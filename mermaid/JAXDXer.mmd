@@ -1,0 +1,71 @@
+flowchart TB
+    subgraph Inputs["System Inputs"]
+        direction LR
+        ens[("Ensemble Object\n[Structures/Trajectories]")]
+        exp[("Experimental Data\n[HDX/NMR/SAXS]")]
+    end
+
+    subgraph Components["Available Components"]
+        direction TB
+        subgraph predictors["Predictors"]
+            bv["BV Predictor\n- Contacts\n- H-bonds"]
+            nmr["NMR Predictor\n- Chemical shifts\n- NOEs"]
+            saxs["SAXS Predictor\n- Scattering\n- Rg"]
+        end
+
+        subgraph loss_funcs["Loss Functions"]
+            hdx_loss["HDX Loss\n- RMSD\n- Enthalpy"]
+            nmr_loss["NMR Loss\n- χ2\n- Correlation"]
+            saxs_loss["SAXS Loss\n- χ2\n- P-value"]
+            reg_loss["Regularization\n- MaxEnt\n- Sparsity"]
+        end
+
+        subgraph analysis_funcs["Analysis Functions"]
+            stats["Statistical\n- Distributions\n- Correlations"]
+            struct["Structural\n- Clusters\n- PCA"]
+            valid["Validation\n- Cross-val\n- Confidence"]
+        end
+
+        subgraph config["Configuration"]
+            pred_cfg["Predictor Config\n- Parameters\n- Cutoffs"]
+            opt_cfg["Optimizer Config\n- Weights\n- Tolerances\n- Replicates"]
+            sys_cfg["System Config\n- Paths\n- Resources"]
+        end
+    end
+
+    subgraph Pipeline["Processing Pipeline"]
+        direction LR
+        data_split["Train/Val Splits"] 
+        feat{"Feature\nCalculation"}
+        opt{"Weight/Parameter\nOptimization"}
+        Analyze{"Optimisation\nAssessment"}
+
+        ens --> |"Featurise"| feat
+        feat --> |"Optimize"| opt
+        opt --> |"Analyse"| Analyze
+        
+        exp --> data_split
+        data_split --> opt
+        data_split -.-> Analyze
+        
+        config -.-> data_split
+        config -.-> feat
+        config -.-> opt
+        
+        predictors --> feat
+        loss_funcs --> opt
+        analysis_funcs --> Analyze
+    end
+
+    Analyze --> res[/"Results\nObject"/]
+    Analyze --> optens[("Optimized\nEnsemble")]
+
+    classDef component fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef process fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef data fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef input fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+    class predictors,loss_funcs,analysis_funcs component
+    class Pipeline process
+    class config data
+    class Inputs input
