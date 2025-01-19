@@ -246,6 +246,18 @@ wheels = [
 ]
 
 [[package]]
+name = "hdxrate"
+version = "0.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/38/b0/6002c04b2cad785900d0cbbcdf3c1cf1a0504fb1ed71a493121be5cc15ef/HDXrate-0.2.2.tar.gz", hash = "sha256:a8da72e8a380ae9fdc5657865f39b03aedcfce6ff922eefb9c8c7c7b4aa2d6b1", size = 37502 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/5a/5ea1c457c38b6372730d972f974bf7ef737b3fd40b223287e8d9218a1efd/HDXrate-0.2.2-py2.py3-none-any.whl", hash = "sha256:ee3e5742aefc60bc6cc364fef5acd7f95852074816f795c423f8b60b6891076e", size = 20149 },
+]
+
+[[package]]
 name = "icecream"
 version = "2.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -380,6 +392,7 @@ name = "jax-ent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "hdxrate" },
     { name = "icecream" },
     { name = "jax", extra = ["cuda12"] },
     { name = "matplotlib" },
@@ -400,6 +413,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "hdxrate", specifier = ">=0.2.2" },
     { name = "icecream", specifier = ">=2.1.4" },
     { name = "jax", extras = ["cuda12"], specifier = "==0.4.35" },
     { name = "matplotlib", specifier = ">=3.10.0" },
