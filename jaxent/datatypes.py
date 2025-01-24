@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from MDAnalysis import Universe
+
 from jaxent.forwardmodels.base import ForwardModel
 
 
