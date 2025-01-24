@@ -388,7 +388,7 @@ with-cuda = [
 ]
 
 [[package]]
-name = "jax-ent"
+name = "jaxent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
