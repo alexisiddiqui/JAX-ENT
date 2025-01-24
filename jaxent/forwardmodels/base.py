@@ -11,6 +11,13 @@ class ForwardModel(ABC):
 
     @abstractmethod
     def initialise(self, ensemble: list[Universe]) -> bool:
+        """
+        This should be some form of validation to ensure that the data is compatible with the forward model.
+        """
+        pass
+
+    @abstractmethod
+    def featurise(self, ensemble: list[Universe]) -> list[Any]:
         pass
 
 
