@@ -2,7 +2,7 @@ import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 
-from jaxent.forwardmodels.featurisers import calc_contacts_universe, calculate_intrinsic_rates
+from jaxent.forwardmodels.models import calc_contacts_universe, calculate_intrinsic_rates
 
 
 def test_calculate_intrinsic_rates():
