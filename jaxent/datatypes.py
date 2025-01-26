@@ -43,17 +43,40 @@ class Experimental_Data:
         self.data = data
 
 
-class Simulation_Ensemble:
+
+class Simulation:
+    """
+    This is the core object that is used during optimisation 
+    """
+
+
+    def __init__(self) -> None:
+        self.input_features:
+        self.frame_weights:
+        self.forward_model_weights:
+        self.forward_models :
+        self.output_features:
+
+    def forward(self):
+        """
+        This function applies the forward models to the input features
+        need to find a way to do this efficiently in jax
+        """
+        pass
+
+
+
+class Experiment_Ensemble:
     """
     Class to hold the information of a simulation ensemble and validate whether the forward model is compatible with the ensemble.
     This is created from a list of MDA Universe objects, as well as a forward model object.
     """
 
-    def __init__(self, universes: list[Universe], forward_models: list[ForwardModel]):
+    def __init__(self, universes: list[Universe], forward_models: list[ForwardModel], experimental_data: list[Experimental_Data]):
         self.ensembles = universes
         self.model = forward_models
 
-    def create_model(self):
+    def create_model(self)-> Simulation:
         # only add forward models that have been successfully initialised
         self.model = self.validate_forward_models()
 
@@ -68,3 +91,4 @@ class Simulation_Ensemble:
                 UserWarning(f"Model {model} failed to initialise. Skipping this model.")
 
         return validated_models
+

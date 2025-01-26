@@ -2,7 +2,7 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 
 class BaseConfig:
@@ -13,6 +13,16 @@ class BaseConfig:
         pass
 
 
+class FeaturiserSettings(TypedDict):
+    name: str
+    batch_size: int | None
+
+
+class OptimiserSettings(TypedDict):
+    name: str
+    n_steps: int
+
+
 @dataclass
 class Settings(BaseConfig):
     protein_name: str
@@ -20,7 +30,8 @@ class Settings(BaseConfig):
     experiment_name: str
     experiment_type: str
 
-    optimiser_config: BaseConfig
+    optimiser_config: OptimiserSettings
+    featuriser_config: FeaturiserSettings
     forward_model_config: BaseConfig
 
     n_replicates: int = 3
