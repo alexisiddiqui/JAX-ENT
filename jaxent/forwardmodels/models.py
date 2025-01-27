@@ -16,8 +16,8 @@ from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
     calculate_intrinsic_rates,
     find_common_residues,
-    get_residue_atom_airs,
-    get_ressidue_indices,
+    get_residue_atom_pairs,
+    get_rssidue_indices,
 )
 from jaxent.forwardmodels.netHDX_functions import HBondNetwork
 
