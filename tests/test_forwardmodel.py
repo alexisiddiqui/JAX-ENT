@@ -1,14 +1,16 @@
+from typing import List, Tuple
+
 import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 
-from jaxent.forwardmodels.models import calc_contacts_universe, calculate_intrinsic_rates
+from jaxent.forwardmodels.models import calc_BV_contacts_universe, calculate_intrinsic_rates
 
 
 def test_calculate_intrinsic_rates():
     """Test the calculation of intrinsic rates against reference data with detailed comparison."""
-    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/HDXer_tutorial/BPTI/BPTI_simulations/P00974_60_1_af_sample_127_10001_protonated.pdb"
-    rates_path = "/home/alexi/Documents/JAX-ENT/tests/inst/BPTI_Intrinsic_rates.dat"
+    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    rates_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
 
     # Load universe
     universe = mda.Universe(topology_path)
@@ -19,7 +21,7 @@ def test_calculate_intrinsic_rates():
     # Basic length checks
     assert len(rates) == len(residue_ids)
     assert len(rates) == len(universe.residues)
-    assert len(rates) == 58
+    assert len(rates) == 376
 
     # Read reference data
     with open(rates_path, "r") as f:
@@ -96,22 +98,55 @@ def test_calculate_intrinsic_rates():
 
     # Final assertion with detailed error message
     matching_array = np.allclose(rates[res_indexes], exp_kints, atol=1e-5)
-    # if not matching_array:
-    #     raise AssertionError(
-    #         f"\nRates comparison failed. Found {len(mismatches)} mismatches out of {len(res_indexes)} residues. "
-    #         "See detailed output above for specific residues and values."
-    #     )
+    if not matching_array:
+        raise AssertionError(
+            f"\nRates comparison failed. Found {len(mismatches)} mismatches out of {len(res_indexes)} residues. "
+            "See detailed output above for specific residues and values."
+        )
 
 
-from typing import List, Tuple
+def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
+    """Load contact data from .tmp files.
+
+    Args:
+        data_dir: Directory containing the .tmp files
+        file_prefix: Prefix of files to load ("Contacts" or "Hbonds")
+
+    Returns:
+        Dictionary mapping residue IDs to their contact values
+    """
+    import glob
+    import os
+
+    # Get all .tmp files matching the prefix
+    pattern = os.path.join(data_dir, f"{file_prefix}_chain_0_res_*.tmp")
+    tmp_files = glob.glob(pattern)
+
+    contact_data = {}
+    for file_path in tmp_files:
+        # Extract residue number from filename
+        filename = os.path.basename(file_path)
+        resid = int(filename.split("res_")[1].split(".tmp")[0])
+
+        # Read first value from file
+        try:
+            with open(file_path, "r") as f:
+                first_line = f.readline().strip()
+                if first_line:  # Check if line is not empty
+                    contact_value = float(first_line.split()[0])
+                    contact_data[resid] = contact_value
+        except (ValueError, IndexError):
+            print(f"Warning: Could not read contact value from {file_path}")
+            continue
+
+    return contact_data
 
 
 def test_calc_contacts_universe():
     """Test the calculation of contacts against reference data with detailed comparison."""
+    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    data_dir = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1"
 
-    # Load test structure
-    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/5pti.pdb"
-    # topology_path = "/home/alexi/Documents/ValDX/raw_data/BRD4/BRD4_APO/BRD4_APO_484_1_af_sample_127_10000_protonated_max_plddt_2399.pdb"
     universe = mda.Universe(topology_path)
 
     # Get N atoms for each residue (excluding prolines)
@@ -123,6 +158,7 @@ def test_calc_contacts_universe():
                 NH_residue_atom_index.append((residue.resid, N_atom.index))
             except IndexError:
                 continue
+
     HN_residue_atom_index: List[Tuple[int, int]] = []
     for residue in universe.residues:
         if residue.resname != "PRO":
@@ -131,57 +167,140 @@ def test_calc_contacts_universe():
                 HN_residue_atom_index.append((residue.resid, H_atom.index))
             except IndexError:
                 continue
-    # Test heavy atom contacts
-    heavy_contacts = calc_contacts_universe(
-        universe=universe,
-        residue_atom_index=NH_residue_atom_index,
-        contact_selection="heavy",
-        radius=6.5,  # 0.65 nm in Angstroms
-        switch=False,
-    )
 
-    # Test oxygen contacts
-    oxygen_contacts = calc_contacts_universe(
-        universe=universe,
-        residue_atom_index=HN_residue_atom_index,
-        contact_selection="oxygen",
-        radius=2.4,  # 0.24 nm in Angstroms
-        switch=False,
-    )
-
-    # Basic length checks
-    assert len(heavy_contacts) == len(NH_residue_atom_index)
-    assert len(oxygen_contacts) == len(HN_residue_atom_index)
-    assert len(heavy_contacts[0]) == len(universe.trajectory)
-    assert len(oxygen_contacts[0]) == len(universe.trajectory)
-
-    # Print detailed comparison if we have reference data
-    print("\nDetailed Contacts Comparison:")
-    print("-" * 80)
-    print(f"{'Residue ID':^10} {'Heavy Contacts':^15} {'O Contacts':^15}")
-    print("-" * 80)
-
-    for (resid, _), heavy, oxygen in zip(NH_residue_atom_index, heavy_contacts, oxygen_contacts):
-        # Get mean contacts across frames
-        mean_heavy = np.mean(heavy)
-        mean_oxygen = np.mean(oxygen)
-        print(f"{resid:^10d} {mean_heavy:^15.2f} {mean_oxygen:^15.2f}")
-
-    # Test switching function
-    heavy_contacts_switch = calc_contacts_universe(
+    # Calculate contacts
+    heavy_contacts = calc_BV_contacts_universe(
         universe=universe,
         residue_atom_index=NH_residue_atom_index,
         contact_selection="heavy",
         radius=6.5,
-        switch=True,
+        switch=False,
     )
 
-    # Verify switching function gives different results than hard cutoff
-    assert not np.allclose(heavy_contacts, heavy_contacts_switch)
+    oxygen_contacts = calc_BV_contacts_universe(
+        universe=universe,
+        residue_atom_index=HN_residue_atom_index,
+        contact_selection="oxygen",
+        radius=2.4,
+        switch=False,
+    )
 
-    # Additional checks
-    assert all(np.all(np.array(contacts) >= 0) for contacts in [heavy_contacts, oxygen_contacts])
-    assert all(isinstance(val, (int, float)) for sublist in heavy_contacts for val in sublist)
+    # Load reference data
+    ref_contacts = load_contact_data(data_dir, "Contacts")
+    ref_hbonds = load_contact_data(data_dir, "Hbonds")
+
+    # Print comparison header
+    print("\nDetailed Contacts Comparison:")
+    print("-" * 120)
+    print(
+        f"{'Residue ID':^10} {'Calc Heavy':^12} {'Ref Heavy':^12} {'Heavy Δ':^12} {'Heavy %Δ':^12} "
+        f"{'Calc O':^12} {'Ref O':^12} {'O Δ':^12} {'O %Δ':^12} {'Match?':^8}"
+    )
+    print("-" * 120)
+
+    matches = []
+    mismatches = []
+
+    # Compare calculated vs reference values
+    for i, ((resid, _), heavy, oxygen) in enumerate(
+        zip(NH_residue_atom_index, heavy_contacts, oxygen_contacts)
+    ):
+        calc_heavy = np.mean(heavy)
+        calc_oxygen = np.mean(oxygen)
+
+        ref_heavy = ref_contacts.get(resid, None)
+        ref_oxygen = ref_hbonds.get(resid, None)
+
+        if ref_heavy is not None and ref_oxygen is not None:
+            heavy_diff = calc_heavy - ref_heavy  # Note: Changed to show direction
+            oxygen_diff = calc_oxygen - ref_oxygen
+
+            heavy_pct = (heavy_diff / ref_heavy * 100) if ref_heavy != 0 else float("inf")
+            oxygen_pct = (oxygen_diff / ref_oxygen * 100) if ref_oxygen != 0 else float("inf")
+
+            # Consider a match if both absolute differences are within tolerance
+            matches_within_tol = (abs(heavy_diff) < 1.0) and (abs(oxygen_diff) < 1.0)
+
+            comparison = {
+                "resid": resid,
+                "calc_heavy": calc_heavy,
+                "ref_heavy": ref_heavy,
+                "heavy_diff": heavy_diff,
+                "heavy_pct": heavy_pct,
+                "calc_oxygen": calc_oxygen,
+                "ref_oxygen": ref_oxygen,
+                "oxygen_diff": oxygen_diff,
+                "oxygen_pct": oxygen_pct,
+            }
+
+            if matches_within_tol:
+                matches.append(comparison)
+            else:
+                mismatches.append(comparison)
+
+            # Add +/- signs to differences
+            heavy_diff_str = f"{'+' if heavy_diff > 0 else ''}{heavy_diff:.2f}"
+            oxygen_diff_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_diff:.2f}"
+            heavy_pct_str = f"{'+' if heavy_diff > 0 else ''}{heavy_pct:.1f}%"
+            oxygen_pct_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_pct:.1f}%"
+
+            print(
+                f"{resid:^10d} {calc_heavy:^12.2f} {ref_heavy:^12.2f} {heavy_diff_str:^12} {heavy_pct_str:^12} "
+                f"{calc_oxygen:^12.2f} {ref_oxygen:^12.2f} {oxygen_diff_str:^12} {oxygen_pct_str:^12} "
+                f"{'✓' if matches_within_tol else '✗':^8}"
+            )
+
+    # Print summary with direction analysis
+    print("\nSummary:")
+    print(f"Total residues compared: {len(matches) + len(mismatches)}")
+    print(f"Matching contacts: {len(matches)}")
+    print(f"Mismatching contacts: {len(mismatches)}")
+
+    if mismatches:
+        print("\nMismatch Analysis:")
+        print("-" * 80)
+
+        # Analyze trends in mismatches
+        heavy_higher = sum(1 for m in mismatches if m["heavy_diff"] > 0)
+        heavy_lower = sum(1 for m in mismatches if m["heavy_diff"] < 0)
+        oxygen_higher = sum(1 for m in mismatches if m["oxygen_diff"] > 0)
+        oxygen_lower = sum(1 for m in mismatches if m["oxygen_diff"] < 0)
+
+        print("\nHeavy Contact Trends:")
+        print(f"  Higher than reference: {heavy_higher} residues")
+        print(f"  Lower than reference:  {heavy_lower} residues")
+        print(f"  Average deviation: {np.mean([m['heavy_diff'] for m in mismatches]):.2f}")
+        print(f"  Average % change: {np.mean([m['heavy_pct'] for m in mismatches]):.1f}%")
+
+        print("\nOxygen Contact Trends:")
+        print(f"  Higher than reference: {oxygen_higher} residues")
+        print(f"  Lower than reference:  {oxygen_lower} residues")
+        print(f"  Average deviation: {np.mean([m['oxygen_diff'] for m in mismatches]):.2f}")
+        print(f"  Average % change: {np.mean([m['oxygen_pct'] for m in mismatches]):.1f}%")
+
+        print("\nLargest Mismatches:")
+        sorted_by_heavy = sorted(mismatches, key=lambda x: abs(x["heavy_pct"]), reverse=True)[:5]
+        sorted_by_oxygen = sorted(mismatches, key=lambda x: abs(x["oxygen_pct"]), reverse=True)[:5]
+
+        print("\nTop 5 Heavy Contact Mismatches:")
+        for m in sorted_by_heavy:
+            print(
+                f"  Residue {m['resid']}: {m['calc_heavy']:.2f} vs {m['ref_heavy']:.2f} "
+                f"(Δ: {m['heavy_diff']:+.2f}, {m['heavy_pct']:+.1f}%)"
+            )
+
+        print("\nTop 5 Oxygen Contact Mismatches:")
+        for m in sorted_by_oxygen:
+            print(
+                f"  Residue {m['resid']}: {m['calc_oxygen']:.2f} vs {m['ref_oxygen']:.2f} "
+                f"(Δ: {m['oxygen_diff']:+.2f}, {m['oxygen_pct']:+.1f}%)"
+            )
+
+    # Assert that most contacts match within tolerance
+    match_ratio = len(matches) / (len(matches) + len(mismatches))
+    assert match_ratio > 0.9, (
+        f"Only {match_ratio:.1%} of contacts match reference values (threshold: 90%)"
+    )
 
     print("\nTest completed successfully!")
 
