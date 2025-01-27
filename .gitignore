@@ -172,3 +172,9 @@ cython_debug/
 .python-version
 
 tests/inst/HDXer_tutorial
+
+
+*offsets.lock
+*offsets.npz
+
+*.png

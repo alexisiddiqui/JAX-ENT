@@ -1,8 +1,69 @@
-from typing import Literal
+import warnings
+from typing import List, Literal, Set, Tuple
 
 import MDAnalysis as mda
 import numpy as np
+from MDAnalysis import Universe
 from MDAnalysis.lib.distances import distance_array
+
+
+def find_common_residues(
+    ensemble: List[Universe],
+) -> Tuple[Set[Tuple[str, int]], Set[Tuple[str, int]]]:
+    """
+    Find the common residues across an ensemble of MDAnalysis Universe objects.
+
+    Args:
+        ensemble: List of MDAnalysis Universe objects to analyze
+
+    Returns:
+        Tuple containing:
+        - Set of common residues (residue name, residue ID) present in all universes
+        - Set of all residues present in any universe
+
+    Raises:
+        ValueError: If no common residues are found in the ensemble
+    """
+    # Extract residue sequences from each universe
+    residue_sequences = [(u.residues.resnames, u.residues.resids) for u in ensemble]
+
+    # Convert sequences to sets of (resname, resid) tuples
+    residue_sets = []
+    for resnames, resids in residue_sequences:
+        residue_set = set(zip(resnames, resids))
+        residue_sets.append(residue_set)
+
+    # Find common residues (intersection of all sets)
+    common_residues = set.intersection(*residue_sets)
+
+    # Find all residues (union of all sets)
+    all_residues = set.union(*residue_sets)
+
+    if len(common_residues) == 0:
+        raise ValueError("No common residues found in the ensemble.")
+
+    if common_residues < all_residues:
+        warnings.warn("Some residues are not present in all universes. These will be ignored.")
+
+    return common_residues, all_residues
+
+
+def get_residue_indices(universe: Universe, common_residues: Set[Tuple[str, int]]) -> List[int]:
+    """
+    Get the indices of common residues in a specific universe.
+
+    Args:
+        universe: MDAnalysis Universe object
+        common_residues: Set of (residue name, residue ID) tuples representing common residues
+
+    Returns:
+        List of residue indices for the common residues in this universe
+    """
+    residue_indices = []
+    for i, (resname, resid) in enumerate(zip(universe.residues.resnames, universe.residues.resids)):
+        if (resname, resid) in common_residues:
+            residue_indices.append(i)
+    return residue_indices
 
 
 def calculate_intrinsic_rates(universe_or_atomgroup):
@@ -168,9 +229,9 @@ def calc_BV_contacts_universe(
     """
     # Set up selection string based on contact type
     if contact_selection == "heavy":
-        sel_string = "not name H*"  # Select all non-hydrogen atoms
+        sel_string = "not type H"  # Select all non-hydrogen atoms
     elif contact_selection == "oxygen":
-        sel_string = "element O"  # Select all oxygen atoms
+        sel_string = "type O"  # Select all oxygen atoms
     else:
         raise ValueError("contact_selection must be either 'heavy' or 'oxygen'")
 
@@ -202,6 +263,8 @@ def calc_BV_contacts_universe(
                 f"{sel_string} and not (resid {exclude_start}:{exclude_end})"
             )
 
+            print(f"resi{res_idx}, {sel_string} and not (resid {exclude_start}:{exclude_end})")
+
             if len(contact_atoms) == 0:
                 continue
 
@@ -216,7 +279,7 @@ def calc_BV_contacts_universe(
                 # Apply switching function to all distances
                 contact_values = rational_switch(distances, radius)
                 # Sum up contact values (weighted contacts)
-                results[i, ts.frame] = np.sum(contact_values[distances <= radius * 1.5])
+                results[i, ts.frame] = np.sum(contact_values[distances <= radius * 1])
             else:
                 # Count contacts within radius
                 results[i, ts.frame] = np.sum(distances <= radius)

@@ -43,19 +43,17 @@ class Experimental_Data:
         self.data = data
 
 
-
 class Simulation:
     """
-    This is the core object that is used during optimisation 
+    This is the core object that is used during optimisation
     """
 
-
     def __init__(self) -> None:
-        self.input_features:
-        self.frame_weights:
-        self.forward_model_weights:
-        self.forward_models :
-        self.output_features:
+        self.input_features: list
+        self.frame_weights: list
+        self.forward_model_weights: list
+        self.forward_models: list
+        self.output_features: list
 
     def forward(self):
         """
@@ -65,18 +63,22 @@ class Simulation:
         pass
 
 
-
 class Experiment_Ensemble:
     """
     Class to hold the information of a simulation ensemble and validate whether the forward model is compatible with the ensemble.
     This is created from a list of MDA Universe objects, as well as a forward model object.
     """
 
-    def __init__(self, universes: list[Universe], forward_models: list[ForwardModel], experimental_data: list[Experimental_Data]):
+    def __init__(
+        self,
+        universes: list[Universe],
+        forward_models: list[ForwardModel],
+        experimental_data: list[Experimental_Data],
+    ):
         self.ensembles = universes
         self.model = forward_models
 
-    def create_model(self)-> Simulation:
+    def create_model(self) -> Simulation:
         # only add forward models that have been successfully initialised
         self.model = self.validate_forward_models()
 
@@ -91,4 +93,3 @@ class Experiment_Ensemble:
                 UserWarning(f"Model {model} failed to initialise. Skipping this model.")
 
         return validated_models
-
