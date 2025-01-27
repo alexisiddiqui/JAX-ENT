@@ -50,7 +50,7 @@ class BV_input_features(Input_Features):
 
 @dataclass(frozen=True)
 class BV_output_features(Output_Features):
-    log_Pf: list  # (residues)
+    log_Pf: list  # (1, residues)
     k_ints: Optional[list]
 
     @property
