@@ -12,8 +12,29 @@ HDX-MS residue protection factor
 Upcoming:
 SAXS
 NMR
-
 CryoEM???
+
+
+Current work is working on implementing the BV model featuriser.
+This includes:
+BV model in jax
+netHDX forward model using BV model with and without BH
+
+
+First get BV model working in jax
+then try and abstract model into netHDX
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -13,6 +13,7 @@ dependencies = [
     "jax[cuda12]==0.4.35",
     "matplotlib>=3.10.0",
     "mdanalysis>=2.8.0",
+    "networkx[default]>=3.4.2",
     "numpy>=2.2.1",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.1",
