@@ -1,138 +1,27 @@
+import glob
+import os
 from typing import List, Tuple
 
-import MDAnalysis as mda
+import mdtraj as md
 import numpy as np
-import pandas as pd
 
-from jaxent.forwardmodels.models import calc_BV_contacts_universe, calculate_intrinsic_rates
-
-
-def test_calculate_intrinsic_rates():
-    """Test the calculation of intrinsic rates against reference data with detailed comparison."""
-    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    rates_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
-
-    # Load universe
-    universe = mda.Universe(topology_path)
-
-    # Calculate rates using our function
-    rates, residue_ids = calculate_intrinsic_rates(universe)
-
-    # Basic length checks
-    assert len(rates) == len(residue_ids)
-    assert len(rates) == len(universe.residues)
-    assert len(rates) == 376
-
-    # Read reference data
-    with open(rates_path, "r") as f:
-        header = f.readline().strip()
-    print(f"Header from file: {header}")
-
-    df = pd.read_csv(rates_path, delim_whitespace=True)
-    print(f"Columns in DataFrame: {df.columns.tolist()}")
-
-    # Rename columns
-    df.columns = ["ResID", "k_int"] if len(df.columns) == 2 else df.columns
-
-    exp_residues = df["ResID"].values
-    exp_kints = df["k_int"].values
-
-    # Get the residue numbers that match the exp_residues
-    res_indexes = []
-    for res in exp_residues:
-        res_indexes.append(np.where(residue_ids == res)[0][0])
-
-    # Detailed comparison
-    print("\nDetailed Rate Comparison:")
-    print("-" * 80)
-    print(
-        f"{'Residue ID':^10} {'Calculated':^15} {'Expected':^15} {'Difference':^15} {'Match?':^10} {'% Diff':^15}"
-    )
-    print("-" * 80)
-
-    matches = []
-    mismatches = []
-
-    for idx, exp_idx in enumerate(res_indexes):
-        calc_rate = rates[exp_idx]
-        exp_rate = exp_kints[idx]
-        abs_diff = abs(calc_rate - exp_rate)
-        rel_diff = abs_diff / exp_rate * 100 if exp_rate != 0 else float("inf")
-
-        matches_within_tol = np.isclose(calc_rate, exp_rate, atol=1e-5)
-
-        comparison = {
-            "resid": exp_residues[idx],
-            "calculated": calc_rate,
-            "expected": exp_rate,
-            "abs_diff": abs_diff,
-            "rel_diff": rel_diff,
-            "matches": matches_within_tol,
-        }
-
-        if matches_within_tol:
-            matches.append(comparison)
-        else:
-            mismatches.append(comparison)
-
-        print(
-            f"{exp_residues[idx]:^10d} {calc_rate:^15.6f} {exp_rate:^15.6f} "
-            f"{abs_diff:^15.6f} {'✓' if matches_within_tol else '✗':^10} "
-            f"{rel_diff:^15.2f}%"
-        )
-
-    print("\nSummary:")
-    print(f"Total residues compared: {len(res_indexes)}")
-    print(f"Matching rates: {len(matches)}")
-    print(f"Mismatching rates: {len(mismatches)}")
-
-    if mismatches:
-        print("\nMismatched Residues Details:")
-        print("-" * 80)
-        for mismatch in mismatches:
-            print(f"Residue {mismatch['resid']}:")
-            print(f"  Calculated: {mismatch['calculated']:.6f}")
-            print(f"  Expected:   {mismatch['expected']:.6f}")
-            print(f"  Abs Diff:   {mismatch['abs_diff']:.6f}")
-            print(f"  Rel Diff:   {mismatch['rel_diff']:.2f}%")
-
-    # Final assertion with detailed error message
-    matching_array = np.allclose(rates[res_indexes], exp_kints, atol=1e-5)
-    if not matching_array:
-        raise AssertionError(
-            f"\nRates comparison failed. Found {len(mismatches)} mismatches out of {len(res_indexes)} residues. "
-            "See detailed output above for specific residues and values."
-        )
+from jaxent.forwardmodels.mdtraj_functions import calc_BV_contacts_mdtraj
 
 
 def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
-    """Load contact data from .tmp files.
-
-    Args:
-        data_dir: Directory containing the .tmp files
-        file_prefix: Prefix of files to load ("Contacts" or "Hbonds")
-
-    Returns:
-        Dictionary mapping residue IDs to their contact values
-    """
-    import glob
-    import os
-
-    # Get all .tmp files matching the prefix
+    """Load contact data from .tmp files."""
     pattern = os.path.join(data_dir, f"{file_prefix}_chain_0_res_*.tmp")
     tmp_files = glob.glob(pattern)
 
     contact_data = {}
     for file_path in tmp_files:
-        # Extract residue number from filename
         filename = os.path.basename(file_path)
         resid = int(filename.split("res_")[1].split(".tmp")[0])
 
-        # Read first value from file
         try:
             with open(file_path, "r") as f:
                 first_line = f.readline().strip()
-                if first_line:  # Check if line is not empty
+                if first_line:
                     contact_value = float(first_line.split()[0])
                     contact_data[resid] = contact_value
         except (ValueError, IndexError):
@@ -142,31 +31,35 @@ def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
     return contact_data
 
 
-def test_calc_contacts_universe():
+def test_calc_contacts_mdtraj():
     """Test the calculation of contacts against reference data with detailed comparison."""
     topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
     data_dir = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1"
 
-    universe = mda.Universe(topology_path)
+    # Load trajectory
+    traj = md.load(topology_path)
 
     # Get N atoms for each residue (excluding prolines)
     NH_residue_atom_index: List[Tuple[int, int]] = []
-    for residue in universe.residues:
-        if residue.resname != "PRO":
+    for residue in traj.topology.residues:
+        if residue.name != "PRO":
             try:
-                N_atom = residue.atoms.select_atoms("name N")[0]
-                NH_residue_atom_index.append((residue.resid, N_atom.index))
-            except IndexError:
+                N_atom = next(atom for atom in residue.atoms if atom.name == "N")
+                NH_residue_atom_index.append((residue.resSeq, N_atom.index))
+            except StopIteration:
                 continue
 
+    # Get H atoms for each residue (excluding prolines)
     HN_residue_atom_index: List[Tuple[int, int]] = []
-    for residue in universe.residues:
-        if residue.resname != "PRO":
+    for residue in traj.topology.residues:
+        if residue.name != "PRO":
             try:
-                H_atom = residue.atoms.select_atoms("name H")[0]
-                HN_residue_atom_index.append((residue.resid, H_atom.index))
-            except IndexError:
+                H_atom = next(atom for atom in residue.atoms if atom.name == "H")
+                HN_residue_atom_index.append((residue.resSeq, H_atom.index))
+            except StopIteration:
                 continue
+
+    # Convert both lists to sets of just the residue numbers (first element of each tuple)
     NH_residues = set(res_num for res_num, _ in NH_residue_atom_index)
     HN_residues = set(res_num for res_num, _ in HN_residue_atom_index)
 
@@ -188,21 +81,21 @@ def test_calc_contacts_universe():
     # Sort both lists by residue number to ensure they're in the same order
     NH_residue_atom_index.sort()
     HN_residue_atom_index.sort()
-    # Calculate contacts
-    heavy_contacts = calc_BV_contacts_universe(
-        universe=universe,
+
+    # Calculate contacts using aligned implementation
+    heavy_contacts = calc_BV_contacts_mdtraj(
+        universe=traj,
         residue_atom_index=NH_residue_atom_index,
         contact_selection="heavy",
-        radius=6.5,
+        radius=0.65,
         switch=False,
     )
 
-    oxygen_contacts = calc_BV_contacts_universe(
-        universe=universe,
+    oxygen_contacts = calc_BV_contacts_mdtraj(
+        universe=traj,
         residue_atom_index=HN_residue_atom_index,
         contact_selection="oxygen",
-        radius=2.4,
-        # residue_ignore=(0, 0),
+        radius=0.24,
         switch=False,
     )
 
@@ -226,14 +119,14 @@ def test_calc_contacts_universe():
     for i, ((resid, _), heavy, oxygen) in enumerate(
         zip(NH_residue_atom_index, heavy_contacts, oxygen_contacts)
     ):
-        calc_heavy = np.mean(heavy)
-        calc_oxygen = np.mean(oxygen)
+        calc_heavy = heavy[0]  # Single frame, take first value
+        calc_oxygen = oxygen[0]  # Single frame, take first value
 
         ref_heavy = ref_contacts.get(resid, None)
         ref_oxygen = ref_hbonds.get(resid, None)
 
         if ref_heavy is not None and ref_oxygen is not None:
-            heavy_diff = calc_heavy - ref_heavy  # Note: Changed to show direction
+            heavy_diff = calc_heavy - ref_heavy
             oxygen_diff = calc_oxygen - ref_oxygen
 
             heavy_pct = (heavy_diff / ref_heavy * 100) if ref_heavy != 0 else float("inf")
@@ -271,7 +164,7 @@ def test_calc_contacts_universe():
                 f"{'✓' if matches_within_tol else '✗':^8}"
             )
 
-    # Print summary with direction analysis
+    # Print summary
     print("\nSummary:")
     print(f"Total residues compared: {len(matches) + len(mismatches)}")
     print(f"Matching contacts: {len(matches)}")
@@ -327,6 +220,4 @@ def test_calc_contacts_universe():
 
 
 if __name__ == "__main__":
-    test_calculate_intrinsic_rates()
-
-    test_calc_contacts_universe()
+    test_calc_contacts_mdtraj()

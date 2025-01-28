@@ -11,6 +11,7 @@ class HDX_peptide:
     dataclass that holds the information of a single peptide produced by HDX-MS experiments
     """
 
+    chain: str
     peptide_number: int
     peptide_sequence: str
     residue_start: int
@@ -28,12 +29,13 @@ class HDX_protection_factor:
     or NMR derived protection factors. May also be used to describe protection factors output from forward models.
     """
 
+    chain: str
     residue_number: int
     residue: int
     protection_factor: float
 
 
-class Experimental_Data:
+class Experimental_Dataset:
     """
     Class to hold the information of the experimental data.
     This is created from a list of HDX_peptide objects or list of HDX_protection_factor objects.
@@ -73,7 +75,7 @@ class Experiment_Ensemble:
         self,
         universes: list[Universe],
         forward_models: list[ForwardModel],
-        experimental_data: list[Experimental_Data],
+        experimental_data: list[Experimental_Dataset],
     ):
         self.ensembles = universes
         self.model = forward_models
