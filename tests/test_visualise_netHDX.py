@@ -7,23 +7,36 @@ import networkx as nx
 import numpy as np
 from matplotlib.figure import Figure
 from MDAnalysis import Universe
+from scipy.spatial.distance import pdist, squareform
+from sklearn.decomposition import PCA
 
-from jaxent.forwardmodels.models import HBondNetwork
+from jaxent.forwardmodels.netHDX_functions import NetHDXConfig, create_average_network
 
 
 def plot_hbond_network_enhanced_PCA(
     G: nx.Graph,
-    universe: Universe,  # Add Universe parameter to access coordinates
+    universe: Universe,
     title: str = "H-Bond Network",
     layout: str = "spring",
     color_scheme: str = "single",
     edge_style: str = "weight",
     show_labels: bool = True,
 ) -> Figure:
-    """Enhanced helper function to plot hydrogen bond networks with spatial regularization"""
-    from scipy.spatial.distance import pdist, squareform
-    from sklearn.decomposition import PCA
+    """
+    Enhanced helper function to plot hydrogen bond networks with spatial regularization using PCA.
 
+    Args:
+        G: NetworkX graph of H-bond network
+        universe: MDAnalysis Universe containing structure and trajectory
+        title: Plot title
+        layout: Layout algorithm ('spring', 'circular', 'kamada_kawai', 'spectral')
+        color_scheme: Node coloring scheme ('single', 'community', 'degree')
+        edge_style: Edge styling ('weight', 'gradient')
+        show_labels: Whether to show node and edge labels
+
+    Returns:
+        Matplotlib Figure object
+    """
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Initialize list to store distance matrices for each frame
@@ -60,6 +73,7 @@ def plot_hbond_network_enhanced_PCA(
 
     # Create dictionary mapping resids to their 2D PCA-projected coordinates
     pos_init = {resid: pos for resid, pos in zip(resids, ca_positions_2d)}
+
     # Normalize initial positions to fit in plot
     if pos_init:
         positions = np.array(list(pos_init.values()))
@@ -71,17 +85,16 @@ def plot_hbond_network_enhanced_PCA(
 
     # Layout options with appropriate parameters
     if layout == "spring":
-        # Use initial positions as starting point for spring layout
-        pos = nx.spring_layout(G, k=10.0, iterations=50, seed=42, pos=pos_init)
+        pos = nx.spring_layout(G, k=2.0, iterations=50, seed=42, pos=pos_init)
     elif layout == "circular":
         pos = nx.circular_layout(G)
     elif layout == "kamada_kawai":
-        # Use initial positions for Kamada-Kawai
         pos = nx.kamada_kawai_layout(G, pos=pos_init)
     elif layout == "spectral":
         pos = nx.spectral_layout(G, scale=10)
     else:
         raise ValueError(f"Unsupported layout: {layout}")
+
     # Node coloring
     if color_scheme == "community":
         communities = nx.community.greedy_modularity_communities(G)
@@ -143,7 +156,20 @@ def plot_hbond_network_enhanced(
     edge_style: str = "weight",
     show_labels: bool = True,
 ) -> Figure:
-    """Enhanced helper function to plot hydrogen bond networks"""
+    """
+    Enhanced helper function to plot hydrogen bond networks.
+
+    Args:
+        G: NetworkX graph of H-bond network
+        title: Plot title
+        layout: Layout algorithm ('spring', 'circular', 'kamada_kawai', 'spectral')
+        color_scheme: Node coloring scheme ('single', 'community', 'degree')
+        edge_style: Edge styling ('weight', 'gradient')
+        show_labels: Whether to show node and edge labels
+
+    Returns:
+        Matplotlib Figure object
+    """
     fig, ax = plt.subplots(figsize=(12, 8))
 
     # Layout options with appropriate parameters
@@ -211,25 +237,27 @@ def plot_hbond_network_enhanced(
     return fig
 
 
-def test_hbond_network_class():
-    """Test the HBondNetwork class implementation with multiple visualization options"""
+def test_hbond_network():
+    """Test the H-bond network implementation with multiple visualization options"""
     topology_path = (
         "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
     )
     trajectory_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    trajectory_path = topology_path.replace(".pdb", "_small.xtc")
 
     # Create test output directory
     test_dir = "tests/hbond_network_viz"
     os.makedirs(test_dir, exist_ok=True)
 
-    print("\nTesting HBondNetwork class...")
+    print("\nTesting H-bond network functionality...")
     print("-" * 80)
 
-    # H-bond parameter sets
-    hbond_params = [
-        {"distance_cutoff": 2.5, "angle_cutoff": 120.0},
-        # {"distance_cutoff": 2.5, "angle_cutoff": 150.0},
-        # {"distance_cutoff": 2.5, "angle_cutoff": 170.0},
+    # H-bond parameter configurations
+    configs = [
+        NetHDXConfig(distance_cutoff=5, angle_cutoff=150.0),
+        # NetHDXConfig(distance_cutoff=2.5, angle_cutoff=150.0),
+        # NetHDXConfig(distance_cutoff=2.5, angle_cutoff=170.0),
     ]
 
     # Visualization parameter sets
@@ -242,13 +270,14 @@ def test_hbond_network_class():
 
     universe = mda.Universe(topology_path, trajectory_path)
 
-    for i, params in enumerate(hbond_params, 1):
-        print(f"\nParameter set {i}: {params}")
-        network = HBondNetwork(**params)
+    for i, config in enumerate(configs, 1):
+        print(f"\nConfiguration {i}:")
+        print(f"  Distance cutoff: {config.distance_cutoff}Å")
+        print(f"  Angle cutoff: {config.angle_cutoff}°")
 
         try:
-            # Get the averaged network directly
-            G = network.get_average_network(universe)
+            # Get the averaged network
+            G = create_average_network(universe, config)
 
             # Print network statistics
             print("\nNetwork Analysis:")
@@ -264,16 +293,17 @@ def test_hbond_network_class():
 
             # Generate visualizations for different parameter combinations
             for layout, color_scheme, edge_style, show_labels in product(*viz_params.values()):
-                viz_name = f"d{params['distance_cutoff']}_a{params['angle_cutoff']}"
+                viz_name = f"d{config.distance_cutoff}_a{config.angle_cutoff}"
                 viz_name += f"_{layout}_{color_scheme}_{edge_style}"
                 viz_name += "_labeled" if show_labels else "_unlabeled"
 
                 title = (
-                    f"H-Bond Network\nD={params['distance_cutoff']}Å, A={params['angle_cutoff']}°\n"
+                    f"H-Bond Network\nD={config.distance_cutoff}Å, A={config.angle_cutoff}°\n"
                     f"{universe.trajectory.n_frames} frames\n"
                     f"{layout.replace('_', ' ').title()} layout, {color_scheme} coloring"
                 )
 
+                # Regular network visualization
                 fig = plot_hbond_network_enhanced(
                     G,
                     title=title,
@@ -288,6 +318,7 @@ def test_hbond_network_class():
                 plt.close(fig)
                 print(f"Saved visualization: {output_path}")
 
+                # PCA-based visualization
                 fig = plot_hbond_network_enhanced_PCA(
                     G,
                     universe=universe,
@@ -304,11 +335,11 @@ def test_hbond_network_class():
                 print(f"Saved visualization: {output_path}")
 
         except Exception as e:
-            print(f"Analysis failed for parameter set {i}: {str(e)}")
+            print(f"Analysis failed for configuration {i}: {str(e)}")
             continue
 
     print("\nTest completed successfully!")
 
 
 if __name__ == "__main__":
-    test_hbond_network_class()
+    test_hbond_network()
