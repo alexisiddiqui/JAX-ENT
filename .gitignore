@@ -178,3 +178,4 @@ tests/inst/HDXer_tutorial
 *offsets.npz
 
 *.png
+.aider*
