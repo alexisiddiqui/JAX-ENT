@@ -23,7 +23,7 @@ class HBondNetworkFeatures(Input_Features):
 class HBondNetwork:
     """
     Calculate hydrogen bond networks from molecular structures
-    This uses the Baker Hubbard method to calculate hbond donors
+    This uses the Baker Hubbard method to calculate hbonds
     """
 
     def __init__(
