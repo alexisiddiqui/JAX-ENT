@@ -6,11 +6,26 @@ import networkx as nx
 import numpy as np
 from matplotlib.figure import Figure
 
-from jaxent.forwardmodels.models import HBondNetwork, netHDX_model
+from jaxent.forwardmodels.models import netHDX_model
+from jaxent.forwardmodels.netHDX_functions import (
+    NetHDXConfig,
+    build_hbond_network,
+    create_average_network,
+    identify_hbond_acceptors,
+    identify_hbond_donors,
+)
 
 
 def plot_hbond_network(G: nx.Graph, title: str = "H-Bond Network") -> Figure:
-    """Helper function to plot a hydrogen bond network"""
+    """Helper function to plot a hydrogen bond network
+
+    Args:
+        G: NetworkX graph representing the H-bond network
+        title: Title for the plot
+
+    Returns:
+        Matplotlib Figure object
+    """
     fig, ax = plt.subplots(figsize=(12, 8))
 
     print("\nDebug - Network properties:")
@@ -45,9 +60,7 @@ def plot_hbond_network(G: nx.Graph, title: str = "H-Bond Network") -> Figure:
 
     plt.title(title)
     plt.axis("off")
-
-    # Add more space around the plot
-    plt.margins(0.2)
+    plt.margins(0.2)  # Add more space around the plot
 
     return fig
 
@@ -80,10 +93,10 @@ def test_nethdx_model():
 
     # Test featurization
     try:
-        contact_matrices = model.featurise(ensemble)
+        feature_data = build_hbond_network(ensemble)
         print("Featurization successful:")
-        print(f"  Number of frames: {len(contact_matrices)}")
-        print(f"  Matrix shape: {np.array(contact_matrices[0]).shape}")
+        print(f"  Number of frames: {len(feature_data.contact_matrices)}")
+        print(f"  Matrix shape: {feature_data.contact_matrices[0].shape}")
     except Exception as e:
         print(f"Featurization failed: {str(e)}")
         return
@@ -91,21 +104,21 @@ def test_nethdx_model():
     print("\nTest completed successfully!")
 
 
-def test_hbond_network_class():
-    """Test the HBondNetwork class implementation with visualization"""
+def test_hbond_network():
+    """Test the H-bond network implementation with visualization"""
     topology_path = (
         "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
     )
     trajectory_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
 
-    print("\nTesting HBondNetwork class...")
+    print("\nTesting H-bond network functionality...")
     print("-" * 80)
 
     # Test different parameter sets
-    test_params = [
-        {"distance_cutoff": 2.5, "angle_cutoff": 120.0},  # Standard H-bond parameters
-        {"distance_cutoff": 2.5, "angle_cutoff": 150.0},  # Slightly stricter
-        {"distance_cutoff": 2.5, "angle_cutoff": 170.0},  # The strictest for testing only
+    test_configs = [
+        NetHDXConfig(distance_cutoff=3.5, angle_cutoff=150.0),  # Standard H-bond parameters
+        NetHDXConfig(distance_cutoff=4.5, angle_cutoff=150.0),  # Slightly stricter
+        NetHDXConfig(distance_cutoff=5, angle_cutoff=150.0),  # The strictest for testing only
     ]
 
     # Create test output directory
@@ -114,17 +127,19 @@ def test_hbond_network_class():
 
     universe = mda.Universe(topology_path, trajectory_path)
 
-    for i, params in enumerate(test_params, 1):
-        print(f"\nParameter set {i}: {params}")
-        network = HBondNetwork(**params)
-
-        # Test donor/acceptor identification
-        donors, acceptors = network._identify_hbond_atoms(universe)
-        print(f"Found {len(donors)} donors and {len(acceptors)} acceptors")
+    for i, config in enumerate(test_configs, 1):
+        print(f"\nConfiguration {i}:")
+        print(f"  Distance cutoff: {config.distance_cutoff}Å")
+        print(f"  Angle cutoff: {config.angle_cutoff}°")
 
         try:
-            # Get average network directly
-            G = network.get_average_network(universe)
+            # Test donor/acceptor identification
+            donors = identify_hbond_donors(universe)
+            acceptors = identify_hbond_acceptors(universe)
+            print(f"Found {len(donors)} donors and {len(acceptors)} acceptors")
+
+            # Get average network
+            G = create_average_network(universe, config)
 
             print("\nNetwork analysis:")
             print(f"  Nodes: {G.number_of_nodes()}")
@@ -150,15 +165,15 @@ def test_hbond_network_class():
             # Plot and save network
             title = (
                 f"H-Bond Network\n"
-                f"Distance cutoff: {params['distance_cutoff']}Å, "
-                f"Angle cutoff: {params['angle_cutoff']}°\n"
+                f"Distance cutoff: {config.distance_cutoff}Å, "
+                f"Angle cutoff: {config.angle_cutoff}°\n"
                 f"({universe.trajectory.n_frames} frames)"
             )
 
             fig = plot_hbond_network(G, title)
             output_path = os.path.join(
                 output_dir,
-                f"hbond_network_d{params['distance_cutoff']}_a{params['angle_cutoff']}.png",
+                f"hbond_network_d{config.distance_cutoff}_a{config.angle_cutoff}.png",
             )
             fig.savefig(output_path, bbox_inches="tight", dpi=300)
             plt.close(fig)
@@ -166,7 +181,7 @@ def test_hbond_network_class():
             print(f"\nSaved visualization to: {output_path}")
 
         except Exception as e:
-            print(f"Analysis failed for parameter set {i}: {str(e)}")
+            print(f"Analysis failed for configuration {i}: {str(e)}")
             continue
 
     print("\nTest completed successfully!")
@@ -174,4 +189,4 @@ def test_hbond_network_class():
 
 if __name__ == "__main__":
     test_nethdx_model()
-    test_hbond_network_class()
+    test_hbond_network()
