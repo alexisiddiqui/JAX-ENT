@@ -19,7 +19,11 @@ from jaxent.forwardmodels.functions import (
     get_residue_atom_pairs,
     get_residue_indices,
 )
-from jaxent.forwardmodels.netHDX_functions import HBondNetwork
+from jaxent.forwardmodels.netHDX_functions import (
+    NetHDX_ForwardPass,
+    NetHDXConfig,
+    build_hbond_network,
+)
 
 
 @dataclass(frozen=True)
@@ -170,23 +174,35 @@ class BV_model(ForwardModel):
 
 
 class netHDX_model(BV_model):
-    def __init__(self):
-        super().__init__()
-        self.hbond_network = HBondNetwork()
+    """
+    Network-based HDX model that uses hydrogen bond networks to predict protection factors.
+    Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
+    """
 
-    def featurise(self, ensemble: List[Universe]) -> List[List[List[float]]]:
+    def __init__(self, config: Optional[NetHDXConfig] = None):
+        super().__init__()
+        self.config = config if config is not None else NetHDXConfig()
+        self.forward: ForwardPass = NetHDX_ForwardPass()
+
+    def featurise(self, ensemble: List[Universe]) -> list[list[list[float]]]:
         """
         Featurize the ensemble using hydrogen bond networks.
 
+        Args:
+            ensemble: List of MDAnalysis Universe objects
+
         Returns:
             List of contact matrices for each frame
+
+        Raises:
+            ValueError: If ensemble validation fails
         """
         # First validate the ensemble
         if not self.initialise(ensemble):
             raise ValueError("Ensemble validation failed")
 
-        # Calculate H-bond network features
-        network_features = self.hbond_network.build_network(ensemble)
+        # Calculate H-bond network features using functional approach
+        network_features = build_hbond_network(ensemble, self.config)
 
         # Convert to required output format
         # Each matrix represents H-bond contacts between residues for a frame
