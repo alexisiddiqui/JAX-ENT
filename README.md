@@ -15,25 +15,20 @@ NMR
 CryoEM???
 
 
-Current work is working on implementing the BV model featuriser.
-This includes:
-BV model in jax
-netHDX forward model using BV model with and without BH
+##############################################################################
 
+Featuriser: Multiple ensembles requires handling of the common resiudes
+- probably should use a dataclass to handle complex topology
 
-First get BV model working in jax
-then try and abstract model into netHDX
-
-
+Optimiser: Each simulation should have its own experimental data section 
+- Should tie this together with the 
 
 
 
 
 
 
-
-
-
+##############################################################################
 
 
 

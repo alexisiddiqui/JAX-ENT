@@ -2,7 +2,7 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Optional
 
 
 class BaseConfig:
@@ -15,14 +15,17 @@ class BaseConfig:
         pass
 
 
-class FeaturiserSettings(TypedDict):
+@dataclass
+class FeaturiserSettings:
     name: str
     batch_size: int | None
 
 
-class OptimiserSettings(TypedDict):
+@dataclass
+class OptimiserSettings:
     name: str
-    n_steps: int
+    n_steps: int = 100
+    tolerance: float = 1e-4
 
 
 @dataclass
