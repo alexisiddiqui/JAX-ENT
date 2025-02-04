@@ -194,7 +194,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         # Calculate rate
         kints[i] = _adj_to_rates(curr_adjs)
 
-    return kints, residue_ids
+    return dict(zip(residue_ids, kints))
 
 
 def calc_BV_contacts_universe(

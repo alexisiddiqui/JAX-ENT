@@ -179,3 +179,5 @@ tests/inst/HDXer_tutorial
 
 *.png
 .aider*
+
+*.pml
