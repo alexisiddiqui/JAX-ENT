@@ -13,5 +13,5 @@ class JaxEnt_Loss(Protocol):
     def __call__(
         self,
         model: Simulation | list[Simulation],
-        dataset: list[Output_Features] | list[Experimental_Dataset] | list[Model_Parameters],
+        dataset: Output_Features | Experimental_Dataset | Model_Parameters,
     ) -> float: ...
