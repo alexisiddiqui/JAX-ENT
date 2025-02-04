@@ -108,8 +108,8 @@ class Experiment_Ensemble:
         self,
         universes: list[Universe],
         forward_models: list[ForwardModel],
-        experimental_data: list[Experimental_Dataset],
-        features: Optional[list[Input_Features]],
+        experimental_data: Optional[list[Experimental_Dataset]] = None,
+        features: Optional[list[Input_Features]] = None,
     ):
         self.ensembles = universes
         self.experimental_data = experimental_data
