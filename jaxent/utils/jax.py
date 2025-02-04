@@ -3,6 +3,8 @@ import numpy as np
 from jaxent.forwardmodels.base import ForwardPass, Input_Features, Model_Parameters
 
 
+########################################
+# this needs to be reworked to be more sensible in jax terms
 def frame_average_features(
     frame_wise_features: Input_Features,  # (frames, residues)
     frame_weights: list,
@@ -35,6 +37,9 @@ def frame_average_features(
 
     # Create new instance with averaged data
     return type(frame_wise_features)(**averaged_fields)
+
+
+########################################
 
 
 def single_pass(

@@ -41,6 +41,7 @@ class Settings(BaseConfig):
 
     n_replicates: int = 3
 
+    n_workers: int = 4
     # set name for child classes?
 
 
