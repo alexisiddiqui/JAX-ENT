@@ -27,6 +27,7 @@ def run_featurise(
     config: Settings | FeaturiserSettings,
     name: Optional[str] = None,
     forward_models: Optional[list[ForwardModel]] = None,
+    validate=True,
 ) -> list[Input_Features]:
     # this function will take in the constructed objects and run the analysis
 
@@ -38,7 +39,8 @@ def run_featurise(
     if name is None:
         raise UserWarning("Name is required")
 
-    ensemble.validate_forward_models()
+    if validate:
+        ensemble.validate_forward_models()
 
     if forward_models is None:
         forward_models = ensemble.forward_models

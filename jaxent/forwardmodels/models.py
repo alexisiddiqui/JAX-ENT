@@ -5,12 +5,7 @@ from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
 from jaxent.datatypes import HDX_peptide, HDX_protection_factor
-from jaxent.forwardmodels.base import (
-    ForwardModel,
-    ForwardPass,
-    Input_Features,
-    Output_Features,
-)
+from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features, Output_Features
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
     calculate_intrinsic_rates,
@@ -40,7 +35,7 @@ class BV_model_Config(BaseConfig):
 
 
 @dataclass(frozen=True)
-class BV_input_features(Input_Features):
+class BV_input_features:
     heavy_contacts: list  # (frames, residues)
     acceptor_contacts: list  # (frames, residues)
 
@@ -52,7 +47,7 @@ class BV_input_features(Input_Features):
 
 
 @dataclass(frozen=True)
-class BV_output_features(Output_Features):
+class BV_output_features:
     log_Pf: list  # (1, residues)
     k_ints: Optional[list]
 
@@ -64,7 +59,7 @@ class BV_output_features(Output_Features):
 class BV_ForwardPass(ForwardPass):
     def __call__(
         self, avg_input_features: BV_input_features, parameters: BV_model_Config
-    ) -> BV_output_features:
+    ) -> Output_Features:
         bc, bh = parameters.forward_parameters
 
         log_pf = bc * avg_input_features.heavy_contacts + bh * avg_input_features.acceptor_contacts
@@ -73,6 +68,9 @@ class BV_ForwardPass(ForwardPass):
             log_Pf=log_pf,
             k_ints=None,  # Optional, can be set later if needed
         )
+
+
+# T_In = BV_input_features  # set proper alias if applicable
 
 
 class BV_model(ForwardModel):
@@ -109,6 +107,9 @@ class BV_model(ForwardModel):
         common_residue_indices = [get_residue_indices(u, self.common_residues) for u in ensemble]
 
         # Calculate intrinsic rates for the common residues
+
+        ########################################################################
+        # this definitely requires fixing to handle multiple universes
         k_ints_res_idx = []
         for idx, u in enumerate(ensemble):
             k_ints_res_idx_dict = calculate_intrinsic_rates(u)
@@ -118,7 +119,9 @@ class BV_model(ForwardModel):
 
         return True
 
-    def featurise(self, ensemble: list[Universe]) -> list[list[list[float]]]:
+        ########################################################################
+
+    def featurise(self, ensemble: list[Universe]) -> Input_Features:
         """
         Calculate BV model features (heavy atom contacts and H-bond acceptor contacts)
         for each residue in the ensemble.
@@ -127,29 +130,28 @@ class BV_model(ForwardModel):
             ensemble: List of MDAnalysis Universe objects
 
         Returns:
-            List of features per universe, per residue, per frame:
-            [[[heavy_contacts, o_contacts], ...], ...]
+            features across universes, per residue, per frame:
 
         Notes:
             - Heavy atom cutoff: 0.65 nm
             - O atom cutoff: 0.24 nm
             - Excludes residues within ±2 positions
         """
-        features = []
+        # concatenate all the features
 
+        heavy_contacts = []
+        acceptor_contacts = []
         # Constants
         HEAVY_RADIUS = self.config.heavy_radius  # 0.65 nm in Angstroms
         O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
 
         for universe in ensemble:
-            universe_features = []
-
             # Get residue indices and atom indices for amide N and H atoms
             NH_residue_atom_pairs = get_residue_atom_pairs(universe, self.common_residues, "N")
             HN_residue_atom_pairs = get_residue_atom_pairs(universe, self.common_residues, "H")
 
             # Calculate heavy atom contacts
-            heavy_contacts = calc_BV_contacts_universe(
+            _heavy_contacts = calc_BV_contacts_universe(
                 universe=universe,
                 residue_atom_index=NH_residue_atom_pairs,
                 contact_selection="heavy",
@@ -157,20 +159,17 @@ class BV_model(ForwardModel):
             )
 
             # Calculate O atom contacts (H-bond acceptors)
-            o_contacts = calc_BV_contacts_universe(
+            _o_contacts = calc_BV_contacts_universe(
                 universe=universe,
                 residue_atom_index=HN_residue_atom_pairs,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
             )
 
-            # Combine features for each residue
-            for h_contacts, o_contacts in zip(heavy_contacts, o_contacts):
-                universe_features.append([h_contacts, o_contacts])
+            heavy_contacts.append(_heavy_contacts)
+            acceptor_contacts.append(_o_contacts)
 
-            features.append(universe_features)
-
-        return features
+        return BV_input_features(heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts)
 
 
 class netHDX_model(BV_model):
@@ -184,7 +183,7 @@ class netHDX_model(BV_model):
         self.config = config if config is not None else NetHDXConfig()
         self.forward: ForwardPass = NetHDX_ForwardPass()
 
-    def featurise(self, ensemble: List[Universe]) -> list[list[list[float]]]:
+    def featurise(self, ensemble: List[Universe]) -> Input_Features:
         """
         Featurize the ensemble using hydrogen bond networks.
 
@@ -204,6 +203,4 @@ class netHDX_model(BV_model):
         # Calculate H-bond network features using functional approach
         network_features = build_hbond_network(ensemble, self.config)
 
-        # Convert to required output format
-        # Each matrix represents H-bond contacts between residues for a frame
-        return [matrix.tolist() for matrix in network_features.contact_matrices]
+        return network_features

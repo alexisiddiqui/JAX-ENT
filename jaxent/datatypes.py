@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import jax
+import numpy as np
 from MDAnalysis import Universe
 
+from jaxent.datatypes import Simulation
 from jaxent.forwardmodels.base import (
     ForwardModel,
     ForwardPass,
@@ -43,6 +46,32 @@ class HDX_protection_factor:
     protection_factor: float
 
 
+@dataclass()
+class Topology_Fragment:
+    """
+    Dataclass that holds the information of a single topology fragment.
+    This is usually a residue but may also be a group of residues such as peptides.
+    """
+
+    chain: str
+    fragment_index: int
+    fragment_sequence: str | list[str]
+    residue_start: int
+    residue_end: int
+
+    def __eq__(self, other) -> bool:
+        """Equal comparison - checks if all attributes are the same"""
+        if not isinstance(other, Topology_Fragment):
+            return NotImplemented
+        return (
+            self.chain == other.chain
+            and self.fragment_index == other.fragment_index
+            and self.fragment_sequence == other.fragment_sequence
+            and self.residue_start == other.residue_start
+            and self.residue_end == other.residue_end
+        )
+
+
 class Experimental_Dataset:
     """
     Class to hold the information of the experimental data.
@@ -71,16 +100,21 @@ class Simulation:
 
     def __post_init__(self):
         self.forwardpass = [model.forward for model in self.forward_models]
+        self.parameters = [p.forward_parameters for p in self.parameters]
 
-    def initialise(self):
+    def initialise(self) -> bool:
         # assert that input features have the same first dimension of "features_shape"
         lengths = [len(feature.features_shape) for feature in self.input_features]
         assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
         self.length = lengths[0]
         if self.frame_weights is None:
-            self.frame_weights = [1 / self.length for _ in range(self.length)]
+            self.frame_weights = [1 / self.length] * self.length
+        if self.frame_weights:
+            assert np.sum(self.frame_weights) == 1, "Frame weights do not sum to 1. Exiting."
         if self.forward_model_weights is None:
             self.forward_model_weights = [1 for _ in range(len(self.forward_models))]
+
+        return True
 
     def forward(self):
         """
@@ -96,6 +130,74 @@ class Simulation:
         )
         # map the single_pass function
         return map(single_pass, self.forwardpass, average_features, self.parameters)
+
+    def update(
+        self, loss: float, argnums: tuple[int, ...] = (0, 1, 2), learning_rate=0.01
+    ) -> Simulation:
+        """
+        Updates simulation parameters based on loss and specified parameters to optimize.
+
+        Args:
+            loss: The scalar loss value
+            argnums: Tuple indicating which parameters to optimize
+                    (0: frame_weights, 1: parameters, 2: forward_model_weights)
+
+        Returns:
+            Updated Simulation instance
+        """
+        # Create new simulation instance
+        new_simulation = Simulation(
+            forward_models=self.forward_models, input_features=self.input_features
+        )
+
+        # Define parameters tuple in same order as argnums reference
+        params_tuple = (self.frame_weights, self.parameters, self.forward_model_weights)
+
+        # Get gradients only for specified parameters
+        grads = jax.grad(lambda *args: loss, argnums=argnums)(*params_tuple)
+
+        # Convert single gradient to tuple if only one parameter being optimized
+        if isinstance(grads, jax.Array):
+            grads = (grads,)
+
+        # Create dictionary mapping param index to its gradient
+        grad_dict = dict(zip(argnums, grads))
+
+        # Could be moved to config
+
+        # Update frame weights if specified
+        if 0 in argnums:
+            new_frame_weights = [
+                w - learning_rate * g for w, g in zip(self.frame_weights, grad_dict[0])
+            ]
+            # Normalize
+            frame_sum = sum(new_frame_weights)
+            new_frame_weights = [w / frame_sum for w in new_frame_weights]
+        else:
+            new_frame_weights = self.frame_weights
+
+        # Update parameters if specified
+        if 1 in argnums:
+            new_parameters = [
+                param - learning_rate * grad for param, grad in zip(self.parameters, grad_dict[1])
+            ]
+        else:
+            new_parameters = self.parameters
+
+        # Update forward model weights if specified
+        if 2 in argnums:
+            new_model_weights = [
+                w - learning_rate * g for w, g in zip(self.forward_model_weights, grad_dict[2])
+            ]
+        else:
+            new_model_weights = self.forward_model_weights
+
+        # Set all parameters in new simulation
+        new_simulation.frame_weights = new_frame_weights
+        new_simulation.parameters = new_parameters
+        new_simulation.forward_model_weights = new_model_weights
+
+        return new_simulation
 
 
 class Experiment_Ensemble:
