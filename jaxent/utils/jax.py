@@ -1,6 +1,6 @@
 import numpy as np
 
-from jaxent.forwardmodels.base import Input_Features
+from jaxent.forwardmodels.base import ForwardPass, Input_Features, Model_Parameters
 
 
 def frame_average_features(
@@ -35,3 +35,9 @@ def frame_average_features(
 
     # Create new instance with averaged data
     return type(frame_wise_features)(**averaged_fields)
+
+
+def single_pass(
+    forward_pass: ForwardPass, input_feature: Input_Features, parameters: Model_Parameters
+):
+    return forward_pass(input_feature, parameters)
