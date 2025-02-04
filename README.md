@@ -18,15 +18,22 @@ CryoEM???
 ##############################################################################
 
 Featuriser: Multiple ensembles requires handling of the common resiudes
-- probably should use a dataclass to handle complex topology
+--> created topology fragment to handle this.
 
 Optimiser: Each simulation should have its own experimental data section 
-- Should tie this together with the 
+- Should tie this together with the data splitting class
 
 
+TODO:
+run_optimise -> seperate SGD into a sperate function
+-> extract optimiser step out
+-> map using jax
+BV_model.initialise -> fragment topology hadnler
+
+frame_average_features - need to find a way to make this jaxable - maybe is fine for now?
 
 
-
+calc_BV_contacts_universe -> fix typing to use numpy - same with the rest of the featuriser code
 
 ##############################################################################
 

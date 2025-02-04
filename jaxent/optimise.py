@@ -26,6 +26,8 @@ def optimise(
     pass
 
 
+########################################################################
+# This needs a more elegant implementation
 def run_optimise(
     simulation: Simulation,
     data_to_fit: tuple[Experimental_Dataset | Model_Parameters | Output_Features, ...],
@@ -69,5 +71,6 @@ def run_optimise(
 
         if average_loss < tolerance:
             break
+    ########################################################################
 
     return simulation
