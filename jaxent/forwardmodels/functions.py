@@ -263,7 +263,7 @@ def calc_BV_contacts_universe(
                 f"{sel_string} and not (resid {exclude_start}:{exclude_end})"
             )
 
-            print(f"resi{res_idx}, {sel_string} and not (resid {exclude_start}:{exclude_end})")
+            # print(f"resi{res_idx}, {sel_string} and not (resid {exclude_start}:{exclude_end})")
 
             if len(contact_atoms) == 0:
                 continue
