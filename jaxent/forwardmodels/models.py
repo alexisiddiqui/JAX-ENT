@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-import numpy as np
 from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
@@ -83,9 +82,9 @@ class BV_model(ForwardModel):
     The list of universes must contain compatible residue sequences.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: BV_model_Config) -> None:
         super().__init__()
-        self.common_residues: set[tuple[str, int]]
+        self.config = config
         self.common_k_ints: list[float]
         self.forward: ForwardPass = BV_ForwardPass()
         self.compatability: HDX_peptide | HDX_protection_factor
@@ -110,11 +109,12 @@ class BV_model(ForwardModel):
         common_residue_indices = [get_residue_indices(u, self.common_residues) for u in ensemble]
 
         # Calculate intrinsic rates for the common residues
-        k_ints = []
-        for u in ensemble:
-            k_ints.append(calculate_intrinsic_rates(u))
+        k_ints_res_idx = []
+        for idx, u in enumerate(ensemble):
+            k_ints_res_idx_dict = calculate_intrinsic_rates(u)
 
-        self.common_k_ints = np.mean(k_ints, axis=0)[common_residue_indices]
+            self.common_k_ints = list(k_ints_res_idx_dict.values())
+            break
 
         return True
 
@@ -138,8 +138,8 @@ class BV_model(ForwardModel):
         features = []
 
         # Constants
-        HEAVY_RADIUS = 0.65  # 0.65 nm in Angstroms
-        O_RADIUS = 2.4  # 0.24 nm in Angstroms
+        HEAVY_RADIUS = self.config.heavy_radius  # 0.65 nm in Angstroms
+        O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
 
         for universe in ensemble:
             universe_features = []
@@ -166,7 +166,7 @@ class BV_model(ForwardModel):
 
             # Combine features for each residue
             for h_contacts, o_contacts in zip(heavy_contacts, o_contacts):
-                universe_features.append([float(h_contacts), float(o_contacts)])
+                universe_features.append([h_contacts, o_contacts])
 
             features.append(universe_features)
 

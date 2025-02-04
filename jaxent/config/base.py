@@ -6,6 +6,8 @@ from typing import Optional, TypedDict
 
 
 class BaseConfig:
+    name: str
+
     def from_json(self, json_path: Path):
         pass
 
@@ -35,6 +37,8 @@ class Settings(BaseConfig):
     forward_model_config: BaseConfig
 
     n_replicates: int = 3
+
+    # set name for child classes?
 
 
 class PathManager:

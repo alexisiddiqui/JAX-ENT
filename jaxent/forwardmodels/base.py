@@ -45,9 +45,8 @@ class ForwardPass(Protocol):
 
 
 class ForwardModel(ABC):
-    def __init__(self) -> None:
-        self.compatability: Union[type, type]
-        self.ensemble: list[Universe]
+    def __init__(self) -> None:  # TODO use a generic to use BaseConfig as a generic type
+        self.compatability: Union[Any, Any]
         self.forward: ForwardPass
 
     @abstractmethod
