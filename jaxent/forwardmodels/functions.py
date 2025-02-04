@@ -1,5 +1,5 @@
 import warnings
-from typing import List, Literal, Set, Tuple
+from typing import List, Literal, Sequence, Set, Tuple
 
 import MDAnalysis as mda
 import numpy as np
@@ -204,7 +204,7 @@ def calc_BV_contacts_universe(
     radius: float,
     residue_ignore: tuple[int, int] = (-2, 2),
     switch: bool = False,
-) -> list[list[float]]:
+) -> Sequence[Sequence[float]]:
     """Calculate contacts between specified atoms and surrounding atoms using MDAnalysis.
 
     Implements contact calculation for Best-Vendruscolo HDX prediction model.
@@ -283,8 +283,12 @@ def calc_BV_contacts_universe(
             else:
                 # Count contacts within radius
                 results[i, ts.frame] = np.sum(distances <= radius)
-
+    ################################################################################
     return results.tolist()
+
+
+# sort this out to use numpy arrays
+################################################################################
 
 
 def get_residue_atom_pairs(
