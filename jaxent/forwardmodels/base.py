@@ -38,7 +38,9 @@ class ForwardPass(Protocol):
     """
 
     def __call__(
-        self, input_features: Input_Features, parameters: Model_Parameters.forward_parameters
+        self,
+        input_features: Input_Features,
+        parameters: Model_Parameters.forward_parameters,  # TODO: need to sort this typing out
     ) -> Output_Features: ...
 
 

@@ -1,8 +1,16 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from MDAnalysis import Universe
 
-from jaxent.forwardmodels.base import ForwardModel
+from jaxent.forwardmodels.base import (
+    ForwardModel,
+    ForwardPass,
+    Input_Features,
+    Model_Parameters,
+    Output_Features,
+)
+from jaxent.utils.jax import frame_average_features, single_pass
 
 
 @dataclass()
@@ -50,19 +58,44 @@ class Simulation:
     This is the core object that is used during optimisation
     """
 
-    def __init__(self) -> None:
-        self.input_features: list
-        self.frame_weights: list
-        self.forward_model_weights: list
-        self.forward_models: list
-        self.output_features: list
+    def __init__(
+        self, forward_models: list[ForwardModel], input_features: list[Input_Features]
+    ) -> None:
+        self.input_features: list[Input_Features] = input_features
+        self.frame_weights: list[float]
+        self.parameters: list[Model_Parameters]
+        self.forward_model_weights: list[float]
+        self.forward_models: list[ForwardModel] = forward_models
+        self.output_features: Optional[list[Output_Features]] = None
+        self.forwardpass: list[ForwardPass]
+
+    def __post_init__(self):
+        self.forwardpass = [model.forward for model in self.forward_models]
+
+    def initialise(self):
+        # assert that input features have the same first dimension of "features_shape"
+        lengths = [len(feature.features_shape) for feature in self.input_features]
+        assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
+        self.length = lengths[0]
+        if self.frame_weights is None:
+            self.frame_weights = [1 / self.length for _ in range(self.length)]
+        if self.forward_model_weights is None:
+            self.forward_model_weights = [1 for _ in range(len(self.forward_models))]
 
     def forward(self):
         """
         This function applies the forward models to the input features
         need to find a way to do this efficiently in jax
         """
-        pass
+
+        # first averages the input parameters using the frame weights
+        average_features = map(
+            frame_average_features,
+            self.input_features,
+            [self.frame_weights] * len(self.input_features),
+        )
+        # map the single_pass function
+        return map(single_pass, self.forwardpass, average_features, self.parameters)
 
 
 class Experiment_Ensemble:
@@ -76,22 +109,48 @@ class Experiment_Ensemble:
         universes: list[Universe],
         forward_models: list[ForwardModel],
         experimental_data: list[Experimental_Dataset],
+        features: Optional[list[Input_Features]],
     ):
         self.ensembles = universes
-        self.model = forward_models
+        self.experimental_data = experimental_data
+        self.forward_models = forward_models
+        self.features = features
 
-    def create_model(self) -> Simulation:
+    def create_model(
+        self,
+        features: Optional[list[Input_Features]],
+    ) -> Simulation:
+        if features is not None:
+            self.features = features
+
         # only add forward models that have been successfully initialised
-        self.model = self.validate_forward_models()
+        valid_models = self.validate_forward_models()
+        # remove entities that align with none
+        valid_data = [data for data in self.experimental_data if data is not None]
 
-    def validate_forward_models(self) -> list[ForwardModel]:
-        validated_models = []
-        for model in self.model:
+        self.experimental_data = valid_data
+        self.forward_models = [model for model in valid_models if model is not None]
+
+        if len(self.forward_models) == 0:
+            raise ValueError("No forward models were successfully initialised. Exiting.")
+        if len(self.experimental_data) == 0:
+            raise ValueError("No experimental data was successfully initialised. Exiting.")
+        if self.features is None:
+            raise ValueError("No input features were successfully initialised. Exiting.")
+
+        simulation = Simulation(forward_models=self.forward_models, input_features=self.features)
+
+        return simulation
+
+    def validate_forward_models(self) -> list[ForwardModel | None]:
+        validated_models: list[ForwardModel | None] = []
+        for model in self.forward_models:
             print(f"Initialising {model}")
 
             if model.initialise(self.ensembles):
                 validated_models.append(model)
             else:
+                validated_models.append(None)
                 UserWarning(f"Model {model} failed to initialise. Skipping this model.")
 
         return validated_models
