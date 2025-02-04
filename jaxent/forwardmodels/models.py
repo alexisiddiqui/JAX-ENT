@@ -56,6 +56,8 @@ class BV_output_features:
         return (1, len(self.log_Pf))
 
 
+########################################################################
+# fix the typing
 class BV_ForwardPass(ForwardPass):
     def __call__(
         self, avg_input_features: BV_input_features, parameters: BV_model_Config
@@ -70,6 +72,7 @@ class BV_ForwardPass(ForwardPass):
         )
 
 
+########################################################################
 # T_In = BV_input_features  # set proper alias if applicable
 
 
@@ -109,7 +112,7 @@ class BV_model(ForwardModel):
         # Calculate intrinsic rates for the common residues
 
         ########################################################################
-        # this definitely requires fixing to handle multiple universes
+        # modify to use topology fragments
         k_ints_res_idx = []
         for idx, u in enumerate(ensemble):
             k_ints_res_idx_dict = calculate_intrinsic_rates(u)

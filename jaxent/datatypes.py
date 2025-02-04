@@ -5,7 +5,6 @@ import jax
 import numpy as np
 from MDAnalysis import Universe
 
-from jaxent.datatypes import Simulation
 from jaxent.forwardmodels.base import (
     ForwardModel,
     ForwardPass,
@@ -100,7 +99,7 @@ class Simulation:
 
     def __post_init__(self):
         self.forwardpass = [model.forward for model in self.forward_models]
-        self.parameters = [p.forward_parameters for p in self.parameters]
+        self.forward_parameters = [p.forward_parameters for p in self.parameters]
 
     def initialise(self) -> bool:
         # assert that input features have the same first dimension of "features_shape"
@@ -130,10 +129,13 @@ class Simulation:
         )
         # map the single_pass function
         return map(single_pass, self.forwardpass, average_features, self.parameters)
+        ########################################################################\
+        # update this to use externally defined optimisers - perhaps update should just update the parameters
+        # change argnum to use enums
 
     def update(
         self, loss: float, argnums: tuple[int, ...] = (0, 1, 2), learning_rate=0.01
-    ) -> Simulation:
+    ) -> "Simulation":
         """
         Updates simulation parameters based on loss and specified parameters to optimize.
 
@@ -151,7 +153,7 @@ class Simulation:
         )
 
         # Define parameters tuple in same order as argnums reference
-        params_tuple = (self.frame_weights, self.parameters, self.forward_model_weights)
+        params_tuple = (self.frame_weights, self.forward_parameters, self.forward_model_weights)
 
         # Get gradients only for specified parameters
         grads = jax.grad(lambda *args: loss, argnums=argnums)(*params_tuple)
@@ -179,10 +181,11 @@ class Simulation:
         # Update parameters if specified
         if 1 in argnums:
             new_parameters = [
-                param - learning_rate * grad for param, grad in zip(self.parameters, grad_dict[1])
+                param - learning_rate * grad
+                for param, grad in zip(self.forward_parameters, grad_dict[1])
             ]
         else:
-            new_parameters = self.parameters
+            new_parameters = self.forward_parameters
 
         # Update forward model weights if specified
         if 2 in argnums:
@@ -194,10 +197,12 @@ class Simulation:
 
         # Set all parameters in new simulation
         new_simulation.frame_weights = new_frame_weights
-        new_simulation.parameters = new_parameters
+        new_simulation.forward_parameters = new_parameters
         new_simulation.forward_model_weights = new_model_weights
 
         return new_simulation
+
+        ########################################################################
 
 
 class Experiment_Ensemble:
@@ -221,17 +226,16 @@ class Experiment_Ensemble:
     def create_model(
         self,
         features: Optional[list[Input_Features]],
+        experimental_data: Optional[list[Experimental_Dataset]],
     ) -> Simulation:
         if features is not None:
             self.features = features
 
-        # only add forward models that have been successfully initialised
-        valid_models = self.validate_forward_models()
-        # remove entities that align with none
-        valid_data = [data for data in self.experimental_data if data is not None]
+        if experimental_data is not None:
+            self.experimental_data = experimental_data
 
-        self.experimental_data = valid_data
-        self.forward_models = [model for model in valid_models if model is not None]
+        if self.experimental_data is None:
+            raise ValueError("No experimental data was provided. Exiting.")
 
         if len(self.forward_models) == 0:
             raise ValueError("No forward models were successfully initialised. Exiting.")
@@ -239,6 +243,22 @@ class Experiment_Ensemble:
             raise ValueError("No experimental data was successfully initialised. Exiting.")
         if self.features is None:
             raise ValueError("No input features were successfully initialised. Exiting.")
+
+        assert len(self.experimental_data) == len(self.forward_models), (
+            "Number of forward models must be equal to number of experimental datasets"
+        )
+        assert len(self.experimental_data) == len(self.features), (
+            "Number of input features must be equal to number of experimental datasets"
+        )
+        # only add forward models that have been successfully initialised
+        valid_models = self.validate_forward_models()
+        # remove entities that align with none
+        valid_data = [
+            data[0] for data in zip(self.experimental_data, valid_models) if all(data) is not None
+        ]
+
+        self.experimental_data = valid_data
+        self.forward_models = [model for model in valid_models if model is not None]
 
         simulation = Simulation(forward_models=self.forward_models, input_features=self.features)
 
