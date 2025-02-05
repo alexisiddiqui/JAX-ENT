@@ -1,9 +1,16 @@
 from MDAnalysis import Universe
 
-from jaxent.config.base import FeaturiserSettings
-from jaxent.datatypes import Experiment_Ensemble
+from jaxent.config.base import FeaturiserSettings, OptimiserSettings
+from jaxent.datatypes import (
+    Experiment_Ensemble,
+    Experimental_Dataset,
+    HDX_protection_factor,
+    Simulation,
+    Simulation_Parameters,
+)
 from jaxent.featurise import run_featurise
-from jaxent.forwardmodels.models import BV_model, BV_model_Config
+from jaxent.forwardmodels.models import BV_input_features, BV_model, BV_model_Config
+from jaxent.optimise import run_optimise
 
 
 def test_run_featurise():
@@ -15,14 +22,106 @@ def test_run_featurise():
 
     test_universe = Universe(topology_path)
 
-    ensemble = Experiment_Ensemble([test_universe], [BV_model(bv_config)])
+    universes = [test_universe]
+
+    models = [BV_model(bv_config)]
+
+    ensemble = Experiment_Ensemble(universes, models)
 
     features = run_featurise(ensemble, featuriser_settings)
 
-    assert len(features) == 1
+    assert len(features) == len(models)
 
     print(features)
 
 
+def test_run_featurise_ensemble():
+    bv_config = BV_model_Config()
+
+    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
+
+    topology_path = (
+        "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    )
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    test_universe = Universe(topology_path, trajectory_path)
+
+    universes = [test_universe]
+
+    models = [BV_model(bv_config)]
+
+    ensemble = Experiment_Ensemble(universes, models)
+
+    features = run_featurise(ensemble, featuriser_settings)
+
+    assert len(features) == len(models)
+
+    print(features)
+
+
+def test_quick_optimiser():
+    bv_config = BV_model_Config()
+
+    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
+
+    topology_path = "/home/alexi/Documents/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+
+    test_universe = Universe(topology_path)
+
+    universes = [test_universe]
+
+    models = [BV_model(bv_config)]
+
+    ensemble = Experiment_Ensemble(universes, models)
+
+    features = run_featurise(ensemble, featuriser_settings)
+
+    assert len(features) == len(models)
+
+    BV_features: BV_input_features = features[0]
+    print(BV_features.features_shape)
+
+    features_length = BV_features.features_shape[0]
+
+    params = Simulation_Parameters(
+        frame_weights=[1], model_parameters=[bv_config], forward_model_weights=[1]
+    )
+
+    simulation = Simulation(forward_models=models, input_features=features, params=params)
+
+    simulation.initialise()
+    test_prediction = simulation.forward()
+
+    opt_settings = OptimiserSettings(name="test")
+
+    # create fake experimental dataset
+
+    pf = HDX_protection_factor(protection_factor=100, top=None)
+
+    test = pf.top
+    print(test)
+
+    fake_pfs = [
+        HDX_protection_factor(protection_factor=100, top=None) for _ in range(features_length)
+    ]
+
+    # print(fake_pfs)
+    #
+    dataset = Experimental_Dataset(data=fake_pfs)
+
+    print(dataset.y_true)
+    print(dataset.y_true.shape)
+
+    opt_simulation = run_optimise(
+        simulation,
+        data_to_fit=(dataset,),
+        config=opt_settings,
+        forward_models=models,
+        loss_functions=[],
+    )
+
+
 if __name__ == "__main__":
-    test_run_featurise()
+    # test_run_featurise()
+    test_quick_optimiser()
+    # test_run_featurise_ensemble()

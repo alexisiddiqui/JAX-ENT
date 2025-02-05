@@ -1,14 +1,18 @@
+from typing import TypeVar
+
 import numpy as np
 
 from jaxent.forwardmodels.base import ForwardPass, Input_Features, Model_Parameters
 
+T_In = TypeVar("T_In", bound=Input_Features)
+
 
 ########################################
-# this needs to be reworked to be more sensible in jax terms
+# this needs to changed to use a jax map type function
 def frame_average_features(
-    frame_wise_features: Input_Features,  # (frames, residues)
-    frame_weights: list,
-) -> Input_Features:  # (1, residues)
+    frame_wise_features: T_In,  # (frames, residues)
+    frame_weights: np.ndarray,  # (frames)
+) -> T_In:  # (1, residues)
     """
     Average features across frames using provided weights
 
@@ -23,8 +27,8 @@ def frame_average_features(
     weights = frame_weights[:, None]  # Shape: (frames, 1)
 
     # Compute weighted averages
-    # Get all fields from the input features
-    fields = frame_wise_features.__dataclass_fields__
+    # Get all fields from the input features slots
+    fields = frame_wise_features.__slots__
 
     # Average each field
     averaged_fields = {}
@@ -36,7 +40,7 @@ def frame_average_features(
             averaged_fields[field_name] = field_data  # Pass through non-array fields
 
     # Create new instance with averaged data
-    return type(frame_wise_features)(**averaged_fields)
+    return frame_wise_features.__class__(**averaged_fields)
 
 
 ########################################

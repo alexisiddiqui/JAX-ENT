@@ -1,15 +1,17 @@
 import warnings
-from typing import List, Literal, Sequence, Set, Tuple
+from typing import List, Literal, Sequence
 
 import MDAnalysis as mda
 import numpy as np
 from MDAnalysis import Universe
 from MDAnalysis.lib.distances import distance_array
 
+from jaxent.datatypes import Topology_Fragment
+
 
 def find_common_residues(
     ensemble: List[Universe],
-) -> Tuple[Set[Tuple[str, int]], Set[Tuple[str, int]]]:
+) -> tuple[set[Topology_Fragment], set[Topology_Fragment]]:
     """
     Find the common residues across an ensemble of MDAnalysis Universe objects.
 
@@ -24,46 +26,58 @@ def find_common_residues(
     Raises:
         ValueError: If no common residues are found in the ensemble
     """
-    # Extract residue sequences from each universe
-    residue_sequences = [(u.residues.resnames, u.residues.resids) for u in ensemble]
+    # Extract residue sequences from each universe - this generates a tuple of topology fragments for each universe
+    ensemble_residue_sequences = [
+        [
+            Topology_Fragment(
+                chain=res.segid,
+                fragment_sequence=res.resname,
+                residue_start=res.resid,
+            )
+            for res in u.residues
+        ]
+        for u in ensemble
+    ]
 
-    # Convert sequences to sets of (resname, resid) tuples
-    residue_sets = []
-    for resnames, resids in residue_sequences:
-        residue_set = set(zip(resnames, resids))
-        residue_sets.append(residue_set)
+    # check that each list of topology fragments are unique within each universe
+
+    ensemble_residue_sequences_set = [
+        set(residue_sequence) for residue_sequence in ensemble_residue_sequences
+    ]
+
+    for resi_list, resi_set, universe in zip(
+        ensemble_residue_sequences, ensemble_residue_sequences_set, ensemble
+    ):
+        if len(resi_list) != len(resi_set):
+            raise ValueError(f"Residue sequences are not unique in universe {universe}")
 
     # Find common residues (intersection of all sets)
-    common_residues = set.intersection(*residue_sets)
+    common_residues = set.intersection(*ensemble_residue_sequences_set)
 
-    # Find all residues (union of all sets)
-    all_residues = set.union(*residue_sets)
+    # Find residues that don't match the common set
+    excluded_residues = set.union(*ensemble_residue_sequences_set) - common_residues
 
     if len(common_residues) == 0:
         raise ValueError("No common residues found in the ensemble.")
 
-    if common_residues < all_residues:
-        warnings.warn("Some residues are not present in all universes. These will be ignored.")
+    if len(excluded_residues) > 0:
+        warnings.warn(
+            f"Excluded {len(excluded_residues)} residues that are not common across all universes."
+        )
 
-    return common_residues, all_residues
+    return common_residues, excluded_residues
 
 
-def get_residue_indices(universe: Universe, common_residues: Set[Tuple[str, int]]) -> List[int]:
-    """
-    Get the indices of common residues in a specific universe.
+# def get_residue_indices(universe: Universe, common_residues: set[Topology_Fragment]) -> List[int]:
+#     """
+#     Get the indices of common residues in a specific universe.
 
-    Args:
-        universe: MDAnalysis Universe object
-        common_residues: Set of (residue name, residue ID) tuples representing common residues
-
-    Returns:
-        List of residue indices for the common residues in this universe
-    """
-    residue_indices = []
-    for i, (resname, resid) in enumerate(zip(universe.residues.resnames, universe.residues.resids)):
-        if (resname, resid) in common_residues:
-            residue_indices.append(i)
-    return residue_indices
+#     Args:
+#         universe: MDAnalysis Universe object
+#         common_residues: Set of Topology Fragments for common residues
+#     Returns:
+#         sorted List of residue indices for the common residues in this universe
+#     """
 
 
 def calculate_intrinsic_rates(universe_or_atomgroup):
@@ -78,8 +92,8 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
     Returns:
     --------
     tuple : (rates, residue_ids)
-        rates : numpy array of intrinsic rates for each residue
         residue_ids : numpy array of corresponding residue sequence numbers
+        rates : numpy array of intrinsic rates for each residue
     """
 
     # Default rate parameters from Bai et al., Proteins, 1993, 17, 75-86
@@ -167,11 +181,13 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
     # Calculate rates for each residue
     for i, curr in enumerate(residues):
         residue_ids[i] = curr.resid
-
+        ########################################################################\
+        # TODO: should this be i==0 or i==1?
         # Skip first residue or PRO
         if i == 0 or curr.resname == "PRO":
             kints[i] = np.inf
             continue
+        ########################################################################\
 
         prev = residues[i - 1]
 
@@ -312,6 +328,13 @@ def get_residue_atom_pairs(
 
     for residue in universe.residues:
         if (residue.resname, residue.resid) in common_residues:
+            # skip the first residue
+            if residue.resid == 1:
+                continue
+
+            # skip PRo residues
+            if residue.resname == "PRO":
+                continue
             try:
                 atom_idx = residue.atoms.select_atoms(f"name {atom_name}")[0].index
                 residue_atom_pairs.append((residue.resid, atom_idx))
