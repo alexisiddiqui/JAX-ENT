@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar, Union
 
 from MDAnalysis import Universe
@@ -15,16 +14,16 @@ class Input_Features(Protocol):
     def features_shape(self) -> tuple[float | int, ...]: ...
 
 
-@dataclass(frozen=True)
+# @dataclass(frozen=True)
+# class Model_Parameters:
+# temperature: float = 300
+#     ph: float = 7
+
+
+T = TypeVar("T", bound="Model_Parameters")
+
+
 class Model_Parameters:
-    temperature: float = 300
-    ph: float = 7
-
-
-T = TypeVar("T", bound="BaseModelParameters")
-
-
-class BaseModelParameters:
     """Base class providing generic PyTree methods for slots-enabled model parameters"""
 
     @classmethod

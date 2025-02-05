@@ -6,6 +6,7 @@
 from typing import Protocol, TypeVar
 
 import jax.numpy as jnp
+from jax import Array
 
 from jaxent.datatypes import Experimental_Dataset, Simulation
 from jaxent.forwardmodels.base import Model_Parameters, Output_Features
@@ -20,10 +21,10 @@ class JaxEnt_Loss(Protocol[M, D]):
         self,
         model: M,
         dataset: D,
-    ) -> float: ...
+    ) -> Array: ...
 
 
-def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> float:
+def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
     """
     Calculate the L2 loss between the predicted and experimental data.
     """
@@ -37,4 +38,4 @@ def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> float:
     # average the loss over the length of the dataset
     loss = jnp.mean(loss)
 
-    return float(loss)
+    return loss
