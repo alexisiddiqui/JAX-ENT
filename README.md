@@ -28,12 +28,12 @@ TODO:
 run_optimise -> seperate SGD into a sperate function
 -> extract optimiser step out
 -> map using jax
-BV_model.initialise -> fragment topology hadnler
 
 frame_average_features - need to find a way to make this jaxable - maybe is fine for now?
 
-
 calc_BV_contacts_universe -> fix typing to use numpy - same with the rest of the featuriser code
+
+# create Enum to handle which parameters are being updated
 
 ##############################################################################
 

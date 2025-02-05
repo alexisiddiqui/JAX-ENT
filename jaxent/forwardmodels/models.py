@@ -1,17 +1,17 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
+import numpy as np
 from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
 from jaxent.datatypes import HDX_peptide, HDX_protection_factor
-from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features, Output_Features
+from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
     calculate_intrinsic_rates,
     find_common_residues,
     get_residue_atom_pairs,
-    get_residue_indices,
 )
 from jaxent.forwardmodels.netHDX_functions import (
     NetHDX_ForwardPass,
@@ -22,6 +22,16 @@ from jaxent.forwardmodels.netHDX_functions import (
 
 @dataclass(frozen=True)
 class BV_model_Config(BaseConfig):
+    # __slots__ = (
+    #     "temperature",
+    #     "bv_bc",
+    #     "bv_bh",
+    #     "ph",
+    #     "heavy_radius",
+    #     "o_radius",
+    #     "forward_parameters",
+    # )
+
     temperature: float = 300
     bv_bc: float = 0.35
     bv_bh: float = 2.0
@@ -36,19 +46,25 @@ class BV_model_Config(BaseConfig):
 
 @dataclass(frozen=True)
 class BV_input_features:
-    heavy_contacts: list  # (frames, residues)
-    acceptor_contacts: list  # (frames, residues)
+    __slots__ = ["heavy_contacts", "acceptor_contacts"]
+
+    heavy_contacts: Sequence[Sequence[float]]  # (frames, residues)
+    acceptor_contacts: Sequence[Sequence[float]]  # (frames, residues)
 
     @property
     def features_shape(self) -> tuple[int, ...]:
         heavy_shape = len(self.heavy_contacts)
-        acceptor_shape = len(self.heavy_contacts)
+        acceptor_shape = len(self.acceptor_contacts)
         return (heavy_shape, acceptor_shape)
 
 
+########################################################################
+# fix the typing to use numpy arrays
 @dataclass(frozen=True)
 class BV_output_features:
-    log_Pf: list  # (1, residues)
+    __slots__ = ["log_Pf", "k_ints"]
+
+    log_Pf: list | Sequence[float]  # (1, residues)]
     k_ints: Optional[list]
 
     @property
@@ -57,26 +73,33 @@ class BV_output_features:
 
 
 ########################################################################
-# fix the typing
-class BV_ForwardPass(ForwardPass):
-    def __call__(
-        self, avg_input_features: BV_input_features, parameters: BV_model_Config
-    ) -> Output_Features:
-        bc, bh = parameters.forward_parameters
-
-        log_pf = bc * avg_input_features.heavy_contacts + bh * avg_input_features.acceptor_contacts
-
-        return BV_output_features(
-            log_Pf=log_pf,
-            k_ints=None,  # Optional, can be set later if needed
-        )
 
 
 ########################################################################
-# T_In = BV_input_features  # set proper alias if applicable
+# fix the typing to use jax arrays
+class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_model_Config]):
+    def __call__(
+        self, input_features: BV_input_features, parameters: BV_model_Config
+    ) -> BV_output_features:
+        bc, bh = parameters.forward_parameters
+
+        # Convert lists to numpy arrays for computation
+        heavy_contacts = np.array(input_features.heavy_contacts)
+        acceptor_contacts = np.array(input_features.acceptor_contacts)
+
+        # Compute protection factors
+        log_pf = bc * heavy_contacts + bh * acceptor_contacts
+
+        # Convert back to list for output
+        log_pf_list = log_pf.flatten().tolist()
+
+        return BV_output_features(log_Pf=log_pf_list, k_ints=None)
 
 
-class BV_model(ForwardModel):
+########################################################################
+
+
+class BV_model(ForwardModel[BV_model_Config]):
     """
     The BV or Best-Vendruscolo model for HDX-MS data.
     This computes protection factors using heavy and h bond acceptor (O) contacts.
@@ -84,8 +107,7 @@ class BV_model(ForwardModel):
     """
 
     def __init__(self, config: BV_model_Config) -> None:
-        super().__init__()
-        self.config = config
+        super().__init__(config=config)
         self.common_k_ints: list[float]
         self.forward: ForwardPass = BV_ForwardPass()
         self.compatability: HDX_peptide | HDX_protection_factor
@@ -107,23 +129,30 @@ class BV_model(ForwardModel):
         self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
 
         # Get residue indices for each universe
-        common_residue_indices = [get_residue_indices(u, self.common_residues) for u in ensemble]
+        common_residue_indices = [frag.residue_start for frag in self.common_residues]
 
         # Calculate intrinsic rates for the common residues
 
-        ########################################################################
-        # modify to use topology fragments
-        k_ints_res_idx = []
+        kint_list = []
         for idx, u in enumerate(ensemble):
             k_ints_res_idx_dict = calculate_intrinsic_rates(u)
 
-            self.common_k_ints = list(k_ints_res_idx_dict.values())
-            break
+            # filter by keys in common_residue_indices
+            k_ints_res_idx_tuple = [
+                k_ints_res_idx_dict[res_idx] for res_idx in common_residue_indices
+            ]
+
+            kint_list.append(k_ints_res_idx_tuple)
+
+        # assert that the lists in kint_list are the same length
+        assert all(len(kint_list[0]) == len(kint_list[i]) for i in range(1, len(kint_list)))
+
+        self.common_k_ints = kint_list[0]
 
         return True
 
-        ########################################################################
-
+    ########################################################################
+    # TODO fix typing
     def featurise(self, ensemble: list[Universe]) -> Input_Features:
         """
         Calculate BV model features (heavy atom contacts and H-bond acceptor contacts)
@@ -142,16 +171,20 @@ class BV_model(ForwardModel):
         """
         # concatenate all the features
 
-        heavy_contacts = []
-        acceptor_contacts = []
+        heavy_contacts: list[Sequence[float]] = []
+        acceptor_contacts: list[Sequence[float]] = []
         # Constants
         HEAVY_RADIUS = self.config.heavy_radius  # 0.65 nm in Angstroms
         O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
 
+        common_residues = {
+            (frag.fragment_sequence, frag.residue_start) for frag in self.common_residues
+        }
+
         for universe in ensemble:
             # Get residue indices and atom indices for amide N and H atoms
-            NH_residue_atom_pairs = get_residue_atom_pairs(universe, self.common_residues, "N")
-            HN_residue_atom_pairs = get_residue_atom_pairs(universe, self.common_residues, "H")
+            NH_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "N")
+            HN_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "H")
 
             # Calculate heavy atom contacts
             _heavy_contacts = calc_BV_contacts_universe(
@@ -169,22 +202,30 @@ class BV_model(ForwardModel):
                 radius=O_RADIUS,
             )
 
-            heavy_contacts.append(_heavy_contacts)
-            acceptor_contacts.append(_o_contacts)
+            heavy_contacts.extend(_heavy_contacts)
+            acceptor_contacts.extend(_o_contacts)
 
         return BV_input_features(heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts)
 
+        ########################################################################
 
-class netHDX_model(BV_model):
+
+class netHDX_model(ForwardModel[NetHDXConfig]):
     """
     Network-based HDX model that uses hydrogen bond networks to predict protection factors.
     Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
     """
 
-    def __init__(self, config: Optional[NetHDXConfig] = None):
-        super().__init__()
-        self.config = config if config is not None else NetHDXConfig()
+    def __init__(self, config: NetHDXConfig):
+        super().__init__(config=config)
         self.forward: ForwardPass = NetHDX_ForwardPass()
+
+    def initialise(self, ensemble: List[Universe]) -> bool:
+        ########################################################################
+        # TODO needs to ensure that there are backbone protons
+        # also need to check whether hydrogen bonds analysis requires Hbonds - maybe could be skippable if angles are not required
+
+        return True
 
     def featurise(self, ensemble: List[Universe]) -> Input_Features:
         """
@@ -202,8 +243,11 @@ class netHDX_model(BV_model):
         # First validate the ensemble
         if not self.initialise(ensemble):
             raise ValueError("Ensemble validation failed")
+        ########################################################################
 
-        # Calculate H-bond network features using functional approach
+        # Calculate H-bond network features using functional approach?
+        # TODO: fix typing for jax
         network_features = build_hbond_network(ensemble, self.config)
 
         return network_features
+        ########################################################################
