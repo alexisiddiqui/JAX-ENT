@@ -17,8 +17,9 @@ CryoEM???
 
 ##############################################################################
 
-Featuriser: Multiple ensembles requires handling of the common resiudes
---> created topology fragment to handle this.
+# need to update the model parameters to be a pytree
+- move generic infomration (temperature/ph up to the main settings class)
+
 
 Optimiser: Each simulation should have its own experimental data section 
 - Should tie this together with the data splitting class

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar, Union
 
 from MDAnalysis import Universe
@@ -14,9 +15,41 @@ class Input_Features(Protocol):
     def features_shape(self) -> tuple[float | int, ...]: ...
 
 
-class Model_Parameters(Protocol):
+@dataclass(frozen=True)
+class Model_Parameters:
+    temperature: float = 300
+    ph: float = 7
+
+
+T = TypeVar("T", bound="BaseModelParameters")
+
+
+class BaseModelParameters:
+    """Base class providing generic PyTree methods for slots-enabled model parameters"""
+
+    @classmethod
+    def _get_ordered_slots(cls) -> tuple[str, ...]:
+        """Get slots in a deterministic order, including parent classes"""
+        all_slots = []
+        for c in cls.__mro__:
+            if hasattr(c, "__slots__"):
+                all_slots.extend(c.__slots__)
+        return tuple(dict.fromkeys(all_slots))
+
+    def tree_flatten(self) -> tuple[tuple[float, ...], tuple]:
+        arrays = tuple(float(getattr(self, slot)) for slot in self._get_ordered_slots())
+        static = ()
+        return arrays, static
+
+    @classmethod
+    def tree_unflatten(cls: type[T], static: tuple, arrays: tuple[float, ...]) -> T:
+        kwargs = {slot: array for slot, array in zip(cls._get_ordered_slots(), arrays)}
+        return cls(**kwargs)
+
+
+class Model_Config(Protocol):
     @property
-    def forward_parameters(self) -> tuple[float, ...]: ...
+    def forward_parameters(self) -> Model_Parameters: ...
 
 
 class Featuriser(Protocol):
@@ -41,10 +74,11 @@ class ForwardPass(Protocol[T_In, T_Out, T_Params]):
 
 
 class ForwardModel(ABC, Generic[T_Params]):
-    def __init__(self, config: T_Params) -> None:
-        self.config: T_Params = config
+    def __init__(self, config: Model_Config) -> None:
+        self.config: Model_Config = config
         self.compatability: Union[Any, Any]
         self.forward: ForwardPass
+        self.params: T_Params = self.config.forward_parameters
 
     @abstractmethod
     def initialise(self, ensemble: list[Universe]) -> bool:

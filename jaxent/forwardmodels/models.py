@@ -6,7 +6,7 @@ from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
 from jaxent.datatypes import HDX_peptide, HDX_protection_factor
-from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features
+from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features, Model_Parameters
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
     calculate_intrinsic_rates,
@@ -18,30 +18,6 @@ from jaxent.forwardmodels.netHDX_functions import (
     NetHDXConfig,
     build_hbond_network,
 )
-
-
-@dataclass(frozen=True)
-class BV_model_Config(BaseConfig):
-    # __slots__ = (
-    #     "temperature",
-    #     "bv_bc",
-    #     "bv_bh",
-    #     "ph",
-    #     "heavy_radius",
-    #     "o_radius",
-    #     "forward_parameters",
-    # )
-
-    temperature: float = 300
-    bv_bc: float = 0.35
-    bv_bh: float = 2.0
-    ph: float = 7
-    heavy_radius: float = 6.5
-    o_radius: float = 2.4
-
-    @property
-    def forward_parameters(self) -> tuple[float, float]:
-        return (self.bv_bc, self.bv_bh)
 
 
 @dataclass(frozen=True)
@@ -75,20 +51,56 @@ class BV_output_features:
 ########################################################################
 
 
+@dataclass(frozen=True, slots=True)
+class BV_Model_Parameters(Model_Parameters):
+    bv_bc: float = 0.35
+    bv_bh: float = 2.0
+
+
+@dataclass(frozen=True)
+class BV_model_Config(BaseConfig):
+    # __slots__ = (
+    #     "temperature",
+    #     "bv_bc",
+    #     "bv_bh",
+    #     "ph",
+    #     "heavy_radius",
+    #     "o_radius",
+    #     "forward_parameters",
+    # )
+
+    temperature: float = 300
+    bv_bc: float = 0.35
+    bv_bh: float = 2.0
+    ph: float = 7
+    heavy_radius: float = 6.5
+    o_radius: float = 2.4
+
+    @property
+    def forward_parameters(self) -> Model_Parameters:
+        return BV_Model_Parameters(
+            bv_bc=self.bv_bc, bv_bh=self.bv_bh, temperature=self.temperature, ph=self.ph
+        )
+
+
+class NetHDX_Model_Parameters(Model_Parameters):
+    shell_energy_scaling: float = 0.84  # Energy scaling factor for each shell contact (-0.5 kcal/mol per shell (-2.1 kj/mol)), using R=8.31/1000 and T=300K
+
+
 ########################################################################
 # fix the typing to use jax arrays
-class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_model_Config]):
+class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model_Parameters]):
     def __call__(
-        self, input_features: BV_input_features, parameters: BV_model_Config
+        self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> BV_output_features:
-        bc, bh = parameters.forward_parameters
+        bc, bh = parameters.bv_bc, parameters.bv_bh
 
         # Convert lists to numpy arrays for computation
         heavy_contacts = np.array(input_features.heavy_contacts)
         acceptor_contacts = np.array(input_features.acceptor_contacts)
 
         # Compute protection factors
-        log_pf = bc * heavy_contacts + bh * acceptor_contacts
+        log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
 
         # Convert back to list for output
         log_pf_list = log_pf.flatten().tolist()
@@ -99,7 +111,7 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_model
 ########################################################################
 
 
-class BV_model(ForwardModel[BV_model_Config]):
+class BV_model(ForwardModel[BV_Model_Parameters]):
     """
     The BV or Best-Vendruscolo model for HDX-MS data.
     This computes protection factors using heavy and h bond acceptor (O) contacts.
@@ -210,7 +222,7 @@ class BV_model(ForwardModel[BV_model_Config]):
         ########################################################################
 
 
-class netHDX_model(ForwardModel[NetHDXConfig]):
+class netHDX_model(ForwardModel[NetHDX_Model_Parameters]):
     """
     Network-based HDX model that uses hydrogen bond networks to predict protection factors.
     Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
