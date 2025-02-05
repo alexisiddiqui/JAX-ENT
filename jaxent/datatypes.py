@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Sequence
 
+import jax.numpy as jnp
 import numpy as np
+from jax import Array  # This is the correct import path
+from jax.tree_util import register_pytree_node
 from MDAnalysis import Universe
 
 from jaxent.forwardmodels.base import (
@@ -112,7 +115,7 @@ class Experimental_Dataset:
     Once loaded, the dataset then extracts the information into a optimisable format.
     """
 
-    def __init__(self, data: list[Experimental_Fragment]):
+    def __init__(self, data: Sequence[Experimental_Fragment]):
         self.data = data
         self.y_true = self.extract_data()
 
@@ -128,25 +131,37 @@ class Experimental_Dataset:
 
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
-    frame_weights: list[float]
+    frame_weights: Array
     model_parameters: list[Model_Parameters]
-    forward_model_weights: list[float]
+    forward_model_weights: Array
 
-    ########################################################################\
-    # TODO: dont really like this since there is no type safety - need to fix this
-    def to_tuple(self):
-        return (self.frame_weights, self.model_parameters, self.forward_model_weights)
+    def tree_flatten(self):
+        # Flatten into (arrays to differentiate, static metadata)
+        # Keep model_parameters as static since we only diff forward_parameters
+        arrays = (
+            self.frame_weights,
+            [m for m in self.model_parameters],  # List of arrays to diff
+            self.forward_model_weights,
+        )
+        static = (self.model_parameters,)  # Store full model params as static
+        return arrays, static
 
     @classmethod
-    def from_tuple(cls, params_tuple):
-        return cls(
-            frame_weights=params_tuple[0],
-            model_parameters=params_tuple[1],
-            forward_model_weights=params_tuple[2],
-        )
+    def tree_unflatten(cls, static, arrays):
+        model_params = static[0]  # Original model params
+        frame_weights, forward_params, forward_weights = arrays
+
+        # Update each model param with new forward params
+        new_model_params = [
+            mp.update_parameters(fp) for mp, fp in zip(model_params, forward_params)
+        ]
+
+        return cls(frame_weights, new_model_params, forward_weights)
 
 
-########################################################################\
+register_pytree_node(
+    Simulation_Parameters, Simulation_Parameters.tree_flatten, Simulation_Parameters.tree_unflatten
+)
 
 
 class Optimisable_Parameters(Enum):
@@ -162,12 +177,12 @@ class Simulation:
 
     def __init__(
         self,
-        forward_models: Sequence[ForwardModel],
         input_features: list[Input_Features],
-        params: Simulation_Parameters,
+        forward_models: Sequence[ForwardModel],
+        params: Optional[Simulation_Parameters],
     ) -> None:
         self.input_features: list[Input_Features] = input_features
-        self.forward_models: list[ForwardModel] = forward_models
+        self.forward_models: Sequence[ForwardModel] = forward_models
 
         self.params: Simulation_Parameters = params
 
@@ -182,14 +197,10 @@ class Simulation:
         lengths = [len(feature.features_shape) for feature in self.input_features]
         assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
         self.length = lengths[0]
-        # if self.params.frame_weights is None:
-        #     self.params.frame_weights = [1 / self.length] * self.length
-        if self.params.frame_weights:
-            assert np.sum(self.params.frame_weights) == 1, "Frame weights do not sum to 1. Exiting."
-        # if self.params.forward_model_weights is None:
-        #     self.params.forward_model_weights = [1 for _ in range(len(self.forward_models))]
-        # if self.params.model_parameters is None:
-        #     self.params.model_parameters = [model.config for model in self.forward_models]
+
+        if self.params is None:
+            raise ValueError("No simulation parameters were provided. Exiting.")
+
         print("Simulation initialised successfully.")
         return True
 
@@ -219,44 +230,44 @@ class Simulation:
         self, params: Simulation_Parameters, argnums: tuple[int, ...] = (0, 1, 2)
     ) -> "Simulation":
         """
-        Updates simulation parameters using proposed prameters and argnums to decide which parameters to update.
+        Updates simulation parameters using proposed parameters and argnums to decide which parameters to update.
+        As Simulation parameters are immutable, this function returns a new Simulation instance with updated parameters.
 
         Args:
-            params: The new paramers
+            params: The new parameters
             argnums: Tuple indicating which parameters to optimize
-                    (0: frame_weights, 1: parameters, 2: forward_model_weights)
+                    (0: frame_weights, 1: model_parameters, 2: forward_model_weights)
 
         Returns:
             Updated Simulation instance
         """
+        # Create lists for the new parameter values
+        new_frame_weights = self.params.frame_weights
+        new_model_parameters = self.params.model_parameters
+        new_forward_weights = self.params.forward_model_weights
 
-        _params = self.params
-        for argnum in argnums:
-            if argnum == 0:
-                _frame_weights = params.frame_weights
-            else:
-                _frame_weights = _params.frame_weights
+        # Update only the parameters specified in argnums
+        if Optimisable_Parameters.frame_weights.value in argnums:
+            new_frame_weights = params.frame_weights
 
-            if argnum == 1:
-                _model_parameters = params.model_parameters
-            else:
-                _model_parameters = _params.model_parameters
+        if Optimisable_Parameters.model_parameters.value in argnums:
+            new_model_parameters = params.model_parameters
 
-            if argnum == 2:
-                _forward_model_weights = params.forward_model_weights
-            else:
-                _forward_model_weights = _params.forward_model_weights
+        if Optimisable_Parameters.forward_model_weights.value in argnums:
+            new_forward_weights = params.forward_model_weights
 
-        updated_params = Simulation_Parameters(
-            frame_weights=_frame_weights,
-            forward_model_weights=_forward_model_weights,
-            model_parameters=_model_parameters,
+        # Create new parameters object
+        new_params = Simulation_Parameters(
+            frame_weights=new_frame_weights,
+            model_parameters=new_model_parameters,
+            forward_model_weights=new_forward_weights,
         )
 
+        # Create new simulation with updated parameters
         return Simulation(
-            forward_models=self.forward_models,
             input_features=self.input_features,
-            params=updated_params,
+            forward_models=self.forward_models,
+            params=new_params,
         )
 
 
@@ -296,10 +307,6 @@ class Experiment_Ensemble:
         if simulation_params is not None:
             self.params = simulation_params
 
-        if self.params is None:
-            print("No simulation parameters were provided. Loading default parameters.")
-            self.params = self.load_default_parameters()
-
         if len(self.forward_models) == 0:
             raise ValueError("No forward models were successfully initialised. Exiting.")
         if len(self.experimental_data) == 0:
@@ -313,6 +320,9 @@ class Experiment_Ensemble:
         assert len(self.experimental_data) == len(self.features), (
             "Number of input features must be equal to number of experimental datasets"
         )
+        if self.params is None:
+            print("No simulation parameters were provided. Loading default parameters.")
+            self.params = self.load_default_parameters()
 
         assert len(self.params.model_parameters) == len(self.forward_models), (
             "Number of forward models must be equal to number of forward model parameters settings"
@@ -335,9 +345,12 @@ class Experiment_Ensemble:
 
     def load_default_parameters(self) -> Simulation_Parameters:
         # load default parameters
-        frame_weights = [1 / len(self.features)] * len(self.features)
-        forward_model_weights = [1 for _ in range(len(self.forward_models))]
-        model_parameters = [model.config for model in self.forward_models]
+
+        assert self.features is not None, "No input features were provided. Exiting."
+
+        frame_weights = jnp.array([1 / len(self.features)] * len(self.features))
+        forward_model_weights = jnp.array([1 / len(self.forward_models)] * len(self.forward_models))
+        model_parameters = [model.params for model in self.forward_models]
 
         return Simulation_Parameters(
             frame_weights=frame_weights,
