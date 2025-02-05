@@ -31,10 +31,13 @@ def run_featurise(
 ) -> list[Input_Features]:
     # this function will take in the constructed objects and run the analysis
 
-    if name is None and isinstance(config, Settings):
+    if isinstance(config, Settings):
+        config = config.featuriser_config
+    if not isinstance(config, FeaturiserSettings):
+        raise ValueError("Invalid config")
+
+    if name is None:
         name = config.name
-    elif name is None and isinstance(config, dict):
-        name = config["name"]
 
     if name is None:
         raise UserWarning("Name is required")
