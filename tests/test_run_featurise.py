@@ -1,3 +1,4 @@
+import jax.numpy as jnp
 from MDAnalysis import Universe
 
 from jaxent.config.base import FeaturiserSettings, OptimiserSettings
@@ -10,6 +11,7 @@ from jaxent.datatypes import (
 )
 from jaxent.featurise import run_featurise
 from jaxent.forwardmodels.models import BV_input_features, BV_model, BV_model_Config
+from jaxent.lossfn.base import hdx_pf_l2_loss
 from jaxent.optimise import run_optimise
 
 
@@ -84,13 +86,16 @@ def test_quick_optimiser():
     features_length = BV_features.features_shape[0]
 
     params = Simulation_Parameters(
-        frame_weights=[1], model_parameters=[bv_config], forward_model_weights=[1]
+        frame_weights=jnp.ones(features_length),
+        model_parameters=[bv_config.forward_parameters],
+        forward_model_weights=jnp.ones(1),
     )
 
     simulation = Simulation(forward_models=models, input_features=features, params=params)
 
     simulation.initialise()
     test_prediction = simulation.forward()
+    print(test_prediction[0])
 
     opt_settings = OptimiserSettings(name="test")
 
@@ -117,7 +122,7 @@ def test_quick_optimiser():
         data_to_fit=(dataset,),
         config=opt_settings,
         forward_models=models,
-        loss_functions=[],
+        loss_functions=[hdx_pf_l2_loss],
     )
 
 

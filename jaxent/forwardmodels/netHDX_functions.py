@@ -17,7 +17,6 @@ from jaxent.forwardmodels.base import ForwardPass, Input_Features, Output_Featur
 class NetHDXConfig(BaseConfig):
     """Configuration for netHDX calculations"""
 
-    shell_energy_scaling: float = 0.84  # Energy scaling factor for each shell contact (-0.5 kcal/mol per shell (-2.1 kj/mol)), using R=8.31/1000 and T=300K
     distance_cutoff: list[float] = field(
         default_factory=lambda: [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5]
     )
@@ -28,10 +27,6 @@ class NetHDXConfig(BaseConfig):
         assert len(list(self.distance_cutoff)) == len(list(self.angle_cutoff)), (
             "Distance and angle cutoffs must be the same length"
         )
-
-    @property
-    def forward_parameters(self) -> tuple[float]:
-        return (self.shell_energy_scaling,)
 
 
 @dataclass(frozen=True)
