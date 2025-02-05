@@ -201,6 +201,8 @@ class Simulation:
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
 
+        # at this point we need to convert all the input features to jax arrays
+
         print("Simulation initialised successfully.")
         return True
 
@@ -209,18 +211,16 @@ class Simulation:
         This function applies the forward models to the input features
         need to find a way to do this efficiently in jax
         """
-
         # first averages the input parameters using the frame weights
         average_features = map(
             frame_average_features,
             self.input_features,
-            [np.array(self.params.frame_weights)] * len(self.input_features),
+            [self.params.frame_weights] * len(self.input_features),
         )
         # map the single_pass function
         output_features = map(
             single_pass, self.forwardpass, average_features, self.params.model_parameters
         )
-        ########################################################################\
         # update this to use externally defined optimisers - perhaps update should just update the parameters
         # change argnum to use enums
 
