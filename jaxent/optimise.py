@@ -95,6 +95,51 @@ def optimise(
 #     return Simulation_Parameters.from_tuple(tuple(new_params))
 
 
+# def optimiser_step(
+#     simulation: Simulation,
+#     loss_fn,
+#     parameters: Simulation_Parameters,
+#     learning_rate: float = 0.01,
+#     argnums: tuple[int, ...] = (0, 1, 2),
+# ) -> Simulation_Parameters:
+#     """Performs a single optimization step using gradient descent."""
+
+#     def loss_from_params(params: Simulation_Parameters):
+#         new_simulation = simulation.update(params, argnums)
+#         return loss_fn(new_simulation)
+
+#     grads = jax.grad(loss_from_params)(parameters)
+
+#     # Convert gradients to arrays and create new parameters
+#     new_frame_weights = parameters.frame_weights
+#     new_model_params = parameters.model_parameters
+#     new_forward_weights = parameters.forward_model_weights
+
+#     if Optimisable_Parameters.frame_weights.value in argnums:
+#         new_frame_weights = (
+#             jnp.array(parameters.frame_weights) - learning_rate * grads.frame_weights
+#         )
+#         new_frame_weights = new_frame_weights / jnp.sum(new_frame_weights)
+
+#     if Optimisable_Parameters.model_parameters.value in argnums:
+#         new_model_params = [
+#             mp.update_parameters(mp - learning_rate * g)
+#             for mp, g in zip(parameters.model_parameters, grads.model_parameters)
+#         ]
+
+#     if Optimisable_Parameters.forward_model_weights.value in argnums:
+#         new_forward_weights = (
+#             jnp.array(parameters.forward_model_weights)
+#             - learning_rate * grads.forward_model_weights
+#         )
+#         new_forward_weights = new_forward_weights / jnp.sum(new_forward_weights)
+
+
+#     return Simulation_Parameters(
+#         frame_weights=new_frame_weights,
+#         model_parameters=new_model_params,
+#         forward_model_weights=new_forward_weights,
+#     )
 def optimiser_step(
     simulation: Simulation,
     loss_fn,
@@ -109,6 +154,11 @@ def optimiser_step(
         return loss_fn(new_simulation)
 
     grads = jax.grad(loss_from_params)(parameters)
+    # Sanitize gradients to remove NaNs and Infs
+    grads = jax.tree_util.tree_map(
+        lambda x: jnp.nan_to_num(x, nan=0.0, posinf=1e5, neginf=-1e5) if x is not None else None,
+        grads,
+    )
 
     # Convert gradients to arrays and create new parameters
     new_frame_weights = parameters.frame_weights
@@ -123,7 +173,7 @@ def optimiser_step(
 
     if Optimisable_Parameters.model_parameters.value in argnums:
         new_model_params = [
-            mp.update_parameters(mp.forward_parameters - learning_rate * g)
+            mp.update_parameters(mp - learning_rate * g)
             for mp, g in zip(parameters.model_parameters, grads.model_parameters)
         ]
 

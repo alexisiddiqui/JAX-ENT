@@ -1,46 +1,48 @@
 from typing import TypeVar
 
-import numpy as np
+from jax import Array
 
 from jaxent.forwardmodels.base import ForwardPass, Input_Features, Model_Parameters
 
 T_In = TypeVar("T_In", bound=Input_Features)
 
+import jax.numpy as jnp
 
-########################################
-# this needs to changed to use a jax map type function
+
 def frame_average_features(
     frame_wise_features: T_In,  # (frames, residues)
-    frame_weights: np.ndarray,  # (frames)
+    frame_weights: Array,  # (frames)
 ) -> T_In:  # (1, residues)
     """
-    Average features across frames using provided weights
+    Average features across frames using provided weights by mapping over slots.
 
     Args:
         frame_wise_features: Features for each frame and residue
         frame_weights: Weights for each frame (should sum to 1)
-
     Returns:
         Frame-averaged features
     """
-    # Expand weights for broadcasting
-    weights = frame_weights[:, None]  # Shape: (frames, 1)
+    # Get all slots from the features class
+    feature_slots = frame_wise_features.__slots__
 
-    # Compute weighted averages
-    # Get all fields from the input features slots
-    fields = frame_wise_features.__slots__
+    # Create dict to store averaged features
+    averaged_features = {}
 
-    # Average each field
-    averaged_fields = {}
-    for field_name in fields:
-        field_data = getattr(frame_wise_features, field_name)
-        if isinstance(field_data, np.ndarray):
-            averaged_fields[field_name] = np.sum(field_data * weights, axis=0)
-        else:
-            averaged_fields[field_name] = field_data  # Pass through non-array fields
+    # Average each slotted feature
+    for slot in feature_slots:
+        feature_array = getattr(frame_wise_features, slot)
+        # Ensure feature_array is a JAX array
+        feature_array = jnp.asarray(feature_array)
 
-    # Create new instance with averaged data
-    return frame_wise_features.__class__(**averaged_fields)
+        # Calculate weighted average across frames
+        # Expand weights to match feature dimensions if needed
+        weights = frame_weights.reshape(-1, *([1] * (feature_array.ndim - 1)))
+        averaged = jnp.sum(feature_array * weights, axis=0, keepdims=True)
+
+        averaged_features[slot] = averaged
+
+    # Create new instance with averaged features
+    return type(frame_wise_features)(**averaged_features)
 
 
 ########################################

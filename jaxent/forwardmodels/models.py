@@ -1,12 +1,19 @@
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import ClassVar, List, Optional, Sequence
 
-import numpy as np
+import jax.numpy as jnp
+from jax import Array
+from jax.tree_util import register_pytree_node
 from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
 from jaxent.datatypes import HDX_peptide, HDX_protection_factor
-from jaxent.forwardmodels.base import ForwardModel, ForwardPass, Input_Features, Model_Parameters
+from jaxent.forwardmodels.base import (
+    ForwardModel,
+    ForwardPass,
+    Input_Features,
+    Model_Parameters,
+)
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
     calculate_intrinsic_rates,
@@ -18,6 +25,8 @@ from jaxent.forwardmodels.netHDX_functions import (
     NetHDXConfig,
     build_hbond_network,
 )
+
+# import register_pytree_node
 
 
 @dataclass(frozen=True)
@@ -40,8 +49,8 @@ class BV_input_features:
 class BV_output_features:
     __slots__ = ["log_Pf", "k_ints"]
 
-    log_Pf: list | Sequence[float]  # (1, residues)]
-    k_ints: Optional[list]
+    log_Pf: list | Sequence[float] | Array  # (1, residues)]
+    k_ints: Optional[list] | Optional[Array]
 
     @property
     def output_shape(self) -> tuple[int, ...]:
@@ -55,6 +64,45 @@ class BV_output_features:
 class BV_Model_Parameters(Model_Parameters):
     bv_bc: float = 0.35
     bv_bh: float = 2.0
+
+    temperature: float = 300
+    static_params: ClassVar[set[str]] = {"temperature"}
+
+    def __mul__(self, scalar: float) -> "BV_Model_Parameters":
+        return BV_Model_Parameters(
+            bv_bc=self.bv_bc * scalar,
+            bv_bh=self.bv_bh * scalar,
+            temperature=self.temperature,
+        )
+
+    __rmul__ = __mul__
+
+    def __sub__(self, other: "BV_Model_Parameters") -> "BV_Model_Parameters":
+        return BV_Model_Parameters(
+            bv_bc=self.bv_bc - other.bv_bc,
+            bv_bh=self.bv_bh - other.bv_bh,
+            temperature=self.temperature,
+        )
+
+    def update_parameters(self, new_params: "BV_Model_Parameters") -> "BV_Model_Parameters":
+        """
+        Creates a new instance with updated parameters, preserving static parameters.
+
+        Args:
+            new_params: Tuple of new parameter values in the order bv_bc, bv_bh
+        Returns:
+            A new BV_Model_Parameters instance with updated non-static parameters
+        """
+
+        # Update non-static parameters
+        bv_bc, bv_bh = new_params.bv_bc, new_params.bv_bh
+
+        return BV_Model_Parameters(bv_bc=bv_bc, bv_bh=bv_bh, temperature=self.temperature)
+
+
+register_pytree_node(
+    BV_Model_Parameters, BV_Model_Parameters.tree_flatten, BV_Model_Parameters.tree_unflatten
+)
 
 
 @dataclass(frozen=True)
@@ -78,9 +126,7 @@ class BV_model_Config(BaseConfig):
 
     @property
     def forward_parameters(self) -> Model_Parameters:
-        return BV_Model_Parameters(
-            bv_bc=self.bv_bc, bv_bh=self.bv_bh, temperature=self.temperature, ph=self.ph
-        )
+        return BV_Model_Parameters(bv_bc=self.bv_bc, bv_bh=self.bv_bh, temperature=self.temperature)
 
 
 class NetHDX_Model_Parameters(Model_Parameters):
@@ -96,14 +142,14 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model
         bc, bh = parameters.bv_bc, parameters.bv_bh
 
         # Convert lists to numpy arrays for computation
-        heavy_contacts = np.array(input_features.heavy_contacts)
-        acceptor_contacts = np.array(input_features.acceptor_contacts)
+        heavy_contacts = jnp.array(input_features.heavy_contacts)
+        acceptor_contacts = jnp.array(input_features.acceptor_contacts)
 
         # Compute protection factors
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
 
         # Convert back to list for output
-        log_pf_list = log_pf.flatten().tolist()
+        log_pf_list = log_pf
 
         return BV_output_features(log_Pf=log_pf_list, k_ints=None)
 
@@ -219,7 +265,27 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
 
         return BV_input_features(heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts)
 
-        ########################################################################
+    # def forward(self) -> list[Output_Features]:
+    #     """
+    #     This function applies the forward models to the input features
+    #     need to find a way to do this efficiently in jax
+    #     """
+    #     # first averages the input parameters using the frame weights
+    #     average_features = map(
+    #         frame_average_features,
+    #         self.input_features,
+    #         [self.params.frame_weights] * len(self.input_features),
+    #     )
+    #     # map the single_pass function
+    #     output_features = map(
+    #         single_pass, self.forwardpass, average_features, self.params.model_parameters
+    #     )
+    #     # update this to use externally defined optimisers - perhaps update should just update the parameters
+    #     # change argnum to use enums
+
+    #     return list(output_features)
+
+    ########################################################################
 
 
 class netHDX_model(ForwardModel[NetHDX_Model_Parameters]):
