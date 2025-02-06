@@ -155,13 +155,9 @@ def optimiser_step(
 
     grads = jax.grad(loss_from_params)(parameters)
     grads = jax.tree_util.tree_map(
-        lambda x: jnp.clip(x, -1.0, 1.0) if x is not None else None, grads
+        lambda x: jnp.clip(x, -1e1, 1e1) if x is not None else None,
+        grads,  #
     )
-    # Sanitize gradients to remove NaNs and Infs
-    # grads = jax.tree_util.tree_map(
-    #     lambda x: jnp.nan_to_num(x, nan=0.0, posinf=1e2, neginf=-1e2) if x is not None else None,
-    #     grads,
-    # )
 
     # Convert gradients to arrays and create new parameters
     new_frame_weights = parameters.frame_weights
@@ -220,23 +216,32 @@ def run_optimise(
             losses.append(loss_fn(simulation, data))
         return jnp.mean(jnp.array(losses))
 
+    prev_loss = jnp.inf
     for step in range(config.n_steps):
         current_loss = compute_loss(simulation)
-        print(f"Step {step}, Loss: {current_loss}")
+        print(f"Step {step}, Loss: {current_loss:.2f}")
         # print(f"Step {step}")
 
         if current_loss < config.tolerance:
+            break
+
+        if jnp.abs(prev_loss - current_loss) < config.convergence:
             break
 
         current_params = optimiser_step(
             simulation,
             compute_loss,
             current_params,
-            learning_rate=0.01,
-            argnums=(0, 1, 2),
+            learning_rate=0.0001,
+            argnums=(1,),
         )
 
-        simulation = simulation.update(current_params, (0, 1, 2))
+        prev_loss = current_loss
+
+        simulation = simulation.update(
+            current_params,
+            (0, 1),
+        )
 
     return simulation
 
