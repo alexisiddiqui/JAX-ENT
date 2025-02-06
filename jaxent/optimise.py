@@ -144,7 +144,7 @@ def optimiser_step(
     simulation: Simulation,
     loss_fn,
     parameters: Simulation_Parameters,
-    learning_rate: float = 0.01,
+    learning_rate: float = 0.000001,
     argnums: tuple[int, ...] = (0, 1, 2),
 ) -> Simulation_Parameters:
     """Performs a single optimization step using gradient descent."""
@@ -154,11 +154,14 @@ def optimiser_step(
         return loss_fn(new_simulation)
 
     grads = jax.grad(loss_from_params)(parameters)
-    # Sanitize gradients to remove NaNs and Infs
     grads = jax.tree_util.tree_map(
-        lambda x: jnp.nan_to_num(x, nan=0.0, posinf=1e5, neginf=-1e5) if x is not None else None,
-        grads,
+        lambda x: jnp.clip(x, -1.0, 1.0) if x is not None else None, grads
     )
+    # Sanitize gradients to remove NaNs and Infs
+    # grads = jax.tree_util.tree_map(
+    #     lambda x: jnp.nan_to_num(x, nan=0.0, posinf=1e2, neginf=-1e2) if x is not None else None,
+    #     grads,
+    # )
 
     # Convert gradients to arrays and create new parameters
     new_frame_weights = parameters.frame_weights
@@ -220,6 +223,7 @@ def run_optimise(
     for step in range(config.n_steps):
         current_loss = compute_loss(simulation)
         print(f"Step {step}, Loss: {current_loss}")
+        # print(f"Step {step}")
 
         if current_loss < config.tolerance:
             break

@@ -34,7 +34,7 @@ def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
     loss = jnp.sum((predictions[0].log_Pf - dataset.y_true) ** 2)
-    print(loss)
+    # print(loss)
     # average the loss over the length of the dataset
     loss = jnp.mean(loss)
 

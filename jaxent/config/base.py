@@ -24,8 +24,9 @@ class FeaturiserSettings:
 @dataclass
 class OptimiserSettings:
     name: str
-    n_steps: int = 100
+    n_steps: int = 1000
     tolerance: float = 1e-4
+    learning_rate: float = 0.01  # not implemented
 
 
 @dataclass

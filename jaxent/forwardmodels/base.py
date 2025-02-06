@@ -72,12 +72,15 @@ class ForwardPass(Protocol[T_In, T_Out, T_Params]):
     def __call__(self, input_features: T_In, parameters: T_Params) -> T_Out: ...
 
 
+T_Config = TypeVar("T_Config", bound=Model_Config)
+
+
 class ForwardModel(ABC, Generic[T_Params]):
-    def __init__(self, config: Model_Config) -> None:
-        self.config: Model_Config = config
+    def __init__(self, config: T_Config) -> None:
+        self.config: T_Config = config
         self.compatability: Union[Any, Any]
         self.forward: ForwardPass
-        self.params: T_Params = self.config.forward_parameters
+        self.params: T_Params = config.forward_parameters
 
     @abstractmethod
     def initialise(self, ensemble: list[Universe]) -> bool:
