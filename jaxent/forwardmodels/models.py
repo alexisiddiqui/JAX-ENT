@@ -36,11 +36,14 @@ class BV_input_features:
     heavy_contacts: Sequence[Sequence[float]]  # (frames, residues)
     acceptor_contacts: Sequence[Sequence[float]]  # (frames, residues)
 
+    ########################################################################
+    # update the features shape to have a fixed/more consistent structure
     @property
     def features_shape(self) -> tuple[int, ...]:
+        length = len(self.heavy_contacts[0])
         heavy_shape = len(self.heavy_contacts)
         acceptor_shape = len(self.acceptor_contacts)
-        return (heavy_shape, acceptor_shape)
+        return (heavy_shape, acceptor_shape, length)
 
 
 ########################################################################
