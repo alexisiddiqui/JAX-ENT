@@ -101,13 +101,13 @@ def test_quick_optimiser():
 
     # create fake experimental dataset
 
-    pf = HDX_protection_factor(protection_factor=100, top=None)
+    pf = HDX_protection_factor(protection_factor=10, top=None)
 
     test = pf.top
     print(test)
 
     fake_pfs = [
-        HDX_protection_factor(protection_factor=100, top=None) for _ in range(features_length)
+        HDX_protection_factor(protection_factor=10, top=None) for _ in range(features_length)
     ]
 
     # print(fake_pfs)
