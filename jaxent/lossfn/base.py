@@ -31,11 +31,36 @@ def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
 
     # Calculate the predicted data
     predictions = model.forward()
+    pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
+    true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
+
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
-    loss = jnp.sum((predictions[0].log_Pf - dataset.y_true) ** 2)
+    loss = jnp.sum((pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
     loss = jnp.mean(loss)
+
+    return loss
+
+
+def hdx_pf_mae_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
+    """
+    Calculate the mae loss between the predicted and experimental data.
+    """
+
+    # Calculate the predicted data
+    predictions = model.forward()
+    pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
+    true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
+
+    # print(predictions[0].log_Pf)
+    # Calculate the
+    loss = jnp.sum(pred_pf - true_pf)
+    # print(loss)
+    # average the loss over the length of the dataset
+    loss = jnp.mean(loss)
+    # take the absolute value of the loss
+    loss = jnp.abs(loss)
 
     return loss
