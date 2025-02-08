@@ -169,12 +169,14 @@ def optimiser_step(
             jnp.array(parameters.frame_weights) - learning_rate * grads.frame_weights
         )
         new_frame_weights = new_frame_weights / jnp.sum(new_frame_weights)
-
+    ########################################################################
+    # fix the update parameters method - perhaps not use a class method
     if Optimisable_Parameters.model_parameters.value in argnums:
         new_model_params = [
             mp.update_parameters(mp - learning_rate * g)
             for mp, g in zip(parameters.model_parameters, grads.model_parameters)
         ]
+    ########################################################################
 
     if Optimisable_Parameters.forward_model_weights.value in argnums:
         new_forward_weights = (
@@ -212,6 +214,7 @@ def run_optimise(
 
     def compute_loss(simulation):
         losses = []
+        simulation.forward()
         for loss_fn, data in zip(loss_functions, data_to_fit):
             losses.append(loss_fn(simulation, data))
         return jnp.mean(jnp.array(losses))
@@ -240,7 +243,7 @@ def run_optimise(
 
         simulation = simulation.update(
             current_params,
-            (0, 1),
+            (1,),
         )
 
     return simulation

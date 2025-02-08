@@ -223,7 +223,6 @@ class Simulation:
         )
         # update this to use externally defined optimisers - perhaps update should just update the parameters
         # change argnum to use enums
-
         return list(output_features)
 
     def update(
