@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Protocol, TypeVar, Union
+from typing import Any, ClassVar, Generic, Protocol, TypeVar, Union
 
 from MDAnalysis import Universe
 
@@ -26,6 +26,8 @@ T = TypeVar("T", bound="Model_Parameters")
 class Model_Parameters:
     """Base class providing generic PyTree methods for slots-enabled model parameters"""
 
+    static_params: ClassVar[set[str]] = set()
+
     @classmethod
     def _get_ordered_slots(cls) -> tuple[str, ...]:
         """Get slots in a deterministic order, including parent classes"""
@@ -44,6 +46,19 @@ class Model_Parameters:
     def tree_unflatten(cls: type[T], static: tuple, arrays: tuple[float, ...]) -> T:
         kwargs = {slot: array for slot, array in zip(cls._get_ordered_slots(), arrays)}
         return cls(**kwargs)
+
+    # @classmethod
+    def update_parameters(self, new_params: "Model_Parameters") -> "Model_Parameters":
+        """Creates new instance with updated non-static parameters.
+        You should override this method in your subclass for faster updates.
+        """
+        param_dict = {}
+        for slot in self._get_ordered_slots():
+            if slot in self.static_params:
+                param_dict[slot] = getattr(self, slot)
+            else:
+                param_dict[slot] = getattr(new_params, slot)
+        return self.__class__(**param_dict)
 
 
 class Model_Config(Protocol):

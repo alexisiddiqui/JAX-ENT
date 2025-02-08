@@ -235,8 +235,11 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
         heavy_contacts: list[Sequence[float]] = []
         acceptor_contacts: list[Sequence[float]] = []
         # Constants
+        ########################################################################
+        # TODO: fix the typing here - to do with the composition of generics in the parent class
         HEAVY_RADIUS = self.config.heavy_radius  # 0.65 nm in Angstroms
         O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
+        ########################################################################
 
         common_residues = {
             (frag.fragment_sequence, frag.residue_start) for frag in self.common_residues

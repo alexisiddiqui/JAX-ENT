@@ -1,5 +1,7 @@
 from typing import List, Tuple
 
+################################################################################
+# TODO: NOTWORKING 06/02/25
 import MDAnalysis as mda
 import numpy as np
 import pandas as pd
@@ -16,12 +18,11 @@ def test_calculate_intrinsic_rates():
     universe = mda.Universe(topology_path)
 
     # Calculate rates using our function
-    rates, residue_ids = calculate_intrinsic_rates(universe)
+    rates = calculate_intrinsic_rates(universe)
 
     # Basic length checks
-    assert len(rates) == len(residue_ids)
-    assert len(rates) == len(universe.residues)
-    assert len(rates) == 376
+    assert len(rates.keys()) == len(universe.residues)
+    assert len(rates.keys()) == 376
 
     # Read reference data
     with open(rates_path, "r") as f:
