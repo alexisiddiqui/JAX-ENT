@@ -12,7 +12,7 @@ dependencies = [
     "icecream>=2.1.4",
     "jax[cuda12]==0.4.35",
     "matplotlib>=3.10.0",
-    "mdanalysis>=2.8.0",
+    "MDAnalysis>=2.8.0",
     "networkx[default]>=3.4.2",
     "numpy>=2.2.1",
     "scikit-learn>=1.6.1",
