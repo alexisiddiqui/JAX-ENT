@@ -1,5 +1,3 @@
-import os
-
 import jax.numpy as jnp
 from MDAnalysis import Universe
 
@@ -171,7 +169,7 @@ def test_regularised_optimiser():
 
     simulation.initialise()
     test_prediction = simulation.forward()
-    print(test_prediction[0])
+    print(test_prediction)
 
     opt_settings = OptimiserSettings(name="test")
 
@@ -209,9 +207,17 @@ def test_regularised_optimiser():
 
 
 if __name__ == "__main__":
+    import jax
+
+    print("Local devices:", jax.local_devices())
+    print("CPU devices:", jax.devices("cpu"))
     # set env XLA_PYTHON_CLIENT_PREALLOCATE=false otherwise jax will preallocate 75% of memory
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    # os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     # test_run_featurise()
     # test_quick_optimiser()
-    test_regularised_optimiser()
+    # test_regularised_optimiser()
     # test_run_featurise_ensemble()
+
+    # try running on jax cpu
+    with jax.default_device(jax.devices("cpu")[0]):
+        test_regularised_optimiser()

@@ -30,7 +30,9 @@ def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
     """
 
     # Calculate the predicted data
-    predictions = model.forward()
+    predictions = (
+        model.forward()
+    )  # TODO: find a way to move the forward call to outside the loss function
     pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
     true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
 
@@ -50,7 +52,9 @@ def hdx_pf_mae_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
     """
 
     # Calculate the predicted data
-    predictions = model.forward()
+    predictions = (
+        model.forward()
+    )  # TODO: find a way to move the forward call to outside the loss function
     pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
     true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
 
