@@ -13,7 +13,6 @@ from jaxent.config.base import BaseConfig
 from jaxent.forwardmodels.base import ForwardPass, Input_Features, Output_Features
 
 
-@dataclass(frozen=True)
 class NetHDXConfig(BaseConfig):
     """Configuration for netHDX calculations"""
 

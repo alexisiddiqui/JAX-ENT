@@ -10,7 +10,7 @@ from jaxent.datatypes import (
     Simulation,
     Simulation_Parameters,
 )
-from jaxent.forwardmodels.base import ForwardModel, Model_Parameters, Output_Features
+from jaxent.forwardmodels.base import Model_Parameters, Output_Features
 from jaxent.lossfn.base import JaxEnt_Loss
 
 
@@ -196,7 +196,7 @@ def run_optimise(
     simulation: Simulation,
     data_to_fit: tuple[Experimental_Dataset | Model_Parameters | Output_Features, ...],
     config: OptimiserSettings,
-    forward_models: Sequence[ForwardModel],
+    forward_model_keys: Sequence[int],
     loss_functions: list[JaxEnt_Loss],
     initialise: Optional[bool] = False,
 ) -> Simulation:
@@ -205,14 +205,20 @@ def run_optimise(
         if not simulation.initialise():
             raise ValueError("Failed to initialise simulation")
 
-        if not (len(data_to_fit) == len(loss_functions) == len(forward_models)):
+        if not (len(data_to_fit) == len(loss_functions) == len(forward_model_keys)):
             raise ValueError(
                 "Number of data targets, loss functions, and forward models must match"
             )
 
+    assert len(data_to_fit) == len(loss_functions) == len(forward_model_keys), (
+        "Number of data targets, loss functions, and forward models must match"
+    )
+
     current_params = simulation.params
 
-    def compute_loss(simulation):
+    def compute_loss(
+        simulation: Simulation,
+    ):
         losses = []
         simulation.forward()
         for loss_fn, data in zip(loss_functions, data_to_fit):
