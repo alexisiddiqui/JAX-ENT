@@ -17,16 +17,23 @@ CryoEM???
 
 ##############################################################################
 
-# need to update the model parameters to be a pytree
-- move generic infomration (temperature/ph up to the main settings class)
-
-
-Optimiser: Each simulation should have its own experimental data section 
-- Should tie this together with the data splitting class
-
 
 TODO:
-run_optimise -> seperate SGD into a sperate function
+
+Need to create data splitting class 
+the data splits should be added to the experimental dataset class
+
+Training and Validation dataset also need to contain the mappings from input features to each of the training data
+
+ for the simulation class - both the inputs and outputs should be accessible by keys - output features can stay as an array until its accessed via a property decorator
+
+for now just keep the loss functions as indexed functions
+
+
+
+
+
+run_optimise -> swap out SGD function with optax
 -> extract optimiser step out
 -> map using jax
 

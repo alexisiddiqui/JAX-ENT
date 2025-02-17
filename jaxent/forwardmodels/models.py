@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field,
 from typing import ClassVar, List, Optional, Sequence
 
 import jax.numpy as jnp
@@ -7,12 +7,14 @@ from jax.tree_util import register_pytree_node
 from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
-from jaxent.datatypes import HDX_peptide, HDX_protection_factor
+from jaxent.datatypes import HDX_peptide, HDX_protection_factor,Topology_Fragment
 from jaxent.forwardmodels.base import (
     ForwardModel,
     ForwardPass,
     Input_Features,
     Model_Parameters,
+    m_key,
+    m_id
 )
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
@@ -35,6 +37,9 @@ class BV_input_features:
 
     heavy_contacts: Sequence[Sequence[float]]  # (frames, residues)
     acceptor_contacts: Sequence[Sequence[float]]  # (frames, residues)
+    key = frozenset(
+        {m_key("HDX_resPF"), m_key("HDX_peptide")}
+    )
 
     ########################################################################
     # update the features shape to have a fixed/more consistent structure
@@ -54,10 +59,21 @@ class BV_output_features:
 
     log_Pf: list | Sequence[float] | Array  # (1, residues)]
     k_ints: Optional[list] | Optional[Array]
+    key = m_key("HDX_resPF")
 
     @property
     def output_shape(self) -> tuple[int, ...]:
         return (1, len(self.log_Pf))
+
+
+@dataclass(frozen=True, slots=True)
+class uptake_BV_output_features:
+    uptake: list[list[float]] | Sequence[Sequence[float]] | Array  # (1, residues, timepoints)]
+    key = m_key("HDX_peptide")
+
+    @property
+    def output_shape(self) -> tuple[int, ...]:
+        return (1, len(self.uptake), len(self.uptake[0]))
 
 
 ########################################################################
@@ -67,9 +83,11 @@ class BV_output_features:
 class BV_Model_Parameters(Model_Parameters):
     bv_bc: float = 0.35
     bv_bh: float = 2.0
-
+    key = frozenset(
+            {m_key("HDX_resPF"), m_key("HDX_peptide")}
+        )
     temperature: float = 300
-    static_params: ClassVar[set[str]] = {"temperature"}
+    static_params: ClassVar[set[str]] = {"temperature","key"}
 
     def __mul__(self, scalar: float) -> "BV_Model_Parameters":
         return BV_Model_Parameters(
@@ -108,28 +126,127 @@ register_pytree_node(
 )
 
 
-@dataclass(frozen=True)
-class BV_model_Config(BaseConfig):
-    # __slots__ = (
-    #     "temperature",
-    #     "bv_bc",
-    #     "bv_bh",
-    #     "ph",
-    #     "heavy_radius",
-    #     "o_radius",
-    #     "forward_parameters",
-    # )
+@dataclass(frozen=True, slots=True)
+class linear_BV_Model_Parameters(Model_Parameters):
+    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
+    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
+    key = frozenset(
+        {m_key("HDX_resPF"), m_key("HDX_peptide")}
+    )
+    temperature: float = 300
+    num_timepoints: int = 1
+    static_params: ClassVar[set[str]] = {"temperature", "num_timepoints", "key"}
 
+    def __mul__(self, scalar: float) -> "linear_BV_Model_Parameters":
+        return linear_BV_Model_Parameters(
+            bv_bc=self.bv_bc * scalar,
+            bv_bh=self.bv_bh * scalar,
+            temperature=self.temperature,
+            num_timepoints=self.num_timepoints,
+        )
+
+    __rmul__ = __mul__
+
+    def __sub__(self, other: "linear_BV_Model_Parameters") -> "linear_BV_Model_Parameters":
+        return linear_BV_Model_Parameters(
+            bv_bc=self.bv_bc - other.bv_bc,
+            bv_bh=self.bv_bh - other.bv_bh,
+            temperature=self.temperature,
+            num_timepoints=self.num_timepoints,
+        )
+
+    def update_parameters(
+        self, new_params: "linear_BV_Model_Parameters"
+    ) -> "linear_BV_Model_Parameters":
+        return linear_BV_Model_Parameters(
+            bv_bc=new_params.bv_bc,
+            bv_bh=new_params.bv_bh,
+            temperature=self.temperature,
+            num_timepoints=self.num_timepoints,
+        )
+
+    def tree_flatten(self):
+        # Override the base class tree_flatten to handle array parameters
+        dynamic_fields = []
+        static_fields = []
+
+        for slot in self._get_ordered_slots():
+            value = getattr(self, slot)
+            if slot in self.static_params:
+                static_fields.append(value)
+            else:
+                dynamic_fields.append(value)
+
+        return (tuple(dynamic_fields), tuple(static_fields))
+
+    @classmethod
+    def tree_unflatten(cls, static_data, dynamic_data):
+        # Reconstruct the parameters from flattened data
+        all_values = list(dynamic_data) + list(static_data)
+        slots = cls._get_ordered_slots()
+
+        return cls(**dict(zip(slots, all_values)))
+
+
+register_pytree_node(
+    linear_BV_Model_Parameters,
+    linear_BV_Model_Parameters.tree_flatten,
+    linear_BV_Model_Parameters.tree_unflatten,
+)
+
+
+class BV_model_Config(BaseConfig):
     temperature: float = 300
     bv_bc: float = 0.35
     bv_bh: float = 2.0
     ph: float = 7
     heavy_radius: float = 6.5
     o_radius: float = 2.4
+    num_timepoints: int = 1
 
+    if num_timepoints > 1:
+        key = m_key("HDX_peptide")
+    elif num_timepoints == 1:
+        key = m_key("HDX_resPF")
+    else:
     @property
     def forward_parameters(self) -> Model_Parameters:
         return BV_Model_Parameters(bv_bc=self.bv_bc, bv_bh=self.bv_bh, temperature=self.temperature)
+
+
+class linear_BV_model_Config(BaseConfig):
+    temperature: float = 300
+    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35, 0.35, 0.35]))
+    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0, 2.0, 2.0]))
+    ph: float = 7
+    heavy_radius: float = 6.5
+    o_radius: float = 2.4
+    num_timepoints: int = 3
+
+    if num_timepoints > 1:
+        key = m_key("HDX_peptide")
+    elif num_timepoints == 1:
+        key = m_key("HDX_resPF")
+    else:
+        raise ValueError("Please make sure your timepoint/prior parameters make sense")
+
+    def __post_init__(self):
+        if (self.num_timepoints > 1) and ((len(self.bv_bh) or len(self.bv_bc)) == 1):
+            object.__setattr__(self, "bv_bc", self.bv_bc * self.num_timepoints)
+            object.__setattr__(self, "bv_bh", self.bv_bh * self.num_timepoints)
+
+        assert self.num_timepoints == len(self.bv_bc) and self.num_timepoints == len(self.bv_bh), (
+            ValueError("Please make sure your timepoint/prior parameters make sense")
+        )
+
+    @property
+    def forward_parameters(self) -> Model_Parameters:
+        return linear_BV_Model_Parameters(
+            bv_bc=self.bv_bc,
+            bv_bh=self.bv_bh,
+            temperature=self.temperature,
+            num_timepoints=self.num_timepoints,
+        )
 
 
 class NetHDX_Model_Parameters(Model_Parameters):
@@ -155,6 +272,29 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model
         log_pf_list = log_pf
 
         return BV_output_features(log_Pf=log_pf_list, k_ints=None)
+
+
+class linear_BV_ForwardPass(
+    ForwardPass[BV_input_features, uptake_BV_output_features, linear_BV_Model_Parameters]
+):
+    """
+    Calculate uptake using a linear BV model with bc and bh as parameters at each timepoint.
+    """
+    key = m_key("HDX_resPF")
+    def __call__(
+        self, input_features: BV_input_features, parameters: linear_BV_Model_Parameters
+    ) -> uptake_BV_output_features:
+        bc, bh = parameters.bv_bc, parameters.bv_bh
+
+        # Convert lists to numpy arrays for computation
+        heavy_contacts = jnp.array(input_features.heavy_contacts)
+        acceptor_contacts = jnp.array(input_features.acceptor_contacts)
+
+        # compute uptake
+        uptake = (bc * heavy_contacts) + (bh * acceptor_contacts)
+        # print("uptake")
+        # print(uptake)
+        return uptake_BV_output_features(uptake=uptake)
 
 
 ########################################################################
@@ -184,13 +324,12 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
             bool: True if initialization was successful
         """
         # Find common residues across the ensemble
-        self.common_residues, _ = find_common_residues(ensemble)
-
+        self.common_topology: set[Topology_Fragment] = find_common_residues(ensemble)[0]
         # Calculate total number of frames in the ensemble
         self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
 
         # Get residue indices for each universe
-        common_residue_indices = [frag.residue_start for frag in self.common_residues]
+        common_residue_indices = [frag.residue_start for frag in self.common_topology]
 
         # Calculate intrinsic rates for the common residues
 
@@ -242,7 +381,7 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
         ########################################################################
 
         common_residues = {
-            (frag.fragment_sequence, frag.residue_start) for frag in self.common_residues
+            (frag.fragment_sequence, frag.residue_start) for frag in self.common_topology
         }
 
         for universe in ensemble:
@@ -292,6 +431,18 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
     #     return list(output_features)
 
     ########################################################################
+
+
+class linear_BV_model(BV_model, ForwardModel[linear_BV_Model_Parameters]):
+    """
+    Linear BV model that uses a linear combination of bc and bh to predict protection factors.
+    Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
+    """
+
+    def __init__(self, config: linear_BV_model_Config):
+        super().__init__(config=config)
+        self.forward: ForwardPass = linear_BV_ForwardPass()
+        self.compatability: HDX_peptide | HDX_protection_factor
 
 
 class netHDX_model(ForwardModel[NetHDX_Model_Parameters]):
