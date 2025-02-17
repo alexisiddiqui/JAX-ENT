@@ -14,7 +14,8 @@ from jaxent.forwardmodels.base import (
     ForwardPass,
     Input_Features,
     Model_Parameters,
-    Output_Features,
+    m_id,
+    m_key,
 )
 from jaxent.utils.jax import frame_average_features, single_pass
 
@@ -26,9 +27,9 @@ class Topology_Fragment:
     This is usually a residue but may also be a group of residues such as peptides.
     """
 
-    chain: str
+    chain: str | int
     fragment_sequence: str  # resname (residue) or single letter codes (peptide) or atom name (atom)
-    residue_start: int  # inclusive
+    residue_start: int  # inclusive, if a peptide, this is the first residue - not the
     residue_end: int | None = None  # inclusive - if None, then this is a single residue
     fragment_index: Optional[int] = (
         None  # atom or peptide index - optional for residues - required for peptides and atoms
@@ -38,6 +39,8 @@ class Topology_Fragment:
         if self.residue_end is None:
             self.residue_end = self.residue_start
         self.length = self.residue_end - self.residue_start + 1
+        if self.length > 1:
+            self.peptide_residues = [i for i in range(self.residue_start + 2, self.residue_end + 1)]
 
     def __eq__(self, other) -> bool:
         """Equal comparison - checks if all attributes are the same"""
@@ -72,6 +75,7 @@ class Experimental_Fragment:
     """
 
     top: Topology_Fragment | None
+    key: m_key | None
 
     @abstractmethod
     def extract_features(self) -> np.ndarray:
@@ -84,10 +88,11 @@ class HDX_peptide(Experimental_Fragment):
     dataclass that holds the information of a single peptide produced by HDX-MS experiments
     """
 
-    charge: int | None
-    retention_time: float
-    intensity: float
     dfrac: list[float]
+    charge: int | None = None
+    retention_time: float | None = None
+    intensity: float | None = None
+    key = m_key("HDX_peptide")
 
     def extract_features(self) -> np.ndarray:
         return np.array(self.dfrac)
@@ -101,6 +106,7 @@ class HDX_protection_factor(Experimental_Fragment):
     """
 
     protection_factor: float
+    key = m_key("HDX_resPf")
 
     def extract_features(self) -> np.ndarray:
         return np.array([self.protection_factor])
@@ -119,6 +125,14 @@ class Experimental_Dataset:
         self.data = data
         self.y_true = self.extract_data()
 
+        # assert keys are all the same
+        assert len(set([data.key for data in self.data])) == 1, (
+            "Keys are not the same. Datasets are comprised of a single type of experimental data."
+        )
+
+        self.key = self.data[0].key
+        self.id: m_id  # to be set later
+
     def extract_data(self) -> np.ndarray:
         """
         Map across every eleemtn in data and stack the features into a single array
@@ -126,14 +140,17 @@ class Experimental_Dataset:
         return np.hstack([_exp_data.extract_features() for _exp_data in self.data])
 
 
+# create a method that splits the dataset using indices
 ########################################################################\
 
 
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
     frame_weights: Array
-    model_parameters: list[Model_Parameters]
+    # frame_mask: Array  # int - TODO define in jax typing
+    model_parameters: Sequence[Model_Parameters]
     forward_model_weights: Array
+    # model_mask: Array  # int - TODO define in jax typing
 
     def tree_flatten(self):
         # Flatten into (arrays to differentiate, static metadata)
@@ -177,24 +194,28 @@ class Simulation:
 
     def __init__(
         self,
-        input_features: list[Input_Features],
+        input_features: dict[m_key, Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
+        model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
-        self.input_features: list[Input_Features] = input_features
+        self.input_features: dict[m_key, Input_Features] = input_features
         self.forward_models: Sequence[ForwardModel] = forward_models
 
-        self.params: Simulation_Parameters = params
+        self.params = params
 
-        self.forwardpass: list[ForwardPass] = [model.forward for model in self.forward_models]
+        self.forwardpass: Sequence[ForwardPass] = [
+            model.forwardpass for model in self.forward_models
+        ]
+        self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
 
-        self.output_features: Optional[list[Output_Features]] = None
+    def __post_init__(self) -> None:
+        self._average_feature_map: Array  # a sparse array to map the average features to the single pass to generate the output features
+        self.output_feature_dict: dict[m_id, Array]
 
-    # def __post_init__(self):
-    #     self.forwardpass =
     def initialise(self) -> bool:
         # assert that input features have the same first dimension of "features_shape"
-        lengths = [len(feature.features_shape) for feature in self.input_features]
+        lengths = [feature.features_shape[-1] for feature in self.input_features.values()]
         assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
         self.length = lengths[0]
 
@@ -206,68 +227,71 @@ class Simulation:
         print("Simulation initialised successfully.")
         return True
 
-    def forward(self) -> list[Output_Features]:
+    def forward(self) -> None:
         """
         This function applies the forward models to the input features
-        need to find a way to do this efficiently in jax
         """
         # first averages the input parameters using the frame weights
+
         average_features = map(
             frame_average_features,
-            self.input_features,
-            [self.params.frame_weights] * len(self.input_features),
+            [self.input_features[key] for key in self.input_features.keys()],
+            [self.params.frame_weights] * len(self.input_features.keys()),
         )
+
+        # reshape average features to match the length of forward models
+
         # map the single_pass function
         output_features = map(
             single_pass, self.forwardpass, average_features, self.params.model_parameters
         )
+        self.output_features = output_features
         # update this to use externally defined optimisers - perhaps update should just update the parameters
         # change argnum to use enums
-        return list(output_features)
 
-    def update(
-        self, params: Simulation_Parameters, argnums: tuple[int, ...] = (0, 1, 2)
-    ) -> "Simulation":
-        """
-        Updates simulation parameters using proposed parameters and argnums to decide which parameters to update.
-        As Simulation parameters are immutable, this function returns a new Simulation instance with updated parameters.
+    # def update(
+    #     self, params: Simulation_Parameters, argnums: tuple[int, ...] = (0, 1, 2)
+    # ) -> "Simulation":
+    #     """
+    #     Updates simulation parameters using proposed parameters and argnums to decide which parameters to update.
+    #     As Simulation parameters are immutable, this function returns a new Simulation instance with updated parameters.
 
-        Args:
-            params: The new parameters
-            argnums: Tuple indicating which parameters to optimize
-                    (0: frame_weights, 1: model_parameters, 2: forward_model_weights)
+    #     Args:
+    #         params: The new parameters
+    #         argnums: Tuple indicating which parameters to optimize
+    #                 (0: frame_weights, 1: model_parameters, 2: forward_model_weights)
 
-        Returns:
-            Updated Simulation instance
-        """
-        # Create lists for the new parameter values
-        new_frame_weights = self.params.frame_weights
-        new_model_parameters = self.params.model_parameters
-        new_forward_weights = self.params.forward_model_weights
+    #     Returns:
+    #         Updated Simulation instance
+    #     """
+    #     # Create lists for the new parameter values
+    #     new_frame_weights = self.params.frame_weights
+    #     new_model_parameters = self.params.model_parameters
+    #     new_forward_weights = self.params.forward_model_weights
 
-        # Update only the parameters specified in argnums
-        if Optimisable_Parameters.frame_weights.value in argnums:
-            new_frame_weights = params.frame_weights
+    #     # Update only the parameters specified in argnums
+    #     if Optimisable_Parameters.frame_weights.value in argnums:
+    #         new_frame_weights = params.frame_weights
 
-        if Optimisable_Parameters.model_parameters.value in argnums:
-            new_model_parameters = params.model_parameters
+    #     if Optimisable_Parameters.model_parameters.value in argnums:
+    #         new_model_parameters = params.model_parameters
 
-        if Optimisable_Parameters.forward_model_weights.value in argnums:
-            new_forward_weights = params.forward_model_weights
+    #     if Optimisable_Parameters.forward_model_weights.value in argnums:
+    #         new_forward_weights = params.forward_model_weights
 
-        # Create new parameters object
-        new_params = Simulation_Parameters(
-            frame_weights=new_frame_weights,
-            model_parameters=new_model_parameters,
-            forward_model_weights=new_forward_weights,
-        )
+    #     # Create new parameters object
+    #     new_params = Simulation_Parameters(
+    #         frame_weights=new_frame_weights,
+    #         model_parameters=new_model_parameters,
+    #         forward_model_weights=new_forward_weights,
+    #     )
 
-        # Create new simulation with updated parameters
-        return Simulation(
-            input_features=self.input_features,
-            forward_models=self.forward_models,
-            params=new_params,
-        )
+    #     # Create new simulation with updated parameters
+    #     return Simulation(
+    #         input_features=self.input_features,
+    #         forward_models=self.forward_models,
+    #         params=new_params,
+    #     )
 
 
 class Experiment_Ensemble:
@@ -287,6 +311,7 @@ class Experiment_Ensemble:
         self.experimental_data = experimental_data
         self.forward_models = forward_models
         self.features = features
+        self.output_feature_map: dict[m_id, int]
 
     def create_model(
         self,

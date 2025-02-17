@@ -1,15 +1,24 @@
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Generic, Protocol, TypeVar, Union
+from typing import ClassVar, Generic, NewType, Protocol, TypeVar
 
 from MDAnalysis import Universe
 
+from jaxent.datatypes import Experimental_Fragment
+
+m_key = NewType("m_key", str)
+m_id = NewType("m_id", str)
+
 
 class Output_Features(Protocol):
+    key: m_key
+
     @property
     def output_shape(self) -> tuple[float, ...]: ...
 
 
 class Input_Features(Protocol):
+    key: set[m_key]
+
     @property
     def features_shape(self) -> tuple[float | int, ...]: ...
 
@@ -26,7 +35,8 @@ T = TypeVar("T", bound="Model_Parameters")
 class Model_Parameters:
     """Base class providing generic PyTree methods for slots-enabled model parameters"""
 
-    static_params: ClassVar[set[str]] = set()
+    key: frozenset[m_key]
+    static_params: ClassVar[set[str]] = {"key"}
 
     @classmethod
     def _get_ordered_slots(cls) -> tuple[str, ...]:
@@ -62,6 +72,8 @@ class Model_Parameters:
 
 
 class Model_Config(Protocol):
+    key: m_key
+
     @property
     def forward_parameters(self) -> Model_Parameters: ...
 
@@ -93,9 +105,12 @@ T_Config = TypeVar("T_Config", bound=Model_Config)
 class ForwardModel(ABC, Generic[T_Params]):
     def __init__(self, config: T_Config) -> None:
         self.config: T_Config = config
-        self.compatability: Union[Any, Any]
-        self.forward: ForwardPass
+        self.compatability: dict[m_key, Experimental_Fragment]
+        self.forward: dict[m_key, ForwardPass]
         self.params: T_Params = config.forward_parameters
+
+    def __post_init__(self):
+        self.key = self.config.key
 
     @abstractmethod
     def initialise(self, ensemble: list[Universe]) -> bool:
@@ -110,4 +125,5 @@ class ForwardModel(ABC, Generic[T_Params]):
 
     @property
     def forwardpass(self) -> ForwardPass:
-        return self.forward
+        _fp: ForwardPass = self.forward[self.config.key]
+        return _fp  # i hope this fixes the typing
