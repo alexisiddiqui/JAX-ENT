@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import ClassVar, Generic, NewType, Protocol, TypeVar
+from typing import ClassVar, Generic, Protocol, TypeVar
 
+import jax.numpy as jnp
+from jax import Array
 from MDAnalysis import Universe
 
-from jaxent.datatypes import Experimental_Fragment
-
-m_key = NewType("m_key", str)
-m_id = NewType("m_id", str)
+from jaxent.core_types import Experimental_Fragment, Topology_Fragment, m_key
 
 
 class Output_Features(Protocol):
@@ -15,6 +14,18 @@ class Output_Features(Protocol):
     @property
     def output_shape(self) -> tuple[float, ...]: ...
 
+    # grabs the output shape of the features
+
+    @abstractmethod
+    def data(self) -> Array:
+        # default to grabbing the first slot
+        for c in type(self).__mro__:
+            if hasattr(c, "__slots__"):
+                return jnp.asarray(getattr(self, c.__slots__[0]))
+        raise AttributeError("No slots found in class")
+
+    # grabs selected data from features - this is used to build the output features
+
 
 class Input_Features(Protocol):
     key: set[m_key]
@@ -22,11 +33,25 @@ class Input_Features(Protocol):
     @property
     def features_shape(self) -> tuple[float | int, ...]: ...
 
+    @abstractmethod
+    def cast_to_jax(self) -> None:
+        # casts all features in slots to jax arrays
+        for c in type(self).__mro__:
+            if hasattr(c, "__slots__"):
+                for slot in c.__slots__:
+                    # try to cast slot to jax array - if it fails, print a warning
+                    # since this wont be compiled we can use try/except to cover improper slots
+                    try:
+                        setattr(self, slot, jnp.asarray(getattr(self, slot)))
+                    # warn if slot is not castable
+                    except Exception as e:
+                        print(
+                            f"Warning: slot {slot} in {self} is not castable to jax array: {e}"
+                            f"\n\n\nContinuiing but this may cause issues with the model"
+                        )
 
-# @dataclass(frozen=True)
-# class Model_Parameters:
-# temperature: float = 300
-#     ph: float = 7
+        # raises an error if no slots are found
+        raise AttributeError("No slots found in class")
 
 
 T = TypeVar("T", bound="Model_Parameters")
@@ -37,7 +62,10 @@ class Model_Parameters:
 
     key: frozenset[m_key]
     static_params: ClassVar[set[str]] = {"key"}
+    dynamic_params: ClassVar[set[str]] = set()
 
+    ####################################################################################################
+    # TODO update this to use static and dynamic parameters instead of trying to get ordered slots
     @classmethod
     def _get_ordered_slots(cls) -> tuple[str, ...]:
         """Get slots in a deterministic order, including parent classes"""
@@ -47,17 +75,22 @@ class Model_Parameters:
                 all_slots.extend(c.__slots__)
         return tuple(dict.fromkeys(all_slots))
 
+    @abstractmethod
     def tree_flatten(self) -> tuple[tuple[float, ...], tuple]:
-        arrays = tuple(float(getattr(self, slot)) for slot in self._get_ordered_slots())
+        arrays = tuple(
+            jnp.asarray(getattr(self, slot)).astype(jnp.float32)
+            for slot in self._get_ordered_slots()
+        )
         static = ()
         return arrays, static
 
     @classmethod
+    @abstractmethod
     def tree_unflatten(cls: type[T], static: tuple, arrays: tuple[float, ...]) -> T:
         kwargs = {slot: array for slot, array in zip(cls._get_ordered_slots(), arrays)}
         return cls(**kwargs)
 
-    # @classmethod
+    @abstractmethod
     def update_parameters(self, new_params: "Model_Parameters") -> "Model_Parameters":
         """Creates new instance with updated non-static parameters.
         You should override this method in your subclass for faster updates.
@@ -71,6 +104,7 @@ class Model_Parameters:
         return self.__class__(**param_dict)
 
 
+####################################################################################################
 class Model_Config(Protocol):
     key: m_key
 
@@ -83,7 +117,9 @@ class Featuriser(Protocol):
     A featuriser is a callable object that takes in a list of universes and then returns a list of features.
     """
 
-    def __call__(self, ensemble: list[Universe]) -> Input_Features: ...
+    def __call__(
+        self, ensemble: list[Universe]
+    ) -> tuple[Input_Features, list[Topology_Fragment]]: ...
 
 
 T_In = TypeVar("T_In", bound=Input_Features, contravariant=True)
@@ -120,7 +156,7 @@ class ForwardModel(ABC, Generic[T_Params]):
         pass
 
     @abstractmethod
-    def featurise(self, ensemble: list[Universe]) -> Input_Features:
+    def featurise(self, ensemble: list[Universe]) -> tuple[Input_Features, list[Topology_Fragment]]:
         pass
 
     @property

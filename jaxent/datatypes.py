@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Sequence
@@ -6,80 +5,97 @@ from typing import Optional, Sequence
 import jax.numpy as jnp
 import numpy as np
 from jax import Array  # This is the correct import path
+from jax.experimental import sparse
 from jax.tree_util import register_pytree_node
 from MDAnalysis import Universe
 
+from jaxent.core_types import Experimental_Fragment, Topology_Fragment, m_id, m_key
 from jaxent.forwardmodels.base import (
     ForwardModel,
     ForwardPass,
     Input_Features,
     Model_Parameters,
-    m_id,
-    m_key,
 )
-from jaxent.utils.jax import frame_average_features, single_pass
+from jaxent.utils.jax_fn import frame_average_features, single_pass
+
+# @dataclass()
+# class Topology_Fragment:
+#     """
+#     Dataclass that holds the information of a single topology fragment.
+#     This is usually a residue but may also be a group of residues such as peptides.
+#     """
+
+#     chain: str | int
+#     fragment_sequence: str  # resname (residue) or single letter codes (peptide) or atom name (atom)
+#     residue_start: int  # inclusive, if a peptide, this is the first residue - not the
+#     residue_end: int | None = None  # inclusive - if None, then this is a single residue
+#     fragment_index: Optional[int] = (
+#         None  # atom or peptide index - optional for residues - required for peptides and atoms
+#     )
+
+#     def __post_init__(self):
+#         if self.residue_end is None:
+#             self.residue_end: int = self.residue_start
+#         self.length = self.residue_end - self.residue_start + 1
+#         if self.length > 2:
+#             self.peptide_residues = [i for i in range(self.residue_start + 2, self.residue_end + 1)]
+
+#     def __eq__(self, other) -> bool:
+#         """Equal comparison - checks if all attributes are the same"""
+#         if not isinstance(other, Topology_Fragment):
+#             return NotImplemented
+#         return (
+#             self.chain == other.chain
+#             and self.fragment_index == other.fragment_index
+#             and self.fragment_sequence == other.fragment_sequence
+#             and self.residue_start == other.residue_start
+#             and self.residue_end == other.residue_end
+#         )
+
+#     def __hash__(self) -> int:
+#         """Hash function - uses the hash of chain, index, sequence, residue start and end"""
+#         return hash(
+#             (
+#                 self.chain,
+#                 self.fragment_index,
+#                 self.fragment_sequence,
+#                 self.residue_start,
+#                 self.residue_end,
+#             )
+#         )
+
+#     def extract_residues(self, peptide: bool = True) -> list["Topology_Fragment"]:
+#         """
+#         Extracts the residues from a peptide or atom fragment
+#         """
+#         if self.length == 1:
+#             return [self]
+#         else:
+#             if peptide is True:
+#                 return [
+#                     Topology_Fragment(self.chain, self.fragment_sequence, res)
+#                     for res in self.peptide_residues
+#                 ]
+#             else:
+#                 return [
+#                     Topology_Fragment(self.chain, self.fragment_sequence, res)
+#                     for res in range(self.residue_start, self.residue_end + 1)
+#                 ]
 
 
-@dataclass()
-class Topology_Fragment:
-    """
-    Dataclass that holds the information of a single topology fragment.
-    This is usually a residue but may also be a group of residues such as peptides.
-    """
+# @dataclass()
+# class Experimental_Fragment:
+#     """
+#     Base class for experimental data - grouped into subdomain fragments
+#     Limtation is that it only covers a single chain - which should be fine in most cases.
+#     """
 
-    chain: str | int
-    fragment_sequence: str  # resname (residue) or single letter codes (peptide) or atom name (atom)
-    residue_start: int  # inclusive, if a peptide, this is the first residue - not the
-    residue_end: int | None = None  # inclusive - if None, then this is a single residue
-    fragment_index: Optional[int] = (
-        None  # atom or peptide index - optional for residues - required for peptides and atoms
-    )
+#     top: Topology_Fragment | None
+#     key: m_key
 
-    def __post_init__(self):
-        if self.residue_end is None:
-            self.residue_end = self.residue_start
-        self.length = self.residue_end - self.residue_start + 1
-        if self.length > 1:
-            self.peptide_residues = [i for i in range(self.residue_start + 2, self.residue_end + 1)]
-
-    def __eq__(self, other) -> bool:
-        """Equal comparison - checks if all attributes are the same"""
-        if not isinstance(other, Topology_Fragment):
-            return NotImplemented
-        return (
-            self.chain == other.chain
-            and self.fragment_index == other.fragment_index
-            and self.fragment_sequence == other.fragment_sequence
-            and self.residue_start == other.residue_start
-            and self.residue_end == other.residue_end
-        )
-
-    def __hash__(self) -> int:
-        """Hash function - uses the hash of chain, index, sequence, residue start and end"""
-        return hash(
-            (
-                self.chain,
-                self.fragment_index,
-                self.fragment_sequence,
-                self.residue_start,
-                self.residue_end,
-            )
-        )
-
-
-@dataclass()
-class Experimental_Fragment:
-    """
-    Base class for experimental data - grouped into subdomain fragments
-    Limtation is that it only covers a single chain - which should be fine in most cases.
-    """
-
-    top: Topology_Fragment | None
-    key: m_key | None
-
-    @abstractmethod
-    def extract_features(self) -> np.ndarray:
-        raise NotImplementedError("This method must be implemented in the child class.")
+#     @abstractmethod
+#     def extract_features(self) -> np.ndarray:
+#         raise NotImplementedError("This method must be implemented in the child class.")
 
 
 @dataclass()
@@ -112,6 +128,13 @@ class HDX_protection_factor(Experimental_Fragment):
         return np.array([self.protection_factor])
 
 
+@dataclass(frozen=True, slots=True)
+class Dataset:
+    data: Sequence[Experimental_Fragment]
+    y_true: Array
+    residue_feature_ouput_mapping: sparse.BCOO
+
+
 ########################################################################\
 # TODO - use generics/typevar to abstractly define the datatypes
 class Experimental_Dataset:
@@ -125,13 +148,31 @@ class Experimental_Dataset:
         self.data = data
         self.y_true = self.extract_data()
 
+        self.train: Dataset
+        self.val: Dataset
+        self.test: Dataset
+
         # assert keys are all the same
         assert len(set([data.key for data in self.data])) == 1, (
             "Keys are not the same. Datasets are comprised of a single type of experimental data."
         )
-
+        # assert that all topology fragments are unique
+        assert len(set([data.top for data in self.data])) == len(self.data), (
+            "Topology fragments are not unique/missing. Exiting."
+        )
+        self.top: list[Topology_Fragment] = [data.top for data in self.data]
         self.key = self.data[0].key
         self.id: m_id  # to be set later
+
+    def __post__init__(self):
+        # check that every topology fragment contains an fragment if not - assigns indices
+        _tops = [data.top for data in self.data]
+        _indices = [top.fragment_index for top in _tops]
+
+        if len(_indices) != len(set(_indices)):
+            UserWarning("Topology fragments are not unique. Assigning indices to fragments.")
+            for idx, top in enumerate(_tops):
+                top.fragment_index = idx
 
     def extract_data(self) -> np.ndarray:
         """
@@ -142,40 +183,40 @@ class Experimental_Dataset:
 
 # create a method that splits the dataset using indices
 ########################################################################\
-
-
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
     frame_weights: Array
-    # frame_mask: Array  # int - TODO define in jax typing
     model_parameters: Sequence[Model_Parameters]
     forward_model_weights: Array
-    # model_mask: Array  # int - TODO define in jax typing
+    forward_model_scaling: Array | Sequence[float]  # This will be static
 
     def tree_flatten(self):
         # Flatten into (arrays to differentiate, static metadata)
-        # Keep model_parameters as static since we only diff forward_parameters
+        # Keep forward_model_scaling as static
         arrays = (
             self.frame_weights,
             [m for m in self.model_parameters],  # List of arrays to diff
             self.forward_model_weights,
         )
-        static = (self.model_parameters,)  # Store full model params as static
+        static = (self.forward_model_scaling,)  # Tuple with single element
         return arrays, static
 
     @classmethod
     def tree_unflatten(cls, static, arrays):
-        model_params = static[0]  # Original model params
-        frame_weights, forward_params, forward_weights = arrays
+        # Unpack the arrays and static parameters
+        frame_weights, model_params, forward_weights = arrays
+        (forward_scaling,) = static  # Unpack single element from static tuple
 
-        # Update each model param with new forward params
-        new_model_params = [
-            mp.update_parameters(fp) for mp, fp in zip(model_params, forward_params)
-        ]
+        # Create new instance
+        return cls(
+            frame_weights=frame_weights,
+            model_parameters=model_params,
+            forward_model_weights=forward_weights,
+            forward_model_scaling=forward_scaling,
+        )
 
-        return cls(frame_weights, new_model_params, forward_weights)
 
-
+# Register the class as a pytree node
 register_pytree_node(
     Simulation_Parameters, Simulation_Parameters.tree_flatten, Simulation_Parameters.tree_unflatten
 )
@@ -194,12 +235,12 @@ class Simulation:
 
     def __init__(
         self,
-        input_features: dict[m_key, Input_Features],
+        input_features: list[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
-        model_name_index: list[tuple[m_key, int, m_id]],
+        # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
-        self.input_features: dict[m_key, Input_Features] = input_features
+        self.input_features: list[Input_Features] = input_features
         self.forward_models: Sequence[ForwardModel] = forward_models
 
         self.params = params
@@ -207,20 +248,32 @@ class Simulation:
         self.forwardpass: Sequence[ForwardPass] = [
             model.forwardpass for model in self.forward_models
         ]
-        self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
+        # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
+        # self.outputs: Sequence[Array]
 
     def __post_init__(self) -> None:
         self._average_feature_map: Array  # a sparse array to map the average features to the single pass to generate the output features
-        self.output_feature_dict: dict[m_id, Array]
+        # self.output_features: dict[m_id, Array]
 
     def initialise(self) -> bool:
         # assert that input features have the same first dimension of "features_shape"
-        lengths = [feature.features_shape[-1] for feature in self.input_features.values()]
+        lengths = [feature.features_shape[-1] for feature in self.input_features]
         assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
         self.length = lengths[0]
 
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
+
+        # assert that the number of forward models is equal to the number of forward model weights
+        assert len(self.forward_models) == len(self.params.forward_model_weights), (
+            "Number of forward models must be equal to number of forward model weights"
+        )
+        # assert that the number of model parameters, constantss and forward model weights are equal
+        assert (
+            len(self.params.model_parameters)
+            == len(self.params.forward_model_scaling)
+            == len(self.params.forward_model_weights)
+        ), "Number of model parameters, constants and forward model weights must be equal"
 
         # at this point we need to convert all the input features to jax arrays
 
@@ -232,11 +285,10 @@ class Simulation:
         This function applies the forward models to the input features
         """
         # first averages the input parameters using the frame weights
-
         average_features = map(
             frame_average_features,
-            [self.input_features[key] for key in self.input_features.keys()],
-            [self.params.frame_weights] * len(self.input_features.keys()),
+            [feat for feat in self.input_features],
+            [self.params.frame_weights] * len(self.input_features),
         )
 
         # reshape average features to match the length of forward models
@@ -245,7 +297,8 @@ class Simulation:
         output_features = map(
             single_pass, self.forwardpass, average_features, self.params.model_parameters
         )
-        self.output_features = output_features
+        print("Single passed features.")
+        self.outputs = list(output_features)
         # update this to use externally defined optimisers - perhaps update should just update the parameters
         # change argnum to use enums
 
@@ -311,7 +364,7 @@ class Experiment_Ensemble:
         self.experimental_data = experimental_data
         self.forward_models = forward_models
         self.features = features
-        self.output_feature_map: dict[m_id, int]
+        # self.output_feature_map: dict[m_id, int]
 
     def create_model(
         self,
@@ -327,6 +380,16 @@ class Experiment_Ensemble:
 
         if self.experimental_data is None:
             raise ValueError("No experimental data was provided. Exiting.")
+
+        # assert that all experimental datasets contain not None self.train, self.val and self.test attributes
+        assert all(
+            [
+                data.train is not None and data.val is not None and data.test is not None
+                for data in self.experimental_data
+            ]
+        ), (
+            "Experimental datasets must contain train, val and test attributes - please split the dataset and create the mapping"
+        )
 
         if simulation_params is not None:
             self.params = simulation_params
@@ -355,7 +418,7 @@ class Experiment_Ensemble:
         valid_models = self.validate_forward_models()
         # remove entities that align with none
         valid_data = [
-            data[0] for data in zip(self.experimental_data, valid_models) if all(data) is not None
+            data[0] for data in zip(self.experimental_data, valid_models) if data[1] is not None
         ]
 
         self.experimental_data = valid_data
@@ -394,3 +457,50 @@ class Experiment_Ensemble:
                 UserWarning(f"Model {model} failed to initialise. Skipping this model.")
 
         return validated_models
+
+    # def build_model_ids(self):
+    #     """
+    #     This method checks the keys of the input features and the names of the forward models
+    #     If not all the names are unique - attempts to build new ones
+    #     First checks if the forward model config keys are unique
+    #     Then checks if the config names are unique
+    #     if neither are unique - attempts to create a combination of key and name
+    #     Otherwise creates a name using the key and the index
+    #     """
+    #     forward_model_keys = [str(model.config.key) for model in self.forward_models]
+
+    #     config_names = [str(model.config.name) for model in self.forward_models]
+
+    #     if len(set(forward_model_keys)) == len(self.forward_models):
+    #         model_ids = [m_id(key) for key in forward_model_keys]
+
+    #     else:
+    #         print(
+    #             "Forward model keys are not unique. Attempting to build new keys from config names."
+    #         )
+
+    #     if len(set(config_names)) == len(self.forward_models):
+    #         model_ids = [m_id(name) for name in config_names]
+
+    #     else:
+    #         print(
+    #             "Forward model names are not unique. Attempting to build new keys from config names."
+    #         )
+
+    #     keys_names = [f"{key}_{name}" for key, name in zip(forward_model_keys, config_names)]
+
+    #     if len(set(keys_names)) == len(self.forward_models):
+    #         model_ids = [m_id(key_name) for key_name in keys_names]
+
+    #     else:
+    #         print(
+    #             "Failed to build unique keys from model keys and config names. Using key_name and index."
+    #         )
+
+    #     indexed_keys_names = [str(idx) + "_" + key_name for idx, key_name in enumerate(keys_names)]
+
+    #     model_ids = [m_id(key_name) for key_name in indexed_keys_names]
+
+    #     assert len(set(model_ids)) == len(self.forward_models), "Model IDs are not unique"
+
+    #     self.model_name_index = list(zip(forward_model_keys, config_names, model_ids))

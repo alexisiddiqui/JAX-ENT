@@ -1,7 +1,10 @@
-from typing import Optional, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Optional, Sequence, Tuple
 
 import jax
 import jax.numpy as jnp
+import optax
+from jax import Array
 
 from jaxent.config.base import OptimiserSettings
 from jaxent.datatypes import (
@@ -10,7 +13,7 @@ from jaxent.datatypes import (
     Simulation,
     Simulation_Parameters,
 )
-from jaxent.forwardmodels.base import Model_Parameters, Output_Features
+from jaxent.forwardmodels.base import ForwardModel, Model_Parameters, Output_Features
 from jaxent.lossfn.base import JaxEnt_Loss
 
 
@@ -32,268 +35,259 @@ def optimise(
     pass
 
 
-########################################################################
-# TODO: fix jax typing
+@dataclass
+class LossComponents:
+    """Stores the various components of loss for training and validation"""
+
+    train_losses: Array  # Individual training loss components
+    val_losses: Array  # Individual validation loss components
+    scaled_train_losses: Array  # Scaled training loss components
+    scaled_val_losses: Array  # Scaled validation loss components
+    total_train_loss: Array  # Total training loss
+    total_val_loss: Array  # Total validation loss
 
 
-# def optimiser_step(
-#     simulation: Simulation,
-#     loss_value: float | np.float64,
-#     parameters: Simulation_Parameters,
-#     learning_rate: float = 0.01,
-#     argnums: tuple[int, ...] = (0, 1, 2),
-# ) -> Simulation_Parameters:
-#     """Performs a single optimization step using gradient descent."""
-#     params_tuple = parameters.to_tuple()
-#     grads = jax.grad(lambda *args: loss_value, argnums=argnums)(*params_tuple)
+@dataclass
+class OptimizationState:
+    params: Simulation_Parameters
+    opt_state: optax.OptState
+    parameter_masks: Simulation_Parameters
+    step: int = 0
+    losses: Optional[LossComponents] = None
 
-#     if isinstance(grads, jax.Array):
-#         grads = (grads,)
-
-#     grad_dict = dict(zip(argnums, grads))
-#     new_params = list(params_tuple)
-
-#     for idx in argnums:
-#         new_params[idx] = params_tuple[idx] - learning_rate * grad_dict[idx]
-#         if idx in (0, 2):  # Normalize weights
-#             new_params[idx] = new_params[idx] / jnp.sum(new_params[idx])
-
-#     return Simulation_Parameters.from_tuple(tuple(new_params))
-
-
-# def optimiser_step(
-#     simulation: Simulation,
-#     loss_fn,  # Function that computes loss given parameters
-#     parameters: Simulation_Parameters,
-#     learning_rate: float = 0.01,
-#     argnums: tuple[int, ...] = (0, 1, 2),
-# ) -> Simulation_Parameters:
-#     """Performs a single optimization step using gradient descent."""
-#     params_tuple = parameters.to_tuple()
-
-#     # Create function that returns loss for given parameters
-#     def loss_from_params(*params):
-#         new_params = Simulation_Parameters.from_tuple(params)
-#         simulation = simulation.update(new_params, argnums)
-#         return loss_fn(simulation)
-
-#     # Calculate gradients
-#     grads = jax.grad(loss_from_params, argnums=argnums)(*params_tuple)
-
-#     if isinstance(grads, jax.Array):
-#         grads = (grads,)
-
-#     grad_dict = dict(zip(argnums, grads))
-#     new_params = list(params_tuple)
-
-#     for idx in argnums:
-#         new_params[idx] = params_tuple[idx] - learning_rate * grad_dict[idx]
-#         if idx in (0, 2):  # Normalize weights
-#             new_params[idx] = new_params[idx] / jnp.sum(new_params[idx])
-
-
-#     return Simulation_Parameters.from_tuple(tuple(new_params))
-
-
-# def optimiser_step(
-#     simulation: Simulation,
-#     loss_fn,
-#     parameters: Simulation_Parameters,
-#     learning_rate: float = 0.01,
-#     argnums: tuple[int, ...] = (0, 1, 2),
-# ) -> Simulation_Parameters:
-#     """Performs a single optimization step using gradient descent."""
-
-#     def loss_from_params(params: Simulation_Parameters):
-#         new_simulation = simulation.update(params, argnums)
-#         return loss_fn(new_simulation)
-
-#     grads = jax.grad(loss_from_params)(parameters)
-
-#     # Convert gradients to arrays and create new parameters
-#     new_frame_weights = parameters.frame_weights
-#     new_model_params = parameters.model_parameters
-#     new_forward_weights = parameters.forward_model_weights
-
-#     if Optimisable_Parameters.frame_weights.value in argnums:
-#         new_frame_weights = (
-#             jnp.array(parameters.frame_weights) - learning_rate * grads.frame_weights
-#         )
-#         new_frame_weights = new_frame_weights / jnp.sum(new_frame_weights)
-
-#     if Optimisable_Parameters.model_parameters.value in argnums:
-#         new_model_params = [
-#             mp.update_parameters(mp - learning_rate * g)
-#             for mp, g in zip(parameters.model_parameters, grads.model_parameters)
-#         ]
-
-#     if Optimisable_Parameters.forward_model_weights.value in argnums:
-#         new_forward_weights = (
-#             jnp.array(parameters.forward_model_weights)
-#             - learning_rate * grads.forward_model_weights
-#         )
-#         new_forward_weights = new_forward_weights / jnp.sum(new_forward_weights)
-
-
-#     return Simulation_Parameters(
-#         frame_weights=new_frame_weights,
-#         model_parameters=new_model_params,
-#         forward_model_weights=new_forward_weights,
-#     )
-def optimiser_step(
-    simulation: Simulation,
-    loss_fn,
-    parameters: Simulation_Parameters,
-    learning_rate: float = 0.000001,
-    argnums: tuple[int, ...] = (0, 1, 2),
-) -> Simulation_Parameters:
-    """Performs a single optimization step using gradient descent."""
-
-    def loss_from_params(params: Simulation_Parameters):
-        new_simulation = simulation.update(params, argnums)
-        return loss_fn(new_simulation)
-
-    grads = jax.grad(loss_from_params)(parameters)
-    grads = jax.tree_util.tree_map(
-        lambda x: jnp.clip(x, -1e1, 1e1) if x is not None else None,
-        grads,  #
-    )
-
-    # Convert gradients to arrays and create new parameters
-    new_frame_weights = parameters.frame_weights
-    new_model_params = parameters.model_parameters
-    new_forward_weights = parameters.forward_model_weights
-
-    if Optimisable_Parameters.frame_weights.value in argnums:
-        new_frame_weights = (
-            jnp.array(parameters.frame_weights) - learning_rate * grads.frame_weights
+    def update(
+        self,
+        new_params: Simulation_Parameters,
+        new_opt_state: optax.OptState,
+        new_losses: LossComponents,
+    ) -> "OptimizationState":
+        return OptimizationState(
+            params=new_params,
+            opt_state=new_opt_state,
+            parameter_masks=self.parameter_masks,
+            step=self.step + 1,
+            losses=new_losses,
         )
-        new_frame_weights = new_frame_weights / jnp.sum(new_frame_weights)
-    ########################################################################
-    # fix the update parameters method - perhaps not use a class method
-    if Optimisable_Parameters.model_parameters.value in argnums:
-        new_model_params = [
-            mp.update_parameters(mp - learning_rate * g)
-            for mp, g in zip(parameters.model_parameters, grads.model_parameters)
+
+
+@dataclass
+class OptimizationHistory:
+    """Tracks the history of optimization states and metrics"""
+
+    states: list[OptimizationState] = field(default_factory=list)
+    best_state: Optional[OptimizationState] = None
+
+    def add_state(self, state: OptimizationState):
+        """Add a new state to history and update best state if needed"""
+        self.states.append(state)
+        if (
+            self.best_state is None
+            or state.losses.total_train_loss < self.best_state.losses.total_train_loss
+        ):
+            self.best_state = state
+
+    def get_loss_history(self) -> list[LossComponents]:
+        """Get history of loss components"""
+        return [state.losses for state in self.states]
+
+    def get_parameter_history(self, param_name: str) -> list[Any]:
+        """Get history of specific parameter values"""
+        return [getattr(state.params, param_name) for state in self.states]
+
+
+class OptaxOptimizer:
+    def __init__(
+        self,
+        learning_rate: float = 1e-3,
+        optimizer: str = "adam",
+        parameter_masks: Optional[Sequence[Optimisable_Parameters]] = [Optimisable_Parameters(1)],
+        clip_value: Optional[float] = 1.0,
+    ):
+        self.learning_rate = learning_rate
+        self.parameter_masks = parameter_masks or list(Optimisable_Parameters)
+        self.clip_value = clip_value
+        self.history = OptimizationHistory()
+
+        optimizer_chain = []
+        if clip_value is not None:
+            optimizer_chain.append(optax.clip(clip_value))
+
+        if optimizer.lower() == "adam":
+            optimizer_chain.append(optax.adam(learning_rate))
+        elif optimizer.lower() == "sgd":
+            optimizer_chain.append(optax.sgd(learning_rate))
+        elif optimizer.lower() == "adagrad":
+            optimizer_chain.append(optax.adagrad(learning_rate))
+        else:
+            raise ValueError(f"Unsupported optimizer: {optimizer}")
+
+        self.optimizer = optax.chain(*optimizer_chain)
+
+    def create_parameter_masks(self, params: Simulation_Parameters) -> Simulation_Parameters:
+        """Creates gradient masks as a Simulation_Parameters instance."""
+        frame_mask = Optimisable_Parameters.frame_weights in self.parameter_masks
+        model_mask = Optimisable_Parameters.model_parameters in self.parameter_masks
+        forward_mask = Optimisable_Parameters.forward_model_weights in self.parameter_masks
+
+        frame_weights_mask = jax.tree_map(lambda _: frame_mask, params.frame_weights)
+        model_parameters_mask = [
+            jax.tree_map(lambda _: model_mask, mp) for mp in params.model_parameters
         ]
-    ########################################################################
-
-    if Optimisable_Parameters.forward_model_weights.value in argnums:
-        new_forward_weights = (
-            jnp.array(parameters.forward_model_weights)
-            - learning_rate * grads.forward_model_weights
+        forward_model_weights_mask = jax.tree_map(
+            lambda _: forward_mask, params.forward_model_weights
         )
-        new_forward_weights = new_forward_weights / jnp.sum(new_forward_weights)
 
-    return Simulation_Parameters(
-        frame_weights=new_frame_weights,
-        model_parameters=new_model_params,
-        forward_model_weights=new_forward_weights,
-    )
+        return Simulation_Parameters(
+            frame_weights=frame_weights_mask,
+            model_parameters=model_parameters_mask,
+            forward_model_weights=forward_model_weights_mask,
+            forward_model_scaling=params.forward_model_scaling,
+        )
+
+    def init(self, params: Simulation_Parameters) -> OptimizationState:
+        """Initialize the optimization state with parameter masks"""
+        parameter_masks = self.create_parameter_masks(params)
+        init_state = OptimizationState(
+            params=params, opt_state=self.optimizer.init(params), parameter_masks=parameter_masks
+        )
+        return init_state
+
+    def compute_loss(
+        self,
+        simulation: Simulation,
+        params: Simulation_Parameters,
+        data_targets: Sequence[Experimental_Dataset | Model_Parameters | Output_Features],
+        indexes: Sequence[int],
+        loss_functions: Sequence[JaxEnt_Loss],
+    ) -> LossComponents:
+        """Compute training and validation losses"""
+
+        # Calculate individual loss components for training and validation
+        train_losses = []
+        val_losses = []
+        for loss_fn, target, idx in zip(loss_functions, data_targets, indexes):
+            train_loss, val_loss = loss_fn(simulation, target, idx)
+            train_losses.append(train_loss)
+            val_losses.append(val_loss)
+
+        # Convert to arrays
+        train_losses = jnp.array(train_losses)
+        val_losses = jnp.array(val_losses)
+
+        # Apply weights and scaling
+        weights = params.forward_model_weights
+        scaling = jnp.array(params.forward_model_scaling)
+
+        scaled_train = train_losses * weights * scaling
+        scaled_val = val_losses * weights * scaling
+
+        # Calculate total losses
+        total_train = jnp.sum(scaled_train)
+        total_val = jnp.sum(scaled_val)
+
+        return LossComponents(
+            train_losses=train_losses,
+            val_losses=val_losses,
+            scaled_train_losses=scaled_train,
+            scaled_val_losses=scaled_val,
+            total_train_loss=total_train,
+            total_val_loss=total_val,
+        )
+
+    def step(
+        self,
+        state: OptimizationState,
+        simulation: Simulation,
+        data_targets: Sequence[Experimental_Dataset | Model_Parameters | Output_Features],
+        loss_functions: Sequence[JaxEnt_Loss],
+        indexes: Sequence[int],
+    ) -> Tuple[OptimizationState, Array]:
+        """Perform one optimization step"""
+        simulation.forward()
+        print("Forward pass done")
+
+        def loss_fn(params: Simulation_Parameters):
+            # Only compute training loss for gradient calculation
+            losses = self.compute_loss(simulation, params, data_targets, indexes, loss_functions)
+            return losses.total_train_loss
+
+        # Compute gradients using only training loss
+        grads = jax.grad(loss_fn)(state.params)
+        print("Gradients computed", grads)
+        # Apply masks to gradients
+        masked_grads = jax.tree_map(
+            lambda g, m: g * m if m is not None else g, grads, state.parameter_masks
+        )
+
+        # Get optimizer updates
+        updates, new_opt_state = self.optimizer.update(masked_grads, state.opt_state)
+        new_params = optax.apply_updates(state.params, updates)
+
+        # Compute losses again for reporting/tracking (outside of gradient computation)
+        losses = self.compute_loss(simulation, new_params, data_targets, indexes, loss_functions)
+
+        # Create new state with updated losses
+        new_state = state.update(new_params, new_opt_state, losses)
+
+        # Add to history
+        self.history.add_state(new_state)
+
+        return new_state, losses.total_train_loss
 
 
 def run_optimise(
     simulation: Simulation,
     data_to_fit: tuple[Experimental_Dataset | Model_Parameters | Output_Features, ...],
     config: OptimiserSettings,
-    forward_model_keys: Sequence[int],
+    forward_models: Sequence[ForwardModel],
+    indexes: Sequence[int],
     loss_functions: list[JaxEnt_Loss],
+    optimizer: Optional[OptaxOptimizer] = None,
     initialise: Optional[bool] = False,
-) -> Simulation:
-    """Runs the optimization process for a given simulation."""
+) -> Tuple[Simulation, OptimizationHistory]:
+    """Runs the optimization process"""
+
     if initialise:
         if not simulation.initialise():
             raise ValueError("Failed to initialise simulation")
 
-        if not (len(data_to_fit) == len(loss_functions) == len(forward_model_keys)):
-            raise ValueError(
-                "Number of data targets, loss functions, and forward models must match"
-            )
+    if not (len(data_to_fit) == len(loss_functions) == len(forward_models)):
+        raise ValueError("Number of data targets, loss functions, and forward models must match")
 
-    assert len(data_to_fit) == len(loss_functions) == len(forward_model_keys), (
-        "Number of data targets, loss functions, and forward models must match"
-    )
+    if optimizer is None:
+        optimizer = OptaxOptimizer(
+            learning_rate=config.learning_rate,
+            optimizer="adam",
+            parameter_masks=[Optimisable_Parameters.model_parameters],
+        )
 
-    current_params = simulation.params
+    opt_state = optimizer.init(simulation.params)
 
-    def compute_loss(
-        simulation: Simulation,
-    ):
-        losses = []
-        simulation.forward()
-        for loss_fn, data in zip(loss_functions, data_to_fit):
-            losses.append(loss_fn(simulation, data))
-        return jnp.mean(jnp.array(losses))
-
-    prev_loss = jnp.inf
     for step in range(config.n_steps):
-        current_loss = compute_loss(simulation)
-        print(f"Step {step}, Loss: {current_loss:.2f}")
-        # print(f"Step {step}")
+        opt_state, current_loss = optimizer.step(
+            opt_state, simulation, data_to_fit, loss_functions, indexes
+        )
+        # if step % 100 == 0:
+        print(f"Step {step}")
+        print(f"Training Loss: {opt_state.losses.total_train_loss}")
+        print(f"Validation Loss: {opt_state.losses.total_val_loss}")
 
+        simulation.params = opt_state.params
         if current_loss < config.tolerance:
+            print(f"Reached convergence tolerance at step {step}")
             break
 
-        if jnp.abs(prev_loss - current_loss) < config.convergence:
+        if (
+            step > 10
+            and abs(current_loss - optimizer.history.best_state.losses.total_train_loss)
+            < config.convergence
+        ):
+            print(f"Loss converged at step {step}")
             break
 
-        current_params = optimiser_step(
-            simulation,
-            compute_loss,
-            current_params,
-            learning_rate=0.0001,
-            argnums=(1,),
-        )
+        # Check convergence on training loss
 
-        prev_loss = current_loss
+    if optimizer.history.best_state is not None:
+        simulation.params = optimizer.history.best_state.params
 
-        simulation = simulation.update(
-            current_params,
-            (1,),
-        )
-
-    return simulation
-
-
-# def run_optimise(
-#     simulation: Simulation,
-#     data_to_fit: tuple[Experimental_Dataset | Model_Parameters | Output_Features, ...],
-#     config: OptimiserSettings,
-#     forward_models: list[ForwardModel],
-#     loss_functions: list[JaxEnt_Loss],
-#     initialise: Optional[bool] = False,
-# ) -> Simulation:
-#     """Runs the optimization process for a given simulation."""
-#     if initialise:
-#         if not simulation.initialise():
-#             raise ValueError("Failed to initialise simulation")
-
-#         if not (len(data_to_fit) == len(loss_functions) == len(forward_models)):
-#             raise ValueError(
-#                 "Number of data targets, loss functions, and forward models must match"
-#             )
-
-#     # jitted_step = jit(optimiser_step)
-
-#     current_params = simulation.params
-
-#     for step in range(config.n_steps):
-#         losses = []
-#         for loss_fn, data in zip(loss_functions, data_to_fit):
-#             losses.append(loss_fn(simulation, data))
-
-#         average_loss = jnp.mean(jnp.array(losses))
-#         if average_loss < config.tolerance:
-#             break
-
-#         current_params = optimiser_step(
-#             simulation, average_loss, current_params, learning_rate=0.01, argnums=(0, 1, 2)
-#         )
-
-#         # create new parameters
-#         new_params = Simulation_Parameters.from_tuple(current_params.to_tuple())
-
-#         simulation.params = new_params
-
-#     return simulation
-########################################################################
+    return simulation, optimizer.history
