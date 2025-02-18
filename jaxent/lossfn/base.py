@@ -10,6 +10,7 @@ from jax import Array
 
 from jaxent.datatypes import Experimental_Dataset, Simulation
 from jaxent.forwardmodels.base import Model_Parameters, Output_Features
+from jaxent.utils.datasplitter import apply_sparse_mapping
 
 # Define TypeVars for the different possible types
 M = TypeVar("M", Simulation, list[Simulation], contravariant=True)
@@ -22,26 +23,42 @@ class JaxEnt_Loss(Protocol[M, D]):
     ) -> tuple[Array, Array]: ...
 
 
-def hdx_pf_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
+def hdx_pf_l2_loss(
+    model: Simulation, dataset: Experimental_Dataset, prediction_index: int
+) -> tuple[Array, Array]:
     """
     Calculate the L2 loss between the predicted and experimental data.
     """
 
     # Calculate the predicted data
     predictions = (
-        model.forward()
+        model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
-    true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
     loss = jnp.sum((pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
-    loss = jnp.mean(loss)
+    train_loss = jnp.mean(loss)
 
-    return loss
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+
+    true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
+
+    # Calculate the L2 loss
+    loss = jnp.sum((pred_pf - true_pf) ** 2)
+    # print(loss)
+    # average the loss over the length of the dataset
+    val_loss = jnp.mean(loss)
+
+    return train_loss, val_loss
 
 
 def hdx_pf_mae_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:

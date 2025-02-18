@@ -25,17 +25,29 @@ the data splits should be added to the experimental dataset class
 
 Training and Validation dataset also need to contain the mappings from input features to each of the training data
 
- for the simulation class - both the inputs and outputs should be accessible by keys - output features can stay as an array until its accessed via a property decorator
+Created the mappings with sparse multiplication - need to implement this into the loss function
+
+rename dataset to dataloader - create model specific "DATASET"
+
+need to sort out using sets of Topology Fragments - this needs to be changed to lists or dictionaries
+
+
+## need to fix implementation of optax optimiser to be better fit for jax 
+- removal of prints
+- seperation of losses -> fix computation to actually use constants
+- also need to find a way to record loss and simulation parameters for further analysis 
+
+# change peptide to refer to hdx_peptide
+
+
+# Speed optimisations:
+for the simulation class - both the inputs and outputs should be accessible by keys - output features can stay as an array until its accessed via a property decorator
+
+
 
 for now just keep the loss functions as indexed functions
 
 
-
-
-
-run_optimise -> swap out SGD function with optax
--> extract optimiser step out
--> map using jax
 
 frame_average_features - need to find a way to make this jaxable - maybe is fine for now?
 

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field,
+from dataclasses import dataclass, field
 from typing import ClassVar, List, Optional, Sequence
 
 import jax.numpy as jnp
@@ -7,14 +7,14 @@ from jax.tree_util import register_pytree_node
 from MDAnalysis import Universe
 
 from jaxent.config.base import BaseConfig
-from jaxent.datatypes import HDX_peptide, HDX_protection_factor,Topology_Fragment
+from jaxent.core_types import m_key
+from jaxent.datatypes import HDX_peptide, HDX_protection_factor, Topology_Fragment
 from jaxent.forwardmodels.base import (
+    Experimental_Fragment,
     ForwardModel,
     ForwardPass,
     Input_Features,
     Model_Parameters,
-    m_key,
-    m_id
 )
 from jaxent.forwardmodels.functions import (
     calc_BV_contacts_universe,
@@ -35,11 +35,9 @@ from jaxent.forwardmodels.netHDX_functions import (
 class BV_input_features:
     __slots__ = ["heavy_contacts", "acceptor_contacts"]
 
-    heavy_contacts: Sequence[Sequence[float]]  # (frames, residues)
-    acceptor_contacts: Sequence[Sequence[float]]  # (frames, residues)
-    key = frozenset(
-        {m_key("HDX_resPF"), m_key("HDX_peptide")}
-    )
+    heavy_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
+    acceptor_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
+    key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
 
     ########################################################################
     # update the features shape to have a fixed/more consistent structure
@@ -49,6 +47,10 @@ class BV_input_features:
         heavy_shape = len(self.heavy_contacts)
         acceptor_shape = len(self.acceptor_contacts)
         return (heavy_shape, acceptor_shape, length)
+
+    def cast_to_jax(self) -> None:
+        setattr(self, "heavy_contacts", jnp.asarray(self.heavy_contacts))
+        setattr(self, "acceptor_contacts", jnp.asarray(self.acceptor_contacts))
 
 
 ########################################################################
@@ -65,6 +67,9 @@ class BV_output_features:
     def output_shape(self) -> tuple[int, ...]:
         return (1, len(self.log_Pf))
 
+    def data(self) -> Array:
+        return jnp.asarray(self.log_Pf)
+
 
 @dataclass(frozen=True, slots=True)
 class uptake_BV_output_features:
@@ -75,19 +80,17 @@ class uptake_BV_output_features:
     def output_shape(self) -> tuple[int, ...]:
         return (1, len(self.uptake), len(self.uptake[0]))
 
-
-########################################################################
+    def data(self) -> Array:
+        return jnp.asarray(self.uptake)
 
 
 @dataclass(frozen=True, slots=True)
 class BV_Model_Parameters(Model_Parameters):
-    bv_bc: float = 0.35
-    bv_bh: float = 2.0
-    key = frozenset(
-            {m_key("HDX_resPF"), m_key("HDX_peptide")}
-        )
+    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
+    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
+    key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300
-    static_params: ClassVar[set[str]] = {"temperature","key"}
+    static_params: ClassVar[set[str]] = {"temperature", "key"}
 
     def __mul__(self, scalar: float) -> "BV_Model_Parameters":
         return BV_Model_Parameters(
@@ -130,9 +133,7 @@ register_pytree_node(
 class linear_BV_Model_Parameters(Model_Parameters):
     bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
     bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
-    key = frozenset(
-        {m_key("HDX_resPF"), m_key("HDX_peptide")}
-    )
+    key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300
     num_timepoints: int = 1
     static_params: ClassVar[set[str]] = {"temperature", "num_timepoints", "key"}
@@ -197,8 +198,8 @@ register_pytree_node(
 
 class BV_model_Config(BaseConfig):
     temperature: float = 300
-    bv_bc: float = 0.35
-    bv_bh: float = 2.0
+    bv_bc: float | Array = jnp.array([0.35])
+    bv_bh: float | Array = jnp.array([2.0])
     ph: float = 7
     heavy_radius: float = 6.5
     o_radius: float = 2.4
@@ -209,9 +210,15 @@ class BV_model_Config(BaseConfig):
     elif num_timepoints == 1:
         key = m_key("HDX_resPF")
     else:
+        raise ValueError("Please make sure your timepoint/prior parameters make sense")
+
     @property
     def forward_parameters(self) -> Model_Parameters:
-        return BV_Model_Parameters(bv_bc=self.bv_bc, bv_bh=self.bv_bh, temperature=self.temperature)
+        return BV_Model_Parameters(
+            bv_bc=jnp.asarray(self.bv_bc),
+            bv_bh=jnp.asarray(self.bv_bh),
+            temperature=self.temperature,
+        )
 
 
 class linear_BV_model_Config(BaseConfig):
@@ -253,23 +260,26 @@ class NetHDX_Model_Parameters(Model_Parameters):
     shell_energy_scaling: float = 0.84  # Energy scaling factor for each shell contact (-0.5 kcal/mol per shell (-2.1 kj/mol)), using R=8.31/1000 and T=300K
 
 
-########################################################################
 # fix the typing to use jax arrays
 class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model_Parameters]):
     def __call__(
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> BV_output_features:
         bc, bh = parameters.bv_bc, parameters.bv_bh
+        print("Model parameters bc, bh:", bc, bh)
 
         # Convert lists to numpy arrays for computation
-        heavy_contacts = jnp.array(input_features.heavy_contacts)
-        acceptor_contacts = jnp.array(input_features.acceptor_contacts)
+        heavy_contacts = jnp.asarray(input_features.heavy_contacts)
+        acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
+        print("Contact shapes:", heavy_contacts.shape, acceptor_contacts.shape)
+        print("Sample contacts:", heavy_contacts[0, :5], acceptor_contacts[0, :5])
 
         # Compute protection factors
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
 
         # Convert back to list for output
         log_pf_list = log_pf
+        print("Calculated log_pf:", log_pf[:5])
 
         return BV_output_features(log_Pf=log_pf_list, k_ints=None)
 
@@ -280,7 +290,9 @@ class linear_BV_ForwardPass(
     """
     Calculate uptake using a linear BV model with bc and bh as parameters at each timepoint.
     """
+
     key = m_key("HDX_resPF")
+
     def __call__(
         self, input_features: BV_input_features, parameters: linear_BV_Model_Parameters
     ) -> uptake_BV_output_features:
@@ -310,8 +322,11 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
         self.common_k_ints: list[float]
-        self.forward: ForwardPass = BV_ForwardPass()
-        self.compatability: HDX_peptide | HDX_protection_factor
+        self.forward: dict[m_key, ForwardPass] = {
+            m_key("HDX_resPF"): BV_ForwardPass(),
+        }
+        #   m_key("HDX_peptide"): raise NotImplementedError("This model does not support peptide uptake")}
+        self.compatability: dict[m_key, Experimental_Fragment]
 
     def initialise(self, ensemble: list[Universe]) -> bool:
         """
@@ -353,7 +368,7 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
 
     ########################################################################
     # TODO fix typing
-    def featurise(self, ensemble: list[Universe]) -> Input_Features:
+    def featurise(self, ensemble: list[Universe]) -> tuple[Input_Features, list[Topology_Fragment]]:
         """
         Calculate BV model features (heavy atom contacts and H-bond acceptor contacts)
         for each residue in the ensemble.
@@ -380,6 +395,8 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
         O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
         ########################################################################
 
+        ########################################################################
+        # TODO aw man we gotta change the set structure because we need to be able to index it
         common_residues = {
             (frag.fragment_sequence, frag.residue_start) for frag in self.common_topology
         }
@@ -408,7 +425,26 @@ class BV_model(ForwardModel[BV_Model_Parameters]):
             heavy_contacts.extend(_heavy_contacts)
             acceptor_contacts.extend(_o_contacts)
 
-        return BV_input_features(heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts)
+            feature_topology = [
+                frag for frag in self.common_topology if "PRO" not in frag.fragment_sequence
+            ]
+            # skip the first residue
+            feature_topology = [frag for frag in feature_topology if frag.residue_start != 1]
+
+            # sort the features by residue start
+            feature_topology.sort(key=lambda x: x.residue_start)
+            # reset the fragment indices
+            for idx, frag in enumerate(feature_topology):
+                frag.fragment_index = idx
+
+        return BV_input_features(
+            heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts
+        ), feature_topology
+
+    # TODO this function needs to output some kind of topology information so that these can be aligned with the experimental data - not sure how best to do this
+    # options are to ouput a seperate object or to tie this into input features
+
+    ########################################################################
 
     # def forward(self) -> list[Output_Features]:
     #     """
@@ -462,7 +498,7 @@ class netHDX_model(ForwardModel[NetHDX_Model_Parameters]):
 
         return True
 
-    def featurise(self, ensemble: List[Universe]) -> Input_Features:
+    def featurise(self, ensemble: List[Universe]) -> tuple[Input_Features, list[Topology_Fragment]]:
         """
         Featurize the ensemble using hydrogen bond networks.
 
