@@ -9,8 +9,13 @@ from MDAnalysis.lib.distances import distance_array
 from jaxent.datatypes import Topology_Fragment
 
 
+####################################################################################################
+# TODO this needs to return lists or numbered dictionaries instead of sets
+# perhaps this is fine and we simply just add an ignore str to the function
 def find_common_residues(
     ensemble: List[Universe],
+    include_mda_selection: str = "protein",
+    ignore_mda_selection: str = "resname SOL",
 ) -> tuple[set[Topology_Fragment], set[Topology_Fragment]]:
     """
     Find the common residues across an ensemble of MDAnalysis Universe objects.
@@ -27,6 +32,9 @@ def find_common_residues(
         ValueError: If no common residues are found in the ensemble
     """
     # Extract residue sequences from each universe - this generates a tuple of topology fragments for each universe
+    ensemble = [u.select_atoms(include_mda_selection) for u in ensemble]
+    ensemble = [u.select_atoms(f"not {ignore_mda_selection}") for u in ensemble]
+
     ensemble_residue_sequences = [
         [
             Topology_Fragment(
