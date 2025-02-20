@@ -7,8 +7,9 @@ from typing import Protocol, TypeVar
 
 import jax.numpy as jnp
 from jax import Array
+from optax.losses import safe_softmax_cross_entropy
 
-from jaxent.datatypes import Experimental_Dataset, Simulation
+from jaxent.datatypes import Experimental_Dataset, Simulation, Simulation_Parameters
 from jaxent.forwardmodels.base import Model_Parameters, Output_Features
 from jaxent.utils.datasplitter import apply_sparse_mapping
 
@@ -61,28 +62,58 @@ def hdx_pf_l2_loss(
     return train_loss, val_loss
 
 
-def hdx_pf_mae_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
+def hdx_pf_mae_loss(
+    model: Simulation, dataset: Experimental_Dataset, prediction_index: int
+) -> tuple[Array, Array]:
     """
     Calculate the mae loss between the predicted and experimental data.
     """
 
     # Calculate the predicted data
+
+    # Calculate the predicted data
     predictions = (
-        model.forward()
+        model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[0].log_Pf).reshape(-1)  # Flatten to 1D
-    true_pf = dataset.y_true.reshape(-1)  # Flatten to 1D
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # print(predictions[0].log_Pf)
-    # Calculate the
-    loss = jnp.sum(pred_pf - true_pf)
+    # Calculate the L2 loss
+    loss = jnp.sum((pred_pf - true_pf) ** 1)
     # print(loss)
     # average the loss over the length of the dataset
-    loss = jnp.mean(loss)
-    # take the absolute value of the loss
-    loss = jnp.abs(loss)
+    train_loss = jnp.mean(loss)
 
-    return loss
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+
+    true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
+
+    # Calculate the L2 loss
+    loss = jnp.sum((pred_pf - true_pf) ** 1)
+    # print(loss)
+    # average the loss over the length of the dataset
+    val_loss = jnp.mean(loss)
+
+    return train_loss, val_loss
+
+
+def max_entropy_loss(
+    model: Simulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    simulation_weights = jnp.abs(model.params.frame_weights) / jnp.sum(
+        jnp.abs(model.params.frame_weights)
+    )
+
+    prior_frame_weights = jnp.abs(dataset.frame_weights) / jnp.sum(jnp.abs(dataset.frame_weights))
+
+    loss = safe_softmax_cross_entropy(jnp.log(simulation_weights), prior_frame_weights)
+    print(loss)
+    return loss, loss
 
 
 def hdx_uptake_l2_loss(model: Simulation, dataset: Experimental_Dataset) -> Array:
