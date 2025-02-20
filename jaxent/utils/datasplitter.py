@@ -555,4 +555,5 @@ def apply_sparse_mapping(sparse_map: sparse.BCOO, features: Array) -> Array:
     Returns:
         Mapped features with shape (..., n_fragments)
     """
+    return sparse_map.todense() @ features
     return sparse.bcoo_multiply_dense(sparse_map, features)
