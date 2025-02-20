@@ -1,4 +1,5 @@
 import copy
+import os
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -1203,6 +1204,8 @@ if __name__ == "__main__":
 
     print("Local devices:", jax.local_devices())
     print("CPU devices:", jax.devices("cpu"))
+    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
     # set env XLA_PYTHON_CLIENT_PREALLOCATE=false otherwise jax will preallocate 75% of memory
     # test_create_sparse_map()
     # # test_create_sparse_map_ensemble()

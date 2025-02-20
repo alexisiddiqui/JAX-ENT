@@ -82,7 +82,7 @@ def hdx_pf_mae_loss(
 
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
-    loss = jnp.sum((pred_pf - true_pf) ** 1)
+    loss = jnp.sum(jnp.abs(pred_pf - true_pf) ** 1)
     # print(loss)
     # average the loss over the length of the dataset
     train_loss = jnp.mean(loss)
@@ -94,7 +94,7 @@ def hdx_pf_mae_loss(
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
     # Calculate the L2 loss
-    loss = jnp.sum((pred_pf - true_pf) ** 1)
+    loss = jnp.sum(jnp.abs(pred_pf - true_pf) ** 1)
     # print(loss)
     # average the loss over the length of the dataset
     val_loss = jnp.mean(loss)
