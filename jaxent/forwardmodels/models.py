@@ -92,7 +92,9 @@ class BV_Model_Parameters(Model_Parameters):
     temperature: float = 300
     static_params: ClassVar[set[str]] = {"temperature", "key"}
 
-    def __mul__(self, scalar: float) -> "BV_Model_Parameters":
+    def __mul__(self, scalar: float | Array) -> "BV_Model_Parameters":
+        scalar = jnp.asarray(scalar)
+
         return BV_Model_Parameters(
             bv_bc=self.bv_bc * scalar,
             bv_bh=self.bv_bh * scalar,
@@ -266,20 +268,20 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> BV_output_features:
         bc, bh = parameters.bv_bc, parameters.bv_bh
-        print("Model parameters bc, bh:", bc, bh)
+        # print("Model parameters bc, bh:", bc, bh)
 
         # Convert lists to numpy arrays for computation
         heavy_contacts = jnp.asarray(input_features.heavy_contacts)
         acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
-        print("Contact shapes:", heavy_contacts.shape, acceptor_contacts.shape)
-        print("Sample contacts:", heavy_contacts[0, :5], acceptor_contacts[0, :5])
+        # print("Contact shapes:", heavy_contacts.shape, acceptor_contacts.shape)
+        # print("Sample contacts:", heavy_contacts[0, :5], acceptor_contacts[0, :5])
 
         # Compute protection factors
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
 
         # Convert back to list for output
         log_pf_list = log_pf
-        print("Calculated log_pf:", log_pf[:5])
+        # print("Calculated log_pf:", log_pf[:5])
 
         return BV_output_features(log_Pf=log_pf_list, k_ints=None)
 
