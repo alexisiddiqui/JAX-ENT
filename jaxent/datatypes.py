@@ -188,26 +188,58 @@ class Simulation_Parameters:
     frame_weights: Array
     model_parameters: Sequence[Model_Parameters]
     forward_model_weights: Array
-    forward_model_scaling: Array | Sequence[float]  # This will be static
+    forward_model_scaling: Array
+
+    # def __post_init__(self):
+    #     # Convert inputs to arrays if they aren't already
+    #     if not isinstance(self.frame_weights, Array):
+    #         object.__setattr__(self, "frame_weights", jnp.asarray(self.frame_weights))
+    #     if not isinstance(self.forward_model_weights, Array):
+    #         object.__setattr__(
+    #             self, "forward_model_weights", jnp.asarray(self.forward_model_weights)
+    #         )
+    #     if not isinstance(self.forward_model_scaling, Array):
+    #         object.__setattr__(
+    #             self, "forward_model_scaling", jnp.asarray(self.forward_model_scaling)
+    #         )
+
+    @classmethod
+    def normalize_weights(cls, params: "Simulation_Parameters") -> "Simulation_Parameters":
+        """Create a new instance with normalized frame weights using JAX-compatible operations"""
+        frame_weights = jnp.asarray(params.frame_weights)
+
+        # set weights to between 0 and 1 using exponential
+        frame_weights = jnp.exp(frame_weights)
+
+        total = jnp.sum(frame_weights)
+
+        normalized_weights = frame_weights / total
+        # print("Weights normalized.")
+        # print(normalized_weights)
+        return cls(
+            frame_weights=normalized_weights,
+            model_parameters=params.model_parameters,
+            forward_model_weights=params.forward_model_weights,
+            forward_model_scaling=params.forward_model_scaling,
+        )
 
     def tree_flatten(self):
         # Flatten into (arrays to differentiate, static metadata)
-        # Keep forward_model_scaling as static
         arrays = (
             self.frame_weights,
-            [m for m in self.model_parameters],  # List of arrays to diff
+            [m for m in self.model_parameters],
             self.forward_model_weights,
         )
-        static = (self.forward_model_scaling,)  # Tuple with single element
+        static = (self.forward_model_scaling,)
         return arrays, static
 
     @classmethod
     def tree_unflatten(cls, static, arrays):
-        # Unpack the arrays and static parameters
+        # Create instance first, then normalize
         frame_weights, model_params, forward_weights = arrays
-        (forward_scaling,) = static  # Unpack single element from static tuple
+        (forward_scaling,) = static
 
-        # Create new instance
+        # Instead of normalizing after creation, just create with the given weights
         return cls(
             frame_weights=frame_weights,
             model_parameters=model_params,
@@ -280,10 +312,14 @@ class Simulation:
         print("Simulation initialised successfully.")
         return True
 
-    def forward(self) -> None:
+    def forward(self, params: Simulation_Parameters) -> None:
         """
         This function applies the forward models to the input features
         """
+        print("frame weight sum ", jnp.sum(params.frame_weights))
+        self.params = Simulation_Parameters.normalize_weights(params)
+        # self.params = params
+        # print(f"Frame weights: {self.params.frame_weights}")
         # first averages the input parameters using the frame weights
         average_features = map(
             frame_average_features,
@@ -297,7 +333,7 @@ class Simulation:
         output_features = map(
             single_pass, self.forwardpass, average_features, self.params.model_parameters
         )
-        print("Single passed features.")
+        # print("Single passed features.")
         self.outputs = list(output_features)
         # update this to use externally defined optimisers - perhaps update should just update the parameters
         # change argnum to use enums

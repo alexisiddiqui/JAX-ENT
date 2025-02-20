@@ -31,10 +31,10 @@ class LossConstants(NamedTuple):
 @dataclass
 class OptimiserSettings:
     name: str
-    n_steps: int = 100000
+    n_steps: int = 1000
     tolerance: float = 1e-1
     convergence: float = 1e-4
-    learning_rate: float = 0.01  # should be alpha in loss constants - currently not implemented
+    learning_rate: float = 1e-4
     optimiser_type: str = "adam"
     loss_constants: LossConstants = LossConstants(GAMMA=0.1, LAMBDA=0.1, PHI=0.1, PSI=0.1)
 

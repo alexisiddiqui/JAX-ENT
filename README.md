@@ -20,10 +20,11 @@ CryoEM???
 
 TODO:
 
-Need to create data splitting class 
-the data splits should be added to the experimental dataset class
 
-Training and Validation dataset also need to contain the mappings from input features to each of the training data
+implement KL uniform loss
+
+implement linear BV and exp BV uptake
+
 
 Created the mappings with sparse multiplication - need to implement this into the loss function
 
