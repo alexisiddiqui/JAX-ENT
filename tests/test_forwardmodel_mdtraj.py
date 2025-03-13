@@ -5,7 +5,7 @@ from typing import List, Tuple
 import mdtraj as md
 import numpy as np
 
-from jaxent.forwardmodels.mdtraj_functions import calc_BV_contacts_mdtraj
+from jaxent.models.HDX.BV.mdtraj_functions import calc_BV_contacts_mdtraj
 
 
 def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
