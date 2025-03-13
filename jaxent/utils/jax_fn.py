@@ -1,12 +1,14 @@
 from typing import TypeVar
 
+import jax.numpy as jnp
 from jax import Array
 
-from jaxent.forwardmodels.base import ForwardPass, Input_Features, Model_Parameters
+from jaxent.interfaces.features import Input_Features
+from jaxent.interfaces.model import Model_Parameters
+from jaxent.types.base import ForwardPass
 
 T_In = TypeVar("T_In", bound=Input_Features)
 
-import jax.numpy as jnp
 
 # def frame_average_features(
 #     frame_wise_features: T_In,  # (frames, residues)
@@ -50,8 +52,10 @@ def frame_average_features(
     frame_weights: Array,
 ) -> T_In:
     """Average features across frames using provided weights."""
-    feature_slots = frame_wise_features.__slots__
+    feature_slots = frame_wise_features.__features__
     averaged_features = {}
+    all_slots = frame_wise_features.__slots__
+    static_slots = [slot for slot in all_slots if slot not in feature_slots]
 
     for slot in feature_slots:
         feature_array = jnp.asarray(getattr(frame_wise_features, slot))  # (53, 500)
@@ -61,6 +65,9 @@ def frame_average_features(
         averaged = jnp.matmul(feature_array, weights.T)  # (53, 1)
         # print(averaged.shape)
         averaged_features[slot] = averaged
+
+    for slot in static_slots:
+        averaged_features[slot] = getattr(frame_wise_features, slot)
 
     return type(frame_wise_features)(**averaged_features)
 
