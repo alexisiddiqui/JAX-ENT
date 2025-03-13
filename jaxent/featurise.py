@@ -1,8 +1,9 @@
 from typing import Optional
 
 from jaxent.config.base import FeaturiserSettings, Settings
-from jaxent.datatypes import Experiment_Ensemble
-from jaxent.forwardmodels.base import ForwardModel, Input_Features, Topology_Fragment
+from jaxent.interfaces.builider import Experiment_Ensemble
+from jaxent.interfaces.features import Input_Features
+from jaxent.types.base import ForwardModel, Partial_Topology
 
 
 def featurise(
@@ -28,7 +29,7 @@ def run_featurise(
     name: Optional[str] = None,
     forward_models: Optional[list[ForwardModel]] = None,
     validate=True,
-) -> tuple[list[Input_Features], list[list[Topology_Fragment]]]:
+) -> tuple[list[Input_Features], list[list[Partial_Topology]]]:
     # this function will take in the constructed objects and run the analysis
 
     if isinstance(config, Settings):
@@ -46,11 +47,13 @@ def run_featurise(
         ensemble.validate_forward_models()
 
     if forward_models is None:
-        forward_models = ensemble.forward_models
+        _forward_models = ensemble.forward_models
+    else:
+        _forward_models = forward_models
 
     features: list[Input_Features] = []
-    feat_top: list[list[Topology_Fragment]] = []
-    for model in forward_models:
+    feat_top: list[list[Partial_Topology]] = []
+    for model in _forward_models:
         try:
             _features, _feat_top = model.featurise(ensemble.ensembles)
 
