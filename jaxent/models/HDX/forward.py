@@ -7,7 +7,8 @@ from jaxent.models.HDX.BV.features import (
     uptake_BV_output_features,
 )
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.types.base import ForwardPass, m_key
+from jaxent.types.base import ForwardPass
+from jaxent.types.key import m_key
 
 
 # fix the typing to use jax arrays

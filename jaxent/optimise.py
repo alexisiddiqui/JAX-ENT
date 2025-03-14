@@ -2,13 +2,14 @@ from typing import Optional, Sequence, Tuple, cast
 
 from jax import Array
 
-from jaxent.config.base import OptimiserSettings
-from jaxent.data.loading import Experimental_Dataset
-from jaxent.interfaces.features import Output_Features
+from jaxent.data.loader import ExpD_Dataloader
 from jaxent.interfaces.model import Model_Parameters
-from jaxent.optimise.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
-from jaxent.optimise.optimiser import OptaxOptimizer
-from jaxent.types.base import ForwardModel, Simulation
+from jaxent.models.core import Simulation
+from jaxent.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
+from jaxent.opt.optimiser import OptaxOptimizer
+from jaxent.types.base import ForwardModel
+from jaxent.types.config import OptimiserSettings
+from jaxent.types.features import Output_Features
 
 
 def optimise(
@@ -31,7 +32,7 @@ def optimise(
 
 def run_optimise(
     simulation: Simulation,
-    data_to_fit: tuple[Experimental_Dataset | Model_Parameters | Output_Features, ...],
+    data_to_fit: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
     config: OptimiserSettings,
     forward_models: Sequence[ForwardModel],
     indexes: Sequence[int],
@@ -67,7 +68,7 @@ def run_optimise(
 
         # print("Parameters:")
         # print(jnp.sum(opt_state.params.frame_weights))
-        print(opt_state.params.model_parameters)
+        # print(opt_state.params.model_parameters)
         # print(jnp.sum(opt_state.params.forward_model_weights))
         # simulation.params = opt_state.params
         if current_loss < config.tolerance:

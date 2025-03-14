@@ -3,9 +3,9 @@ from typing import TypeVar
 import jax.numpy as jnp
 from jax import Array
 
-from jaxent.interfaces.features import Input_Features
 from jaxent.interfaces.model import Model_Parameters
 from jaxent.types.base import ForwardPass
+from jaxent.types.features import Input_Features
 
 T_In = TypeVar("T_In", bound=Input_Features)
 

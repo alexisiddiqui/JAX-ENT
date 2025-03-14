@@ -1,12 +1,12 @@
 ########################################################################
 # TODO need to simplify code using _create_modified_instance and lambda functions - using this we can then use lax to speed up the optimisation
-from abc import abstractmethod
 from typing import Any, Callable, ClassVar, TypeVar, cast
 
 import jax.numpy as jnp
 from jax import Array
+from jax.tree_util import register_pytree_node
 
-from jaxent.types.base import m_key
+from jaxent.types.key import m_key
 
 T_mp = TypeVar("T_mp", bound="Model_Parameters")
 
@@ -98,7 +98,7 @@ class Model_Parameters:
         dynamic_slots, static_slots = cls._get_grouped_slots()
 
         # Rebuild parameter dict
-        params = {}
+        params: dict[str, Any] = {}
 
         # Dynamic parameters from arrays
         params.update(zip(dynamic_slots, arrays))
@@ -109,7 +109,7 @@ class Model_Parameters:
         return cls(**params)
 
     # these are currently used during the optimisation process - we suggest that you implement these methods to speed up these operations
-    @abstractmethod
+    # @abstractmethod
     def update_parameters(self: T_mp, new_params: T_mp) -> T_mp:
         """Creates new instance with updated non-static parameters.
         You should override this method in your subclass for faster updates.
@@ -133,7 +133,7 @@ class Model_Parameters:
         return cast(T_mp, self.__class__(**param_dict))
 
     # these are currently used during the optimisation process - we suggest that you implement these methods to speed up these operations
-    @abstractmethod
+    # @abstractmethod
     def __sub__(self: T_mp, other: T_mp) -> T_mp:
         """Subtract other model parameters from self"""
         param_dict = {}
@@ -145,7 +145,7 @@ class Model_Parameters:
         return cast(T_mp, self.__class__(**param_dict))
 
     # these are currently used during the optimisation process - we suggest that you implement these methods to speed up these operations
-    @abstractmethod
+    # @abstractmethod
     def __mul__(self: T_mp, scalar: float | Array) -> T_mp:
         """Multiply model parameters by a scalar"""
         scalar = jnp.asarray(scalar)
@@ -186,3 +186,8 @@ class Model_Parameters:
             T_mp,
             self.__class__(**{slot: getattr(self, slot) for slot in self._get_ordered_slots()}),
         )
+
+
+register_pytree_node(
+    Model_Parameters, Model_Parameters.tree_flatten, Model_Parameters.tree_unflatten
+)

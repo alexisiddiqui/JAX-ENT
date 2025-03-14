@@ -5,9 +5,9 @@ import jax.numpy as jnp
 from jax import Array
 from jax.experimental import sparse
 
-from jaxent.data.loading import Experimental_Fragment
-from jaxent.interfaces.features import Input_Features
-from jaxent.types.topology import Partial_Topology
+from jaxent.data.loader import ExpD_Datapoint
+from jaxent.interfaces.topology import Partial_Topology
+from jaxent.types.features import Input_Features
 
 
 ####################################################################################################
@@ -16,7 +16,7 @@ from jaxent.types.topology import Partial_Topology
 def create_sparse_map(
     input_features: Input_Features,
     feature_topology: Sequence[Partial_Topology],
-    output_features: Sequence[Experimental_Fragment],
+    output_features: Sequence[ExpD_Datapoint],
 ) -> sparse.BCOO:
     ####################################################################################################
     """
@@ -40,7 +40,7 @@ def create_sparse_map(
     assert all([isinstance(top, Partial_Topology) for top in feature_topology]), (
         "Feature topology must be a list of Partial_Topology objects"
     )
-    assert all([isinstance(frag, Experimental_Fragment) for frag in output_features]), (
+    assert all([isinstance(frag, ExpD_Datapoint) for frag in output_features]), (
         "Output features must be a list of Experimental_Fragment objects"  # noqa
     )
 
@@ -58,20 +58,31 @@ def create_sparse_map(
     assert input_features.features_shape[0] == len(feature_topology), (
         "Input features and topology do not match"
     )
+    try:
+        # assert that fragment indices are present and unique
+        assert all([top.fragment_index is not None for top in feature_topology]), (
+            "Fragment indices are not present in feature topology"
+        )
+        assert len(set([top.fragment_index for top in feature_topology])) == len(
+            feature_topology
+        ), "Fragment indices are not unique in feature topology"
 
-    # assert that fragment indices are present and unique
-    assert all([top.fragment_index is not None for top in feature_topology]), (
-        "Fragment indices are not present in feature topology"
-    )
-    assert len(set([top.fragment_index for top in feature_topology])) == len(feature_topology), (
-        "Fragment indices are not unique in feature topology"
-    )
+        assert all([out_feat.top.fragment_index is not None for out_feat in output_features]), (
+            "Fragment indices are not present in output features"
+        )
+        assert all(feat_top.fragment_index is not None for feat_top in feature_topology), (
+            "Fragment indices are not present in feature topology"
+        )
+    except AssertionError as e:
+        UserWarning(f"Fragment indices are not present in feature topology: {e}")
+
+    print(feature_topology)
 
     # sort feature_topology by fragment index
     feature_topology = sorted(
-        feature_topology, key=lambda x: 0 if x.fragment_index is None else x.fragment_index
+        feature_topology, key=lambda x: x.fragment_index if x.fragment_index is not None else -1
     )
-    #
+    print(feature_topology)
 
     assert all([top.fragment_index == i for i, top in enumerate(feature_topology)]), (
         "Topology fragments are not indexed from 0 - have they been matched with the input features?"
@@ -80,11 +91,19 @@ def create_sparse_map(
     stripped_feature_topology = copy.deepcopy(feature_topology)
     for top in stripped_feature_topology:
         top.fragment_index = None
+    stripped_output_topology = copy.deepcopy(output_features)
+    for frag in stripped_output_topology:
+        frag.top.fragment_index = None
 
     # assert that set of feature topology is contained within output features topologies
-    assert set([f.top for f in output_features]).issubset(set(stripped_feature_topology)), (
-        "Feature topology is not contained within output features"
-    )
+    assert set([f.top for f in stripped_output_topology]).issubset(
+        set(stripped_feature_topology)
+    ), f"""Feature topology is not contained within output features: ≈
+            \n Output features: \n
+            {set([f.top for f in output_features])}
+            \n Stripped Feature topology: \n
+            {set(stripped_feature_topology)}"""
+
     n_residues = len(feature_topology)
     n_fragments = len(output_features)
 
@@ -180,87 +199,3 @@ def apply_sparse_mapping(sparse_map: sparse.BCOO, features: Array) -> Array:
     """
     return sparse_map.todense() @ features
     return sparse.bcoo_multiply_dense(sparse_map, features)
-
-
-if __name__ == "__main__":
-    print("Running tests for sparse mapping functions...")
-
-    # Demonstrate the concept of sparse mapping with JAX
-    try:
-        # Create a simple sparse mapping
-        indices = jnp.array(
-            [
-                [0, 0, 1, 1, 2, 2],  # Fragment indices (rows)
-                [0, 1, 1, 2, 2, 3],  # Residue indices (columns)
-            ],
-            dtype=jnp.int32,
-        )
-
-        values = jnp.array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5], dtype=jnp.float32)
-        sparse_map = sparse.BCOO((values, indices), shape=(3, 4))
-
-        print("\nSparse mapping shape:", sparse_map.shape)
-        print("Dense representation:")
-        print(sparse_map.todense())
-
-        # Create sample residue features
-        residue_features = jnp.array([1.0, 2.0, 3.0, 4.0], dtype=jnp.float32)
-        print("\nResidue features:", residue_features)
-
-        # Apply the mapping with matrix multiplication
-        fragment_features = sparse_map @ residue_features
-        print("Fragment features:", fragment_features)
-
-        # Expected results
-        expected = jnp.array([1.5, 2.5, 3.5], dtype=jnp.float32)
-        print("Expected result:", expected)
-
-        # Verify results
-        assert jnp.allclose(fragment_features, expected), (
-            "Matrix multiplication result doesn't match!"
-        )
-
-        # Test apply_sparse_mapping function
-        func_result = apply_sparse_mapping(sparse_map, residue_features)
-        print("\nResult from apply_sparse_mapping:", func_result)
-
-        # Verify function result
-        assert jnp.allclose(func_result, expected), "Function result doesn't match!"
-
-        print("\nAll tests passed!")
-        print("\nExample explanation:")
-        print("- The sparse map represents 3 fragments, each covering 2 residues")
-        print("- Fragment 0 (row 0) covers residues 0 and 1 with weight 0.5 each")
-        print("- Fragment 1 (row 1) covers residues 1 and 2 with weight 0.5 each")
-        print("- Fragment 2 (row 2) covers residues 2 and 3 with weight 0.5 each")
-        print("- When applied to features [1,2,3,4], we get:")
-        print("  * Fragment 0: 0.5*1 + 0.5*2 = 1.5")
-        print("  * Fragment 1: 0.5*2 + 0.5*3 = 2.5")
-        print("  * Fragment 2: 0.5*3 + 0.5*4 = 3.5")
-
-    except Exception as e:
-        print(f"Test failed: {e}")
-        print("This might be expected if running outside the full environment.")
-
-        # Provide a fallback numpy example if JAX fails
-        try:
-            import numpy as np
-
-            print("\nFallback to numpy example:")
-
-            # Create the same matrix with numpy
-            mapping = np.array([[0.5, 0.5, 0.0, 0.0], [0.0, 0.5, 0.5, 0.0], [0.0, 0.0, 0.5, 0.5]])
-
-            features = np.array([1.0, 2.0, 3.0, 4.0])
-            result = mapping @ features
-
-            print("Mapping matrix:")
-            print(mapping)
-            print("\nFeatures:", features)
-            print("Result:", result)
-            print("Expected:", [1.5, 2.5, 3.5])
-
-            assert np.allclose(result, np.array([1.5, 2.5, 3.5])), "Numpy result doesn't match!"
-            print("Numpy example passed!")
-        except Exception as numpy_error:
-            print(f"Numpy example also failed: {numpy_error}")

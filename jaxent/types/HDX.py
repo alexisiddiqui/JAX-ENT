@@ -2,12 +2,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from jaxent.data.loading import Experimental_Fragment
-from jaxent.types.base import m_key
+from jaxent.data.loader import ExpD_Datapoint
+from jaxent.types.key import m_key
 
 
 @dataclass()
-class HDX_peptide(Experimental_Fragment):
+class HDX_peptide(ExpD_Datapoint):
     """
     dataclass that holds the information of a single peptide produced by HDX-MS experiments
     """
@@ -24,7 +24,7 @@ class HDX_peptide(Experimental_Fragment):
 
 
 @dataclass()
-class HDX_protection_factor(Experimental_Fragment):
+class HDX_protection_factor(ExpD_Datapoint):
     """
     Dataclass that holds the information of a single protection factor produced by REX experiments
     or NMR derived protection factors. May also be used to describe protection factors output from forward models.
