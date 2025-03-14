@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
-from jaxent.types.base import m_key
+from jaxent.types.key import m_key
 
 
 @dataclass(frozen=True)
@@ -21,8 +21,9 @@ class NetworkMetrics:
     max_path_lengths: Mapping[int, float]
 
     def cast_to_jax(self) -> None:
+        # TODO check that this is actually setting the values to jax arrays - do we need to convert the keys to jax arrays?
         for attr in self.__annotations__:
-            setattr(self, attr, np.asarray(getattr(self, attr)))
+            setattr(self, attr, jnp.asarray(getattr(self, attr)))
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ class NetHDX_input_features:
     contact_matrices: list[np.ndarray]  # Shape: (n_frames, n_residues, n_residues)
     residue_ids: Sequence[int]  # Shape: (n_residues,)
     network_metrics: Optional[list[NetworkMetrics]] = None  # Shape: (n_frames,)
-    __features__: ClassVar[set[str]] = {"contact_matrices", "residue_ids"}
+    __features__: ClassVar[set[str]] = {"contact_matrices"}
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
 
     @property
@@ -40,7 +41,7 @@ class NetHDX_input_features:
         return (len(self.contact_matrices), len(self.residue_ids), len(self.residue_ids))
 
     def cast_to_jax(self) -> None:
-        setattr(self, "contact_matrices", np.asarray(self.contact_matrices))
+        setattr(self, "contact_matrices", jnp.asarray(self.contact_matrices))
         if self.network_metrics is not None:
             for nm in self.network_metrics:
                 nm.cast_to_jax()

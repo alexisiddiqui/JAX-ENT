@@ -6,7 +6,7 @@ from jax import Array
 from jax.tree_util import register_pytree_node
 
 from jaxent.interfaces.simulation import Model_Parameters
-from jaxent.types.base import m_key
+from jaxent.types.key import m_key
 
 
 @dataclass(frozen=True, slots=True)
