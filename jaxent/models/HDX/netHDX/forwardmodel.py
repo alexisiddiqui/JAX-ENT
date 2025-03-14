@@ -1,13 +1,14 @@
 import MDAnalysis as mda
 
-from jaxent.features.netHDX import build_hbond_network
-from jaxent.models.common import find_common_residues
+from jaxent.interfaces.topology import Partial_Topology
 from jaxent.models.config import NetHDXConfig
+from jaxent.models.func.common import find_common_residues
+from jaxent.models.func.netHDX import build_hbond_network
 from jaxent.models.HDX.netHDX.features import NetHDX_input_features
 from jaxent.models.HDX.netHDX.netHDX_functions import NetHDX_ForwardPass
 from jaxent.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
-from jaxent.types.base import ForwardModel, ForwardPass, m_key
-from jaxent.types.topology import Partial_Topology
+from jaxent.types.base import ForwardModel, ForwardPass
+from jaxent.types.key import m_key
 
 
 class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, NetHDXConfig]):

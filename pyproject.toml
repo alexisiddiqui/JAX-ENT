@@ -38,4 +38,6 @@ dev = [
 
 [[tool.mypy.overrides]]
 module = "MDAnalysis,tqdm,networkx"
-ignore_missing_imports = false
+
+[tool.mypy]
+ignore_missing_imports = true

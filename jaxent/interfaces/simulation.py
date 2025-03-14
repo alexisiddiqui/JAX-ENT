@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from typing import Sequence
 
 import jax.numpy as jnp
-import optax
-from jax import Array  # This is the correct import path
+import optax  # type: ignore
+from jax import Array, jit
 from jax.tree_util import register_pytree_node
 
 from jaxent.interfaces.model import Model_Parameters
@@ -23,8 +23,8 @@ class Simulation_Parameters:
 
     ########################################################################
     # TODO I think this is maybe kinda silly - but
-    @classmethod
-    def normalize_weights(cls, params: "Simulation_Parameters") -> "Simulation_Parameters":
+    @staticmethod
+    def normalize_weights(params: "Simulation_Parameters") -> "Simulation_Parameters":
         """Create a new instance with normalized frame weights using JAX-compatible operations"""
         # set weights and
 
@@ -59,6 +59,7 @@ class Simulation_Parameters:
         # normalized_weights = optax.projections.projection_simplex(frame_weights)
         # total = jnp.sum(frame_weights)
         # find normalise loss indexes
+        @jit
         def normalize_masked_weights(weights, mask):
             """
             Normalizes weights where mask is True, maintaining gradient flow.
@@ -97,7 +98,7 @@ class Simulation_Parameters:
         # normalized_weights = frame_weights / total
         # print("Weights normalized.")
         # print(normalized_weights)
-        return cls(
+        return Simulation_Parameters(
             frame_weights=frame_weights,
             frame_mask=frame_mask,
             model_parameters=params.model_parameters,

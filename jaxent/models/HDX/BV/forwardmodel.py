@@ -3,16 +3,17 @@ from typing import Sequence
 import jax.numpy as jnp
 from MDAnalysis import Universe
 
-from jaxent.data.loading import Experimental_Fragment
-from jaxent.features.contacts import calc_BV_contacts_universe
-from jaxent.features.uptake import calculate_intrinsic_rates
-from jaxent.models.common import find_common_residues, get_residue_atom_pairs
+from jaxent.data.loader import ExpD_Datapoint
+from jaxent.interfaces.topology import Partial_Topology
 from jaxent.models.config import BV_model_Config, linear_BV_model_Config
+from jaxent.models.func.common import find_common_residues, get_residue_atom_pairs
+from jaxent.models.func.contacts import calc_BV_contacts_universe
+from jaxent.models.func.uptake import calculate_intrinsic_rates
 from jaxent.models.HDX.BV.features import BV_input_features
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.models.HDX.forward import BV_ForwardPass, BV_uptake_ForwardPass, linear_BV_ForwardPass
-from jaxent.types.base import ForwardModel, ForwardPass, m_key
-from jaxent.types.topology import Partial_Topology
+from jaxent.types.base import ForwardModel, ForwardPass
+from jaxent.types.key import m_key
 
 
 class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Config]):
@@ -29,7 +30,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             m_key("HDX_resPF"): BV_ForwardPass(),
             m_key("HDX_peptide"): BV_uptake_ForwardPass(),
         }
-        self.compatability: dict[m_key, Experimental_Fragment]
+        self.compatability: dict[m_key, ExpD_Datapoint]
 
     def initialise(self, ensemble: list[Universe]) -> bool:
         """
@@ -193,4 +194,4 @@ class linear_BV_model(BV_model):
         self.forward: dict[m_key, ForwardPass] = {
             m_key("HDX_resPF"): linear_BV_ForwardPass(),
         }
-        self.compatability: dict[m_key, Experimental_Fragment]
+        self.compatability: dict[m_key, ExpD_Datapoint]
