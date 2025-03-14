@@ -1,7 +1,7 @@
 from MDAnalysis import Universe
 
 from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 from jaxent.types.config import FeaturiserSettings
 
@@ -19,7 +19,7 @@ def test_run_featurise():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feat_top = run_featurise(ensemble, featuriser_settings)
 
@@ -41,7 +41,7 @@ def test_run_featurise_ensemble():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feat_top = run_featurise(ensemble, featuriser_settings)
 

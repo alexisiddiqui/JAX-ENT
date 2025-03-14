@@ -13,7 +13,7 @@ from jaxent.data.loader import Dataset, ExpD_Dataloader
 from jaxent.data.splitting.sparse_map import create_sparse_map
 from jaxent.data.splitting.split import DataSplitter
 from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.interfaces.simulation import Simulation_Parameters
 from jaxent.models.config import BV_model_Config
 from jaxent.models.core import Simulation
@@ -83,7 +83,7 @@ def test_quick_optimiser():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
     # print("feature_topology", [top.fragment_index for top in feature_topology[0]])

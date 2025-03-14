@@ -10,7 +10,7 @@ from jaxent.types.base import ForwardModel
 from jaxent.types.features import Input_Features
 
 
-class Experiment_Ensemble:
+class Experiment_Builder:
     """
     Class to hold the information of a simulation ensemble and validate whether the forward model is compatible with the ensemble.
     This is created from a list of MDA Universe objects, as well as a forward model object.

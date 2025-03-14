@@ -1,9 +1,8 @@
-from typing import Any, Optional, Sequence, cast
+from typing import Any, Callable, Optional, Sequence, cast
 
 import jax.numpy as jnp
 import optax
 from jax import (
-    Array,  # This is the correct import path
     jit,
 )
 from jax.tree_util import register_pytree_node
@@ -53,50 +52,13 @@ from jaxent.utils.jax_fn import frame_average_features, single_pass
 #     return output_features
 
 
-def forward_pure(
-    params: Simulation_Parameters,
-    input_features: Sequence[Input_Features],
-    forwardpass: Sequence[ForwardPass],
-) -> Sequence[Output_Features]:
-    """
-    Pure function for forward computation that is jittable.
-
-    Args:
-        params: Simulation parameters
-        input_features: Input features
-        forwardpass: Forward pass functions
-
-    Returns:
-        Output features
-    """
-    # Normalize weights
-    params = Simulation_Parameters.normalize_weights(params)
-
-    # Mask the frame weights
-    masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-    masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
-    # Apply frame_average_features individually to each input feature
-    # instead of using tree_map which can traverse too deep
-    average_features = [
-        frame_average_features(feature, params.frame_weights) for feature in input_features
-    ]
-
-    # Second operation using direct iteration as well
-    output_features = [
-        single_pass(fp, feat, param)
-        for fp, feat, param in zip(forwardpass, average_features, params.model_parameters)
-    ]
-
-    return output_features
-
-
 class Simulation:
     """
     This is the core object that is used during optimisation
     """
 
     outputs: Sequence[Output_Features]
+    _jit_forward_pure: Callable
 
     def __init__(
         self,
@@ -115,10 +77,12 @@ class Simulation:
         )
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
+        self._jit_forward_pure: Callable = None  # type: ignore
 
-    def __post_init__(self) -> None:
-        self._average_feature_map: Array  # a sparse array to map the average features to the single pass to generate the output features
-        # self.output_features: dict[m_id, Array]
+    # def __post_init__(self) -> None:
+    #     # not implemented yet
+    #     self._average_feature_map: Array  # a sparse array to map the average features to the single pass to generate the output features
+    #     # self.output_features: dict[m_id, Array]
 
     def initialise(self) -> bool:
         # assert that input features have the same first dimension of "features_shape"
@@ -144,12 +108,33 @@ class Simulation:
         print(self.forwardpass)
 
         print("Simulation initialised successfully.")
-
+        # clear the jit function
+        del self._jit_forward_pure
         # initialise the jit function using the inputs provided
-        self._jit_forward_pure = jit(
-            forward_pure,
-            static_argnames=("forwardpass"),  # "input_features",
+        self._jit_forward_pure: Callable = cast(
+            Callable,
+            jit(
+                self.forward_pure,
+                static_argnames=("forwardpass"),  # "input_features",
+            ),
         )
+        try:
+            self.forward(self.params)
+            # if the forward pass is successful, try jit pass
+        except Exception as e:
+            raise ValueError(f"Failed to apply forward models: {e}")
+        try:
+            self._jit_forward_pure(
+                self.params,
+                self._input_features,
+                self.forwardpass,
+            )
+        except Exception as e:
+            RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            self._jit_forward_pure = self.forward_pure
+
+        # try to run the forward pass using the parameters provided
+
         return True
 
     def forward(self, params: Simulation_Parameters) -> None:
@@ -159,22 +144,22 @@ class Simulation:
         self.params = params
 
         # try:
-        #     outputs = self._jit_forward_pure(
+        outputs = self._jit_forward_pure(
+            params,
+            self._input_features,
+            self.forwardpass,
+        )
+        # except Exception as e:
+        #     RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+
+        # try:
+        #     outputs = self.forward_pure(
         #         params,
         #         self._input_features,
         #         self.forwardpass,
         #     )
         # except Exception as e:
-        #     print(f"Warning - Jit failed: {e}")
-
-        try:
-            outputs = forward_pure(
-                params,
-                self._input_features,
-                self.forwardpass,
-            )
-        except Exception as e:
-            raise ValueError(f"Failed to apply forward models: {e}")
+        #     raise ValueError(f"Failed to apply forward models: {e}")
 
         self.outputs = outputs
 
@@ -226,6 +211,44 @@ class Simulation:
         instance.outputs = outputs
 
         return instance
+
+    @staticmethod
+    def forward_pure(
+        params: Simulation_Parameters,
+        input_features: Sequence[Input_Features],
+        forwardpass: Sequence[ForwardPass],
+    ) -> Sequence[Output_Features]:
+        """
+        Pure function for forward computation that is jittable.
+
+        Args:
+            params: Simulation parameters
+            input_features: Input features
+            forwardpass: Forward pass functions
+
+        Returns:
+            Output features
+        """
+        # Normalize weights
+        params = Simulation_Parameters.normalize_weights(params)
+
+        # Mask the frame weights
+        masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
+        masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
+
+        # Apply frame_average_features individually to each input feature
+        # instead of using tree_map which can traverse too deep
+        average_features = [
+            frame_average_features(feature, params.frame_weights) for feature in input_features
+        ]
+
+        # Second operation using direct iteration as well
+        output_features = [
+            single_pass(fp, feat, param)
+            for fp, feat, param in zip(forwardpass, average_features, params.model_parameters)
+        ]
+
+        return output_features
 
 
 # Register Simulation as a pytree node
