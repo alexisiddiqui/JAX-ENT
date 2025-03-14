@@ -15,7 +15,7 @@ from jaxent.data.loader import ExpD_Dataloader
 from jaxent.data.splitting.sparse_map import apply_sparse_mapping, create_sparse_map
 from jaxent.data.splitting.split import DataSplitter
 from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.models.config import BV_model_Config
 from jaxent.models.func.common import find_common_residues
 from jaxent.models.HDX.BV.forwardmodel import BV_model
@@ -45,7 +45,7 @@ def test_create_sparse_map():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -123,7 +123,7 @@ def test_create_sparse_map_ensemble():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -198,7 +198,7 @@ def test_random_split():
     models = [BV_model(bv_config)]
 
     # Create ensemble and get features
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues
@@ -249,7 +249,7 @@ def test_spatial_split():
     models = [BV_model(bv_config)]
 
     # Create ensemble and get features
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues
@@ -299,7 +299,7 @@ def test_stratified_split():
     models = [BV_model(bv_config)]
 
     # Create ensemble and get features
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues
@@ -349,7 +349,7 @@ def test_cluster_split_sequence():
     models = [BV_model(bv_config)]
 
     # Create ensemble and get features
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues
@@ -398,7 +398,7 @@ def test_cluster_split_featuress():
     models = [BV_model(bv_config)]
 
     # Create ensemble and get features
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues

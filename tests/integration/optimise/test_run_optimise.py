@@ -8,7 +8,7 @@ from jaxent.data.loader import Dataset, ExpD_Dataloader
 from jaxent.data.splitting.sparse_map import create_sparse_map
 from jaxent.data.splitting.split import DataSplitter
 from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.interfaces.simulation import Simulation_Parameters
 from jaxent.models.config import BV_model_Config, linear_BV_model_Config
 from jaxent.models.core import Simulation
@@ -84,7 +84,7 @@ def test_quick_optimiser():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
     # print("feature_topology", [top.fragment_index for top in feature_topology[0]])
@@ -206,7 +206,7 @@ def test_quick_sparse_optimiser():
 
     models = [BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -317,7 +317,7 @@ def test_quick_max_ent_optimiser():
 
     models = [BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -441,7 +441,7 @@ def test_quick_MAE_optimiser():
 
     models = [BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -583,7 +583,7 @@ def test_quick_MAE_sparse_optimiser():
 
     models = [BV_model(bv_config), BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -737,7 +737,7 @@ def test_quick_MAE_max_ent_optimiser():
 
     models = [BV_model(bv_config), BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -894,7 +894,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -1049,7 +1049,7 @@ def test_quick_sparse_max_ent_optimiser():
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -1221,7 +1221,7 @@ def test_regularised_optimiser():
         linear_BV_model(uptake_config),
     ]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features = run_featurise(ensemble, featuriser_settings, forward_models=models)
     assert len(features) == len(models)
@@ -1310,7 +1310,7 @@ def test_uptake_optimiser():
 
     models = [linear_BV_model(uptake_config), linear_BV_model(uptake_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features = run_featurise(ensemble, featuriser_settings, forward_models=models)
     assert len(features) == len(models)
