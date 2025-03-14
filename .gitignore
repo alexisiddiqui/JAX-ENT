@@ -25,6 +25,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+*.DS_Store
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -172,7 +173,8 @@ cython_debug/
 .python-version
 
 tests/inst/HDXer_tutorial
-
+tests/_plots
+tests/_*
 
 *offsets.lock
 *offsets.npz

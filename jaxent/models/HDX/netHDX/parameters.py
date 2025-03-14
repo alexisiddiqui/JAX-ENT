@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import Array
 
 from jaxent.interfaces.simulation import Model_Parameters
-from jaxent.types.base import m_key
+from jaxent.types.key import m_key
 
 
 @dataclass(frozen=True, slots=True)

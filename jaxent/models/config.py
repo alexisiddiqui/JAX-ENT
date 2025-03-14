@@ -1,13 +1,21 @@
 from dataclasses import field
+from typing import Protocol
 
 import jax.numpy as jnp
 from jax import Array
 
-from jaxent.config.base import BaseConfig
 from jaxent.interfaces.simulation import Model_Parameters
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
-from jaxent.types.base import m_key
+from jaxent.types.config import BaseConfig
+from jaxent.types.key import m_key
+
+
+class Model_Config(Protocol):
+    key: m_key
+
+    @property
+    def forward_parameters(self) -> Model_Parameters: ...
 
 
 class BV_model_Config(BaseConfig):
@@ -20,16 +28,18 @@ class BV_model_Config(BaseConfig):
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
 
-    def __init__(self, num_timepoints: int) -> None:
+    def __init__(self, num_timepoints: int | None = None) -> None:
         super().__init__()
-
-        if num_timepoints > 1:
-            self.key = m_key("HDX_peptide")
-        elif num_timepoints == 1:
+        if num_timepoints is None:
             self.key = m_key("HDX_resPF")
         else:
-            raise ValueError("Please make sure your timepoint/prior parameters make sense")
-        self.num_timepoints = num_timepoints
+            if num_timepoints > 1:
+                self.key = m_key("HDX_peptide")
+            elif num_timepoints == 1:
+                self.key = m_key("HDX_resPF")
+            else:
+                raise ValueError("Please make sure your timepoint/prior parameters make sense")
+            self.num_timepoints = num_timepoints
 
     @property
     def forward_parameters(self) -> Model_Parameters:

@@ -1,6 +1,6 @@
 from typing import List, Tuple, cast
 
-import mdtraj as md
+import mdtraj as md  # type: ignore
 import numpy as np
 
 

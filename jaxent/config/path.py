@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from jaxent.config.base import Settings
+from jaxent.types.config import Settings
 
 
 class PathManager:
