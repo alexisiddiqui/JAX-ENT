@@ -2,7 +2,7 @@ from typing import Optional
 
 from icecream import ic  # Import icecream for debugging
 
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.types.base import ForwardModel, Partial_Topology
 from jaxent.types.config import FeaturiserSettings, Settings
 from jaxent.types.features import Input_Features
@@ -34,7 +34,7 @@ def featurise(
 
 
 def run_featurise(
-    ensemble: Experiment_Ensemble,
+    ensemble: Experiment_Builder,
     config: Settings | FeaturiserSettings,
     name: Optional[str] = None,
     forward_models: Optional[list[ForwardModel]] = None,

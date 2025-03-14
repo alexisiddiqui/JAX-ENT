@@ -4,8 +4,10 @@
 # Monotonicity loss, Consistency loss.
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Protocol, Sequence, TypeVar
+from functools import partial
+from typing import NamedTuple, Optional, Protocol, Sequence, TypeVar
 
+import jax
 import optax
 from jax import Array
 
@@ -53,8 +55,8 @@ class JaxEnt_Loss(Protocol[M, D]):
     ) -> tuple[Array, Array]: ...
 
 
-@dataclass
-class LossComponents:
+# @dataclass(frozen=True)
+class LossComponents(NamedTuple):
     """Stores the various components of loss for training and validation"""
 
     train_losses: Array  # Individual training loss components
@@ -65,11 +67,11 @@ class LossComponents:
     total_val_loss: Array  # Total validation loss
 
 
-@dataclass
-class OptimizationState:
+# @dataclass(frozen=True)
+class OptimizationState(NamedTuple):
     params: Simulation_Parameters
     opt_state: optax.OptState
-    parameter_masks: Simulation_Parameters
+    gradient_mask: Simulation_Parameters
     step: int = 0
     losses: Optional[LossComponents] = None
 
@@ -82,12 +84,17 @@ class OptimizationState:
         return OptimizationState(
             params=new_params,
             opt_state=new_opt_state,
-            parameter_masks=self.parameter_masks,
+            gradient_mask=self.gradient_mask,
             step=self.step + 1,
             losses=new_losses,
         )
 
 
+@partial(
+    jax.tree_util.register_dataclass,
+    data_fields=["states", "best_state"],
+    meta_fields=[],
+)
 @dataclass
 class OptimizationHistory:
     """Tracks the history of optimization states and metrics"""
@@ -97,18 +104,23 @@ class OptimizationHistory:
 
     def add_state(self, state: OptimizationState):
         """Add a new state to history and update best state if needed"""
-
         self.states.append(state)
-        if (
-            self.best_state is None
-            or state.losses.total_train_loss < self.best_state.losses.total_train_loss  # type: ignore
-        ):
-            self.best_state = state
+        # Handle None case separately since 'is None' checks aren't JIT-compatible
 
-    def get_loss_history(self) -> list[LossComponents]:
-        """Get history of loss components"""
-        return [state.losses for state in self.states]  # type: ignore
+    @staticmethod
+    def _pick_best_state(states: list[OptimizationState]) -> OptimizationState:
+        """Pick the best state based on validation loss"""
 
-    def get_parameter_history(self, param_name: str) -> list[Any]:
-        """Get history of specific parameter values"""
-        return [getattr(state.params, param_name) for state in self.states]
+        best_state: OptimizationState = states[-1]
+        for state in states:
+            if state.losses.total_val_loss < best_state.losses.total_val_loss:
+                best_state = state
+
+        return best_state
+
+    def get_best_state(self) -> OptimizationState:
+        """Get the best state based on validation loss"""
+
+        self.best_state = self._pick_best_state(self.states)
+
+        return self.best_state

@@ -3,6 +3,13 @@ import os
 import time
 from datetime import datetime
 
+import jax
+
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false" # this shaves 0.2 seconds off the total time lmao
+
+jax.config.update("jax_platform_name", "cpu")
+os.environ["JAX_PLATFORM_NAME"] = "cpu"
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 import sys
@@ -17,7 +24,7 @@ from jaxent.data.loader import Dataset, ExpD_Dataloader
 from jaxent.data.splitting.sparse_map import create_sparse_map
 from jaxent.data.splitting.split import DataSplitter
 from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Ensemble
+from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.interfaces.simulation import Simulation_Parameters
 from jaxent.models.config import BV_model_Config
 from jaxent.models.core import Simulation
@@ -25,7 +32,7 @@ from jaxent.models.func.common import find_common_residues
 from jaxent.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.opt.losses import hdx_pf_l2_loss
 from jaxent.opt.optimiser import OptaxOptimizer
-from jaxent.optimise import run_optimise
+from jaxent.opt.run import run_optimise
 from jaxent.types.config import FeaturiserSettings, Optimisable_Parameters, OptimiserSettings
 from jaxent.types.HDX import HDX_protection_factor
 from tests.plots.datasplitting import plot_split_visualization
@@ -114,13 +121,13 @@ def setup_features():
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = "./tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
     models = [BV_model(bv_config)]
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -237,7 +244,7 @@ def run_benchmark_optimisation(config_params, precomputed_data):
         init_success = simulation.initialise()
         if not init_success:
             print(f"Failed to initialize simulation for {config['name']}")
-            continue
+            raise RuntimeError("Failed to initialize simulation")
 
         # Run a single forward pass to ensure everything is set up
         simulation.forward(params)
@@ -252,6 +259,7 @@ def run_benchmark_optimisation(config_params, precomputed_data):
             config=opt_settings,
             forward_models=[BV_model(BV_model_Config())],
             indexes=[0],
+            initialise=True,
             loss_functions=[hdx_pf_l2_loss],
         )
         end_time = time.time()
@@ -358,9 +366,12 @@ if __name__ == "__main__":
 
     print("Local devices:", jax.local_devices())
     print("CPU devices:", jax.devices("cpu"))
+    # set default device to CPU
 
-    # Disable memory preallocation
-    os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    # Disable memory preallocation - must be defined at the top of the script
+    # os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+    # os.environ["JAX_PLATFORM_NAME"] = "cpu"
+    # jax.config.update("jax_platform_name", "cpu")
 
     # Run benchmark
     test_quick_optimiser()
