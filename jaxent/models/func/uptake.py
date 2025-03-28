@@ -104,14 +104,12 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
     for i, curr in enumerate(residues):
         residue_ids[i] = curr.resid
         ########################################################################\
-        # TODO: should this be i==0 or i==1?
         # Skip first residue or PRO
         if i == 0 or curr.resname == "PRO":
             kints[i] = np.inf
             continue
-        ########################################################################\
-
         prev = residues[i - 1]
+        ########################################################################\
 
         # Get rate adjustments
         curr_name = (
@@ -120,7 +118,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         prev_name = prev.resname if prev.resname in rate_adjs else "ALA"
 
         # Special handling for termini
-        if i == 1:  # First non-PRO residue
+        if i == 0:  # First non-PRO residue
             prev_name = "NT"
         if i == n_residues - 1:  # Last residue
             curr_name = "CT"

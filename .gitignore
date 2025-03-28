@@ -183,3 +183,10 @@ tests/_*
 .aider*
 
 *.pml
+
+*.svg
+
+*.h5
+
+*.xtc
+*.pdb

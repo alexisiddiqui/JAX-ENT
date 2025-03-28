@@ -1,0 +1,3 @@
+# Iteration, weighted MSE to target, weighted RMSE to target, Total lambdas, Fractional change in lambda, Curr. stepsize, Beta_C, Beta_H, Curr. work 
+  1000 0.062639 0.250279 1.42502885e+00 6.34144853e-06 6.38269541e-03 3.50000000e-01 2.00000000e+00  0.89688 
+  2000 0.062629 0.250258 1.42633377e+00 7.08514278e-09 6.38314419e-03 3.50000000e-01 2.00000000e+00  0.89751 

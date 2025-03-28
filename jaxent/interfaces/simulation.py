@@ -3,7 +3,7 @@ from typing import Sequence
 
 import jax.numpy as jnp
 import optax  # type: ignore
-from jax import Array, jit
+from jax import Array
 from jax.tree_util import register_pytree_node
 
 from jaxent.interfaces.model import Model_Parameters
@@ -26,67 +26,40 @@ class Simulation_Parameters:
     @staticmethod
     def normalize_weights(params: "Simulation_Parameters") -> "Simulation_Parameters":
         """Create a new instance with normalized frame weights using JAX-compatible operations"""
-        # set weights and
-
+        # Use projection_simplex for frame weights normalization
         frame_weights = optax.projections.projection_simplex(jnp.asarray(params.frame_weights))
 
-        # clip the frame mask to be between 0 and 1
-        # raise NotImplementedError("Normalisation of frame mask is not implemented yet.")
-        # Ensure frame mask is between 0 and 1
+        # Clip the frame mask to be between 0 and 1
         frame_mask_clipped = jnp.clip(params.frame_mask, 0, 1)
 
         # Apply smooth binary approximation
         def smooth_binary_poly(x):
             """Polynomial S-curve that transitions smoothly from 0 to 1."""
-            return 3 * x**2 - 2 * x**3  # Already clipped above
+            return 3 * x**2 - 2 * x**3
 
         # Convert to binary-like values with smooth gradients
         frame_mask = smooth_binary_poly(frame_mask_clipped)
-        # def round_straight_through(x):
-        #     """Round with straight-through gradient estimator."""
-        #     rounded = jnp.round(x)
-        #     return x + jax.lax.stop_gradient(rounded - x)
 
-        # # apply mask to frame weights
-        # binary_mask = round_straight_through(frame_mask)
-        # # normalise the masked frame weights, so that they sum to 1. if frame_mask sum is less than 1 - return the original frame weights
-
-        # condition = jnp.sum(binary_mask) > 1
-        # result = jnp.where(condition, binary_mask, frame_mask)
-        # frame_mask = frame_mask + jax.lax.stop_gradient(result - frame_mask)
-        # frame_mask = jnp.asarray(jnp.where(jnp.sum(binary_mask) > 1, binary_mask, frame_mask))
-        # normalise the frame weights
-        # normalized_weights = optax.projections.projection_simplex(frame_weights)
-        # total = jnp.sum(frame_weights)
-        # find normalise loss indexes
-        @jit
+        # Modified normalize_masked_weights function to avoid boolean context issues
         def normalize_masked_weights(weights, mask):
             """
-            Normalizes weights where mask is True, maintaining gradient flow.
-            Uses smooth masking for gradient propagation with safe division.
-
-            Args:
-            weights: Array of weights
-            mask: Boolean mask indicating which weights to normalize
-
-            Returns:
-            Array with the masked weights normalized
+            Normalizes weights where mask is non-zero, avoiding boolean contexts.
             """
-            # Convert mask to float for multiplication
-            float_mask = mask.astype(jnp.float32)
+            # Convert mask to float without boolean comparison
+            float_mask = jnp.clip(mask, 0, 1).astype(jnp.float32)
 
             # Apply mask to weights
             masked_weights = weights * float_mask
 
-            # Get the sum of masked weights and add a small epsilon to avoid division by 0
-            total = jnp.sum(masked_weights)
-            epsilon = 1e-8
+            # Get the sum of masked weights with epsilon to avoid division by 0
+            total = jnp.sum(masked_weights) + 1e-8
 
-            # Normalize masked weights using safe division
-            normalized = masked_weights / (total + epsilon)
+            # Normalize masked weights
+            normalized = masked_weights / total
 
-            # Use original weights where mask is False
-            result = jnp.where(mask, normalized, weights)
+            # Use original weights where mask is 0, normalized weights otherwise
+            # Avoid boolean comparison with mask by using multiplication
+            result = weights * (1.0 - float_mask) + normalized * float_mask
 
             return result
 
@@ -95,9 +68,6 @@ class Simulation_Parameters:
             params.forward_model_weights, params.normalise_loss_functions
         )
 
-        # normalized_weights = frame_weights / total
-        # print("Weights normalized.")
-        # print(normalized_weights)
         return Simulation_Parameters(
             frame_weights=frame_weights,
             frame_mask=frame_mask,

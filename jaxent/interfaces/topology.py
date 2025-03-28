@@ -16,6 +16,7 @@ class Partial_Topology:
     fragment_sequence: str  # resname (residue) or single letter codes (peptide) or atom name (atom)
     residue_start: int  # inclusive, if a peptide, this is the first residue - not the
     residue_end: int | None = None  # inclusive - if None, then this is a single residue
+    peptide_trim: int = 2
     fragment_index: Optional[int] = (
         None  # atom or peptide index - optional for residues - required for peptides and atoms
     )
@@ -24,9 +25,15 @@ class Partial_Topology:
     def __post_init__(self):
         if self.residue_end is None:
             self.residue_end = self.residue_start
-        self.length = self.residue_end - self.residue_start + 1
-        if self.length > 2:
-            self.peptide_residues = [i for i in range(self.residue_start + 2, self.residue_end + 1)]
+        self.length = (self.residue_end - self.residue_start) + 1
+        if self.length > self.peptide_trim:
+            self.peptide_residues = [
+                i
+                for i in range(
+                    self.residue_start + self.peptide_trim,
+                    self.residue_end + 1,
+                )
+            ]
             self.peptide_length = len(self.peptide_residues)
 
     def __eq__(self, other) -> bool:
@@ -60,7 +67,7 @@ class Partial_Topology:
         if self.length == 1:
             return [self]
         else:
-            if peptide is True:
+            if peptide is True:  # this needs to ignore the first two residues
                 return [
                     Partial_Topology(self.chain, self.fragment_sequence, res)
                     for res in self.peptide_residues
