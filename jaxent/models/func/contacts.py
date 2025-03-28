@@ -121,5 +121,5 @@ def calc_BV_contacts_universe(
     return results.tolist()
 
 
-# sort this out to use numpy arrays
+# TODO sort this out to use numpy arrays and also use a more efficient method, use MDA to calculate all relevant distances and then mask them after.
 ################################################################################

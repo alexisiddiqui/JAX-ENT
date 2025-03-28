@@ -8,6 +8,7 @@ from functools import partial
 from typing import NamedTuple, Optional, Protocol, Sequence, TypeVar
 
 import jax
+import jax.numpy as jnp
 import optax
 from jax import Array
 
@@ -44,6 +45,7 @@ D = TypeVar(
     Output_Features,
     ExpD_Dataloader,
     Model_Parameters,
+    Array,
     Simulation_Parameters,
     contravariant=True,
 )
@@ -109,17 +111,18 @@ class OptimizationHistory:
 
     @staticmethod
     def _pick_best_state(states: list[OptimizationState]) -> OptimizationState:
-        """Pick the best state based on validation loss"""
+        """Pick the best state based on unscaled validation loss"""
 
         best_state: OptimizationState = states[-1]
         for state in states:
-            if state.losses.total_val_loss < best_state.losses.total_val_loss:
+            # Use the sum of unscaled validation losses instead of total_val_loss
+            if jnp.sum(state.losses.val_losses) < jnp.sum(best_state.losses.val_losses):
                 best_state = state
 
         return best_state
 
     def get_best_state(self) -> OptimizationState:
-        """Get the best state based on validation loss"""
+        """Get the best state based on unscaled validation loss"""
 
         self.best_state = self._pick_best_state(self.states)
 
