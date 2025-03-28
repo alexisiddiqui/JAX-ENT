@@ -41,7 +41,7 @@ class OptaxOptimizer:
         learning_rate: float = 1e-4,
         optimizer: str = "adam",
         parameter_masks: set[Optimisable_Parameters] = {
-            Optimisable_Parameters.model_parameters,
+            Optimisable_Parameters.frame_weights,
         },
         clip_value: Optional[float] = 1.0,
     ):
@@ -61,6 +61,8 @@ class OptaxOptimizer:
             optimizer_chain.append(optax.sgd(learning_rate))
         elif optimizer.lower() == "adagrad":
             optimizer_chain.append(optax.adagrad(learning_rate))
+        elif optimizer.lower() == "adamw":
+            optimizer_chain.append(optax.adamw(learning_rate=learning_rate))
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -102,11 +104,13 @@ class OptaxOptimizer:
         self,
         model: InitialisedSimulation,
         optimisable_funcs: list[bool] | Array | None,
-        _jit_test_args: tuple[
-            Sequence[ExpD_Dataloader[Any] | Model_Parameters | Output_Features],
-            Sequence[JaxEnt_Loss],
-            Sequence[int],
-        ],
+        _jit_test_args: Optional[
+            tuple[
+                Sequence[ExpD_Dataloader[Any] | Model_Parameters | Output_Features],
+                Sequence[JaxEnt_Loss],
+                Sequence[int],
+            ]
+        ] = None,
     ) -> OptimizationState:
         """Initialize the optimization state"""
         params = model.params
@@ -126,62 +130,70 @@ class OptaxOptimizer:
         # Okay here we setup the jit step function - to do this we require the additional inputs for run_optimise...
 
         # test that the _step function works
-        try:
-            data_targets, loss_functions, indexes = _jit_test_args
+        if _jit_test_args is not None:
+            try:
+                data_targets, loss_functions, indexes = _jit_test_args
+                self.step = self._step
 
-            _ = self._step(
-                self,
-                OptimizationState(
-                    params=params,
-                    opt_state=opt_state,
-                    gradient_mask=gradient_masks,
-                ),
-                model,
-                tuple(data_targets),
-                tuple(loss_functions),
-                self.history,
-                tuple(indexes),
-            )
-        except Exception as e:
-            raise ValueError(f"Error in step function: {e}")
+                _ = self.step(
+                    self,
+                    OptimizationState(
+                        params=params,
+                        opt_state=opt_state,
+                        gradient_mask=gradient_masks,
+                    ),
+                    model,
+                    tuple(data_targets),
+                    tuple(loss_functions),
+                    self.history,
+                    tuple(indexes),
+                )
+            except Exception as e:
+                del self.step
+                raise ValueError(f"Error in step function: {e}")
 
-        # delete the current step function
-        del self.step
+            # delete the current step function
 
-        self.step = jax.jit(
-            self._step,
-            donate_argnames=("state",),
-            static_argnames=(
-                # "optimizer",
-                # "simulation",
-                "data_targets",
-                "loss_functions",
-                # "history",
-                "indexes",
-            ),
-        )
+            # now try to jit the step function
+            try:
+                # raise ValueError("Stop here")
+                del self.step
 
-        # now try to jit the step function
-        try:
-            _ = self.step(
-                self,
-                OptimizationState(
-                    params=params,
-                    opt_state=opt_state,
-                    gradient_mask=gradient_masks,
-                ),
-                model,
-                tuple(data_targets),
-                tuple(loss_functions),
-                self.history,
-                tuple(indexes),
-            )
-            print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
-        except Exception as e:
+                self.step = jax.jit(
+                    self._step,
+                    donate_argnames=("state",),
+                    static_argnames=(
+                        # "optimizer",
+                        # "simulation",
+                        # "data_targets",
+                        "loss_functions",
+                        # "history",
+                        "indexes",
+                    ),
+                )
+                _ = self.step(
+                    self,
+                    OptimizationState(
+                        params=params,
+                        opt_state=opt_state,
+                        gradient_mask=gradient_masks,
+                    ),
+                    model,
+                    tuple(data_targets),
+                    tuple(loss_functions),
+                    self.history,
+                    tuple(indexes),
+                )
+                print("\n\n\n\n\n\n\n\n\n Optimiser JIT compilation successful \n\n\n\n\n\n\n\n\n")
+            except Exception as e:
+                print(e)
+                self.step = self._step
+                RuntimeWarning(
+                    f"JIT compilation failed: {e} \n Reverting back to non-jit step function"
+                )
+        else:
+            print("No test args provided, skipping JIT compilation")
             self.step = self._step
-            RuntimeWarning(
-                f"JIT compilation failed: {e} \n Reverting back to non-jit step function"
-            )
 
         return OptimizationState(
             params=params,
@@ -404,7 +416,7 @@ class OptaxOptimizer:
     jax.jit,
     static_argnames=(
         "simulation",
-        "data_targets",
+        # "data_targets",
         "indexes",
         "loss_functions",
     ),

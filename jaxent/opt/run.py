@@ -1,5 +1,7 @@
-from typing import Callable, Optional, Sequence, Tuple, cast
+from typing import Callable, Optional, Sequence, Tuple, TypedDict, cast
 
+import jax
+import jax.numpy as jnp
 from jax import Array
 
 from jaxent.data.loader import ExpD_Dataloader
@@ -30,6 +32,19 @@ def optimise(
     pass
 
 
+class OptimiseFnInputs(TypedDict):
+    _simulation: InitialisedSimulation
+    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features]
+    n_steps: int
+    tolerance: float
+    convergence: float
+    indexes: tuple[int]
+    loss_functions: tuple[JaxEnt_Loss]
+    optimisable_funcs: list[bool] | Array | None
+    optimizer: OptaxOptimizer
+    opt_state: OptimizationState
+
+
 def _optimise(
     _simulation: InitialisedSimulation,
     data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features],
@@ -43,6 +58,7 @@ def _optimise(
 ) -> Tuple[InitialisedSimulation, OptaxOptimizer]:
     for step in range(n_steps):
         history = optimizer.history
+
         opt_state, current_loss, history = optimizer.step(
             optimizer=optimizer,
             state=opt_state,
@@ -53,15 +69,23 @@ def _optimise(
             history=history,
         )
         # if step % 100 == 0:
-        print(
-            f"Step {step}/{n_steps}",  # type: ignore
-            f"Training Loss: {opt_state.losses.total_train_loss:.2f}",  # type: ignore
-            f"Validation Loss: {opt_state.losses.total_val_loss:.2f}",  # type: ignore
+        jax.debug.print(
+            fmt=" ".join(
+                [
+                    "Step {step}/{n_steps}",  # type: ignore
+                    "Training Loss: {train_loss:.2f}",  # type: ignore
+                    "Validation Loss: {val_loss:.2f}",  # type: ignore
+                ]
+            ),
+            step=step,
+            n_steps=n_steps,
+            train_loss=opt_state.losses.total_train_loss,
+            val_loss=opt_state.losses.total_val_loss,
         )
 
         optimizer.history = history
-        if current_loss < tolerance:
-            print(f"Reached convergence tolerance at step {step}")
+        if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
+            print(f"Reached convergence tolerance/nan vals at step {step}, loss: {current_loss}")
             break
         # compare to the previous loss
         if (
@@ -69,7 +93,9 @@ def _optimise(
             and abs(current_loss - optimizer.history.states[-2].losses.total_train_loss)  # type: ignore
             < convergence
         ):
-            print(f"Loss converged at step {step}")
+            print(
+                f"Loss converged at step {step}, loss delta: {current_loss - optimizer.history.states[-2].losses.total_train_loss}"
+            )  # type: ignore
             break
 
         # Check convergence on training loss
@@ -83,7 +109,7 @@ def _optimise(
 
 def run_optimise(
     simulation: Simulation,
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features],
+    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features | Array],
     config: OptimiserSettings,
     forward_models: Sequence[ForwardModel],
     indexes: Sequence[int],
@@ -91,7 +117,8 @@ def run_optimise(
     optimizer: Optional[OptaxOptimizer] = None,
     optimisable_funcs: list[bool] | Array | None = None,
     initialise: Optional[bool] = False,
-    _opt: Callable = _optimise,
+    _opt_fn: Callable = _optimise,  # we seperate this so that users can add diagnostics in the loss loop
+    jit_update_step: bool = False,
 ) -> Tuple[InitialisedSimulation, OptimizationHistory]:
     """Runs the optimization process"""
 
@@ -108,15 +135,23 @@ def run_optimise(
         raise ValueError("Number of data targets and loss functions must match")
 
     if optimizer is None:
-        optimizer = OptaxOptimizer()
-
-    _optimizer: OptaxOptimizer = cast(OptaxOptimizer, optimizer)
+        optimizer = OptaxOptimizer(
+            learning_rate=config.learning_rate,
+            optimizer=config.optimiser_type,
+        )
+    if jit_update_step is False or None:
+        jit_test_args = None
+    else:
+        jit_test_args = (data_to_fit, loss_functions, indexes)
 
     opt_state = optimizer.initialise(
-        _simulation, optimisable_funcs, _jit_test_args=(data_to_fit, loss_functions, indexes)
+        _simulation,
+        optimisable_funcs,
+        _jit_test_args=jit_test_args,
     )
+    _optimizer: OptaxOptimizer = cast(OptaxOptimizer, optimizer)
 
-    _simulation, optimizer = _opt(
+    _simulation, optimizer = _opt_fn(
         _simulation,
         data_to_fit,
         config.n_steps,

@@ -19,6 +19,16 @@ class NetworkMetrics:
     min_path_lengths: Mapping[int, float]
     mean_path_lengths: Mapping[int, float]
     max_path_lengths: Mapping[int, float]
+    # New metrics
+    closeness: Mapping[int, float]
+    pagerank: Mapping[int, float]
+    harmonic_centrality: Mapping[int, float]
+    hits_hub: Mapping[int, float]
+    hits_authority: Mapping[int, float]
+    avg_communicability: Mapping[int, float]
+    # Global metrics
+    degree_assortativity: float
+    local_efficiency: float
 
     def cast_to_jax(self) -> None:
         # TODO check that this is actually setting the values to jax arrays - do we need to convert the keys to jax arrays?
