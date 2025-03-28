@@ -27,6 +27,7 @@ class BV_model_Config(BaseConfig):
     o_radius: float = 2.4
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
+    residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
 
     def __init__(self, num_timepoints: int | None = None) -> None:
         super().__init__()
@@ -91,8 +92,18 @@ class NetHDXConfig(BaseConfig):
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     shell_energy_scaling: float = 0.84
 
-    def __init__(self, num_timepoints: int = 1) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        distance_cutoff: list[float] = [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5],
+        angle_cutoff: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        num_timepoints: int = 1,
+    ) -> None:
+        # super().__init__()
+        if self.distance_cutoff is not None:
+            self.distance_cutoff = distance_cutoff
+        if self.angle_cutoff is not None:
+            self.angle_cutoff = angle_cutoff
+
         assert len(list(self.distance_cutoff)) == len(list(self.angle_cutoff)), (
             "Distance and angle cutoffs must be the same length"
         )

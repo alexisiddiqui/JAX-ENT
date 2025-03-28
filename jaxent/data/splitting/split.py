@@ -158,6 +158,9 @@ class DataSplitter:
 
         self.common_residues = common_residues
 
+        print(f"Common residues: {len(common_residues)}")
+        print(f"Dataset size: {len(dataset.data)}")
+
         ic("Filtering dataset to common residues")
         self.dataset.data = filter_common_residues(
             self.dataset.data, common_residues, peptide=peptide

@@ -23,7 +23,7 @@ from jaxent.opt.losses import (
     max_entropy_loss,
 )
 from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
-from jaxent.optimise import run_optimise
+from jaxent.opt.run import run_optimise
 from jaxent.types.config import FeaturiserSettings, OptimiserSettings
 from jaxent.types.HDX import (
     HDX_peptide,

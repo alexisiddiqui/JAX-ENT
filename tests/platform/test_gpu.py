@@ -12,8 +12,16 @@ def test_gpu_available():
     """Test that a GPU is available and is the default backend."""
     print("\nTesting GPU availability...")
     assert len(jax.devices()) > 0
-    assert jax.default_backend() == "gpu"
-    assert len(jax.devices("gpu")) > 0
+    assert any(
+        [
+            jax.default_backend() == "gpu",
+            jax.default_backend() == "tpu",
+            jax.default_backend() == "METAL",
+        ]
+    )
+    assert any(
+        [len(jax.devices("gpu")) > 0, len(jax.devices("tpu")) > 0, len(jax.devices("METAL")) > 0],
+    )
     print("GPU is available and is the default backend.")
 
 

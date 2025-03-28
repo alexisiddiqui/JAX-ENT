@@ -20,7 +20,7 @@ class FeaturiserSettings:
     batch_size: int | None
 
 
-class LossConstants(NamedTuple):
+class LossConstants(NamedTuple):  # TODO we need to change these to have more meaningful names
     GAMMA: float
     LAMBDA: float
     PHI: float
@@ -31,7 +31,7 @@ class LossConstants(NamedTuple):
 class OptimiserSettings:
     name: str
     n_steps: int = 100
-    tolerance: float = 1e-1
+    tolerance: float = 1e-2
     convergence: float = 1e-4
     learning_rate: float = 1e-4
     optimiser_type: str = "adam"
@@ -58,6 +58,7 @@ class Settings(BaseConfig):
     forward_model_config: BaseConfig
 
     n_replicates: int = 3
+    peptide_trim: int = 2
 
     n_workers: int = 4
     # set name for child classes?

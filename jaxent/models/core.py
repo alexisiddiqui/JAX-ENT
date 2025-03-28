@@ -1,7 +1,5 @@
 from typing import Any, Callable, Optional, Sequence, cast
 
-import jax.numpy as jnp
-import optax
 from jax import (
     jit,
 )
@@ -107,32 +105,38 @@ class Simulation:
         print("Loaded forward passes")
         print(self.forwardpass)
 
-        print("Simulation initialised successfully.")
         # clear the jit function
         del self._jit_forward_pure
+
+        self._jit_forward_pure = self.forward_pure
         # initialise the jit function using the inputs provided
+        try:
+            self.forward(self.params)
+            # if the forward pass is successful, try jit pass
+        except Exception as e:
+            raise ValueError(f"Failed to apply forward models without JIT: {e}")
+
         self._jit_forward_pure: Callable = cast(
             Callable,
             jit(
                 self.forward_pure,
                 static_argnames=("forwardpass"),  # "input_features",
+                # donate_argnames=("params", "input_features"),
             ),
         )
-        try:
-            self.forward(self.params)
-            # if the forward pass is successful, try jit pass
-        except Exception as e:
-            raise ValueError(f"Failed to apply forward models: {e}")
         try:
             self._jit_forward_pure(
                 self.params,
                 self._input_features,
                 self.forwardpass,
             )
+            print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
+
         except Exception as e:
             RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
             self._jit_forward_pure = self.forward_pure
 
+        print("Simulation initialised successfully.")
         # try to run the forward pass using the parameters provided
 
         return True
@@ -233,11 +237,10 @@ class Simulation:
         params = Simulation_Parameters.normalize_weights(params)
 
         # Mask the frame weights
-        masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-        masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
+        # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
+        # masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
 
         # Apply frame_average_features individually to each input feature
-        # instead of using tree_map which can traverse too deep
         average_features = [
             frame_average_features(feature, params.frame_weights) for feature in input_features
         ]

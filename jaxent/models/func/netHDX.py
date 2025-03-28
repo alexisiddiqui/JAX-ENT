@@ -9,7 +9,7 @@ from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysi
 from MDAnalysis.core.groups import ResidueGroup  # type: ignore
 from tqdm.auto import tqdm  # type: ignore
 
-from jaxent.models.config import NetHDXConfig
+from jaxent.models.config import BV_model_Config, NetHDXConfig
 from jaxent.models.HDX.netHDX.features import NetHDX_input_features, NetworkMetrics
 
 
@@ -91,24 +91,74 @@ def analyze_hbonds_for_shell(
         acceptors_sel="name O",
         d_a_cutoff=distance,  # donor-acceptor cutoff
         d_h_a_angle_cutoff=int(angle),  # donor-hydrogen-acceptor angle cutoff
-        update_selections=False,  # Update selections at each frame
+        update_selections=False,  # Update selections at each frame???
     )
     hbonds.run()
     return hbonds
 
 
+def analyze_hbonds_for_BV(
+    universe: mda.Universe,
+    donor_selection: str,
+    heavy_radius: float,
+    o_radius: float,
+    angle: float = 0,
+) -> tuple[HydrogenBondAnalysis, HydrogenBondAnalysis]:
+    """
+    Analyze hydrogen bonds for a specific shell defined by distance and angle cutoffs.
+
+    Args:
+        universe: MDAnalysis Universe containing structure
+        donor_selection: MDAnalysis selection string for the donor
+        distance: Distance cutoff for this shell
+        angle: Angle cutoff for this shell
+
+    Returns:
+        HydrogenBondAnalysis results for this shell
+    """
+    oxygen_hbonds = HydrogenBondAnalysis(
+        universe=universe,
+        donors_sel=donor_selection,
+        hydrogens_sel="element H",
+        acceptors_sel="name O",
+        d_a_cutoff=heavy_radius,  # donor-acceptor cutoff
+        d_h_a_angle_cutoff=int(angle),  # donor-hydrogen-acceptor angle cutoff
+        update_selections=False,  # Update selections at each frame
+    )
+    oxygen_hbonds.run()
+
+    heavy_hbonds = HydrogenBondAnalysis(
+        universe=universe,
+        donors_sel=donor_selection,
+        hydrogens_sel="element H",
+        acceptors_sel="not element H",
+        d_a_cutoff=o_radius,  # donor-acceptor cutoff
+        d_h_a_angle_cutoff=int(angle),  # donor-hydrogen-acceptor angle cutoff
+        update_selections=False,  # Update selections at each
+    )
+    heavy_hbonds.run()
+
+    return (oxygen_hbonds, heavy_hbonds)
+
+
 def create_contact_matrix_for_frame(
-    hbonds: HydrogenBondAnalysis, frame: int, n_residues: int, residue_mapping: dict
+    hbonds: HydrogenBondAnalysis,
+    frame: int,
+    n_residues: int,
+    residue_mapping: dict,
+    residue_ignore: tuple[int, int] = (0, 0),  # Default matches NetHDX default
 ) -> np.ndarray:
     """
     Create a contact matrix for a specific frame from hydrogen bond analysis results.
-    Only includes residues specified in the residue_mapping dictionary.
+    Only includes residues specified in the residue_mapping dictionary and excludes
+    residues that are within the residue_ignore range relative to each other.
 
     Args:
         hbonds: HydrogenBondAnalysis results
         frame: Frame number to analyze
         n_residues: Total number of residues in the filtered set
         residue_mapping: Mapping from residue IDs to matrix indices
+        residue_ignore: Tuple of (min_distance, max_distance) for residues to ignore
 
     Returns:
         Contact matrix for the frame with only the mapped residues
@@ -127,6 +177,11 @@ def create_contact_matrix_for_frame(
         donor_resid = donor_atom.residue.resid
         acceptor_resid = acceptor_atom.residue.resid
 
+        # Skip if residues are within the ignore range
+        res_distance = acceptor_resid - donor_resid
+        if residue_ignore[0] <= res_distance <= residue_ignore[1]:
+            continue
+
         # Skip if residues not in mapping
         if donor_resid not in residue_mapping or acceptor_resid not in residue_mapping:
             continue
@@ -140,107 +195,9 @@ def create_contact_matrix_for_frame(
     return contact_matrix
 
 
-# def _process_residue(args):
-#     residue, universe, config, n_frames, n_residues, residue_mapping = args
-#     matrix = np.zeros((n_frames, n_residues, n_residues))
-#     try:
-#         donor_sel = f"resid {residue.resid} and name N"
-#         for dist, angle in zip(config.distance_cutoff, config.angle_cutoff):
-#             hbonds = analyze_hbonds_for_shell(
-#                 universe=universe, donor_selection=donor_sel, distance=dist, angle=angle
-#             )
-#             unique_frames = np.unique(hbonds.results.hbonds[:, 0])
-#             for frame in unique_frames:
-#                 frame_contacts = create_contact_matrix_for_frame(
-#                     hbonds=hbonds,
-#                     frame=int(frame),
-#                     n_residues=n_residues,
-#                     residue_mapping=residue_mapping,
-#                 )
-#                 matrix[int(frame)] += frame_contacts
-#     except Exception as e:
-#         print(f"Warning: processing residue {residue.resid}: {str(e)}")
-#     return matrix
-
-
-# Then, update calculate_trajectory_hbonds as follows:
-
-
-# def calculate_trajectory_hbonds(
-#     universe: mda.Universe, config: NetHDXConfig, n_workers=10
-# ) -> np.ndarray:
-#     """
-#     Calculate hydrogen bonds for all frames across all shells defined in config,
-#     parallelizing the computation across residues.
-#     """
-
-#     n_residues = len(universe.residues)
-#     n_frames = len(universe.trajectory)
-#     residue_mapping = {res.resid: i for i, res in enumerate(universe.residues)}
-
-#     # Prepare arguments for each residue
-#     args = [
-#         (residue, universe, config, n_frames, n_residues, residue_mapping)
-#         for residue in universe.residues
-#     ]
-
-#     with multiprocessing.Pool(processes=n_workers) as pool:
-#         results = list(
-#             tqdm(
-#                 pool.imap(_process_residue, args),
-#                 total=len(args),
-#                 desc="Analyzing residues",
-#             )
-#         )
-
-#     # Sum contributions of all residues.
-#     contact_matrices = np.zeros((n_frames, n_residues, n_residues))
-#     for mat in results:
-#         contact_matrices += mat
-
-
-# #     return contact_matrices
-# def calculate_trajectory_hbonds(universe: mda.Universe, config: NetHDXConfig) -> np.ndarray:
-#     """
-#     Calculate hydrogen bonds for all frames across all shells defined in config.
-#     """
-#     residues = cast(ResidueGroup, universe.residues)
-#     n_residues = len(residues)
-#     n_frames = len(universe.trajectory)
-#     residue_list = [r for r in residues]
-#     residue_mapping = {res.resid: i for i, res in enumerate(residue_list)}
-#     contact_matrices = np.zeros((n_frames, n_residues, n_residues))
-
-#     for residue in tqdm(residue_list, desc="Analyzing residues"):
-#         try:
-#             donor_sel = f"resid {residue.resid} and name N"
-
-#             for dist, angle in zip(config.distance_cutoff, config.angle_cutoff):
-#                 hbonds = analyze_hbonds_for_shell(
-#                     universe=universe, donor_selection=donor_sel, distance=dist, angle=angle
-#                 )
-
-#                 # Now correctly handle each frame
-#                 unique_frames = np.unique(hbonds.results.hbonds[:, 0])
-#                 for frame in unique_frames:
-#                     frame_contacts = create_contact_matrix_for_frame(
-#                         hbonds=hbonds,
-#                         frame=frame,
-#                         n_residues=n_residues,
-#                         residue_mapping=residue_mapping,
-#                     )
-#                     contact_matrices[int(frame)] += frame_contacts
-
-#         except Exception as e:
-#             print(f"Warning: processing residue {residue.resid}: {str(e)}")
-#             continue
-
-#     return contact_matrices
-
-
 def build_hbond_network(
     ensemble: list[mda.Universe],
-    config: Optional[NetHDXConfig] = None,
+    config: Optional[NetHDXConfig | BV_model_Config] = None,
     common_residue_ids: Optional[list[int]] = None,
 ) -> NetHDX_input_features:
     """
@@ -278,9 +235,16 @@ def build_hbond_network(
     # Calculate contact matrices for each universe in ensemble
     for universe in ensemble:
         # Calculate full contact matrices first
-        contact_matrices = calculate_trajectory_hbonds(
-            universe, config, common_residue_ids=common_residue_ids
-        )
+        if isinstance(config, BV_model_Config):
+            contact_matrices = calculate_trajectory_hbonds_BV(
+                universe, config, common_residue_ids=common_residue_ids
+            )
+        elif isinstance(config, NetHDXConfig):
+            contact_matrices = calculate_trajectory_hbonds(
+                universe, config, common_residue_ids=common_residue_ids
+            )
+        else:
+            raise ValueError("Invalid configuration type")
 
         # If common_residue_ids is provided, filter the contact matrices
         if common_residue_ids and residue_mapping:
@@ -371,8 +335,85 @@ def calculate_trajectory_hbonds(
                         frame=frame,
                         n_residues=n_residues,
                         residue_mapping=residue_mapping,
+                        residue_ignore=config.residue_ignore,
                     )
                     contact_matrices[int(frame)] += frame_contacts
+
+        except Exception as e:
+            print(f"Warning: processing residue {residue.resid}: {str(e)}")
+            continue
+
+    return contact_matrices
+
+
+def calculate_trajectory_hbonds_BV(
+    universe: mda.Universe, config: BV_model_Config, common_residue_ids: Optional[list[int]] = None
+) -> np.ndarray:
+    """
+    Calculate hydrogen bonds for all frames across all shells defined in config.
+
+    Args:
+        universe: MDAnalysis Universe containing structure
+        config: Configuration parameters for hydrogen bond analysis
+        common_residue_ids: Optional list of residue IDs to include in the analysis
+
+    Returns:
+        Array of contact matrices for all frames
+    """
+    residues = cast(ResidueGroup, universe.residues)
+
+    # Filter residues if common_residue_ids is provided
+    if common_residue_ids:
+        residue_list = [r for r in residues if r.resid in common_residue_ids]
+    else:
+        residue_list = [r for r in residues]
+
+    n_residues = len(residue_list)
+    n_frames = len(universe.trajectory)
+
+    # Create mapping from residue IDs to matrix indices
+    residue_mapping = {res.resid: i for i, res in enumerate(residue_list)}
+
+    contact_matrices = np.zeros((n_frames, n_residues, n_residues))
+
+    scaled_parameters = np.asarray([config.bv_bc, config.bv_bh])  # Scaling parameters for BV model
+
+    for residue in tqdm(residue_list, desc="Analyzing residues"):
+        try:
+            donor_sel = f"resid {residue.resid} and name N"
+
+            oxygen_hbonds, heavy_hbonds = analyze_hbonds_for_BV(
+                universe=universe,
+                donor_selection=donor_sel,
+                heavy_radius=config.heavy_radius,
+                o_radius=config.o_radius,
+            )
+
+            # now strip residues from config.residue_ignore
+
+            # Process each frame
+            unique_frames = np.unique(oxygen_hbonds.results.hbonds[:, 0])
+
+            for frame in unique_frames:
+                oxygen_frame_contacts = create_contact_matrix_for_frame(
+                    hbonds=oxygen_hbonds,
+                    frame=frame,
+                    n_residues=n_residues,
+                    residue_mapping=residue_mapping,
+                    residue_ignore=config.residue_ignore,
+                )
+
+                heavy_frame_contacts = create_contact_matrix_for_frame(
+                    hbonds=heavy_hbonds,
+                    frame=frame,
+                    n_residues=n_residues,
+                    residue_mapping=residue_mapping,
+                    residue_ignore=config.residue_ignore,
+                )
+
+                contact_matrices[int(frame)] += (heavy_frame_contacts * scaled_parameters[0]) + (
+                    oxygen_frame_contacts * scaled_parameters[1]
+                )
 
         except Exception as e:
             print(f"Warning: processing residue {residue.resid}: {str(e)}")
@@ -398,53 +439,6 @@ def compute_path_lengths(G: nx.Graph, node: int) -> tuple[float, float, float]:
     return min(path_lengths), float(np.mean(path_lengths)), max(path_lengths)
 
 
-# def compute_weighted_clustering(G: nx.Graph) -> dict:
-#     """Custom weighted clustering coefficient implementation"""
-#     clustering = {}
-#     for node in G.nodes():
-#         neighbors = list(G.neighbors(node))
-#         if len(neighbors) < 2:
-#             clustering[node] = 0.0
-#             continue
-
-#         # Calculate weighted triangles
-#         triangle_weight = 0.0
-#         max_triangle_weight = 0.0
-#         for i, n1 in enumerate(neighbors):
-#             w1 = G[node][n1]["weight"]
-#             for n2 in neighbors[i + 1 :]:
-#                 w2 = G[node][n2]["weight"]
-#                 if G.has_edge(n1, n2):
-#                     w3 = G[n1][n2]["weight"]
-#                     triangle_weight += (w1 * w2 * w3) ** (1 / 3)
-#                 max_triangle_weight += (w1 * w2) ** (1 / 2)
-
-#         clustering[node] = triangle_weight / max_triangle_weight if max_triangle_weight > 0 else 0.0
-#     return clustering
-
-
-# def compute_local_clustering(G: nx.Graph, node: int) -> float:
-#     """Compute weighted clustering coefficient for a single node"""
-#     neighbors = list(G.neighbors(node))
-#     if len(neighbors) < 2:
-#         return 0.0
-
-#     possible_triangles = len(neighbors) * (len(neighbors) - 1) / 2
-#     if possible_triangles == 0:
-#         return 0.0
-
-#     triangles = 0
-#     for i, n1 in enumerate(neighbors):
-#         for n2 in neighbors[i + 1 :]:
-#             if G.has_edge(n1, n2):
-#                 w1 = G[node][n1]["weight"]
-#                 w2 = G[node][n2]["weight"]
-#                 w3 = G[n1][n2]["weight"]
-#                 triangles += (w1 * w2 * w3) ** (1 / 3)
-
-#     return triangles / possible_triangles
-
-
 def compute_graph_metrics(G: nx.Graph) -> NetworkMetrics:
     """Compute network metrics from a given NetworkX graph."""
     max_weight = max((w for _, _, w in G.edges(data="weight")), default=1.0)  # type: ignore
@@ -464,6 +458,45 @@ def compute_graph_metrics(G: nx.Graph) -> NetworkMetrics:
     nx.set_edge_attributes(G, dist_weights, "distance")
     betweenness = nx.betweenness_centrality(G, weight="weight", normalized=True)
     k_core = nx.core_number(G)
+
+    # New metrics
+    # Closeness centrality
+    closeness = nx.closeness_centrality(G, distance="distance")
+
+    # PageRank
+    pagerank = nx.pagerank(G, weight="weight")
+
+    # Harmonic centrality
+    harmonic = nx.harmonic_centrality(G, distance="distance")
+
+    # HITS algorithm for hub and authority scores
+    hubs, authorities = nx.hits(G, max_iter=100)
+
+    # Communicability - compute average for each node
+    try:
+        comm = nx.communicability(G)
+        avg_comm = {
+            node: sum(values.values()) / len(values) if values else 0.0
+            for node, values in comm.items()
+        }
+    except Exception as e:
+        print(f"Warning: failed to compute communicability: {str(e)}")
+        avg_comm = {node: 0.0 for node in G.nodes()}
+
+    # Global metrics
+    # Degree assortativity coefficient
+    try:
+        degree_assortativity = nx.degree_assortativity_coefficient(G, weight="weight")
+    except Exception as e:
+        print(f"Warning: failed to compute degree assortativity: {str(e)}")
+        degree_assortativity = float("nan")
+
+    # Local efficiency (global metric)
+    try:
+        local_eff = nx.local_efficiency(G)
+    except Exception as e:
+        print(f"Warning: failed to compute local efficiency: {str(e)}")
+        local_eff = float("nan")
 
     # Path lengths
     path_metrics = {}
@@ -495,6 +528,14 @@ def compute_graph_metrics(G: nx.Graph) -> NetworkMetrics:
         min_path_lengths=min_paths,
         mean_path_lengths=mean_paths,
         max_path_lengths=max_paths,
+        closeness=closeness,
+        pagerank=pagerank,
+        harmonic_centrality=harmonic,
+        hits_hub=hubs,
+        hits_authority=authorities,
+        avg_communicability=avg_comm,
+        degree_assortativity=degree_assortativity,
+        local_efficiency=local_eff,
     )
 
 
@@ -529,7 +570,7 @@ def parallel_compute_trajectory_metrics(
 
 def create_average_network(
     universe: mda.Universe,
-    config: Optional[NetHDXConfig] = None,
+    config: Optional[NetHDXConfig | BV_model_Config] = None,
     weight_threshold: float = 0,  # Added weight threshold parameter
 ) -> nx.Graph:
     """
@@ -547,7 +588,15 @@ def create_average_network(
         config = NetHDXConfig()
 
     # Calculate contact matrices for all frames using the new HydrogenBondAnalysis approach
-    contact_matrices = calculate_trajectory_hbonds(universe, config)
+    if isinstance(config, BV_model_Config):
+        contact_matrices = calculate_trajectory_hbonds_BV(universe, config)
+        n_shells = 1  # Number of distance/angle shell combinations
+    elif isinstance(config, NetHDXConfig):
+        contact_matrices = calculate_trajectory_hbonds(universe, config)
+        n_shells = len(config.distance_cutoff)  # Number of distance/angle shell combinations
+    else:
+        raise ValueError("Invalid configuration type")
+
     n_frames = len(contact_matrices)
 
     # Calculate average contact matrix
@@ -555,7 +604,6 @@ def create_average_network(
     avg_contact_matrix = np.mean(contact_matrices, axis=0)
 
     # Normalize the average matrix by the number of shells to get frequencies
-    n_shells = len(config.distance_cutoff)  # Number of distance/angle shell combinations
     # avg_contact_matrix = avg_contact_matrix / n_shells
 
     # Create graph using the weight threshold
@@ -589,7 +637,7 @@ def create_average_network(
 
 
 def contact_matrix_to_graph(
-    contact_matrix: np.ndarray, residue_ids: Sequence[int], weight_threshold: float = 0.1
+    contact_matrix: np.ndarray, residue_ids: Sequence[int], weight_threshold: float = 0
 ) -> nx.Graph:
     """
     Convert a contact matrix to a NetworkX graph with filtered edges.
