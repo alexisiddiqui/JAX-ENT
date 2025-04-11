@@ -116,7 +116,7 @@ def calc_BV_contacts_universe(
                 results[i, ts.frame] = contacts_count
                 ic(f"Hard cutoff mode: counted {contacts_count} contacts within {radius}Å")
 
-    ic(f"Final results shape: {np.array(results).shape}")
+    ic(f"Final results shape: {np.array(results).shape}")  # results (residues, frames)
     ################################################################################
     return results.tolist()
 
