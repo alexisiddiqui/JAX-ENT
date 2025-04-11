@@ -1,0 +1,5 @@
+{
+  "l2_weight": 0.01,
+  "x_regularisation": 1000.0,
+  "maxent_regularisation": 100.0
+}

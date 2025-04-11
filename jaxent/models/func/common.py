@@ -12,6 +12,7 @@ from jaxent.interfaces.topology import Partial_Topology
 ####################################################################################################
 # TODO this needs to return lists or numbered dictionaries instead of sets
 # perhaps this is fine and we simply just add an ignore str to the function
+# we need an easier way to get direct access to the residues
 def find_common_residues(
     ensemble: List[Universe],
     include_mda_selection: str = "protein",

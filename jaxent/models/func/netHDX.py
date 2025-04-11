@@ -275,7 +275,7 @@ def build_hbond_network(
     # Compute network metrics
     try:
         network_metrics = parallel_compute_trajectory_metrics(
-            all_contact_matrices, residue_ids, n_processes=None
+            all_contact_matrices, residue_ids, n_processes=4
         )
     except Exception as e:
         print(f"Warning: failed to compute network metrics: {str(e)}")

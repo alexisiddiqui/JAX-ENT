@@ -419,7 +419,7 @@ def test_hbond_network():
     # trajectory_path = topology_path.replace(".pdb", "_small.xtc")
 
     # Create test output directory
-    test_dir = "tests/hbond_network_viz"
+    test_dir = "tests/_plots/hbond_network_viz"
     os.system(f"rm -rf {test_dir}")
     os.makedirs(test_dir, exist_ok=True)
 

@@ -1,0 +1,8 @@
+{
+  "parameters": {
+    "l2_weight": 0.16341846465664092,
+    "x_regularisation": 274.0550524249695,
+    "maxent_regularisation": 52.47386887109415
+  },
+  "mse": 0.19177569778240072
+}

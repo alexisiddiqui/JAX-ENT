@@ -49,10 +49,10 @@ class Simulation_Parameters:
             float_mask = jnp.clip(mask, 0, 1).astype(jnp.float32)
 
             # Apply mask to weights
-            masked_weights = weights * float_mask
+            masked_weights = (weights * float_mask) + 1e-8
 
             # Get the sum of masked weights with epsilon to avoid division by 0
-            total = jnp.sum(masked_weights) + 1e-8
+            total = jnp.sum(masked_weights)
 
             # Normalize masked weights
             normalized = masked_weights / total
