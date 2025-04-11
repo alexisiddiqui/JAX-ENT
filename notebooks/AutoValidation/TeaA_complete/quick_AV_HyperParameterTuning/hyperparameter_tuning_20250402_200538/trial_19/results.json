@@ -1,0 +1,10 @@
+{
+  "trial": 19,
+  "parameters": {
+    "l2_weight": 0.37970457955180237,
+    "x_regularisation": 1000.0,
+    "maxent_regularisation": 0.1
+  },
+  "mse": 0.20229203503623178,
+  "sem": 0.06663943921263102
+}

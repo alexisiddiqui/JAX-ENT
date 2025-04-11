@@ -190,3 +190,8 @@ tests/_*
 
 *.xtc
 *.pdb
+
+_*
+
+# exclude folders called HDXer
+HDXer/

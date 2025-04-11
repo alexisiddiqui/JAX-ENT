@@ -94,8 +94,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         """
         # concatenate all the features
 
-        heavy_contacts: list[Sequence[float]] = []
-        acceptor_contacts: list[Sequence[float]] = []
+        heavy_contacts: list[Sequence[Sequence[float]]] = []
+        acceptor_contacts: list[Sequence[Sequence[float]]] = []
         # Constants
         ########################################################################
         # TODO: fix the typing here - to do with the composition of generics in the parent class
@@ -114,7 +114,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         for universe in ensemble:
             # Get residue indices and atom indices for amide N and H atoms
             NH_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "N")
-            HN_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "H")
+            HN_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "H | HN")
 
             # Calculate heavy atom contacts
             _heavy_contacts = calc_BV_contacts_universe(
@@ -132,8 +132,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 radius=O_RADIUS,
             )
 
-            heavy_contacts.extend(_heavy_contacts)
-            acceptor_contacts.extend(_o_contacts)
+            heavy_contacts.append(_heavy_contacts)
+            acceptor_contacts.append(_o_contacts)
 
             feature_topology = [
                 frag for frag in self.common_topology if "PRO" not in frag.fragment_sequence
@@ -149,9 +149,12 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
         assert len(feature_topology) > 1, "Feature topology is None"
 
+        _heavy_contacts = [jnp.asarray(contact) for contact in heavy_contacts]
+        _acceptor_contacts = [jnp.asarray(contact) for contact in acceptor_contacts]
+
         return BV_input_features(
-            heavy_contacts=heavy_contacts,
-            acceptor_contacts=acceptor_contacts,
+            heavy_contacts=jnp.concatenate(_heavy_contacts, axis=1),
+            acceptor_contacts=jnp.concatenate(_acceptor_contacts, axis=1),
             k_ints=jnp.array(self.common_k_ints),
         ), feature_topology
 
