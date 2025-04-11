@@ -83,10 +83,10 @@ def _optimise(
             val_loss=opt_state.losses.total_val_loss,
         )
 
-        optimizer.history = history
         if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
             print(f"Reached convergence tolerance/nan vals at step {step}, loss: {current_loss}")
             break
+        optimizer.history = history  # update only if not nan
         # compare to the previous loss
         if (
             step > 10

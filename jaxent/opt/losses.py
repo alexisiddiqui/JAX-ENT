@@ -119,6 +119,29 @@ def maxent_convexKL_loss(
     return loss, loss
 
 
+def maxent_L2_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    """
+    Calculates the L2 penalty of the simulation weights compared to the prior weights. Scaled by the number of frames, squared.
+    """
+    epsilon = 1e-10
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+
+    prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+
+    n_frames = simulation_weights.shape[0]
+
+    loss = jnp.mean((jnp.abs(simulation_weights - prior_frame_weights)) ** 2)
+
+    return loss, loss
+
+
 def sparse_max_entropy_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
@@ -185,7 +208,7 @@ def hdx_uptake_l2_loss(
             # Compute L2 loss for this timepoint
             timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 2)
 
-            # Accumulate loss
+            # Accumulate loss - normalize by the number of residues
             total_loss += timepoint_loss
 
         # Average loss across timepoints
@@ -241,7 +264,7 @@ def hdx_uptake_l1_loss(
             timepoint_loss = jnp.mean(jnp.abs((pred_mapped - true_mapped) ** 1))
 
             # Accumulate loss
-            total_loss += timepoint_loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
 
         # Average loss across timepoints
         return jnp.asarray(total_loss)
@@ -300,7 +323,65 @@ def hdx_uptake_mean_centred_l1_loss(
             timepoint_loss = jnp.mean(jnp.abs(pred_centered - true_centered))
 
             # Accumulate loss
-            total_loss += timepoint_loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss)
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_mean_centred_l2_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
+    This loss centers both predictions and targets around their means before computing the L1 norm.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Center predictions and targets around their means
+            pred_mean = jnp.mean(pred_mapped)
+            true_mean = jnp.mean(true_mapped)
+
+            pred_centered = pred_mapped - pred_mean
+            true_centered = true_mapped - true_mean
+
+            # Compute L1 loss for this timepoint
+            timepoint_loss = jnp.mean(jnp.abs(pred_centered - true_centered) ** 2)
+
+            # Accumulate loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
 
         # Average loss across timepoints
         return jnp.asarray(total_loss)
@@ -343,45 +424,77 @@ def hdx_uptake_monotonicity_loss(model: Simulation, dataset: None, prediction_in
     return loss
 
 
+# def jax_pairwise_cosine_similarity(array: Array) -> Array:
+#     """
+#     Calculate the pairwise cosine similarity between vectors in an array.
+
+#     Args:
+#         array: JAX array of shape (n_samples, n_features) or (n_features,)
+#             If 1D, it's treated as a single sample with n_features
+
+#     Returns:
+#         A square matrix of shape (n_samples, n_samples) containing
+#         pairwise cosine similarities between the samples
+#     """
+#     # If input is 1D, reshape to 2D
+#     if array.ndim == 1:
+#         array = array.reshape(1, -1)
+
+#     # Handle empty array
+#     if array.shape[0] == 0 or array.shape[1] == 0:
+#         return jnp.empty((array.shape[0], array.shape[0]))
+
+#     # Normalize the array
+#     array = array / jnp.sum(array)
+
+#     # Compute dot products
+#     dot_products = jnp.matmul(array, array.T)
+
+#     # Compute norms
+#     norms = jnp.sqrt(jnp.sum(array**2, axis=1))
+
+#     # Create a 2D grid of norm products
+#     norm_products = jnp.outer(norms, norms)
+
+#     # Add small epsilon to avoid division by zero
+#     epsilon = 1e-8
+#     norm_products = jnp.maximum(norm_products, epsilon)
+
+#     # Compute cosine similarities
+#     similarity_matrix = dot_products / norm_products
+
+#     # Ensure values are in the valid range for cosine similarity [-1, 1]
+#     similarity_matrix = 1 - jnp.clip(similarity_matrix, -1.0, 1.0)
+
+#     return similarity_matrix
+
+
 def jax_pairwise_cosine_similarity(array: Array) -> Array:
     """
     Calculate the pairwise cosine similarity between vectors in an array.
-
-    Args:
-        array: JAX array of shape (n_samples, n_features) or (n_features,)
-            If 1D, it's treated as a single sample with n_features
-
-    Returns:
-        A square matrix of shape (n_samples, n_samples) containing
-        pairwise cosine similarities between the samples
     """
     # If input is 1D, reshape to 2D
     if array.ndim == 1:
         array = array.reshape(1, -1)
-
     # Handle empty array
     if array.shape[0] == 0 or array.shape[1] == 0:
         return jnp.empty((array.shape[0], array.shape[0]))
 
     # Compute dot products
     dot_products = jnp.matmul(array, array.T)
-
     # Compute norms
     norms = jnp.sqrt(jnp.sum(array**2, axis=1))
-
     # Create a 2D grid of norm products
     norm_products = jnp.outer(norms, norms)
-
     # Add small epsilon to avoid division by zero
     epsilon = 1e-8
     norm_products = jnp.maximum(norm_products, epsilon)
-
     # Compute cosine similarities
     similarity_matrix = dot_products / norm_products
-
     # Ensure values are in the valid range for cosine similarity [-1, 1]
-    similarity_matrix = jnp.clip(similarity_matrix, -1.0, 1.0)
+    similarity_matrix = 1 + jnp.clip(similarity_matrix, -1.0, 1.0)
 
+    # Return similarity or distance as needed
     return similarity_matrix
 
 
@@ -400,10 +513,225 @@ def frame_weight_consistency_loss(
     # Calculate the pairwise cosine similarity between the weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
 
-    # Compute the L21 distance between the two similarity matrices
-    l1_distance = jnp.mean((dataset - weight_similarity) ** 1)
+    # Compute the L2 distance between the two similarity matrices
+    l2_distance = jnp.mean((jnp.abs(dataset - weight_similarity)) ** 2)
+
+    return l2_distance, l2_distance
+
+
+def exp_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Computes and compares graphs of the pairwise distances between ensembles.
+    One graph is constructed using the features/structures, another using the weights.
+    TODO how are weights compared between each other?
+    The loss is the L1 distance/Cosine between the two graphs.
+    """
+
+    weights = model.params.frame_weights
+
+    # Calculate the pairwise cosine similarity between the weights
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # Compute the L1 distance between the two similarity matrices
+    l1_distance = jnp.mean(-1 + (jnp.exp((jnp.abs(dataset - weight_similarity))) ** 2))
+    # l1_distance = jnp.log(jnp.exp(l1_distance))
 
     return l1_distance, l1_distance
+
+
+def L1_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Computes and compares graphs of the pairwise distances between ensembles.
+    One graph is constructed using the features/structures, another using the weights.
+    TODO how are weights compared between each other?
+    The loss is the L1 distance/Cosine between the two graphs.
+    """
+
+    weights = model.params.frame_weights
+
+    # Calculate the pairwise cosine similarity between the weights
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # Compute the L1 distance between the two similarity matrices
+    l1_distance = jnp.mean(-1 + (jnp.exp((jnp.abs(dataset - weight_similarity))) ** 2))
+    # l1_distance = jnp.log(jnp.exp(l1_distance))
+
+    return l1_distance, l1_distance
+
+
+def normalised_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Computes and compares graphs of the pairwise distances between ensembles.
+    One graph is constructed using the features/structures, another using the weights.
+    TODO how are weights compared between each other?
+    The loss is the L1 distance/Cosine between the two graphs.
+    """
+
+    weights = model.params.frame_weights
+
+    # Calculate the pairwise cosine similarity between the weights
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # mean center the weights
+    weight_similarity = weight_similarity - jnp.mean(weight_similarity)
+
+    dataset = dataset - jnp.mean(dataset)
+
+    # Compute the L1 distance between the two similarity matrices
+    l1_distance = (jnp.abs(dataset - weight_similarity)) ** 2
+
+    l1_distance = jnp.mean(-1 + jnp.exp(l1_distance))
+
+    return l1_distance, l1_distance
+
+
+def convex_KL_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Computes and compares graphs of the pairwise distances between ensembles.
+    One graph is constructed using the features/structures, another using the weights.
+    TODO how are weights compared between each other?
+    The loss is the L1 distance/Cosine between the two graphs.
+    """
+    weights = model.params.frame_weights
+
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # Get shape
+    n = weight_similarity.shape[0]
+
+    # Use JAX's built-in function for upper triangle indices
+    # This is trace-compatible and avoids boolean conversion issues
+    rows, cols = jnp.triu_indices(n, k=1)
+
+    # Handle empty arrays case
+    if rows.size == 0:
+        return jnp.array(0.0), jnp.array(0.0)
+
+    # Extract using these indices - this works with JIT
+    weight_upper = weight_similarity[rows, cols]
+    dataset_upper = dataset[rows, cols]
+    # Small epsilon to avoid numerical issues
+    epsilon = 1e-5
+    # Normalize the weights and add epsilon
+    weight_similarity = weight_upper + epsilon
+    weight_similarity = weight_similarity / jnp.sum(weight_similarity)
+
+    # Normalize the dataset and add epsilon
+    dataset = dataset_upper + epsilon
+    dataset = dataset / jnp.sum(dataset)
+    # Use optax's safe sofftmax_cross_entropy
+    loss = -1 + jnp.exp(
+        jnp.sum(
+            optax.losses.convex_kl_divergence(
+                log_predictions=jnp.log(weight_similarity),
+                targets=dataset,
+            )
+        )
+    )
+
+    return loss, loss
+
+
+def cosine_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Computes the cosine similarity between the pairwise weight similarity matrix
+    and the input dataset matrix by considering only the upper triangular elements.
+    """
+    weights = model.params.frame_weights
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # Get shape
+    n = weight_similarity.shape[0]
+
+    # Use JAX's built-in function for upper triangle indices
+    # This is trace-compatible and avoids boolean conversion issues
+    rows, cols = jnp.triu_indices(n, k=1)
+
+    # Handle empty arrays case
+    if rows.size == 0:
+        return jnp.array(0.0), jnp.array(0.0)
+
+    # Extract using these indices - this works with JIT
+    weight_upper = weight_similarity[rows, cols]
+    dataset_upper = dataset[rows, cols]
+
+    # Handle empty arrays case
+    if weight_upper.size == 0 or dataset_upper.size == 0:
+        return jnp.array(0.0), jnp.array(0.0)
+
+    # Center the vectors (subtract mean) to improve numerical stability
+    weight_centered = weight_upper - jnp.mean(weight_upper)
+    dataset_centered = dataset_upper - jnp.mean(dataset_upper)
+
+    # Compute dot product
+    dot_product = jnp.sum(weight_centered * dataset_centered)
+
+    # Compute magnitudes with safe epsilon
+    epsilon = 1e-8
+    weight_magnitude = jnp.sqrt(jnp.sum(weight_centered**2) + epsilon)
+    dataset_magnitude = jnp.sqrt(jnp.sum(dataset_centered**2) + epsilon)
+
+    # Safe division with fallback to zero when norms are too small
+    cosine_similarity = jnp.where(
+        (weight_magnitude > epsilon) & (dataset_magnitude > epsilon),
+        dot_product / (weight_magnitude * dataset_magnitude),
+        0.0,
+    )
+
+    # Clip to valid range and convert to distance
+    cosine_similarity = jnp.clip(cosine_similarity, -1.0, 1.0)
+    cosine_distance = 1.0 - cosine_similarity
+
+    return cosine_distance, cosine_distance
+
+
+def corr_frame_weight_consistency_loss(
+    model: Simulation, dataset: Array, prediction_index: int
+) -> tuple[Array, Array]:
+    weights = model.params.frame_weights
+    weight_similarity = jax_pairwise_cosine_similarity(weights)
+
+    # Get shape
+    n = weight_similarity.shape[0]
+
+    # Use JAX's built-in function for upper triangle indices
+    # This is trace-compatible and avoids boolean conversion issues
+    rows, cols = jnp.triu_indices(n, k=1)
+
+    # Handle empty arrays case
+    if rows.size == 0:
+        return jnp.array(0.0), jnp.array(0.0)
+
+    # Extract using these indices - this works with JIT
+    weight_upper = weight_similarity[rows, cols]
+    dataset_upper = dataset[rows, cols]
+
+    # Compute correlation coefficient instead of cosine similarity
+    # This is more numerically stable during optimization
+    weight_mean = jnp.mean(weight_upper)
+    dataset_mean = jnp.mean(dataset_upper)
+
+    weight_centered = weight_upper - weight_mean
+    dataset_centered = dataset_upper - dataset_mean
+
+    numerator = jnp.sum(weight_centered * dataset_centered)
+    denominator = jnp.sqrt(jnp.sum(weight_centered**2) * jnp.sum(dataset_centered**2) + 1e-12)
+
+    correlation = numerator / denominator
+    correlation = jnp.clip(correlation, -1.0, 1.0)
+    distance = 1.0 - correlation
+
+    return distance, distance
 
 
 def HDX_uptake_MAE_loss(
@@ -446,10 +774,10 @@ def HDX_uptake_MAE_loss(
             timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped))
 
             # Accumulate loss
-            total_loss += timepoint_loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
 
         # Average loss across timepoints
-        return jnp.asarray(total_loss / y_true.shape[0])
+        return jnp.asarray(total_loss)
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
@@ -512,10 +840,10 @@ def HDX_uptake_KL_loss(
             timepoint_loss = jnp.sum(timepoint_loss)
 
             # Accumulate loss
-            total_loss += timepoint_loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
 
         # Average loss across timepoints
-        return total_loss / y_true.shape[0]  # Consider adding division by timepoints
+        return total_loss  # Consider adding division by timepoints
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
@@ -577,10 +905,10 @@ def HDX_uptake_convex_KL_loss(
             timepoint_loss = jnp.sum(timepoint_loss)
 
             # Accumulate loss
-            total_loss += timepoint_loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
 
         # Average loss across timepoints
-        return total_loss / y_true.shape[0]  # Consider adding division by timepoints
+        return total_loss  # Consider adding division by timepoints
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)

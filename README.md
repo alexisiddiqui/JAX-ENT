@@ -20,17 +20,15 @@ CryoEM???
 
 TODO:
 
+Align the shapes of the inputs and outputs Arrays to be consistent
+- Add type hinting to the shape of the arrays (Chex?)
 
-implement KL uniform loss
+Printing of classes and Logging
+CLI Interface
+CI
 
-implement linear BV and exp BV uptake
+***Docs
 
-
-Created the mappings with sparse multiplication - need to implement this into the loss function
-
-rename dataset to dataloader - create model specific "DATASET"
-
-need to sort out using sets of Topology Fragments - this needs to be changed to lists or dictionaries
 
 
 ## need to fix implementation of optax optimiser to be better fit for jax 

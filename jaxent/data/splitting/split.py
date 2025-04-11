@@ -14,7 +14,7 @@ from jaxent.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.interfaces.topology import Partial_Topology
 from jaxent.models.func.common import find_common_residues
 
-ic.disable()
+# ic.disable()
 
 
 def find_fragment_centrality(
@@ -107,10 +107,10 @@ def filter_common_residues(
     for i, data in enumerate(dataset):
         assert data.top is not None, "Topology fragment is not defined in the experimental data."
         peptide_residues = data.top.extract_residues(peptide=peptide)
-        # ic(f"Fragment {i}: Found {len(peptide_residues)} residues")
+        ic(f"Fragment {i}: Found {len(peptide_residues)} residues")
 
         in_common = any([res in common_residues for res in peptide_residues])
-        # ic(f"Fragment {i}: Has common residues: {in_common}")
+        ic(f"Fragment {i}: Has common residues: {in_common}")
 
         if in_common:
             new_data.append(data)
@@ -131,6 +131,7 @@ class DataSplitter:
         peptide: bool = True,
         centrality: bool = True,
         train_size: float = 0.5,
+        align_sequence: bool = False,
     ):
         ic.configureOutput(prefix="SPLITTER | ")
         ic(f"Initializing DataSplitter with random_seed={random_seed}")
@@ -240,7 +241,7 @@ class DataSplitter:
         return True
 
     def random_split(
-        self, remove_overlap: bool = True
+        self, remove_overlap: bool = False
     ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
         # just performs a random split
         ic.configureOutput(prefix="RANDOM_SPLIT | ")
@@ -284,11 +285,11 @@ class DataSplitter:
             return train_data, val_data
         except Exception as e:
             ic.format("Split validation failed: {}", str(e))
-            print("Split is not valid - trying again")
+            print(f"Split is not valid - trying again {self.random_seed}")
 
             # change random seed
             self.random_seed += 1
-            ic(f"Incrementing random seed to {self.random_seed}")
+            print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
 
             return self.random_split(remove_overlap=remove_overlap)

@@ -1,3 +1,4 @@
+import os
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
@@ -393,10 +394,24 @@ def test_network_metrics_plotting():
     # Load test data and compute metrics
     topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
     trajectory_path = "./tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+
+    # Create test output directory
+    test_dir = "tests/_plots/network_metrics_viz"
+    os.system(f"rm -rf {test_dir}")
+    os.makedirs(test_dir, exist_ok=True)
+
+    print("\nTesting network metrics visualization functionality...")
+    print("-" * 80)
+
     try:
         # Create universe and compute network metrics
         universe = Universe(topology_path, trajectory_path)
         config = NetHDXConfig()
+
+        # Create configuration-specific directory
+        config_name = "netHDX_standard"
+        config_dir = os.path.join(test_dir, config_name)
+        os.makedirs(config_dir, exist_ok=True)
 
         # Build network and get metrics
         features = build_hbond_network([universe], config)
@@ -409,9 +424,10 @@ def test_network_metrics_plotting():
         )
 
         # Save plot
-        output_path = "network_metrics_distribution.png"
+        output_path = os.path.join(config_dir, "network_metrics_distribution.png")
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
+        print(f"Saved visualization: {output_path}")
 
         # Create heatmap visualization
         fig_heatmap = plot_framewise_network_metrics_heatmap(
@@ -421,18 +437,20 @@ def test_network_metrics_plotting():
         )
 
         # Save heatmap plot
-        output_path_heatmap = "network_metrics_heatmap.png"
+        output_path_heatmap = os.path.join(config_dir, "network_metrics_heatmap.png")
         fig_heatmap.savefig(output_path_heatmap, dpi=300, bbox_inches="tight")
         plt.close(fig_heatmap)
+        print(f"Saved visualization: {output_path_heatmap}")
 
         # Create and save global metrics plot
         fig_global = plot_global_network_metrics(
             features.network_metrics,
             title=f"Global Network Metrics\n{universe.trajectory.n_frames} frames",
         )
-        output_path_global = "global_network_metrics.png"
+        output_path_global = os.path.join(config_dir, "global_network_metrics.png")
         fig_global.savefig(output_path_global, dpi=300, bbox_inches="tight")
         plt.close(fig_global)
+        print(f"Saved visualization: {output_path_global}")
 
         # Create and save PCA with global metrics plot
         fig_pca = plot_pca_global_metrics(
@@ -440,13 +458,12 @@ def test_network_metrics_plotting():
             features.network_metrics,
             title=f"PCA of CA Distances Colored by Global Metrics\n{universe.trajectory.n_frames} frames",
         )
-        output_path_pca = "pca_global_metrics.png"
+        output_path_pca = os.path.join(config_dir, "pca_global_metrics.png")
         fig_pca.savefig(output_path_pca, dpi=300, bbox_inches="tight")
         plt.close(fig_pca)
+        print(f"Saved visualization: {output_path_pca}")
 
-        print(
-            f"Successfully created visualizations:\n{output_path}\n{output_path_heatmap}\n{output_path_global}\n{output_path_pca}"
-        )
+        print("\nTest completed successfully!")
     except Exception as e:
         print(f"Error during testing: {str(e)}")
 

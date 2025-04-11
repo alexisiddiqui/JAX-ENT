@@ -28,6 +28,7 @@ class BV_model_Config(BaseConfig):
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
+    peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
 
     def __init__(self, num_timepoints: int | None = None) -> None:
         super().__init__()
@@ -87,10 +88,11 @@ class NetHDXConfig(BaseConfig):
         default_factory=lambda: [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5]
     )
     angle_cutoff: list[float] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    residue_ignore: tuple[int, int] = (0, 0)  # Range of residues to ignore relative to donor
+    residue_ignore: tuple[int, int] = (-1, 1)  # Range of residues to ignore relative to donor
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     shell_energy_scaling: float = 0.84
+    peptide_trim: int = 2  # HDXer by defualt uses 1 residue trim but this should be 2
 
     def __init__(
         self,
