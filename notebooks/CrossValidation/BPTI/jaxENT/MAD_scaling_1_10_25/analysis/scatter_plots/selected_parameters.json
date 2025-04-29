@@ -1,0 +1,20 @@
+{
+    "mae_vs_kld": {
+        "mcMSE20_MAD20": 6.7,
+        "MSE25_MAD25": 5.6,
+        "MSE25_MAD10": 6.7,
+        "HDXer": "(3, 1)"
+    },
+    "mse_vs_mae": {
+        "mcMSE20_MAD20": 6.7,
+        "MSE25_MAD25": 4.5,
+        "MSE25_MAD10": 6.7,
+        "HDXer": "(7, 0)"
+    },
+    "mse_vs_kld": {
+        "mcMSE20_MAD20": 5.6,
+        "MSE25_MAD25": 4.5,
+        "MSE25_MAD10": 6.7,
+        "HDXer": "(5, 1)"
+    }
+}

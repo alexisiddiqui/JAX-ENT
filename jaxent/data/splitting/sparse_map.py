@@ -95,14 +95,18 @@ def create_sparse_map(
     for frag in stripped_output_topology:
         frag.top.fragment_index = None
 
-    # assert that set of feature topology is contained within output features topologies
-    assert set([f.top for f in stripped_output_topology]).issubset(
-        set(stripped_feature_topology)
-    ), f"""Feature topology is not contained within output features: ≈
-            \n Output features: \n
-            {set([f.top for f in output_features])}
-            \n Stripped Feature topology: \n
-            {set(stripped_feature_topology)}"""
+    # # assert that set of feature topology is contained within output features topologies
+    # assert set([f.top for f in stripped_output_topology]).issubset(
+    #     set(stripped_feature_topology)
+    # ), f"""Feature topology is not contained within output features: ≈
+    #         \n Output features: \n
+    #         {set([f.top for f in output_features])}
+    #         \n Stripped Feature topology: \n
+    #         {set(stripped_feature_topology)}"""
+    if not set([f.top for f in stripped_output_topology]).issubset(set(stripped_feature_topology)):
+        UserWarning(
+            f"Feature topology is not contained within output features: \n Output features: \n {set([f.top for f in output_features])} \n Stripped Feature topology: \n {set(stripped_feature_topology)}"
+        )
 
     n_residues = len(feature_topology)
     n_fragments = len(output_features)

@@ -32,203 +32,30 @@ from typing import Sequence
 
 import jax
 import matplotlib.pyplot as plt
-from jaxENT_run_AutoValidation_L2FWConsistency_TeaA import (
+from jaxENT_run_AutoValidation_L2only_TeaA import (
     create_synthetic_data,
+    setup_simulation,
+    visualize_optimization_results,
 )
 from MDAnalysis import Universe
 
-from jaxent.analysis.plots.optimisation import (
-    plot_frame_weights_heatmap,
-    plot_loss_components,
-    plot_split_visualization,
-    plot_total_losses,
-)
-from jaxent.data.loader import Dataset, ExpD_Dataloader, ExpD_Datapoint
-from jaxent.data.splitting.sparse_map import create_sparse_map
-from jaxent.data.splitting.split import DataSplitter
-from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Builder
+from jaxent.data.loader import ExpD_Dataloader
 from jaxent.interfaces.simulation import Simulation_Parameters
-from jaxent.interfaces.topology import Partial_Topology
 from jaxent.models.core import Simulation
 from jaxent.models.HDX.BV.features import BV_input_features
-from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
+from jaxent.models.HDX.BV.forwardmodel import BV_model_Config
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.opt.losses import hdx_uptake_l2_loss, maxent_convexKL_loss
-from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
+from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
 from jaxent.opt.run import run_optimise
 from jaxent.types.base import ForwardModel
-from jaxent.types.config import FeaturiserSettings, OptimiserSettings
+from jaxent.types.config import OptimiserSettings
 from jaxent.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,
 )
 
-
-# Function to create datasets with mappings for each seed
-def create_datasets_with_mappings(
-    trajs: list[Universe],
-    features: Sequence[BV_input_features],
-    feature_topology: list[Partial_Topology],
-    exp_data: Sequence[ExpD_Datapoint],
-    seeds: list[int],
-    train_val_split: float,
-) -> list[ExpD_Dataloader]:
-    """
-    Creates datasets with train/val splits for multiple seeds.
-
-    Parameters:
-    -----------
-    ensemble : list
-        List of universe objects
-    features : list
-        List of feature objects
-    feature_topology : list
-        List of feature topology objects
-    exp_data : list
-        List of experimental data
-    seeds : list
-        List of random seeds
-
-    Returns:
-    --------
-    datasets : list
-        List of dataset objects for each seed
-    """
-    datasets = []
-
-    # assert seeds are unique
-    assert len(seeds) == len(set(seeds)), "Seeds must be unique"
-
-    for seed in seeds:
-        print(f"Creating dataset for seed: {seed}")  # Track progress
-        # Create a dataset object
-        dataset = ExpD_Dataloader(data=exp_data)
-
-        # Create a splitter with the current seed
-        splitter = DataSplitter(
-            dataset,
-            random_seed=seed,
-            ensemble=trajs,
-            common_residues=set(feature_topology),
-            peptide=False,
-            train_size=train_val_split,
-            centrality=False,
-        )
-
-        # Generate train/val split
-        train_data, val_data = splitter.random_split(remove_overlap=True)
-        print(f"Generated train/val split for seed: {seed}")  # Track progress
-
-        # Create sparse maps
-        train_sparse_map = create_sparse_map(features[0], feature_topology, train_data)
-        val_sparse_map = create_sparse_map(features[0], feature_topology, val_data)
-        test_sparse_map = create_sparse_map(features[0], feature_topology, exp_data)
-        print(f"Created sparse maps for seed: {seed}")  # Track progress
-
-        # Add train, val, and test sets to the dataset
-        dataset.train = Dataset(
-            data=train_data,
-            y_true=jnp.array([data.extract_features() for data in train_data]),
-            residue_feature_ouput_mapping=train_sparse_map,
-        )
-
-        dataset.val = Dataset(
-            data=val_data,
-            y_true=jnp.array([data.extract_features() for data in val_data]),
-            residue_feature_ouput_mapping=val_sparse_map,
-        )
-
-        dataset.test = Dataset(
-            data=exp_data,
-            y_true=jnp.array([data.extract_features() for data in exp_data]),
-            residue_feature_ouput_mapping=test_sparse_map,
-        )
-
-        datasets.append(dataset)
-        print(f"Dataset created and appended for seed: {seed}")  # Track progress
-
-    return datasets
-
-
-def visualize_optimization_results(
-    output_suff: str,
-    train_data: list[ExpD_Datapoint],
-    val_data: list[ExpD_Datapoint],
-    exp_data: list[ExpD_Datapoint],
-    opt_history: OptimizationHistory,
-):
-    """
-    Create and display all visualization plots.
-    outptu_suff is the suffix for the output directory - simply add the name of the plot+.png to save it
-    """
-
-    # Create all plots
-    split_fig = plot_split_visualization(train_data, val_data, exp_data)
-    total_loss_fig = plot_total_losses(opt_history)
-    loss_fig = plot_loss_components(opt_history)
-    weights_fig = plot_frame_weights_heatmap(opt_history)
-
-    # save all plots
-    split_fig.savefig(output_suff + "_split.png")
-    total_loss_fig.savefig(output_suff + "_total_loss.png")
-    loss_fig.savefig(output_suff + "_loss_components.png")
-    weights_fig.savefig(output_suff + "_frame_weights.png")
-    plt.close("all")
-    print(f"Visualizations saved with prefix: {output_suff}")  # Track progress
-
-
-# def create_synthetic_data(
-#     ref_structures: list[Universe],
-#     ref_ratios: list[float],
-#     bv_config=BV_model_Config(num_timepoints=3),
-# ) -> Sequence[ExpD_Datapoint]:
-#     """
-#     Create synthetic data based on reference structures and their ratios.
-
-#     Featurises each reference structure, averages across frames.
-#     """
-#     print("Creating synthetic data...")  # Track progress
-
-#     features = []
-
-#     featuriser_settings = FeaturiserSettings(name="synthetic", batch_size=None)
-#     models = [BV_model(bv_config)]
-#     ensemble = Experiment_Builder(ref_structures, models)
-#     features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-#     print(f"Features shape: {features[0].features_shape}")
-
-#     # check that the length trajectoy is the same as the number of reference ratios
-#     assert len(ref_ratios) == features[0].features_shape[2], (
-#         f"Length of ref_ratios: {len(ref_ratios)} and features: {features[0].features_shape[2]} do not match"
-#     )
-
-#     # Create synthetic data by applying forward pass using the reference ratios as the frame weights
-#     params = Simulation_Parameters(
-#         frame_weights=jnp.array(ref_ratios).reshape(1, -1, 1),
-#         frame_mask=jnp.ones_like(jnp.array(ref_ratios)).reshape(1, -1, 1),
-#         model_parameters=[bv_config.forward_parameters],
-#         forward_model_weights=jnp.ones(1, dtype=jnp.float32),
-#         forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
-#         normalise_loss_functions=jnp.zeros(1, dtype=jnp.float32),
-#     )
-#     print(params)
-
-#     simulation = Simulation(forward_models=models, input_features=features, params=params)
-#     simulation.initialise()
-#     simulation.forward(params)
-#     output = simulation.outputs[0]
-#     print(f"Output shape: {output.uptake.shape}")
-#     # Create synthetic data
-#     synthetic_data = [
-#         HDX_peptide(dfrac=output.uptake[0, i], top=feature_topology[0][i])
-#         for i in range(output.uptake.shape[1])
-#     ]
-#     del simulation
-#     jax.clear_caches()
-#     print("Synthetic data created.")  # Track progress
-#     return synthetic_data
+# Function to create da
 
 
 def run_L2_optimization(
@@ -280,8 +107,8 @@ def run_L2_optimization(
 
             optimiser = OptaxOptimizer(
                 parameter_masks={Optimisable_Parameters.frame_weights},
-                optimizer="adam",
-                learning_rate=5e-4,
+                optimizer="sgd",
+                learning_rate=1e-4,
             )
             # Run optimization
             print(f"Running optimization for Dataset Seed {i + 1}/{len(datasets)}")
@@ -317,9 +144,9 @@ def run_L2_optimization(
             )
             visualize_optimization_results(
                 output_suff,
-                train_data=datasets[0].train.data,
-                val_data=datasets[0].val.data,
-                exp_data=datasets[0].test.data,
+                train_data=dataset.train.data,
+                val_data=dataset.val.data,
+                exp_data=dataset.test.data,
                 opt_history=loaded_history,
             )
             del new_simulation
@@ -334,138 +161,6 @@ def run_L2_optimization(
     return results
 
 
-def setup_simulation(
-    bv_config: BV_model_Config,
-    seeds: list[int],
-    trajectory_path: str,
-    topology_path: str,
-    synthetic_data: Sequence[ExpD_Datapoint],
-    train_val_split: float = 0.6,
-) -> tuple[
-    list[ExpD_Dataloader],
-    Sequence[ForwardModel],
-    OptimiserSettings,
-    # ExpD_Dataloader,
-    Sequence[BV_input_features],
-]:
-    print("Setting up simulation...")  # Track progress
-    opt_settings = OptimiserSettings(name="test", n_steps=5000, convergence=1e-5)
-
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-
-    test_universe = Universe(topology_path, trajectory_path)
-
-    universes = [test_universe]
-
-    models = [BV_model(bv_config)]
-
-    ensemble = Experiment_Builder(universes, models)
-
-    # check if trajectory dir has .jpz files
-    traj_dir = os.path.dirname(trajectory_path)
-    if not any(file.endswith(".jpz.npz") for file in os.listdir(traj_dir)):
-        features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-        # save heavy, oxygen contacts and kints using jax savez
-        features = features[0]
-        print(f"Features shape: {features.features_shape}")
-
-        jnp.savez(
-            os.path.join(traj_dir, "features.jpz"),
-            heavy_contacts=features.heavy_contacts,
-            acceptor_contacts=features.acceptor_contacts,
-            k_ints=features.k_ints,
-        )
-
-    else:
-        #
-        feature_topology = [[data.top for data in synthetic_data]]
-        # Load the features from the .jpz file
-        features_path = os.path.join(traj_dir, "features.jpz.npz")
-        features = [BV_input_features(**jnp.load(features_path))]
-        print(f"Loaded features shape: {features[0].features_shape}")
-
-    datasets = create_datasets_with_mappings(
-        universes,
-        features,
-        feature_topology[0],
-        synthetic_data,
-        seeds=seeds,
-        train_val_split=train_val_split,
-    )
-
-    jax.clear_caches()
-    print("Simulation setup complete.")  # Track progress
-
-    return datasets, models, opt_settings, features
-
-
-def setup_simulation(
-    bv_config: BV_model_Config,
-    seeds: list[int],
-    trajectory_path: str,
-    topology_path: str,
-    synthetic_data: Sequence[ExpD_Datapoint],
-    train_val_split: float = 0.6,
-) -> tuple[
-    list[ExpD_Dataloader],
-    Sequence[ForwardModel],
-    OptimiserSettings,
-    # ExpD_Dataloader,
-    Sequence[BV_input_features],
-]:
-    print("Setting up simulation...")  # Track progress
-    opt_settings = OptimiserSettings(name="test", n_steps=500, convergence=1e-8)
-
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-
-    test_universe = Universe(topology_path, trajectory_path)
-
-    universes = [test_universe]
-
-    models = [BV_model(bv_config)]
-
-    ensemble = Experiment_Builder(universes, models)
-
-    # check if trajectory dir has .jpz files
-    traj_dir = os.path.dirname(trajectory_path)
-    if not any(file.endswith(".jpz.npz") for file in os.listdir(traj_dir)):
-        features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-        # save heavy, oxygen contacts and kints using jax savez
-        features = features[0]
-        print(f"Features shape: {features.features_shape}")
-
-        jnp.savez(
-            os.path.join(traj_dir, "features.jpz"),
-            heavy_contacts=features.heavy_contacts,
-            acceptor_contacts=features.acceptor_contacts,
-            k_ints=features.k_ints,
-        )
-
-    else:
-        #
-        feature_topology = [[data.top for data in synthetic_data]]
-        # Load the features from the .jpz file
-        features_path = os.path.join(traj_dir, "features.jpz.npz")
-        features = [BV_input_features(**jnp.load(features_path))]
-        print(f"Loaded features shape: {features[0].features_shape}")
-
-    datasets = create_datasets_with_mappings(
-        universes,
-        features,
-        feature_topology[0],
-        synthetic_data,
-        seeds=seeds,
-        train_val_split=train_val_split,
-    )
-
-    jax.clear_caches()
-    print("Simulation setup complete.")  # Track progress
-
-    return datasets, models, opt_settings, features
-
-
 def run_quick_auto_validation(
     base_output_dir: str,
     reference_paths: list[str],
@@ -474,7 +169,12 @@ def run_quick_auto_validation(
     bv_config: BV_model_Config,
     regularisation_scale: float = 0.1,
 ):
-    print("Starting quick auto-validation...")  # Track progress
+    print(f"Starting auto-validation with regularization scale: {regularisation_scale}")
+    jax.clear_caches()
+    # Create output directory for this regularization scale
+    output_dir = os.path.join(base_output_dir, "quick_auto_validation_results")
+    os.makedirs(output_dir, exist_ok=True)
+
     reference_structures = [Universe(top_path) for top_path in reference_paths]
 
     synthetic_data = create_synthetic_data(
@@ -498,21 +198,11 @@ def run_quick_auto_validation(
         frame_weights=jnp.ones(trajectory_length) / trajectory_length,
         frame_mask=jnp.ones(trajectory_length, dtype=jnp.float32),
         model_parameters=[bv_config.forward_parameters],
-        forward_model_weights=jnp.array([1.0, regularisation_scale], dtype=jnp.float32),
+        forward_model_weights=jnp.array([10.0, regularisation_scale], dtype=jnp.float32),
         forward_model_scaling=jnp.ones(2, dtype=jnp.float32),
-        normalise_loss_functions=jnp.ones(2, dtype=jnp.float32),
+        normalise_loss_functions=jnp.zeros(2, dtype=jnp.float32),
     )
-    # new_params = Simulation_Parameters(
-    #     frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-    #     frame_mask=jnp.ones(trajectory_length, dtype=jnp.float32),
-    #     model_parameters=[bv_config.forward_parameters],
-    #     forward_model_weights=jnp.array([1000.0], dtype=jnp.float32),
-    #     forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
-    #     normalise_loss_functions=jnp.zeros(1, dtype=jnp.float32),
-    # )
 
-    # Run the simulation for each dataset
-    output_dir = os.path.join(base_output_dir, "quick_auto_validation_results")
     # Make sure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
@@ -534,7 +224,6 @@ def run_quick_auto_validation(
 
     # save the pairwise similarity matrix as a heatmap
     plt.imshow(pairwise_similarity, cmap="hot", interpolation="nearest")
-    # add colorbar
     plt.colorbar()
     plt.savefig(
         os.path.join(output_dir, "pairwise_similarity_matrix.png"),
@@ -542,6 +231,8 @@ def run_quick_auto_validation(
         bbox_inches="tight",
     )
     plt.close()
+    opt_settings.n_steps = 5000
+    opt_settings.convergence = 1e-4
 
     results = run_L2_optimization(
         features=features,
@@ -552,8 +243,10 @@ def run_quick_auto_validation(
         output_dir=output_dir,
         pairwise_similarity=pairwise_similarity,
     )
-    print("Auto-validation completed successfully.")
-    print(f"Saving results to {output_dir}")
+    print(
+        f"Auto-validation completed successfully for regularization scale: {regularisation_scale}"
+    )
+    print(f"Results saved to {output_dir}")
 
 
 if __name__ == "__main__":
@@ -567,26 +260,39 @@ if __name__ == "__main__":
         "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
     )
 
-    regularisation_scale = [0, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0][6]
-    # regularisation_scale = 10.0
-    base_output_dir = os.path.join(
-        os.path.dirname(__file__),
-        "normalisation_MaxENT",
-        f"TeaA_simple_{regularisation_scale}_adam",
-    )
+    # List of regularization scales to test
+    regularisation_scales = [0, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+    regularisation_scales = [0.1, 0.5, 1.0, 2.0]
 
-    # Create the output directory if it doesn't exist
-    # os.system(f"rm -rf {base_output_dir}")
-    os.system(f"mkdir -p {base_output_dir}")
+    # Configure the BV model
+    bv_config = BV_model_Config(num_timepoints=5)
+    bv_config.timepoints = jnp.array([0.167, 1, 10, 60, 120])
 
-    bv_config = BV_model_Config(num_timepoints=4)
-    bv_config.timepoints = jnp.array([0.1, 1.0, 10.0, 100.0])
-    run_quick_auto_validation(
-        base_output_dir=base_output_dir,
-        reference_paths=[open_path, closed_path],
-        trajectory_path=trajectory_path,
-        topology_path=topology_path,
-        bv_config=bv_config,
-        regularisation_scale=regularisation_scale,
-    )
-    print("Auto-validation script completed.")
+    # Iterate through all regularization scales
+    for regularisation_scale in regularisation_scales:
+        print(f"\n===== Processing regularization scale: {regularisation_scale} =====\n")
+
+        # Create a unique output directory for each regularization scale
+        base_output_dir = os.path.join(
+            os.path.dirname(__file__),
+            "normalisation_MaxENT",
+            f"TeaA_simple_{regularisation_scale}_sgd",
+        )
+
+        # Create the output directory if it doesn't exist
+        os.makedirs(base_output_dir, exist_ok=True)
+
+        # Run the auto-validation for this regularization scale
+        run_quick_auto_validation(
+            base_output_dir=base_output_dir,
+            reference_paths=[open_path, closed_path],
+            trajectory_path=trajectory_path,
+            topology_path=topology_path,
+            bv_config=bv_config,
+            regularisation_scale=regularisation_scale,
+        )
+
+        # Clear any remaining memory to prevent issues between runs
+        jax.clear_caches()
+
+    print("Auto-validation script completed for all regularization scales.")

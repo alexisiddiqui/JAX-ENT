@@ -22,15 +22,29 @@ For each structure and config description, the script will compute the adjancenc
 The mixing experiment takes the two adjacency matrices and computes the mixed matrix.
 The mixed matrix then has its MSD compared to the first reference structure. This is repeated over the number intervals between 0 and 100%, inclusive.
 Multiple replicates are run with random but deterministic dropout to compute confidence intervals.
+
+
 """
 
 import argparse
 import os
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from MDAnalysis import Universe
 from tqdm import tqdm
+
+mpl.rcParams.update(
+    {
+        "axes.titlesize": 20,
+        "axes.labelsize": 24,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 20,
+        "legend.fontsize": 16,
+        "font.size": 24,  # default for all text (fallback)
+    }
+)
 
 from jaxent.models.config import BV_model_Config, NetHDXConfig
 from jaxent.models.func.netHDX import calculate_trajectory_hbonds, calculate_trajectory_hbonds_BV
@@ -103,7 +117,21 @@ def parse_arguments():
         default="heavy",
         help="Atom selection for pairwise distance RMSD calculation (heavy or CA atoms)",
     )
-
+    parser.add_argument(
+        "--plot_heatmaps",
+        default=True,
+        help="Plot heatmaps of adjacency matrices",
+    )
+    parser.add_argument(
+        "--plot_all_mixing_ratios",
+        default=True,
+        help="Plot heatmaps for all mixing ratios (default: only key ratios)",
+    )
+    parser.add_argument(
+        "--heatmap_colormap",
+        default="magma",
+        help="Colormap to use for heatmaps (default: viridis)",
+    )
     return parser.parse_args()
 
 
@@ -347,6 +375,7 @@ def calculate_distance_matrix_rmsd(matrix1, matrix2):
     return np.sqrt(np.mean((matrix1 - matrix2) ** 2))
 
 
+# Then modify run_mixing_experiment() function:
 def run_mixing_experiment(args):
     """Run the mixing experiment."""
     # Create output directory
@@ -387,8 +416,9 @@ def run_mixing_experiment(args):
         rmsd = calculate_distance_matrix_rmsd(mixed_dist_matrix, dist_matrix1)
         structure_rmsds.append(rmsd)
 
-    # Results storage
+    # Results and adjacency matrices storage
     all_results = {}
+    all_adjacency_matrices = {}
 
     for config_name, config in configs.items():
         print(f"Processing configuration: {config_name}")
@@ -406,11 +436,18 @@ def run_mixing_experiment(args):
         rmsd_ci_lower = []
         rmsd_ci_upper = []
 
+        # Store mixed matrices for visualization if needed
+        mixed_matrices = []
+
         print(
             f"  Calculating RMSD for {len(mixing_ratios)} mixing ratios with {args.num_replicates} replicates..."
         )
         for ratio in tqdm(mixing_ratios):
             mixed_matrix = mix_matrices(adjacency_1, adjacency_2, ratio)
+
+            # Store the matrix if we'll be plotting heatmaps
+            if args.plot_heatmaps:
+                mixed_matrices.append(mixed_matrix.copy())
 
             # Run multiple replicates with different dropout patterns
             replicate_rmsds = []
@@ -435,7 +472,7 @@ def run_mixing_experiment(args):
             rmsd_ci_lower.append(ci_lower)
             rmsd_ci_upper.append(ci_upper)
 
-        # Store results
+        # Store results and matrices
         all_results[config_name] = {
             "mixing_ratios": mixing_ratios,
             "rmsd_values": rmsd_values,
@@ -445,11 +482,25 @@ def run_mixing_experiment(args):
             "structure_rmsds": structure_rmsds,  # Add the structure RMSDs for each mixing ratio
         }
 
+        if args.plot_heatmaps:
+            all_adjacency_matrices[config_name] = mixed_matrices
+
     # Visualize results
     visualize_results(all_results, args)
 
     # Create the new plot comparing matrix RMSD to structural RMSD
     plot_matrix_vs_structure_rmsd(all_results, args)
+
+    # Plot heatmaps of adjacency matrices if requested
+    if args.plot_heatmaps:
+        print("Plotting adjacency matrix heatmaps...")
+        plot_adjacency_heatmaps(
+            all_results,
+            all_adjacency_matrices,
+            args,
+            plot_all=args.plot_all_mixing_ratios,
+            colormap=args.heatmap_colormap,
+        )
 
     return all_results
 
@@ -602,6 +653,130 @@ def visualize_results(results, args):
             f.write("\n")
 
 
+def plot_adjacency_heatmaps(results, adjacency_matrices, args, plot_all=False, colormap="viridis"):
+    """
+    Plot heatmaps of mixed adjacency matrices at each mixing ratio.
+
+    Parameters:
+    -----------
+    results : dict
+        Results from the mixing experiment
+    adjacency_matrices : dict
+        Dictionary containing adjacency matrices for different configurations and mixing ratios
+    args : argparse.Namespace
+        Command line arguments
+    plot_all : bool, optional
+        Whether to plot all mixing ratios or just key ones (0%, 25%, 50%, 75%, 100%)
+    colormap : str, optional
+        Matplotlib colormap to use for the heatmaps
+    """
+    # Create a directory for heatmaps
+    heatmap_dir = os.path.join(args.output_dir, "adjacency_heatmaps")
+    os.makedirs(heatmap_dir, exist_ok=True)
+
+    # For each configuration
+    for config_name, matrices in adjacency_matrices.items():
+        print(f"  Generating heatmaps for {config_name}...")
+
+        # Create a subdirectory for this configuration
+        config_dir = os.path.join(heatmap_dir, config_name)
+        os.makedirs(config_dir, exist_ok=True)
+
+        # Get mixing ratios
+        mixing_ratios = results[config_name]["mixing_ratios"]
+
+        # Determine which mixing ratios to plot
+        if plot_all:
+            # Plot all mixing ratios
+            indices_to_plot = range(len(mixing_ratios))
+        else:
+            # Plot only key mixing ratios (0%, ~25%, ~50%, ~75%, 100%)
+            key_ratios = [0.0, 0.25, 0.5, 0.75, 1.0]
+            indices_to_plot = [np.abs(mixing_ratios - ratio).argmin() for ratio in key_ratios]
+
+        # Plot individual heatmaps for selected mixing ratios
+        for i in indices_to_plot:
+            ratio = mixing_ratios[i]
+            matrix = matrices[i]
+
+            # Create heatmap
+            plt.figure(figsize=(10, 8))
+            plt.imshow(matrix, cmap=colormap, interpolation="nearest")
+            plt.colorbar(label="Connection strength")
+
+            # Add labels and title
+            mixing_percent = int(ratio * 100)
+            plt.title(
+                f"{config_name}: {mixing_percent}% {args.structure_names[1]} / {100 - mixing_percent}% {args.structure_names[0]}"
+            )
+            plt.xlabel("Residue index")
+            plt.ylabel("Residue index")
+
+            # Save figure
+            filename = f"{config_name}_mix_{mixing_percent:03d}.png"
+            plt.savefig(os.path.join(config_dir, filename), dpi=300)
+            plt.close()
+
+        # Create a figure showing key mixing ratios side by side
+        fig, axes = plt.subplots(1, len(indices_to_plot), figsize=(4 * len(indices_to_plot), 4))
+
+        if len(indices_to_plot) == 1:
+            axes = [axes]  # Handle case with only one subplot
+
+        for j, idx in enumerate(indices_to_plot):
+            ratio = mixing_ratios[idx]
+            matrix = matrices[idx]
+            mixing_percent = int(ratio * 100)
+
+            # Plot on the corresponding axis
+            im = axes[j].imshow(matrix, cmap=colormap, interpolation="nearest")
+            axes[j].set_title(f"{mixing_percent}% {args.structure_names[1]}")
+            axes[j].set_xlabel("Residue index")
+
+            # Only add y-label for the first plot
+            if j == 0:
+                axes[j].set_ylabel("Residue index")
+
+        # Add a colorbar that applies to all subplots
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.02, 0.7])
+        fig.colorbar(im, cax=cbar_ax, label="Connection strength")
+
+        plt.suptitle(f"{config_name} Adjacency Matrices at Different Mixing Ratios")
+        plt.tight_layout(rect=[0, 0, 0.85, 0.95])
+
+        # Save the side-by-side comparison
+        plt.savefig(os.path.join(config_dir, f"{config_name}_key_comparisons.png"), dpi=300)
+        plt.close()
+
+        # Create difference plots (difference from 0% mixing)
+        base_matrix = matrices[0]  # 0% mixing (all structure 1)
+
+        for i in indices_to_plot[1:]:  # Skip the first one (0% mixing)
+            ratio = mixing_ratios[i]
+            matrix = matrices[i]
+            mixing_percent = int(ratio * 100)
+
+            # Calculate difference matrix
+            diff_matrix = matrix - base_matrix
+
+            # Create heatmap of differences
+            plt.figure(figsize=(10, 8))
+            # Use a diverging colormap for differences
+            plt.imshow(diff_matrix, cmap="RdBu_r", interpolation="nearest")
+            plt.colorbar(label="Connection strength difference")
+
+            # Add labels and title
+            plt.title(f"{config_name}: Difference {mixing_percent}% - 0% mixing")
+            plt.xlabel("Residue index")
+            plt.ylabel("Residue index")
+
+            # Save figure
+            filename = f"{config_name}_diff_{mixing_percent:03d}.png"
+            plt.savefig(os.path.join(config_dir, filename), dpi=300)
+            plt.close()
+
+
 def main():
     """Main function to run the mixing experiment."""
     args = parse_arguments()
@@ -630,9 +805,15 @@ def main():
     print(f"  Random seed: {args.seed}")
     print(f"  Atom selection for structural RMSD: {args.atom_selection}")
     print(f"  Output directory: {args.output_dir}")
+    print(f"  Plot heatmaps: {args.plot_heatmaps}")
+    if args.plot_heatmaps:
+        print(f"  Plot all mixing ratios: {args.plot_all_mixing_ratios}")
+        print(f"  Heatmap colormap: {args.heatmap_colormap}")
 
     # Run the mixing experiment
     results = run_mixing_experiment(args)
+
+    print(f"Mixing experiment completed. Results saved to {args.output_dir}")
 
     print(f"Mixing experiment completed. Results saved to {args.output_dir}")
 

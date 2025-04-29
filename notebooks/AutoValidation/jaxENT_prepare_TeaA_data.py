@@ -13,12 +13,25 @@ trajectory_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Repro
 
 import os
 
+# import mpl
+# Set up matplotlib parameters
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
 from MDAnalysis.analysis import align, rms
 from sklearn.decomposition import PCA
 
+mpl.rcParams.update(
+    {
+        "axes.titlesize": 20,
+        "axes.labelsize": 24,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 20,
+        "legend.fontsize": 16,
+        "font.size": 24,  # default for all text (fallback)
+    }
+)
 # Paths defined in the script
 output_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories"
 open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
@@ -230,5 +243,167 @@ for i in selected_indices:
 rmsd_plot_path = os.path.join(output_dir, "TeaA_RMSD_plot.png")
 plt.savefig(rmsd_plot_path, dpi=300)
 plt.close()
+
+# Create a new RMSD clustering plot (RMSD to open vs RMSD to closed)
+plt.figure(figsize=(10, 9))
+
+# Set up color scheme as requested
+open_color = "blue"
+closed_color = "orange"
+
+# Identify points in clusters (within threshold)
+near_open = rmsd_to_open < threshold
+near_closed = rmsd_to_closed < threshold
+selected_frames = np.logical_or(near_open, near_closed)
+
+# Color array (blue for closer to open, orange for closer to closed)
+colors = np.where(rmsd_to_open < rmsd_to_closed, open_color, closed_color)
+
+# Plot non-clustered points with lower saturation first
+plt.scatter(
+    rmsd_to_open[~selected_frames],
+    rmsd_to_closed[~selected_frames],
+    c=np.take(colors, np.where(~selected_frames)[0]),
+    alpha=0.3,  # Lower alpha for non-clustered points
+    s=20,  # Smaller size for non-clustered points
+)
+
+# Plot clustered points with full saturation on top
+plt.scatter(
+    rmsd_to_open[selected_frames],
+    rmsd_to_closed[selected_frames],
+    c=np.take(colors, np.where(selected_frames)[0]),
+    alpha=0.8,  # Higher alpha for clustered points
+    s=40,  # Larger size for clustered points
+    edgecolor="black",
+    linewidth=0.5,
+)
+
+# Add threshold lines
+plt.axvline(x=threshold, color=open_color, linestyle="--", alpha=0.7)
+plt.axhline(y=threshold, color=closed_color, linestyle="--", alpha=0.7)
+
+# Add diagonal line (equidistant from both states)
+max_val = max(np.max(rmsd_to_open), np.max(rmsd_to_closed)) * 1.1
+plt.plot([0, max_val], [0, max_val], "k--", alpha=0.5)
+
+# Create custom legend items
+from matplotlib.lines import Line2D
+
+legend_elements = [
+    Line2D(
+        [0],
+        [0],
+        marker="o",
+        color="w",
+        markerfacecolor=open_color,
+        markersize=10,
+        alpha=0.8,
+        markeredgecolor="black",
+        markeredgewidth=0.5,
+        label="Open State Cluster (<1 Å)",
+    ),
+    Line2D(
+        [0],
+        [0],
+        marker="o",
+        color="w",
+        markerfacecolor=closed_color,
+        markersize=10,
+        alpha=0.8,
+        markeredgecolor="black",
+        markeredgewidth=0.5,
+        label="Closed State Cluster (<1 Å)",
+    ),
+    Line2D(
+        [0],
+        [0],
+        marker="o",
+        color="w",
+        markerfacecolor=open_color,
+        markersize=8,
+        alpha=0.3,
+        label="Non-clustered (Open-like)",
+    ),
+    Line2D(
+        [0],
+        [0],
+        marker="o",
+        color="w",
+        markerfacecolor=closed_color,
+        markersize=8,
+        alpha=0.3,
+        label="Non-clustered (Closed-like)",
+    ),
+    Line2D(
+        [0], [0], linestyle="--", color=open_color, label=f"Open State Threshold ({threshold} Å)"
+    ),
+    Line2D(
+        [0],
+        [0],
+        linestyle="--",
+        color=closed_color,
+        label=f"Closed State Threshold ({threshold} Å)",
+    ),
+    Line2D([0], [0], linestyle="--", color="black", alpha=0.5, label="Equal Distance Line"),
+]
+
+# Labels and formatting
+plt.xlabel("RMSD to Open State (Å)", fontsize=20)
+plt.ylabel("RMSD to Closed State (Å)", fontsize=20)
+plt.title("TeaA Conformational States", fontsize=24)
+plt.grid(alpha=0.3)
+
+# Add explanatory text
+explanation = (
+    "RMSD Clustering Explanation:\n\n"
+    "• Each point represents a single structure (frame) from the TeaA simulation\n"
+    "• The x-axis shows how similar each structure is to the open reference state\n"
+    "• The y-axis shows how similar each structure is to the closed reference state\n"
+    "• Lower RMSD values (closer to 0) indicate higher structural similarity\n"
+    "• Blue points are closer to the open state, orange points closer to the closed state\n"
+    "• Faded points are not included in the clustering (>1 Å from both states)\n"
+    "• Bright points are within the " + str(threshold) + " Å threshold of either state\n"
+    "• The dashed lines mark the " + str(threshold) + " Å similarity threshold"
+)
+
+# Add the explanatory text in a box
+# plt.figtext(
+#     0.5,
+#     0.01,
+#     explanation,
+#     ha="center",
+#     fontsize=12,
+#     bbox={"facecolor": "white", "edgecolor": "gray", "alpha": 0.9, "pad": 5},
+# )
+
+# Add legend
+plt.legend(handles=legend_elements, loc="upper right", frameon=True, framealpha=0.9, fontsize=12)
+
+# Set equal aspect ratio for clarity
+plt.axis("equal")
+
+# Set reasonable limits with buffer
+buffer = 0
+plt.xlim(-buffer, max_val)
+plt.ylim(-buffer, max_val)
+
+# Improve tick labels
+plt.xticks(fontsize=16)
+plt.yticks(fontsize=16)
+
+# Add shaded regions to highlight thresholds
+plt.axvspan(0, threshold, alpha=0.1, color=open_color)
+plt.axhspan(0, threshold, alpha=0.1, color=closed_color)
+
+# Make plot tight
+# plt.tight_layout(rect=[0, 0.15, 1, 1])  # Make room for the bottom explanation text
+
+# Save the clustering plot
+rmsd_cluster_path = os.path.join(output_dir, "TeaA_RMSD_clustering_plot.png")
+plt.savefig(rmsd_cluster_path, dpi=300, bbox_inches="tight")
+plt.close()
+
+print(f"RMSD clustering plot saved to {rmsd_cluster_path}")
 
 print(f"RMSD plot saved to {rmsd_plot_path}")

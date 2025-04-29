@@ -1,0 +1,14 @@
+{
+    "mae_vs_kld": {
+        "mean_L1": 10.0,
+        "HDXer": "(7, 0)"
+    },
+    "mse_vs_mae": {
+        "mean_L1": 10.0,
+        "HDXer": "(5, 0)"
+    },
+    "mse_vs_kld": {
+        "mean_L1": 10.0,
+        "HDXer": "(5, 0)"
+    }
+}
