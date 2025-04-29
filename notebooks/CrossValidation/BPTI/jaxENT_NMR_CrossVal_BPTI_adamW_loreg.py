@@ -39,10 +39,8 @@ from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.opt.base import JaxEnt_Loss
 from jaxent.opt.losses import (
-    hdx_uptake_l1_loss,
     hdx_uptake_l2_loss,
     hdx_uptake_mean_centred_l1_loss,
-    hdx_uptake_mean_centred_l2_loss,
     maxent_convexKL_loss,
 )
 from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
@@ -171,7 +169,9 @@ def setup_simulation(
 ]:
     bv_config = BV_model_Config(num_timepoints=3)
 
-    opt_settings = OptimiserSettings(name="test", n_steps=500, learning_rate=1e-3, convergence=1e-8)
+    opt_settings = OptimiserSettings(
+        name="test", n_steps=1000, learning_rate=1e-3, convergence=1e-5
+    )
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
@@ -409,9 +409,7 @@ def run_MAE_max_ent_optimization_replicates(
                     frame_weights=jnp.ones(trajectory_length) / trajectory_length,
                     frame_mask=simulation.params.frame_mask,
                     model_parameters=simulation.params.model_parameters,
-                    forward_model_weights=jnp.array(
-                        [0.5, maxent_params[j], 0.1], dtype=jnp.float32
-                    ),
+                    forward_model_weights=jnp.array([0.5, maxent_params[j], 0], dtype=jnp.float32),
                     forward_model_scaling=jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
                     normalise_loss_functions=jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
                 )
@@ -490,9 +488,9 @@ def main():
     n_replicates = 20
 
     regularization = {
-        "L1": hdx_uptake_l1_loss,
+        # "L1": hdx_uptake_l1_loss,
         "mean_L1": hdx_uptake_mean_centred_l1_loss,
-        "mean_L2": hdx_uptake_mean_centred_l2_loss,
+        # "mean_L2": hdx_uptake_mean_centred_l2_loss,
         # "KL": HDX_uptake_KL_loss,
         # "MAE": HDX_uptake_MAE_loss,
         # "convexKL": HDX_uptake_convex_KL_loss,
@@ -501,7 +499,7 @@ def main():
     # pick script dir
     base_output_dir = "./notebooks/CrossValidation/"
 
-    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/AdamW_loreg")
+    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/AdamW_noreg1000_conv1e-5")
     os.makedirs(base_output_dir, exist_ok=True)
     # remove directory if it exists
 

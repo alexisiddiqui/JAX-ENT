@@ -668,7 +668,7 @@ def plot_rmsd_histograms(rmsd_values, histories, ref_names, n_bins=30):
 
 
 # Function to plot cluster ratios with state-matching colors
-def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=None):
+def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=[0.6, 0.4]):
     n_seeds = cluster_ratios.shape[0]
     n_clusters = cluster_ratios.shape[1]
 
@@ -715,6 +715,7 @@ def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_
                 linewidth=2,
                 label=f"True {ref_names[j]} Ratio ({ratio * 100:.0f}%)",
             )
+    ax.set_ylim(0, 1)
 
     ax.set_xlabel("State")
     ax.set_ylabel("Weighted Ratio")
