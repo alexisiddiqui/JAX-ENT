@@ -56,6 +56,7 @@ import os
 
 import jax
 import jax.numpy as jnp
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
@@ -78,6 +79,18 @@ from jaxent.models.HDX.forward import BV_ForwardPass
 from jaxent.types.base import ForwardPass
 from jaxent.types.config import FeaturiserSettings
 from jaxent.utils.hdf import load_optimization_history_from_file
+
+# globally set axes/tick/legend font‐sizes
+mpl.rcParams.update(
+    {
+        "axes.titlesize": 20,
+        "axes.labelsize": 24,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 20,
+        "legend.fontsize": 16,
+        "font.size": 24,  # default for all text (fallback)
+    }
+)
 
 
 class BV_uptake_ForwardPass(  # this is a modified version that can operate over features with multiple dimensions
@@ -126,6 +139,176 @@ class BV_uptake_ForwardPass(  # this is a modified version that can operate over
 
         # Return the list of timepoint-wise residue-wise uptake arrays
         return uptake_BV_output_features(uptake_per_timepoint)
+
+
+def compute_pf_correlation(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology):
+    """
+    Compute Pearson correlation coefficient between predicted and experimental protection factors.
+
+    Parameters:
+    -----------
+    avg_pf_dict : dict
+        Dictionary with ensemble-average protection factors for each method, parameter, and seed
+    exp_residues : numpy.ndarray
+        Experimental residue numbers
+    exp_log_pfs : numpy.ndarray
+        Experimental log protection factors
+    feature_topology : list
+        Topology information for the features
+
+    Returns:
+    --------
+    corr_results : dict
+        Dictionary with correlation values grouped by method and parameter
+    """
+    from scipy.stats import pearsonr
+
+    corr_results = {}
+
+    # Create mapping from residue number to feature index
+    # Only consider features that represent single residues (not peptides)
+    residue_to_index = {}
+    for i, topology in enumerate(feature_topology):
+        if topology.residue_end is None or topology.residue_end == topology.residue_start:
+            # Single residue
+            residue_to_index[topology.residue_start] = i
+
+    # Extract indices for experimental residues
+    valid_exp_indices = []
+    valid_exp_residues = []
+    valid_exp_log_pfs = []
+
+    for i, residue in enumerate(exp_residues):
+        if residue in residue_to_index:
+            valid_exp_indices.append(residue_to_index[residue])
+            valid_exp_residues.append(residue)
+            valid_exp_log_pfs.append(exp_log_pfs[i])
+
+    if len(valid_exp_indices) == 0:
+        print("Error: No matching residues found between experimental data and feature topology")
+        return corr_results
+
+    # Process each method
+    for method, param_dict in avg_pf_dict.items():
+        corr_results[method] = {}
+
+        # Process each parameter
+        for param, seed_dict in param_dict.items():
+            corr_values = []
+
+            # Process each seed
+            for seed_key, avg_pf in seed_dict.items():
+                if avg_pf is None:
+                    continue
+
+                # Extract predicted protection factors for the matching residues
+                pred_log_pfs = np.array([avg_pf[idx] for idx in valid_exp_indices])
+
+                # Compute Pearson correlation coefficient
+                try:
+                    corr, _ = pearsonr(pred_log_pfs, valid_exp_log_pfs)
+                    corr_values.append(corr)
+                except:
+                    # Handle case where correlation can't be computed
+                    print(
+                        f"Warning: Could not compute correlation for {method}, param={param}, seed={seed_key}"
+                    )
+
+            corr_results[method][param] = corr_values
+
+    return corr_results
+
+
+def analyze_protection_factors(
+    weights_dict, reference_path, topology_path, trajectory_path, hdx_nmr_pf_path, output_dir
+):
+    """
+    Analyze protection factors by comparing predicted and experimental values.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Dictionary with weights for each method, parameter, and seed
+    reference_path : str
+        Path to reference PDB file
+    topology_path : str
+        Path to MD topology file
+    trajectory_path : str
+        Path to trajectory file
+    hdx_nmr_pf_path : str
+        Path to HDX NMR protection factors .dat file
+    output_dir : str
+        Directory to save output files and plots
+
+    Returns:
+    --------
+    results : dict
+        Dictionary with analysis results
+    """
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Compute protection factors
+    print("Computing protection factors...")
+    log_pfs, feature_topology = compute_protection_factors(
+        topology_path, trajectory_path, output_dir
+    )
+
+    # Load experimental protection factors
+    print("Loading experimental protection factors...")
+    exp_residues, exp_log_pfs = load_hdx_nmr_pf(hdx_nmr_pf_path)
+
+    # Compute ensemble-average protection factors
+    print("Computing ensemble-average protection factors...")
+    avg_pf_dict = compute_ensemble_average_pf(log_pfs, weights_dict)
+
+    # Compute MSE
+    print("Computing MSE for protection factors...")
+    mse_results = compute_pf_mse(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology)
+
+    # Create and save MSE visualization
+    print("Creating protection factor MSE plot...")
+    fig_mse = plot_boxplots(
+        mse_results,
+        metric_name="Protection Factor MSE",
+        title="Mean Squared Error between Predicted and Experimental Protection Factors",
+        ylabel="Mean Squared Error (Protection Factors)",
+    )
+
+    # Save MSE plot
+    output_path_mse = os.path.join(output_dir, "pf_mse_comparison.png")
+    fig_mse.savefig(output_path_mse, dpi=300)
+    print(f"Protection factor MSE plot saved to {output_path_mse}")
+
+    # Compute correlation coefficients
+    print("Computing correlation for protection factors...")
+    corr_results = compute_pf_correlation(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology)
+
+    # Create and save correlation visualization
+    print("Creating protection factor correlation plot...")
+    fig_corr = plot_boxplots(
+        corr_results,
+        metric_name="Protection Factor Correlation",
+        title="Pearson Correlation between Predicted and Experimental Protection Factors",
+        ylabel="Pearson Correlation Coefficient",
+    )
+
+    # Save correlation plot
+    output_path_corr = os.path.join(output_dir, "pf_correlation_comparison.png")
+    fig_corr.savefig(output_path_corr, dpi=300)
+    print(f"Protection factor correlation plot saved to {output_path_corr}")
+
+    return {
+        "log_pfs": log_pfs,
+        "feature_topology": feature_topology,
+        "exp_residues": exp_residues,
+        "exp_log_pfs": exp_log_pfs,
+        "avg_pf_dict": avg_pf_dict,
+        "mse_results": mse_results,
+        "fig_mse": fig_mse,
+        "corr_results": corr_results,
+        "fig_corr": fig_corr,
+    }
 
 
 def select_representative_parameter(
@@ -636,8 +819,8 @@ def plot_scatter(
                 seed_handles,
                 seed_labels,
                 title="Seeds",
-                loc="upper left",
-                bbox_to_anchor=(0.05, 0.95),
+                loc="upper right",
+                # bbox_to_anchor=(0.05, 0.95),
             )
             ax.add_artist(seed_legend)
 
@@ -653,612 +836,33 @@ def plot_scatter(
     # Add overall title
     if title:
         fig.suptitle(title, fontsize=16, y=0.98)
-        plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for the suptitle
+        plt.tight_layout(rect=[0, 0.1, 1, 0.95])  # Adjust for the suptitle
     else:
         plt.tight_layout()
 
     return (fig, selected_params) if select_param else fig
 
 
-def create_comparison_scatter_plots(
-    uniform_kl_results,
-    mae_results,
-    w1_results,
-    output_dir=None,
-    select_param=True,
-    average_method="mean",
-    representative_method="local_density",
-    conservative_choice="higher",
-    method_specific_conservative={"HDXer": "lower"},
-):
+def load_hdx_nmr_pf(hdx_nmr_pf_path):
     """
-    Create scatter plots comparing different metrics and optionally select representative parameters.
+    Load HDX NMR protection factors from a .dat file.
 
     Parameters:
     -----------
-    uniform_kl_results : dict
-        Dictionary with KL divergence from uniform values
-    mae_results : dict
-        Dictionary with MAE values for deuterium uptake
-    w1_results : dict
-        Dictionary with W1 distance values for deuterium uptake
-    output_dir : str, optional
-        Directory to save output plots
-    select_param : bool, optional
-        Whether to select and display representative parameters
-    average_method : str, optional
-        Method for averaging across seeds/datasets ("mean" or "median")
-    representative_method : str, optional
-        Method for selecting representative parameter ("euclidean_median" or "local_density")
-    conservative_choice : str, optional
-        Default choice when multiple parameters are equally good ("higher" or "lower")
-    method_specific_conservative : dict, optional
-        Method-specific overrides for conservative_choice
+    hdx_nmr_pf_path : str
+        Path to the HDX NMR protection factors .dat file
 
     Returns:
     --------
-    results : dict
-        Dictionary with generated figures and selected parameters
+    residues : numpy.ndarray
+        Residue numbers
+    log_pfs : numpy.ndarray
+        Log protection factors
     """
-    import os
-
-    # Initialize dictionary for results
-    results = {"figs": {}, "selected_params": {}}
-
-    # 1. Plot uptake MAE vs weights KLD against uniform
-    if select_param:
-        fig1, selected_params1 = plot_scatter(
-            uniform_kl_results,
-            mae_results,
-            x_label="KL Divergence from Uniform",
-            y_label="Deuterium Uptake MAE",
-            title="Deuterium Uptake MAE vs. KL Divergence from Uniform",
-            select_param=True,
-            average_method=average_method,
-            representative_method=representative_method,
-            conservative_choice=conservative_choice,
-            method_specific_conservative=method_specific_conservative,
-        )
-        results["selected_params"]["mae_vs_kld"] = selected_params1
-    else:
-        fig1 = plot_scatter(
-            uniform_kl_results,
-            mae_results,
-            x_label="KL Divergence from Uniform",
-            y_label="Deuterium Uptake MAE",
-            title="Deuterium Uptake MAE vs. KL Divergence from Uniform",
-            select_param=False,
-        )
-
-    results["figs"]["mae_vs_kld"] = fig1
-
-    # 2. Plot W1 uptake vs uptake MAE
-    if select_param:
-        fig2, selected_params2 = plot_scatter(
-            mae_results,
-            w1_results,
-            x_label="Deuterium Uptake MAE",
-            y_label="Wasserstein-1 Distance (Deuterium Uptake)",
-            title="Wasserstein-1 Distance vs. MAE for Deuterium Uptake",
-            select_param=True,
-            average_method=average_method,
-            representative_method=representative_method,
-            conservative_choice=conservative_choice,
-            method_specific_conservative=method_specific_conservative,
-        )
-        results["selected_params"]["w1_vs_mae"] = selected_params2
-    else:
-        fig2 = plot_scatter(
-            mae_results,
-            w1_results,
-            x_label="Deuterium Uptake MAE",
-            y_label="Wasserstein-1 Distance (Deuterium Uptake)",
-            title="Wasserstein-1 Distance vs. MAE for Deuterium Uptake",
-            select_param=False,
-        )
-
-    results["figs"]["w1_vs_mae"] = fig2
-
-    # 3. Plot W1 uptake vs weights KLD against uniform
-    if select_param:
-        fig3, selected_params3 = plot_scatter(
-            uniform_kl_results,
-            w1_results,
-            x_label="KL Divergence from Uniform",
-            y_label="Wasserstein-1 Distance (Deuterium Uptake)",
-            title="Wasserstein-1 Distance vs. KL Divergence from Uniform",
-            select_param=True,
-            average_method=average_method,
-            representative_method=representative_method,
-            conservative_choice=conservative_choice,
-            method_specific_conservative=method_specific_conservative,
-        )
-        results["selected_params"]["w1_vs_kld"] = selected_params3
-    else:
-        fig3 = plot_scatter(
-            uniform_kl_results,
-            w1_results,
-            x_label="KL Divergence from Uniform",
-            y_label="Wasserstein-1 Distance (Deuterium Uptake)",
-            title="Wasserstein-1 Distance vs. KL Divergence from Uniform",
-            select_param=False,
-        )
-
-    results["figs"]["w1_vs_kld"] = fig3
-
-    # Save figures if output directory provided
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Save each figure
-        fig1.savefig(os.path.join(output_dir, "mae_vs_kld_scatter.png"), dpi=300)
-        fig2.savefig(os.path.join(output_dir, "w1_vs_mae_scatter.png"), dpi=300)
-        fig3.savefig(os.path.join(output_dir, "w1_vs_kld_scatter.png"), dpi=300)
-
-        # If parameters were selected, save them to a JSON file
-        if select_param:
-            import json
-
-            # Convert any non-serializable objects (like tuples) to strings
-            json_friendly_params = {}
-            for plot_type, params in results["selected_params"].items():
-                json_friendly_params[plot_type] = {}
-                for method, param in params.items():
-                    if isinstance(param, tuple):
-                        json_friendly_params[plot_type][method] = str(param)
-                    else:
-                        json_friendly_params[plot_type][method] = param
-
-            with open(os.path.join(output_dir, "selected_parameters.json"), "w") as f:
-                json.dump(json_friendly_params, f, indent=4)
-
-    return results
-
-
-def compute_uptake_mae(weights_dict, features, parameters=None):
-    """
-    Compute Mean Absolute Error (MAE) between weighted and unweighted deuterium uptake.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
-    features : BV_input_features
-        Input features for the BV model
-    parameters : BV_Model_Parameters, optional
-        Model parameters, if None, default parameters will be used
-
-    Returns:
-    --------
-    mae_results : dict
-        Dictionary with MAE values grouped by method and parameter
-    """
-    import numpy as np
-
-    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
-
-    # Initialize BV_uptake_ForwardPass
-    forward_pass = BV_uptake_ForwardPass()
-
-    # Use default parameters if none provided
-    if parameters is None:
-        parameters = BV_Model_Parameters()
-
-    # Initialize results dictionary
-    mae_results = {}
-
-    # Compute uptake for all frames using the BV_uptake_ForwardPass
-    output_features = forward_pass(features, parameters)
-
-    # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
-    uptake_values = output_features.uptake
-
-    # Compute unweighted (uniform) uptake (average across frames)
-    n_frames = uptake_values.shape[2]
-    uniform_weights = np.ones(n_frames) / n_frames
-
-    # Calculate unweighted uptake for each residue and timepoint
-    unweighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
-    for t in range(uptake_values.shape[0]):  # For each timepoint
-        for r in range(uptake_values.shape[1]):  # For each residue
-            unweighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=uniform_weights)
-
-    # Process each method
-    for method, param_dict in weights_dict.items():
-        mae_results[method] = {}
-
-        # Process each parameter
-        for param, seed_dict in param_dict.items():
-            mae_values = []
-
-            # Process each seed
-            for seed_key, weights in seed_dict.items():
-                if weights is None:
-                    continue
-
-                # Make sure weights array length matches the number of frames
-                n_frames = features.features_shape[2]
-                if len(weights) > n_frames:
-                    weights = weights[:n_frames]
-                elif len(weights) < n_frames:
-                    # Pad weights with zeros if needed
-                    padding = np.zeros(n_frames - len(weights))
-                    weights = np.concatenate([weights, padding])
-                    # Renormalize
-                    weights = weights / np.sum(weights)
-
-                # Compute weighted uptake for each residue and timepoint
-                weighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
-                for t in range(uptake_values.shape[0]):  # For each timepoint
-                    for r in range(uptake_values.shape[1]):  # For each residue
-                        weighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=weights)
-
-                # Compute MAE between weighted and unweighted uptake
-                mae = np.mean(np.abs(weighted_uptake - unweighted_uptake))
-                mae_values.append(mae)
-
-            mae_results[method][param] = mae_values
-
-    return mae_results
-
-
-def compute_uptake_w1_distances(
-    weights_dict, exp_residues, exp_uptake, features, feature_topology, parameters=None
-):
-    """
-    Compute Wasserstein-1 distances between predicted and experimental deuterium uptake.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
-    exp_residues : list
-        List of experimental residue numbers
-    exp_uptake : list
-        List of experimental uptake values for each residue
-    features : BV_input_features
-        Input features for the BV model
-    feature_topology : list
-        Topology information for the features
-    parameters : BV_Model_Parameters, optional
-        Model parameters, if None, default parameters will be used
-
-    Returns:
-    --------
-    w1_results : dict
-        Dictionary with W1 distances grouped by method and parameter
-    """
-    import numpy as np
-    from scipy.stats import wasserstein_distance
-
-    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
-
-    # Initialize BV_uptake_ForwardPass
-    forward_pass = BV_uptake_ForwardPass()
-
-    # Use default parameters if none provided
-    if parameters is None:
-        parameters = BV_Model_Parameters()
-
-    # Initialize results dictionary
-    w1_results = {}
-
-    # Print some information about the data
-    print(f"Experimental data: {len(exp_residues)} residues with uptake measurements")
-
-    # Create mapping from residue number to feature index
-    residue_to_index = {}
-    for i, topology in enumerate(feature_topology):
-        if topology.residue_end is None or topology.residue_end == topology.residue_start:
-            # Single residue
-            residue_to_index[topology.residue_start] = i
-
-    # Extract indices for experimental residues
-    valid_exp_indices = []
-    valid_exp_residues = []
-    valid_exp_uptake = []
-
-    for i, residue in enumerate(exp_residues):
-        if residue in residue_to_index:
-            valid_exp_indices.append(residue_to_index[residue])
-            valid_exp_residues.append(residue)
-            valid_exp_uptake.append(exp_uptake[i])
-        else:
-            print(f"Warning: Residue {residue} not found in feature topology")
-
-    if len(valid_exp_indices) == 0:
-        print("Error: No matching residues found between experimental data and feature topology")
-        return {}
-
-    print(f"Found {len(valid_exp_indices)} matching residues between experimental data and model")
-
-    # Process each method
-    for method, param_dict in weights_dict.items():
-        w1_results[method] = {}
-
-        # Process each parameter
-        for param, seed_dict in param_dict.items():
-            w1_values = []
-
-            # Process each seed
-            for seed_key, weights in seed_dict.items():
-                if weights is None:
-                    continue
-
-                # Make sure weights array length matches the number of frames
-                n_frames = features.features_shape[2]
-                if len(weights) > n_frames:
-                    weights = weights[:n_frames]
-                elif len(weights) < n_frames:
-                    # Pad weights with zeros if needed
-                    padding = np.zeros(n_frames - len(weights))
-                    weights = np.concatenate([weights, padding])
-                    # Renormalize
-                    weights = weights / np.sum(weights)
-
-                # Compute uptake for all frames using the BV_uptake_ForwardPass
-                output_features = forward_pass(features, parameters)
-
-                # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
-                uptake_values = output_features.uptake
-
-                # Compute weighted average uptake for each residue and timepoint
-                # Average over frames (last dimension) using weights
-                avg_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
-                for t in range(uptake_values.shape[0]):  # For each timepoint
-                    for r in range(uptake_values.shape[1]):  # For each residue
-                        avg_uptake[t, r] = np.average(uptake_values[t, r, :], weights=weights)
-
-                # Extract predicted uptake for the matching residues
-                pred_uptake = np.array([avg_uptake[:, idx] for idx in valid_exp_indices])
-
-                # Compute W1 distance for each residue and take the average
-                w1_dists = []
-                for i in range(len(valid_exp_indices)):
-                    w1_dist = wasserstein_distance(pred_uptake[i], valid_exp_uptake[i])
-                    w1_dists.append(w1_dist)
-
-                # Average W1 distance across all residues
-                avg_w1_dist = np.mean(w1_dists)
-                w1_values.append(avg_w1_dist)
-
-            w1_results[method][param] = w1_values
-
-    return w1_results
-
-
-def analyze_deuterium_uptake(
-    weights_dict,
-    reference_path,
-    topology_path,
-    trajectory_path,
-    segs_path,
-    dfrac_path,
-    output_dir,
-    features=None,
-    feature_topology=None,
-):
-    """
-    Analyze deuterium uptake by comparing predicted and experimental values.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
-    reference_path : str
-        Path to reference PDB file
-    topology_path : str
-        Path to topology file
-    trajectory_path : str
-        Path to trajectory file
-    segs_path : str
-        Path to the residue segments file
-    dfrac_path : str
-        Path to the experimental deuterium fractions file
-    output_dir : str
-        Directory to save output files and plots
-    features : BV_input_features, optional
-        Pre-computed features, if available
-    feature_topology : list, optional
-        Pre-computed feature topology, if available
-
-    Returns:
-    --------
-    results : dict
-        Dictionary with analysis results
-    """
-    import json
-    import os
-
-    import jax.numpy as jnp
-    from MDAnalysis import Universe
-
-    from jaxent.featurise import run_featurise
-    from jaxent.interfaces.builder import Experiment_Builder
-    from jaxent.models.config import BV_model_Config
-    from jaxent.models.HDX.BV.features import BV_input_features
-    from jaxent.models.HDX.BV.forwardmodel import BV_model
-    from jaxent.types.config import FeaturiserSettings
-
-    # Create output directory
-    os.makedirs(output_dir, exist_ok=True)
-    # Load experimental uptake data
-    print("Loading experimental uptake data...")
-    exp_residues, exp_uptake = load_experimental_uptake(segs_path, dfrac_path)
-
-    if features is None or feature_topology is None:
-        # Set up paths for cached features
-        features_path = os.path.join(output_dir, "features.jpz.npz")
-        topology_path_json = os.path.join(output_dir, "topology.json")
-
-        # Check if cached files exist
-        features_exist = os.path.exists(features_path)
-        topology_exist = os.path.exists(topology_path_json)
-
-        # Load or compute features and topology
-        if features_exist and topology_exist:
-            print(f"Loading cached features and topology from {output_dir}")
-            # Load features
-            loaded_features_dict = jnp.load(features_path)
-            features = BV_input_features(
-                heavy_contacts=loaded_features_dict["heavy_contacts"],
-                acceptor_contacts=loaded_features_dict["acceptor_contacts"],
-                k_ints=loaded_features_dict["k_ints"],
-            )
-            print(features)
-            # Load topology
-            with open(topology_path_json, "r") as f:
-                topology_dicts = json.load(f)
-
-            from jaxent.interfaces.topology import Partial_Topology
-
-            feature_topology = [
-                Partial_Topology(
-                    chain=top_dict["chain"],
-                    fragment_sequence=top_dict["fragment_sequence"],
-                    residue_start=top_dict["residue_start"],
-                    residue_end=top_dict["residue_end"],
-                    peptide_trim=top_dict["peptide_trim"],
-                    fragment_index=top_dict["fragment_index"],
-                )
-                for top_dict in topology_dicts
-            ]
-
-            print(f"Loaded features shape: {features.features_shape}")
-            print(f"Loaded topology count: {len(feature_topology)}")
-        else:
-            print("Computing features and topology...")
-            # Setup for featurization
-            featuriser_settings = FeaturiserSettings(name="protection_factors", batch_size=None)
-            bv_config = BV_model_Config(num_timepoints=1)
-            models = [BV_model(bv_config)]
-
-            # Create ensemble using the trajectory
-            ensemble = Experiment_Builder([Universe(topology_path, trajectory_path)], models)
-            features_list, feature_topology_list = run_featurise(ensemble, featuriser_settings)
-            features = features_list[0]
-            feature_topology = feature_topology_list[0]
-
-            print(f"Computed features shape: {features.features_shape}")
-
-            # Save features
-            print(f"Saving features to {features_path}")
-            jnp.savez(
-                os.path.join(output_dir, "features.jpz"),
-                heavy_contacts=features.heavy_contacts,
-                acceptor_contacts=features.acceptor_contacts,
-                k_ints=features.k_ints,
-            )
-
-            # Save topology
-            def topology_to_dict(topology):
-                return {
-                    "chain": topology.chain,
-                    "fragment_sequence": topology.fragment_sequence,
-                    "residue_start": int(topology.residue_start),
-                    "residue_end": int(topology.residue_end)
-                    if topology.residue_end is not None
-                    else None,
-                    "peptide_trim": int(topology.peptide_trim),
-                    "fragment_index": int(topology.fragment_index)
-                    if topology.fragment_index is not None
-                    else None,
-                    "length": int(topology.length)
-                    if hasattr(topology, "length") and topology.length is not None
-                    else None,
-                }
-
-            topology_dicts = [topology_to_dict(top) for top in feature_topology]
-
-            print(f"Saving topology to {topology_path_json}")
-            with open(topology_path_json, "w") as f:
-                json.dump(topology_dicts, f, indent=2)
-    print(features)
-
-    # Compute W1 distances for deuterium uptake
-    print("Computing W1 distances for deuterium uptake...")
-    w1_results = compute_uptake_w1_distances(
-        weights_dict, exp_residues, exp_uptake, features, feature_topology
-    )
-
-    # Create and save W1 distance visualization
-    print("Creating deuterium uptake W1 distance plot...")
-    fig_w1 = plot_boxplots(
-        w1_results,
-        metric_name="Deuterium Uptake W1 Distance",
-        title="Wasserstein-1 Distance between Predicted and Experimental Deuterium Uptake",
-        ylabel="Wasserstein-1 Distance (Deuterium Uptake)",
-    )
-
-    # Save W1 plot
-    output_path_w1 = os.path.join(output_dir, "deuterium_uptake_w1_distance_comparison.png")
-    fig_w1.savefig(output_path_w1, dpi=300)
-    print(f"Deuterium uptake W1 distance plot saved to {output_path_w1}")
-
-    # NEW: Compute MAE between weighted and unweighted uptake
-    print("Computing MAE between weighted and unweighted uptake...")
-    mae_results = compute_uptake_mae(weights_dict, features)
-
-    # Create and save MAE visualization
-    print("Creating deuterium uptake MAE plot...")
-    fig_mae = plot_boxplots(
-        mae_results,
-        metric_name="Deuterium Uptake MAE",
-        title="Mean Absolute Error between Weighted and Unweighted Deuterium Uptake",
-        ylabel="Mean Absolute Error (Deuterium Uptake)",
-    )
-
-    # Save MAE plot
-    output_path_mae = os.path.join(output_dir, "deuterium_uptake_mae_comparison.png")
-    fig_mae.savefig(output_path_mae, dpi=300)
-    print(f"Deuterium uptake MAE plot saved to {output_path_mae}")
-
-    return {
-        "w1_results": w1_results,
-        "fig_w1": fig_w1,
-        "mae_results": mae_results,  # NEW
-        "fig_mae": fig_mae,  # NEW
-    }
-
-
-def load_experimental_uptake(segs_path, dfrac_path):
-    """
-    Load experimental deuterium uptake data from files.
-
-    Parameters:
-    -----------
-    segs_path : str
-        Path to the residue segments file
-    dfrac_path : str
-        Path to the experimental deuterium fractions file
-
-    Returns:
-    --------
-    residues : list
-        List of residue numbers
-    uptake_values : list
-        List of uptake values for each residue at multiple timepoints
-    """
-    import numpy as np
-
-    # Load residue segments
-    with open(segs_path, "r") as f:
-        segs_text = [line.strip() for line in f.readlines()]
-        segs = [line.split() for line in segs_text]
-
-    # Extract residue numbers
-    residues = [int(seg[1]) for seg in segs]
-
-    # Load deuterium fractions
-    with open(dfrac_path, "r") as f:
-        # Skip first line (header) and read the rest
-        dfrac_text = [line.strip() for line in f.readlines()[1:]]
-        dfracs = [line.split() for line in dfrac_text]
-
-    # Convert to float arrays
-    uptake_values = [np.array(line, dtype=float) for line in dfracs]
-
-    return residues, uptake_values
+    data = np.loadtxt(hdx_nmr_pf_path)
+    residues = data[:, 0].astype(int)
+    log_pfs = data[:, 1]
+    return residues, log_pfs
 
 
 def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
@@ -1386,26 +990,44 @@ def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
     return output_features.log_Pf, feature_topology[0]
 
 
-def load_hdx_nmr_pf(hdx_nmr_pf_path):
+def load_experimental_uptake(segs_path, dfrac_path):
     """
-    Load HDX NMR protection factors from a .dat file.
+    Load experimental deuterium uptake data from files.
 
     Parameters:
     -----------
-    hdx_nmr_pf_path : str
-        Path to the HDX NMR protection factors .dat file
+    segs_path : str
+        Path to the residue segments file
+    dfrac_path : str
+        Path to the experimental deuterium fractions file
 
     Returns:
     --------
-    residues : numpy.ndarray
-        Residue numbers
-    log_pfs : numpy.ndarray
-        Log protection factors
+    residues : list
+        List of residue numbers
+    uptake_values : list
+        List of uptake values for each residue at multiple timepoints
     """
-    data = np.loadtxt(hdx_nmr_pf_path)
-    residues = data[:, 0].astype(int)
-    log_pfs = data[:, 1]
-    return residues, log_pfs
+    import numpy as np
+
+    # Load residue segments
+    with open(segs_path, "r") as f:
+        segs_text = [line.strip() for line in f.readlines()]
+        segs = [line.split() for line in segs_text]
+
+    # Extract residue numbers
+    residues = [int(seg[1]) for seg in segs]
+
+    # Load deuterium fractions
+    with open(dfrac_path, "r") as f:
+        # Skip first line (header) and read the rest
+        dfrac_text = [line.strip() for line in f.readlines()[1:]]
+        dfracs = [line.split() for line in dfrac_text]
+
+    # Convert to float arrays
+    uptake_values = [np.array(line, dtype=float) for line in dfracs]
+
+    return residues, uptake_values
 
 
 def compute_ensemble_average_pf(log_pfs, weights_dict):
@@ -1454,9 +1076,9 @@ def compute_ensemble_average_pf(log_pfs, weights_dict):
     return avg_pf_dict
 
 
-def compute_pf_w1_distances(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology):
+def compute_pf_mse(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology):
     """
-    Compute Wasserstein-1 distances between predicted and experimental protection factors.
+    Compute Mean Squared Error between predicted and experimental protection factors.
 
     Parameters:
     -----------
@@ -1471,10 +1093,10 @@ def compute_pf_w1_distances(avg_pf_dict, exp_residues, exp_log_pfs, feature_topo
 
     Returns:
     --------
-    w1_results : dict
-        Dictionary with W1 distances grouped by method and parameter
+    mse_results : dict
+        Dictionary with MSE values grouped by method and parameter
     """
-    w1_results = {}
+    mse_results = {}
 
     # Print some information about the feature topology
     print("Feature topology information:")
@@ -1507,17 +1129,17 @@ def compute_pf_w1_distances(avg_pf_dict, exp_residues, exp_log_pfs, feature_topo
 
     if len(valid_exp_indices) == 0:
         print("Error: No matching residues found between experimental data and feature topology")
-        return w1_results
+        return mse_results
 
     print(f"Found {len(valid_exp_indices)} matching residues: {valid_exp_residues}")
 
     # Process each method
     for method, param_dict in avg_pf_dict.items():
-        w1_results[method] = {}
+        mse_results[method] = {}
 
         # Process each parameter
         for param, seed_dict in param_dict.items():
-            w1_values = []
+            mse_values = []
 
             # Process each seed
             for seed_key, avg_pf in seed_dict.items():
@@ -1527,20 +1149,225 @@ def compute_pf_w1_distances(avg_pf_dict, exp_residues, exp_log_pfs, feature_topo
                 # Extract predicted protection factors for the matching residues
                 pred_log_pfs = np.array([avg_pf[idx] for idx in valid_exp_indices])
 
-                # Compute W1 distance
-                w1_dist = wasserstein_distance(pred_log_pfs, valid_exp_log_pfs)
-                w1_values.append(w1_dist)
+                # Compute MSE
+                mse = np.mean((pred_log_pfs - valid_exp_log_pfs) ** 2)
+                mse_values.append(mse)
 
-            w1_results[method][param] = w1_values
+            mse_results[method][param] = mse_values
 
-    return w1_results
+    return mse_results
 
 
-def analyze_protection_factors(
-    weights_dict, reference_path, topology_path, trajectory_path, hdx_nmr_pf_path, output_dir
+def compute_uptake_mse(
+    weights_dict, exp_residues, exp_uptake, features, feature_topology, parameters=None
 ):
     """
-    Analyze protection factors by comparing predicted and experimental values.
+    Compute Mean Squared Error between predicted and experimental deuterium uptake.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Dictionary with weights for each method, parameter, and seed
+    exp_residues : list
+        List of experimental residue numbers
+    exp_uptake : list
+        List of experimental uptake values for each residue
+    features : BV_input_features
+        Input features for the BV model
+    feature_topology : list
+        Topology information for the features
+    parameters : BV_Model_Parameters, optional
+        Model parameters, if None, default parameters will be used
+
+    Returns:
+    --------
+    mse_results : dict
+        Dictionary with MSE values grouped by method and parameter
+    """
+    import numpy as np
+
+    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+
+    # Initialize BV_uptake_ForwardPass
+    forward_pass = BV_uptake_ForwardPass()
+
+    # Use default parameters if none provided
+    if parameters is None:
+        parameters = BV_Model_Parameters()
+
+    # Initialize results dictionary
+    mse_results = {}
+
+    # Print some information about the data
+    print(f"Experimental data: {len(exp_residues)} residues with uptake measurements")
+
+    # Create mapping from residue number to feature index
+    residue_to_index = {}
+    for i, topology in enumerate(feature_topology):
+        if topology.residue_end is None or topology.residue_end == topology.residue_start:
+            # Single residue
+            residue_to_index[topology.residue_start] = i
+
+    # Extract indices for experimental residues
+    valid_exp_indices = []
+    valid_exp_residues = []
+    valid_exp_uptake = []
+
+    for i, residue in enumerate(exp_residues):
+        if residue in residue_to_index:
+            valid_exp_indices.append(residue_to_index[residue])
+            valid_exp_residues.append(residue)
+            valid_exp_uptake.append(exp_uptake[i])
+        else:
+            print(f"Warning: Residue {residue} not found in feature topology")
+
+    if len(valid_exp_indices) == 0:
+        print("Error: No matching residues found between experimental data and feature topology")
+        return {}
+
+    print(f"Found {len(valid_exp_indices)} matching residues between experimental data and model")
+
+    # Process each method
+    for method, param_dict in weights_dict.items():
+        mse_results[method] = {}
+
+        # Process each parameter
+        for param, seed_dict in param_dict.items():
+            mse_values = []
+
+            # Process each seed
+            for seed_key, weights in seed_dict.items():
+                if weights is None:
+                    continue
+
+                # Make sure weights array length matches the number of frames
+                n_frames = features.features_shape[2]
+                if len(weights) > n_frames:
+                    weights = weights[:n_frames]
+                elif len(weights) < n_frames:
+                    # Pad weights with zeros if needed
+                    padding = np.zeros(n_frames - len(weights))
+                    weights = np.concatenate([weights, padding])
+                    # Renormalize
+                    weights = weights / np.sum(weights)
+
+                # Compute uptake for all frames using the BV_uptake_ForwardPass
+                output_features = forward_pass(features, parameters)
+
+                # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
+                uptake_values = output_features.uptake
+
+                # Compute weighted average uptake for each residue and timepoint
+                # Average over frames (last dimension) using weights
+                avg_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
+                for t in range(uptake_values.shape[0]):  # For each timepoint
+                    for r in range(uptake_values.shape[1]):  # For each residue
+                        avg_uptake[t, r] = np.average(uptake_values[t, r, :], weights=weights)
+
+                # Extract predicted uptake for the matching residues
+                pred_uptake = np.array([avg_uptake[:, idx] for idx in valid_exp_indices])
+
+                # Compute MSE for each residue and take the average
+                mse_values_per_residue = []
+                for i in range(len(valid_exp_indices)):
+                    # Calculate MSE for each residue across timepoints
+                    mse_per_residue = np.mean((pred_uptake[i] - valid_exp_uptake[i]) ** 2)
+                    mse_values_per_residue.append(mse_per_residue)
+
+                # Average MSE across all residues
+                avg_mse = np.mean(mse_values_per_residue)
+                mse_values.append(avg_mse)
+
+            mse_results[method][param] = mse_values
+
+    return mse_results
+
+
+# def analyze_protection_factors(
+#     weights_dict, reference_path, topology_path, trajectory_path, hdx_nmr_pf_path, output_dir
+# ):
+#     """
+#     Analyze protection factors by comparing predicted and experimental values.
+
+#     Parameters:
+#     -----------
+#     weights_dict : dict
+#         Dictionary with weights for each method, parameter, and seed
+#     reference_path : str
+#         Path to reference PDB file
+#     topology_path : str
+#         Path to MD topology file
+#     trajectory_path : str
+#         Path to trajectory file
+#     hdx_nmr_pf_path : str
+#         Path to HDX NMR protection factors .dat file
+#     output_dir : str
+#         Directory to save output files and plots
+
+#     Returns:
+#     --------
+#     results : dict
+#         Dictionary with analysis results
+#     """
+#     # Create output directory
+#     os.makedirs(output_dir, exist_ok=True)
+
+#     # Compute protection factors
+#     print("Computing protection factors...")
+#     log_pfs, feature_topology = compute_protection_factors(
+#         topology_path, trajectory_path, output_dir
+#     )
+
+#     # Load experimental protection factors
+#     print("Loading experimental protection factors...")
+#     exp_residues, exp_log_pfs = load_hdx_nmr_pf(hdx_nmr_pf_path)
+
+#     # Compute ensemble-average protection factors
+#     print("Computing ensemble-average protection factors...")
+#     avg_pf_dict = compute_ensemble_average_pf(log_pfs, weights_dict)
+
+#     # Compute MSE
+#     print("Computing MSE for protection factors...")
+#     mse_results = compute_pf_mse(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology)
+
+#     # Create and save MSE visualization
+#     print("Creating protection factor MSE plot...")
+#     fig_mse = plot_boxplots(
+#         mse_results,
+#         metric_name="Protection Factor MSE",
+#         title="Mean Squared Error between Predicted and Experimental Protection Factors",
+#         ylabel="Mean Squared Error (Protection Factors)",
+#     )
+
+#     # Save MSE plot
+#     output_path_mse = os.path.join(output_dir, "pf_mse_comparison.png")
+#     fig_mse.savefig(output_path_mse, dpi=300)
+#     print(f"Protection factor MSE plot saved to {output_path_mse}")
+
+#     return {
+#         "log_pfs": log_pfs,
+#         "feature_topology": feature_topology,
+#         "exp_residues": exp_residues,
+#         "exp_log_pfs": exp_log_pfs,
+#         "avg_pf_dict": avg_pf_dict,
+#         "mse_results": mse_results,
+#         "fig_mse": fig_mse,
+#     }
+
+
+def analyze_deuterium_uptake(
+    weights_dict,
+    reference_path,
+    topology_path,
+    trajectory_path,
+    segs_path,
+    dfrac_path,
+    output_dir,
+    features=None,
+    feature_topology=None,
+):
+    """
+    Analyze deuterium uptake by comparing predicted and experimental values.
 
     Parameters:
     -----------
@@ -1549,69 +1376,449 @@ def analyze_protection_factors(
     reference_path : str
         Path to reference PDB file
     topology_path : str
-        Path to MD topology file
+        Path to topology file
     trajectory_path : str
         Path to trajectory file
-    hdx_nmr_pf_path : str
-        Path to HDX NMR protection factors .dat file
+    segs_path : str
+        Path to the residue segments file
+    dfrac_path : str
+        Path to the experimental deuterium fractions file
     output_dir : str
         Directory to save output files and plots
+    features : BV_input_features, optional
+        Pre-computed features, if available
+    feature_topology : list, optional
+        Pre-computed feature topology, if available
 
     Returns:
     --------
     results : dict
         Dictionary with analysis results
     """
+    import json
+    import os
+
+    import jax.numpy as jnp
+    from MDAnalysis import Universe
+
+    from jaxent.interfaces.builder import Experiment_Builder
+    from jaxent.models.config import BV_model_Config
+    from jaxent.models.HDX.BV.features import BV_input_features
+    from jaxent.models.HDX.BV.forwardmodel import BV_model
+    from jaxent.types.config import FeaturiserSettings
+
+    k_ints_path = "/Users/alexi/JAX-ENT/tests/inst/BPTI_Intrinsic_rates.dat"
+
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
+    # Load experimental uptake data
+    print("Loading experimental uptake data...")
+    exp_residues, exp_uptake = load_experimental_uptake(segs_path, dfrac_path)
 
-    # Compute protection factors
-    print("Computing protection factors...")
-    log_pfs, feature_topology = compute_protection_factors(
-        topology_path, trajectory_path, output_dir
+    # open as csv - first line is header
+    with open(k_ints_path, "r") as f:
+        k_ints_text = [line.strip() for line in f.readlines()[1:]]
+        k_ints = [line.split() for line in k_ints_text]
+    # create dictionary
+
+    k_int_dict = {int(k_int[0]): float(k_int[1]) for k_int in k_ints}
+
+    print(len(k_int_dict))
+
+    # filter out the residues that are not in the features
+    feat_res = [res for res in exp_residues]
+
+    filtered_k_int_dict = {res: k_int_dict[res] for res in k_int_dict if res in feat_res}
+
+    print(len(filtered_k_int_dict))
+    filtered_k_ints = jnp.array([filtered_k_int_dict[res] for res in feat_res])
+    k_ints = jnp.asarray(list(k_int_dict.values()))
+    print(filtered_k_ints)
+    print(k_ints)
+
+    if features is None or feature_topology is None:
+        # Set up paths for cached features
+        features_path = os.path.join(output_dir, "features.jpz.npz")
+        topology_path_json = os.path.join(output_dir, "topology.json")
+
+        # Check if cached files exist
+        features_exist = os.path.exists(features_path)
+        topology_exist = os.path.exists(topology_path_json)
+
+        # Load or compute features and topology
+        if features_exist and topology_exist:
+            print(f"Loading cached features and topology from {output_dir}")
+            # Load features
+            loaded_features_dict = jnp.load(features_path)
+            features = BV_input_features(
+                heavy_contacts=loaded_features_dict["heavy_contacts"],
+                acceptor_contacts=loaded_features_dict["acceptor_contacts"],
+                k_ints=k_ints,
+            )
+            print(features)
+            # Load topology
+            with open(topology_path_json, "r") as f:
+                topology_dicts = json.load(f)
+
+            from jaxent.interfaces.topology import Partial_Topology
+
+            feature_topology = [
+                Partial_Topology(
+                    chain=top_dict["chain"],
+                    fragment_sequence=top_dict["fragment_sequence"],
+                    residue_start=top_dict["residue_start"],
+                    residue_end=top_dict["residue_end"],
+                    peptide_trim=top_dict["peptide_trim"],
+                    fragment_index=top_dict["fragment_index"],
+                )
+                for top_dict in topology_dicts
+            ]
+
+            print(f"Loaded features shape: {features.features_shape}")
+            print(f"Loaded topology count: {len(feature_topology)}")
+        else:
+            print("Computing features and topology...")
+            # Setup for featurization
+            featuriser_settings = FeaturiserSettings(name="protection_factors", batch_size=None)
+            bv_config = BV_model_Config(num_timepoints=1)
+            models = [BV_model(bv_config)]
+
+            # Create ensemble using the trajectory
+            ensemble = Experiment_Builder([Universe(topology_path, trajectory_path)], models)
+            features_list, feature_topology_list = run_featurise(ensemble, featuriser_settings)
+            features = BV_input_features(
+                heavy_contacts=features_list[0].heavy_contacts,
+                acceptor_contacts=features_list[0].heavy_contacts,
+                k_ints=k_ints,
+            )
+            feature_topology = feature_topology_list[0]
+
+            print(f"Computed features shape: {features.features_shape}")
+
+            # Save features
+            print(f"Saving features to {features_path}")
+            jnp.savez(
+                os.path.join(output_dir, "features.jpz"),
+                heavy_contacts=features.heavy_contacts,
+                acceptor_contacts=features.acceptor_contacts,
+                k_ints=k_ints,
+            )
+
+            # Save topology
+            def topology_to_dict(topology):
+                return {
+                    "chain": topology.chain,
+                    "fragment_sequence": topology.fragment_sequence,
+                    "residue_start": int(topology.residue_start),
+                    "residue_end": int(topology.residue_end)
+                    if topology.residue_end is not None
+                    else None,
+                    "peptide_trim": int(topology.peptide_trim),
+                    "fragment_index": int(topology.fragment_index)
+                    if topology.fragment_index is not None
+                    else None,
+                    "length": int(topology.length)
+                    if hasattr(topology, "length") and topology.length is not None
+                    else None,
+                }
+
+            topology_dicts = [topology_to_dict(top) for top in feature_topology]
+
+            print(f"Saving topology to {topology_path_json}")
+            with open(topology_path_json, "w") as f:
+                json.dump(topology_dicts, f, indent=2)
+    print(features)
+
+    # Compute MSE for deuterium uptake
+    print("Computing MSE for deuterium uptake...")
+    mse_results = compute_uptake_mse(
+        weights_dict, exp_residues, exp_uptake, features, feature_topology
     )
 
-    # Load experimental protection factors
-    print("Loading experimental protection factors...")
-    exp_residues, exp_log_pfs = load_hdx_nmr_pf(hdx_nmr_pf_path)
-
-    # Compute ensemble-average protection factors
-    print("Computing ensemble-average protection factors...")
-    avg_pf_dict = compute_ensemble_average_pf(log_pfs, weights_dict)
-
-    # Compute W1 distances
-    print("Computing W1 distances for protection factors...")
-    w1_results = compute_pf_w1_distances(avg_pf_dict, exp_residues, exp_log_pfs, feature_topology)
-
-    # Create and save W1 distance visualization
-    print("Creating protection factor W1 distance plot...")
-    fig_w1 = plot_boxplots(
-        w1_results,
-        metric_name="Protection Factor W1 Distance",
-        title="Wasserstein-1 Distance between Predicted and Experimental Protection Factors",
-        ylabel="Wasserstein-1 Distance (Protection Factors)",
+    # Create and save MSE visualization
+    print("Creating deuterium uptake MSE plot...")
+    fig_mse = plot_boxplots(
+        mse_results,
+        metric_name="Deuterium Uptake MSE",
+        title="Mean Squared Error between Predicted and Experimental Deuterium Uptake",
+        ylabel="Mean Squared Error (Deuterium Uptake)",
     )
 
-    # Save W1 plot
-    output_path_w1 = os.path.join(output_dir, "pf_w1_distance_comparison.png")
-    fig_w1.savefig(output_path_w1, dpi=300)
-    print(f"Protection factor W1 distance plot saved to {output_path_w1}")
+    # Save MSE plot
+    output_path_mse = os.path.join(output_dir, "deuterium_uptake_mse_comparison.png")
+    fig_mse.savefig(output_path_mse, dpi=300)
+    print(f"Deuterium uptake MSE plot saved to {output_path_mse}")
 
-    # # Create and save protection factor comparison plot
-    # print("Creating protection factor comparison plot...")
-    # fig_pf = plot_protection_factors(
-    #     avg_pf_dict, exp_residues, exp_log_pfs, feature_topology, output_dir
-    # )
+    # Still compute MAE between weighted and unweighted uptake
+    print("Computing MAE between weighted and unweighted uptake...")
+    mae_results = compute_uptake_mae(weights_dict, features)
+
+    # Create and save MAE visualization
+    print("Creating deuterium uptake MAE plot...")
+    fig_mae = plot_boxplots(
+        mae_results,
+        metric_name="Deuterium Uptake MAE",
+        title="Mean Absolute Error between Weighted and Unweighted Deuterium Uptake",
+        ylabel="Mean Absolute Error (Deuterium Uptake)",
+    )
+
+    # Save MAE plot
+    output_path_mae = os.path.join(output_dir, "deuterium_uptake_mae_comparison.png")
+    fig_mae.savefig(output_path_mae, dpi=300)
+    print(f"Deuterium uptake MAE plot saved to {output_path_mae}")
 
     return {
-        "log_pfs": log_pfs,
-        "feature_topology": feature_topology,
-        "exp_residues": exp_residues,
-        "exp_log_pfs": exp_log_pfs,
-        "avg_pf_dict": avg_pf_dict,
-        "w1_results": w1_results,
-        "fig_w1": fig_w1,
+        "mse_results": mse_results,
+        "fig_mse": fig_mse,
+        "mae_results": mae_results,
+        "fig_mae": fig_mae,
     }
+
+
+def create_comparison_scatter_plots(
+    uniform_kl_results,
+    mae_results,
+    mse_results,  # Changed from w1_results to mse_results
+    output_dir=None,
+    select_param=True,
+    average_method="mean",
+    representative_method="local_density",
+    conservative_choice="higher",
+    method_specific_conservative={"HDXer": "lower"},
+):
+    """
+    Create scatter plots comparing different metrics and optionally select representative parameters.
+
+    Parameters:
+    -----------
+    uniform_kl_results : dict
+        Dictionary with KL divergence from uniform values
+    mae_results : dict
+        Dictionary with MAE values for deuterium uptake
+    mse_results : dict
+        Dictionary with MSE values for deuterium uptake (changed from W1 distance)
+    output_dir : str, optional
+        Directory to save output plots
+    select_param : bool, optional
+        Whether to select and display representative parameters
+    average_method : str, optional
+        Method for averaging across seeds/datasets ("mean" or "median")
+    representative_method : str, optional
+        Method for selecting representative parameter ("euclidean_median" or "local_density")
+    conservative_choice : str, optional
+        Default choice when multiple parameters are equally good ("higher" or "lower")
+    method_specific_conservative : dict, optional
+        Method-specific overrides for conservative_choice
+
+    Returns:
+    --------
+    results : dict
+        Dictionary with generated figures and selected parameters
+    """
+    import os
+
+    # Initialize dictionary for results
+    results = {"figs": {}, "selected_params": {}}
+
+    # 1. Plot uptake MAE vs weights KLD against uniform
+    if select_param:
+        fig1, selected_params1 = plot_scatter(
+            uniform_kl_results,
+            mae_results,
+            x_label="KL Divergence from Uniform",
+            y_label="Deuterium Uptake MAE",
+            title="Deuterium Uptake MAE vs. KL Divergence from Uniform",
+            select_param=True,
+            average_method=average_method,
+            representative_method=representative_method,
+            conservative_choice=conservative_choice,
+            method_specific_conservative=method_specific_conservative,
+        )
+        results["selected_params"]["mae_vs_kld"] = selected_params1
+    else:
+        fig1 = plot_scatter(
+            uniform_kl_results,
+            mae_results,
+            x_label="KL Divergence from Uniform",
+            y_label="Deuterium Uptake MAE",
+            title="Deuterium Uptake MAE vs. KL Divergence from Uniform",
+            select_param=False,
+        )
+
+    results["figs"]["mae_vs_kld"] = fig1
+
+    # 2. Plot MSE uptake vs uptake MAE (changed from W1 to MSE)
+    if select_param:
+        fig2, selected_params2 = plot_scatter(
+            mae_results,
+            mse_results,  # Changed from w1_results to mse_results
+            x_label="Deuterium Uptake MAE",
+            y_label="Mean Squared Error (Deuterium Uptake)",  # Changed label
+            title="Mean Squared Error vs. MAE for Deuterium Uptake",  # Changed title
+            select_param=True,
+            average_method=average_method,
+            representative_method=representative_method,
+            conservative_choice=conservative_choice,
+            method_specific_conservative=method_specific_conservative,
+        )
+        results["selected_params"]["mse_vs_mae"] = selected_params2  # Changed key
+    else:
+        fig2 = plot_scatter(
+            mae_results,
+            mse_results,  # Changed from w1_results to mse_results
+            x_label="Deuterium Uptake MAE",
+            y_label="Mean Squared Error (Deuterium Uptake)",  # Changed label
+            title="Mean Squared Error vs. MAE for Deuterium Uptake",  # Changed title
+            select_param=False,
+        )
+
+    results["figs"]["mse_vs_mae"] = fig2  # Changed key
+
+    # 3. Plot MSE uptake vs weights KLD against uniform (changed from W1 to MSE)
+    if select_param:
+        fig3, selected_params3 = plot_scatter(
+            uniform_kl_results,
+            mse_results,  # Changed from w1_results to mse_results
+            x_label="KL Divergence from Uniform",
+            y_label="Mean Squared Error (Deuterium Uptake)",  # Changed label
+            title="Mean Squared Error vs. KL Divergence from Uniform",  # Changed title
+            select_param=True,
+            average_method=average_method,
+            representative_method=representative_method,
+            conservative_choice=conservative_choice,
+            method_specific_conservative=method_specific_conservative,
+        )
+        results["selected_params"]["mse_vs_kld"] = selected_params3  # Changed key
+    else:
+        fig3 = plot_scatter(
+            uniform_kl_results,
+            mse_results,  # Changed from w1_results to mse_results
+            x_label="KL Divergence from Uniform",
+            y_label="Mean Squared Error (Deuterium Uptake)",  # Changed label
+            title="Mean Squared Error vs. KL Divergence from Uniform",  # Changed title
+            select_param=False,
+        )
+
+    results["figs"]["mse_vs_kld"] = fig3  # Changed key
+
+    # Save figures if output directory provided
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Save each figure
+        fig1.savefig(os.path.join(output_dir, "mae_vs_kld_scatter.png"), dpi=300)
+        fig2.savefig(
+            os.path.join(output_dir, "mse_vs_mae_scatter.png"), dpi=300
+        )  # Changed filename
+        fig3.savefig(
+            os.path.join(output_dir, "mse_vs_kld_scatter.png"), dpi=300
+        )  # Changed filename
+
+        # If parameters were selected, save them to a JSON file
+        if select_param:
+            import json
+
+            # Convert any non-serializable objects (like tuples) to strings
+            json_friendly_params = {}
+            for plot_type, params in results["selected_params"].items():
+                json_friendly_params[plot_type] = {}
+                for method, param in params.items():
+                    if isinstance(param, tuple):
+                        json_friendly_params[plot_type][method] = str(param)
+                    else:
+                        json_friendly_params[plot_type][method] = param
+
+            with open(os.path.join(output_dir, "selected_parameters.json"), "w") as f:
+                json.dump(json_friendly_params, f, indent=4)
+
+    return results
+
+
+def compute_uptake_mae(weights_dict, features, parameters=None):
+    """
+    Compute Mean Absolute Error (MAE) between weighted and unweighted deuterium uptake.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Dictionary with weights for each method, parameter, and seed
+    features : BV_input_features
+        Input features for the BV model
+    parameters : BV_Model_Parameters, optional
+        Model parameters, if None, default parameters will be used
+
+    Returns:
+    --------
+    mae_results : dict
+        Dictionary with MAE values grouped by method and parameter
+    """
+    import numpy as np
+
+    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+
+    # Initialize BV_uptake_ForwardPass
+    forward_pass = BV_uptake_ForwardPass()
+
+    # Use default parameters if none provided
+    if parameters is None:
+        parameters = BV_Model_Parameters()
+
+    # Initialize results dictionary
+    mae_results = {}
+
+    # Compute uptake for all frames using the BV_uptake_ForwardPass
+    output_features = forward_pass(features, parameters)
+
+    # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
+    uptake_values = output_features.uptake
+
+    # Compute unweighted (uniform) uptake (average across frames)
+    n_frames = uptake_values.shape[2]
+    uniform_weights = np.ones(n_frames) / n_frames
+
+    # Calculate unweighted uptake for each residue and timepoint
+    unweighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
+    for t in range(uptake_values.shape[0]):  # For each timepoint
+        for r in range(uptake_values.shape[1]):  # For each residue
+            unweighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=uniform_weights)
+
+    # Process each method
+    for method, param_dict in weights_dict.items():
+        mae_results[method] = {}
+
+        # Process each parameter
+        for param, seed_dict in param_dict.items():
+            mae_values = []
+
+            # Process each seed
+            for seed_key, weights in seed_dict.items():
+                if weights is None:
+                    continue
+
+                # Make sure weights array length matches the number of frames
+                n_frames = features.features_shape[2]
+                if len(weights) > n_frames:
+                    weights = weights[:n_frames]
+                elif len(weights) < n_frames:
+                    # Pad weights with zeros if needed
+                    padding = np.zeros(n_frames - len(weights))
+                    weights = np.concatenate([weights, padding])
+                    # Renormalize
+                    weights = weights / np.sum(weights)
+
+                # Compute weighted uptake for each residue and timepoint
+                weighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
+                for t in range(uptake_values.shape[0]):  # For each timepoint
+                    for r in range(uptake_values.shape[1]):  # For each residue
+                        weighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=weights)
+
+                # Compute MAE between weighted and unweighted uptake
+                mae = np.mean(np.abs(weighted_uptake - unweighted_uptake))
+                mae_values.append(mae)
+
+            mae_results[method][param] = mae_values
+
+    return mae_results
 
 
 def kl_divergence(p, q):
@@ -2150,7 +2357,7 @@ def plot_boxplots(results, metric_name, method_names=None, title=None, ylabel=No
     # Add overall title
     fig.suptitle(title if title else f"{metric_name} Comparison", fontsize=16, y=0.98)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for the suptitle
+    plt.tight_layout(rect=[0, 0.4, 1, 0.95])  # Adjust for the suptitle
 
     return fig
 
@@ -2369,7 +2576,7 @@ def plot_pca_contours(weights_dict, topology_path, trajectory_path, output_dir=N
             fig.suptitle(
                 f"PCA Contour Plots of CA Pairwise Distances - {method}", fontsize=16, y=0.98
             )
-            plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
+            plt.tight_layout(rect=[0, 0.1, 1, 0.95])  # Adjust for suptitle
 
             # Store figure in dictionary
             fig_dict[method] = fig
@@ -2655,292 +2862,6 @@ def plot_top_structures_w1_boxplots(w1_results, method_names=None, n_top=20, tit
     )
 
 
-def cluster_and_select_representative_structures(
-    weights_dict,
-    topology_path,
-    trajectory_path,
-    output_dir,
-    n_components=10,
-    n_clusters=50,
-    n_top=20,
-):
-    """
-    Cluster the MD trajectory in PCA space and select representative structures
-    based on summed weights across seeds.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Nested dictionary with weights for each method, parameter, and seed
-    topology_path : str
-        Path to MD topology file
-    trajectory_path : str
-        Path to MD trajectory file
-    output_dir : str
-        Directory to save output trajectories
-    n_components : int
-        Number of PCA components to use
-    n_clusters : int
-        Number of clusters for K-means
-    n_top : int
-        Number of top clusters to include
-
-    Returns:
-    --------
-    cluster_results : dict
-        Dictionary with cluster information and visualizations
-    """
-    import os
-
-    import MDAnalysis as mda
-    import numpy as np
-    from MDAnalysis.analysis import align
-    from scipy.spatial.distance import pdist
-    from sklearn.cluster import KMeans
-    from sklearn.decomposition import PCA
-    from sklearn.metrics import pairwise_distances_argmin_min
-
-    cluster_results = {}
-
-    try:
-        # Create output directory
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Load MD universe
-        md_universe = mda.Universe(topology_path, trajectory_path)
-        n_frames = md_universe.trajectory.n_frames
-
-        # Select CA atoms for alignment
-        ca_atoms = md_universe.select_atoms("name CA")
-
-        # Align trajectory to the first frame using CA atoms
-        print("Aligning trajectory...")
-        align.AlignTraj(
-            md_universe, md_universe, select="name CA", in_memory=True, weights="mass", ref_frame=0
-        ).run()
-
-        # Extract pairwise distances for each frame
-        print(f"Extracting pairwise distances for {n_frames} frames...")
-        pairwise_distances = []
-        for ts in md_universe.trajectory:
-            coords = ca_atoms.positions
-            pairwise_dists = pdist(coords)
-            pairwise_distances.append(pairwise_dists)
-
-        pairwise_distances = np.array(pairwise_distances)
-
-        # Perform PCA with n_components
-        print(f"Performing PCA with {n_components} components...")
-        pca = PCA(n_components=n_components)
-        pca_data = pca.fit_transform(pairwise_distances)
-
-        # Perform K-means clustering
-        print(f"Clustering with K-means ({n_clusters} clusters)...")
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        cluster_labels = kmeans.fit_predict(pca_data)
-
-        # Find the closest frame to each centroid
-        print("Finding frames closest to centroids...")
-        closest_frames, _ = pairwise_distances_argmin_min(kmeans.cluster_centers_, pca_data)
-
-        # Create a mapping from cluster to frames
-        cluster_to_frames = {}
-        for i in range(n_clusters):
-            cluster_to_frames[i] = np.where(cluster_labels == i)[0]
-
-        # Process each method and parameter
-        for method, param_dict in weights_dict.items():
-            cluster_results[method] = {}
-
-            for param, seed_dict in param_dict.items():
-                # Skip if no valid seeds
-                valid_seeds = {k: v for k, v in seed_dict.items() if v is not None}
-                if not valid_seeds:
-                    print(f"Skipping {method}, param={param}: no valid seeds")
-                    continue
-
-                # Initialize cluster weights
-                cluster_weights = np.zeros(n_clusters)
-
-                # Sum weights for each cluster across seeds
-                for seed_key, weights in valid_seeds.items():
-                    # Ensure weights array length matches frames
-                    if len(weights) > n_frames:
-                        weights = weights[:n_frames]
-                    elif len(weights) < n_frames:
-                        # Pad weights
-                        padding = np.zeros(n_frames - len(weights))
-                        weights = np.concatenate([weights, padding])
-                        weights = weights / np.sum(weights)
-
-                    # Accumulate weights for each cluster
-                    for cluster_idx in range(n_clusters):
-                        cluster_frames = cluster_to_frames[cluster_idx]
-                        cluster_weights[cluster_idx] += np.sum(weights[cluster_frames])
-
-                # Normalize cluster weights
-                if np.sum(cluster_weights) > 0:
-                    cluster_weights = cluster_weights / np.sum(cluster_weights)
-
-                # Store cluster weights
-                cluster_results[method][param] = {
-                    "cluster_weights": cluster_weights,
-                    "cluster_to_frames": cluster_to_frames,
-                }
-
-                # Select top n_top clusters
-                top_clusters = np.argsort(cluster_weights)[-n_top:]
-
-                # Define output trajectory name
-                if method == "HDXer" and isinstance(param, tuple) and len(param) == 2:
-                    gamma, exponent = param
-                    output_name = f"{method}_gamma{gamma}_exp{exponent}_cluster{n_top}.pdb"
-                elif method == "HDXer":
-                    output_name = f"{method}_gamma{param}_cluster{n_top}.pdb"
-                else:
-                    output_name = f"{method}_rep{param}_cluster{n_top}.pdb"
-
-                # Full path to output trajectory
-                output_traj_path = os.path.join(output_dir, output_name)
-
-                # Create trajectory with representative structures
-                try:
-                    with mda.coordinates.PDB.PDBWriter(output_traj_path, multiframe=True) as writer:
-                        # Write each frame in order of descending cluster weight
-                        for cluster_idx in sorted(
-                            top_clusters, key=lambda x: cluster_weights[x], reverse=True
-                        ):
-                            # Find frame closest to centroid in this cluster
-                            cluster_frames = cluster_to_frames[cluster_idx]
-
-                            # If the cluster has frames, use the one closest to centroid
-                            if len(cluster_frames) > 0:
-                                # Calculate distances to centroid in PCA space
-                                cluster_center = kmeans.cluster_centers_[cluster_idx]
-                                frames_pca = pca_data[cluster_frames]
-
-                                # Find index of frame closest to centroid
-                                distances = np.linalg.norm(frames_pca - cluster_center, axis=1)
-                                closest_idx = cluster_frames[np.argmin(distances)]
-
-                                # Write this frame to trajectory
-                                md_universe.trajectory[closest_idx]
-                                writer.write(md_universe.atoms)
-
-                    print(
-                        f"Wrote {n_top} representative structures for {method}, param={param} to {output_traj_path}"
-                    )
-
-                    # Store information about selected frames
-                    cluster_results[method][param]["top_clusters"] = top_clusters
-                    cluster_results[method][param]["representative_frames"] = [
-                        cluster_to_frames[cluster_idx][
-                            np.argmin(
-                                np.linalg.norm(
-                                    pca_data[cluster_to_frames[cluster_idx]]
-                                    - kmeans.cluster_centers_[cluster_idx],
-                                    axis=1,
-                                )
-                            )
-                        ]
-                        if len(cluster_to_frames[cluster_idx]) > 0
-                        else None
-                        for cluster_idx in top_clusters
-                    ]
-
-                except Exception as e:
-                    print(f"Error writing trajectory for {method}, param={param}: {e}")
-
-        # Add general clustering information to results
-        cluster_results["clustering_info"] = {
-            "pca": pca,
-            "kmeans": kmeans,
-            "pca_data": pca_data,
-            "cluster_labels": cluster_labels,
-            "closest_frames": closest_frames,
-        }
-
-    except Exception as e:
-        print(f"Error in cluster_and_select_representative_structures: {e}")
-
-    return cluster_results
-
-
-def plot_clustered_dataset(cluster_results, output_dir=None):
-    """
-    Visualize the clustered dataset in 2D PCA space, coloring points by cluster.
-
-    Parameters:
-    -----------
-    cluster_results : dict
-        Results from the clustering function
-    output_dir : str, optional
-        Directory to save the plot
-
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The generated figure
-    """
-    import os
-
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    # Extract clustering information
-    if "clustering_info" not in cluster_results:
-        print("No clustering information found")
-        return None
-
-    clustering_info = cluster_results["clustering_info"]
-    pca_data = clustering_info["pca_data"]
-    cluster_labels = clustering_info["cluster_labels"]
-    kmeans = clustering_info["kmeans"]
-
-    # Create a 2D visualization using the first two PCA components
-    fig, ax = plt.subplots(figsize=(12, 10))
-
-    # Create a colormap for the clusters
-    cmap = plt.cm.get_cmap("tab20", np.max(cluster_labels) + 1)
-
-    # Plot each point, colored by cluster
-    scatter = ax.scatter(
-        pca_data[:, 0], pca_data[:, 1], c=cluster_labels, cmap=cmap, alpha=0.5, s=10
-    )
-
-    # Plot cluster centers
-    centers = kmeans.cluster_centers_
-    ax.scatter(
-        centers[:, 0],
-        centers[:, 1],
-        s=200,
-        marker="*",
-        c=range(len(centers)),
-        cmap=cmap,
-        edgecolors="k",
-        linewidths=1,
-    )
-
-    # Add grid and labels
-    ax.grid(True, alpha=0.3)
-    ax.set_xlabel("PC1")
-    ax.set_ylabel("PC2")
-    ax.set_title("Clustered Trajectory in PCA Space")
-
-    # Add colorbar
-    cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label("Cluster")
-
-    # Save figure if output directory provided
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-        output_path = os.path.join(output_dir, "clustered_trajectory.png")
-        fig.savefig(output_path, dpi=300)
-        print(f"Clustered trajectory plot saved to {output_path}")
-
-    return fig
-
-
 def compute_cluster_w1_distances(
     cluster_results, weights_dict, reference_path, topology_path, trajectory_path
 ):
@@ -3050,9 +2971,353 @@ def compute_cluster_w1_distances(
     return w1_results
 
 
+def cluster_and_select_representative_structures(
+    weights_dict,
+    topology_path,
+    trajectory_path,
+    output_dir,
+    n_components=10,
+    n_clusters=50,
+    n_top=20,
+):
+    """
+    Cluster the MD trajectory in PCA space and select representative structures
+    based on summed weights across seeds.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Nested dictionary with weights for each method, parameter, and seed
+    topology_path : str
+        Path to MD topology file
+    trajectory_path : str
+        Path to MD trajectory file
+    output_dir : str
+        Directory to save output trajectories
+    n_components : int
+        Number of PCA components to use
+    n_clusters : int
+        Number of clusters for K-means
+    n_top : int
+        Number of top clusters to include
+
+    Returns:
+    --------
+    cluster_results : dict
+        Dictionary with cluster information and visualizations
+    """
+    import os
+
+    import MDAnalysis as mda
+    import numpy as np
+    from MDAnalysis.analysis import align
+    from scipy.spatial.distance import pdist
+    from scipy.stats import gaussian_kde
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import pairwise_distances_argmin_min
+
+    cluster_results = {}
+
+    try:
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Load MD universe
+        md_universe = mda.Universe(topology_path, trajectory_path)
+        n_frames = md_universe.trajectory.n_frames
+
+        # Select CA atoms for alignment
+        ca_atoms = md_universe.select_atoms("name CA")
+
+        # Align trajectory to the first frame using CA atoms
+        print("Aligning trajectory...")
+        align.AlignTraj(
+            md_universe, md_universe, select="name CA", in_memory=True, weights="mass", ref_frame=0
+        ).run()
+
+        # Extract pairwise distances for each frame
+        print(f"Extracting pairwise distances for {n_frames} frames...")
+        pairwise_distances = []
+        for ts in md_universe.trajectory:
+            coords = ca_atoms.positions
+            pairwise_dists = pdist(coords)
+            pairwise_distances.append(pairwise_dists)
+
+        pairwise_distances = np.array(pairwise_distances)
+
+        # Perform PCA with n_components
+        print(f"Performing PCA with {n_components} components...")
+        pca = PCA(n_components=n_components)
+        pca_data = pca.fit_transform(pairwise_distances)
+
+        # Calculate density in PCA space to find the highest density structure in unweighted ensemble
+        print("Calculating density in PCA space...")
+        kde = gaussian_kde(pca_data.T)
+        density = kde(pca_data.T)
+
+        # Find the structure with highest density (representing the most populated region)
+        highest_density_idx = np.argmax(density)
+        highest_density_point = pca_data[highest_density_idx]
+        print(f"Highest density structure found at frame {highest_density_idx}")
+
+        # Perform K-means clustering
+        print(f"Clustering with K-means ({n_clusters} clusters)...")
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(pca_data)
+
+        # Calculate distances from each centroid to the highest density point
+        centroid_distances = np.linalg.norm(kmeans.cluster_centers_ - highest_density_point, axis=1)
+
+        # Create mapping from original cluster index to ordered index
+        ordered_indices = np.argsort(centroid_distances)
+        index_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(ordered_indices)}
+
+        # Reorder cluster labels
+        reordered_labels = np.array([index_mapping[label] for label in cluster_labels])
+
+        # Reorder cluster centers
+        reordered_centers = kmeans.cluster_centers_[ordered_indices]
+
+        # Find the closest frame to each centroid
+        print("Finding frames closest to centroids...")
+        closest_frames, _ = pairwise_distances_argmin_min(reordered_centers, pca_data)
+
+        # Create a mapping from cluster to frames (using reordered labels)
+        cluster_to_frames = {}
+        for i in range(n_clusters):
+            cluster_to_frames[i] = np.where(reordered_labels == i)[0]
+
+        # Process each method and parameter
+        for method, param_dict in weights_dict.items():
+            cluster_results[method] = {}
+
+            for param, seed_dict in param_dict.items():
+                # Skip if no valid seeds
+                valid_seeds = {k: v for k, v in seed_dict.items() if v is not None}
+                if not valid_seeds:
+                    print(f"Skipping {method}, param={param}: no valid seeds")
+                    continue
+
+                # Initialize cluster weights
+                cluster_weights = np.zeros(n_clusters)
+
+                # Sum weights for each cluster across seeds
+                for seed_key, weights in valid_seeds.items():
+                    # Ensure weights array length matches frames
+                    if len(weights) > n_frames:
+                        weights = weights[:n_frames]
+                    elif len(weights) < n_frames:
+                        # Pad weights
+                        padding = np.zeros(n_frames - len(weights))
+                        weights = np.concatenate([weights, padding])
+                        weights = weights / np.sum(weights)
+
+                    # Accumulate weights for each cluster
+                    for cluster_idx in range(n_clusters):
+                        cluster_frames = cluster_to_frames[cluster_idx]
+                        cluster_weights[cluster_idx] += np.sum(weights[cluster_frames])
+
+                # Normalize cluster weights
+                if np.sum(cluster_weights) > 0:
+                    cluster_weights = cluster_weights / np.sum(cluster_weights)
+
+                # Store cluster weights
+                cluster_results[method][param] = {
+                    "cluster_weights": cluster_weights,
+                    "cluster_to_frames": cluster_to_frames,
+                }
+
+                # Select top n_top clusters
+                top_clusters = np.argsort(cluster_weights)[-n_top:]
+
+                # Define output trajectory name
+                if method == "HDXer" and isinstance(param, tuple) and len(param) == 2:
+                    gamma, exponent = param
+                    output_name = f"{method}_gamma{gamma}_exp{exponent}_cluster{n_top}.pdb"
+                elif method == "HDXer":
+                    output_name = f"{method}_gamma{param}_cluster{n_top}.pdb"
+                else:
+                    output_name = f"{method}_rep{param}_cluster{n_top}.pdb"
+
+                # Full path to output trajectory
+                output_traj_path = os.path.join(output_dir, output_name)
+
+                # Create trajectory with representative structures
+                try:
+                    with mda.coordinates.PDB.PDBWriter(output_traj_path, multiframe=True) as writer:
+                        # Write each frame in order of descending cluster weight
+                        for cluster_idx in sorted(
+                            top_clusters, key=lambda x: cluster_weights[x], reverse=True
+                        ):
+                            # Find frame closest to centroid in this cluster
+                            cluster_frames = cluster_to_frames[cluster_idx]
+
+                            # If the cluster has frames, use the one closest to centroid
+                            if len(cluster_frames) > 0:
+                                # Calculate distances to centroid in PCA space
+                                cluster_center = reordered_centers[cluster_idx]
+                                frames_pca = pca_data[cluster_frames]
+
+                                # Find index of frame closest to centroid
+                                distances = np.linalg.norm(frames_pca - cluster_center, axis=1)
+                                closest_idx = cluster_frames[np.argmin(distances)]
+
+                                # Write this frame to trajectory
+                                md_universe.trajectory[closest_idx]
+                                writer.write(md_universe.atoms)
+
+                    print(
+                        f"Wrote {n_top} representative structures for {method}, param={param} to {output_traj_path}"
+                    )
+
+                    # Store information about selected frames
+                    cluster_results[method][param]["top_clusters"] = top_clusters
+                    cluster_results[method][param]["representative_frames"] = [
+                        cluster_to_frames[cluster_idx][
+                            np.argmin(
+                                np.linalg.norm(
+                                    pca_data[cluster_to_frames[cluster_idx]]
+                                    - reordered_centers[cluster_idx],
+                                    axis=1,
+                                )
+                            )
+                        ]
+                        if len(cluster_to_frames[cluster_idx]) > 0
+                        else None
+                        for cluster_idx in top_clusters
+                    ]
+
+                except Exception as e:
+                    print(f"Error writing trajectory for {method}, param={param}: {e}")
+
+        # Add general clustering information to results
+        cluster_results["clustering_info"] = {
+            "pca": pca,
+            "kmeans": kmeans,
+            "pca_data": pca_data,
+            "cluster_labels": reordered_labels,  # Use reordered labels
+            "closest_frames": closest_frames,
+            "cluster_centers": reordered_centers,  # Use reordered centers
+            "centroid_distances": centroid_distances[ordered_indices],  # Reordered distances
+            "highest_density_point": highest_density_point,
+            "highest_density_frame": highest_density_idx,
+        }
+
+    except Exception as e:
+        print(f"Error in cluster_and_select_representative_structures: {e}")
+
+    return cluster_results
+
+
+def plot_clustered_dataset(cluster_results, output_dir=None):
+    """
+    Visualize the clustered dataset in 2D PCA space, coloring points by cluster.
+    Clusters are ordered by distance from highest density structure.
+
+    Parameters:
+    -----------
+    cluster_results : dict
+        Results from the clustering function
+    output_dir : str, optional
+        Directory to save the plot
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        The generated figure
+    """
+    import os
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Extract clustering information
+    if "clustering_info" not in cluster_results:
+        print("No clustering information found")
+        return None
+
+    clustering_info = cluster_results["clustering_info"]
+    pca_data = clustering_info["pca_data"]
+    cluster_labels = clustering_info["cluster_labels"]
+    centers = clustering_info["cluster_centers"]  # Already reordered
+    highest_density_point = clustering_info["highest_density_point"]
+    highest_density_frame = clustering_info["highest_density_frame"]
+
+    # Create a 2D visualization using the first two PCA components
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Create a colormap for the clusters (using viridis for better sequential color perception)
+    cmap = plt.cm.get_cmap("viridis", np.max(cluster_labels) + 1)
+
+    # Plot each point, colored by cluster
+    scatter = ax.scatter(
+        pca_data[:, 0], pca_data[:, 1], c=cluster_labels, cmap=cmap, alpha=0.5, s=10
+    )
+
+    # Plot cluster centers
+    ax.scatter(
+        centers[:, 0],
+        centers[:, 1],
+        s=200,
+        marker="*",
+        c=range(len(centers)),
+        cmap=cmap,
+        edgecolors="k",
+        linewidths=1,
+    )
+
+    # Highlight the highest density point
+    ax.scatter(
+        highest_density_point[0],
+        highest_density_point[1],
+        s=300,
+        marker="X",
+        color="red",
+        edgecolors="k",
+        linewidths=2,
+        label="Highest Density Structure",
+    )
+
+    # Add labels showing the order of clusters
+    for i, center in enumerate(centers[:10]):  # Just show first 10 to avoid clutter
+        ax.text(
+            center[0],
+            center[1],
+            str(i),
+            fontsize=12,
+            ha="center",
+            va="center",
+            bbox=dict(facecolor="white", alpha=0.7, edgecolor="none"),
+        )
+
+    # Add grid and labels
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+    ax.set_title(
+        "Clustered Trajectory in PCA Space\n(Clusters ordered by distance from highest density structure)"
+    )
+    ax.legend()
+
+    # Add colorbar
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label("Cluster (ordered by distance from highest density)")
+
+    # Save figure if output directory provided
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, "clustered_trajectory.png")
+        fig.savefig(output_path, dpi=300)
+        print(f"Clustered trajectory plot saved to {output_path}")
+
+    return fig
+
+
 def plot_cluster_distribution(cluster_results, output_dir=None):
     """
     Create bar charts showing the distribution of clusters (bins) for each method and parameter.
+    Clusters are ordered by distance from highest density structure.
 
     Parameters:
     -----------
@@ -3069,6 +3334,7 @@ def plot_cluster_distribution(cluster_results, output_dir=None):
     import os
 
     import matplotlib.pyplot as plt
+    import numpy as np
 
     figs = {}
 
@@ -3078,6 +3344,15 @@ def plot_cluster_distribution(cluster_results, output_dir=None):
     if not methods:
         print("No methods found in cluster results")
         return figs
+
+    # Get centroid distances if available
+    if (
+        "clustering_info" in cluster_results
+        and "centroid_distances" in cluster_results["clustering_info"]
+    ):
+        centroid_distances = cluster_results["clustering_info"]["centroid_distances"]
+    else:
+        centroid_distances = None
 
     # Process each method
     for method in methods:
@@ -3091,7 +3366,7 @@ def plot_cluster_distribution(cluster_results, output_dir=None):
         # Create a figure for this method
         n_params = len(params)
         fig, axes = plt.subplots(
-            n_params, 1, figsize=(12, 4 * n_params), squeeze=False, sharex=True
+            n_params, 1, figsize=(14, 4 * n_params), squeeze=False, sharex=True
         )
 
         axes = axes.flatten()
@@ -3111,19 +3386,26 @@ def plot_cluster_distribution(cluster_results, output_dir=None):
 
             # Create bar chart
             ax = axes[i]
-            bars = ax.bar(range(len(cluster_weights)), cluster_weights, alpha=0.7)
+
+            # Use a colormap to color bars by distance from highest density
+            if centroid_distances is not None:
+                # Normalize distances for colormap
+                norm_distances = centroid_distances / np.max(centroid_distances)
+                colors = plt.cm.viridis(norm_distances)
+                bars = ax.bar(range(len(cluster_weights)), cluster_weights, color=colors, alpha=0.7)
+            else:
+                bars = ax.bar(range(len(cluster_weights)), cluster_weights, alpha=0.7)
 
             # Highlight top clusters if available
-            if (
-                len(top_clusters) > 0
-            ):  # Fix: Use explicit length check instead of boolean evaluation
+            if len(top_clusters) > 0:
                 for cluster_idx in top_clusters:
-                    bars[cluster_idx].set_color("red")
+                    bars[cluster_idx].set_edgecolor("red")
+                    bars[cluster_idx].set_linewidth(2)
                     bars[cluster_idx].set_alpha(1.0)
 
             # Add grid and labels
             ax.grid(True, alpha=0.3)
-            ax.set_xlabel("Cluster Index")
+            ax.set_xlabel("Cluster Index (ordered by distance from highest density)")
             ax.set_ylabel("Normalized Weight")
 
             # Set title based on parameter type
@@ -3137,9 +3419,30 @@ def plot_cluster_distribution(cluster_results, output_dir=None):
 
             ax.set_title(title)
 
+            # Add text annotations for top clusters
+            for cluster_idx in top_clusters:
+                ax.text(
+                    cluster_idx,
+                    cluster_weights[cluster_idx] + 0.01,
+                    f"{cluster_idx}",
+                    ha="center",
+                    va="bottom",
+                    fontweight="bold",
+                )
+
         # Set overall title
         fig.suptitle(f"Cluster Weight Distribution - {method}", fontsize=16, y=0.99)
-        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.tight_layout(rect=[0, 0.1, 1, 0.97])
+
+        # Add colorbar for distance if available
+        if centroid_distances is not None:
+            cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+            sm = plt.cm.ScalarMappable(
+                cmap=plt.cm.viridis, norm=plt.Normalize(vmin=0, vmax=np.max(centroid_distances))
+            )
+            sm.set_array([])
+            cbar = fig.colorbar(sm, cax=cbar_ax)
+            cbar.set_label("Distance from highest density structure")
 
         # Save figure
         if output_dir:
@@ -3250,25 +3553,26 @@ def run_clustering_analysis(
 
 def main():
     # Base directory containing results
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
+    base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MAD_scaling_1_10_25"
     # base_dir = "/Users/alexi/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
     # base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
     # HDXer directory
     hdxer_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/HDXer/BPTI_TFES_RW_bench_r_naive_random"
 
     # Available regularization functions
-    regularization_fns = ["mean_L1", "mean_L2", "L1"]
+    regularization_fns = ["mcMSE20_MAD20", "MSE25_MAD25", "MSE25_MAD10"]
 
     # Number of seeds
     n_seeds = 3
 
     # Define alpha values (regularization parameters)
     # This replaces n_replicates - use 20 values to match the original n_replicates
-    alpha_values = np.linspace(1, 10, 20)
+    alpha_values = np.linspace(0.1, 10, 10)
+    # alpha_values = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # HDXer gamma values and exponents
-    gamma_values = list(range(1, 10))  # 1-9
-    exponents = [0]
+    gamma_values = list(range(1, 10, 2))
+    exponents = [-1, 0, 1]
 
     # Output directory for saving plots
     output_dir = os.path.join(base_dir, "analysis")
@@ -3441,14 +3745,14 @@ def main():
     # Get the MAE results from uptake analysis
     mae_results = uptake_results.get("mae_results", {})
 
-    # Get the W1 results from uptake analysis
-    w1_uptake_results = uptake_results.get("w1_results", {})
+    # Get the MSE results from uptake analysis (changed from w1_results to mse_results)
+    mse_results = uptake_results.get("mse_results", {})  # <-- CHANGED THIS LINE
 
     # Create comparison scatter plots
     scatter_figs = create_comparison_scatter_plots(
         uniform_kl_results,  # KL divergence from uniform
         mae_results,  # Uptake MAE
-        w1_uptake_results,  # W1 distance for uptake
+        mse_results,  # MSE distance for uptake (changed from w1_uptake_results)
         scatter_output_dir,
     )
 

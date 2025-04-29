@@ -167,61 +167,6 @@ def mask_L0_loss(
     return loss, loss
 
 
-def hdx_uptake_l2_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
-) -> tuple[Array, Array]:
-    """
-    Calculate the L2 loss between the predicted and experimental data for HDX uptake.
-
-    Args:
-        model: Simulation object containing model outputs
-        dataset: Experimental dataset containing true uptake values
-
-    Returns:
-        Tuple of train and validation losses
-    """
-
-    # Get the predicted uptake from the model
-    predictions = model.outputs[prediction_index]
-
-    # Get the true uptake data
-    # true_uptake = dataset.y_true
-
-    # Compute train and validation losses
-    def compute_loss(sparse_mapping, y_true):
-        # Initialize loss accumulator
-        total_loss = 0.0
-
-        # Iterate over timepoints
-        for timepoint_idx in range(y_true.shape[0]):
-            # Get the true uptake for this timepoint
-            true_uptake_timepoint = y_true[timepoint_idx, :]
-
-            # Get the predicted uptake for this timepoint
-            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
-
-            # Apply sparse mapping to predicted uptake
-            # This handles cases where not all residues are measured
-            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
-            true_mapped = true_uptake_timepoint
-
-            # Compute L2 loss for this timepoint
-            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 2)
-
-            # Accumulate loss - normalize by the number of residues
-            total_loss += timepoint_loss
-
-        # Average loss across timepoints
-        return jnp.asarray(total_loss)
-
-    # Compute train and validation losses
-    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
-
-    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
-
-    return train_loss, val_loss
-
-
 def hdx_uptake_l1_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[Array, Array]:
@@ -264,7 +209,7 @@ def hdx_uptake_l1_loss(
             timepoint_loss = jnp.mean(jnp.abs((pred_mapped - true_mapped) ** 1))
 
             # Accumulate loss
-            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
+            total_loss += timepoint_loss
 
         # Average loss across timepoints
         return jnp.asarray(total_loss)
@@ -734,11 +679,12 @@ def corr_frame_weight_consistency_loss(
     return distance, distance
 
 
-def HDX_uptake_MAE_loss(
+def hdx_uptake_mean_centred_MSE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[Array, Array]:
     """
-    Calculate the MAE (Mean Absolute Error) loss between the predicted and experimental data for HDX uptake.
+    Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
+    This loss centers both predictions and targets around their means before computing the L1 norm.
 
     Args:
         model: Simulation object containing model outputs
@@ -748,9 +694,126 @@ def HDX_uptake_MAE_loss(
     Returns:
         Tuple of train and validation losses
     """
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Center predictions and targets around their means
+            pred_mean = jnp.mean(pred_mapped)
+            true_mean = jnp.mean(true_mapped)
+
+            pred_centered = pred_mapped - pred_mean
+            true_centered = true_mapped - true_mean
+
+            # Compute L1 loss for this timepoint
+            timepoint_loss = jnp.mean(jnp.abs(pred_centered - true_centered) ** 2)
+
+            # Accumulate loss
+            total_loss += timepoint_loss
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss) / (y_true.shape[0] * y_true.shape[-1])
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_mean_centred_MAE_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
+    This loss centers both predictions and targets around their means before computing the L1 norm.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Center predictions and targets around their means
+            pred_mean = jnp.mean(pred_mapped)
+            true_mean = jnp.mean(true_mapped)
+
+            pred_centered = pred_mapped - pred_mean
+            true_centered = true_mapped - true_mean
+
+            # Compute L1 loss for this timepoint
+            timepoint_loss = jnp.mean(jnp.abs(pred_centered - true_centered) ** 1)
+
+            # Accumulate loss
+            total_loss += timepoint_loss
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss) / (y_true.shape[0] * y_true.shape[-1])
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_l2_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the L2 loss between the predicted and experimental data for HDX uptake.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+
+    Returns:
+        Tuple of train and validation losses
+    """
 
     # Get the predicted uptake from the model
     predictions = model.outputs[prediction_index]
+
+    # Get the true uptake data
+    # true_uptake = dataset.y_true
 
     # Compute train and validation losses
     def compute_loss(sparse_mapping, y_true):
@@ -770,14 +833,124 @@ def HDX_uptake_MAE_loss(
             pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
             true_mapped = true_uptake_timepoint
 
-            # Compute MAE loss for this timepoint
-            timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped))
+            # Compute L2 loss for this timepoint
+            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 2)
 
-            # Accumulate loss
-            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
+            # Accumulate loss - normalize by the number of residues
+            total_loss += timepoint_loss
 
         # Average loss across timepoints
         return jnp.asarray(total_loss)
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_MAE_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the L2 loss between the predicted and experimental data for HDX uptake.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+
+    Returns:
+        Tuple of train and validation losses
+    """
+
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Get the true uptake data
+    # true_uptake = dataset.y_true
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            # This handles cases where not all residues are measured
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Compute L2 loss for this timepoint
+            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 1)
+
+            # Accumulate loss - normalize by the number of residues
+            total_loss += timepoint_loss
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss) / (y_true.shape[0])
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_MSE_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the L2 loss between the predicted and experimental data for HDX uptake.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+
+    Returns:
+        Tuple of train and validation losses
+    """
+
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Get the true uptake data
+    # true_uptake = dataset.y_true
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            # This handles cases where not all residues are measured
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Compute L2 loss for this timepoint
+            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 2)
+
+            # Accumulate loss - normalize by the number of residues
+            total_loss += timepoint_loss
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss) / (y_true.shape[0])
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)

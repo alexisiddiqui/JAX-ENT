@@ -102,11 +102,14 @@ def filter_common_residues(
     # ic(f"Filtering dataset with {len(dataset)} fragments")
     # ic(f"Common residues: {len(common_residues)}")
     # ic(f"Using peptide residues: {peptide}")
+    print([str(data.top) for data in dataset])
+    print([str(res) for res in common_residues])
 
     new_data = []
     for i, data in enumerate(dataset):
-        assert data.top is not None, "Topology fragment is not defined in the experimental data."
+        assert data.top is not None, "Topology is not defined in the experimental data."
         peptide_residues = data.top.extract_residues(peptide=peptide)
+        print(peptide_residues)
         ic(f"Fragment {i}: Found {len(peptide_residues)} residues")
 
         in_common = any([res in common_residues for res in peptide_residues])
@@ -129,9 +132,11 @@ class DataSplitter:
         ensemble: list[mda.Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
         peptide: bool = True,
+        peptide_trim: int = 1,
         centrality: bool = True,
         train_size: float = 0.5,
         align_sequence: bool = False,
+        mda_selection_ignore: str = "resname PRO or resid 1",
     ):
         ic.configureOutput(prefix="SPLITTER | ")
         ic(f"Initializing DataSplitter with random_seed={random_seed}")
@@ -148,7 +153,7 @@ class DataSplitter:
         self.centrality = centrality
         if common_residues is None and ensemble is not None:
             ic("Finding common residues from ensemble")
-            common_residues = find_common_residues(ensemble)[0]
+            common_residues = find_common_residues(ensemble, mda_selection_ignore)[0]
             ic(f"Found {len(common_residues)} common residues")
         elif (common_residues and ensemble) is None:
             ic.format("ERROR: Both common_residues and ensemble are None")
@@ -156,6 +161,10 @@ class DataSplitter:
             ic(f"Using provided common residues: {len(common_residues)}")
         else:
             raise ValueError("Either common_residues or ensemble must be provided")
+
+        assert isinstance(common_residues, set), (
+            f"Common residues must be a set of Partial_Topology objects {common_residues}"
+        )
 
         self.common_residues = common_residues
 
@@ -172,7 +181,7 @@ class DataSplitter:
 
         ic("Calculating fragment centrality")
         self.fragment_centrality = find_fragment_centrality(
-            self.dataset.top, mode="max", peptide=peptide
+            self.dataset.top, mode="mean", peptide=peptide
         )
         ic(
             f"Fragment centrality stats: min={min(self.fragment_centrality)}, max={max(self.fragment_centrality)}"

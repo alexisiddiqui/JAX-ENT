@@ -190,8 +190,15 @@ tests/_*
 
 *.xtc
 *.pdb
-
+*.npz
+*.jpz.npz
+*.npy
+*.svg
+*.dat
 _*
 
 # exclude folders called HDXer
 HDXer/
+.npz
+.npy
+.jpz.npz

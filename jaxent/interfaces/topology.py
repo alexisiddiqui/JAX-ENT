@@ -10,20 +10,22 @@ class Partial_Topology:
     """
 
     chain: str | int
-    fragment_sequence: (
-        str | list[str]
-    )  # resname (residue) or single letter codes (peptide) or atom name (atom)
+    # resname (residue) or single letter codes (peptide) or atom name (atom)
     residue_start: int  # inclusive, if a peptide, this is the first residue - not the
     residue_end: int | None = None  # inclusive - if None, then this is a single residue
-    peptide_trim: int = 2
+    fragment_sequence: str | list[str] = "seg"
     fragment_index: Optional[int] = (
         None  # atom or peptide index - optional for residues - required for peptides and atoms
     )
     length: int | None = None  # length of the fragment
+    peptide_trim: int = 2
 
     def __post_init__(self):
+        self.residue_start = int(self.residue_start)
+        self.fragment_index = int(self.fragment_index) if self.fragment_index is not None else None
         if self.residue_end is None:
             self.residue_end = self.residue_start
+
         self.length = (self.residue_end - self.residue_start) + 1
         if self.length > self.peptide_trim:
             self.peptide_residues = [
@@ -110,8 +112,8 @@ class Partial_Topology:
 
     def __add__(self, other: "Partial_Topology") -> "Partial_Topology":
         """Operator overloading for + to combine two topologies if they are adjacent"""
-        if self.chain != other.chain or self.fragment_sequence != other.fragment_sequence:
-            raise ValueError("Cannot combine topologies with different chains or sequences")
+        if self.chain != other.chain:
+            raise ValueError("Cannot combine topologies with different chains")
 
         # Check if they are adjacent
         if self.residue_end + 1 == other.residue_start:
@@ -137,8 +139,8 @@ class Partial_Topology:
 
     def __sub__(self, other: "Partial_Topology") -> "Partial_Topology":
         """Operator overloading for - to subtract a topology from another (splitting it)"""
-        if self.chain != other.chain or self.fragment_sequence != other.fragment_sequence:
-            raise ValueError("Cannot subtract topologies with different chains or sequences")
+        if self.chain != other.chain:
+            raise ValueError("Cannot subtract topologies with different chains")
 
         # Check if the other topology is fully contained within this one
         if other.residue_start >= self.residue_start and other.residue_end <= self.residue_end:

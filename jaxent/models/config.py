@@ -29,6 +29,8 @@ class BV_model_Config(BaseConfig):
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
+    peptide: bool = False
+    mda_selection_exclusion: str = "resname PRO or resid 1"
 
     def __init__(self, num_timepoints: int | None = None) -> None:
         super().__init__()
@@ -93,6 +95,8 @@ class NetHDXConfig(BaseConfig):
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     shell_energy_scaling: float = 0.84
     peptide_trim: int = 2  # HDXer by defualt uses 1 residue trim but this should be 2
+    peptide: bool = True
+    mda_selection_exclusion: str = "resname PRO or resid 1"
 
     def __init__(
         self,

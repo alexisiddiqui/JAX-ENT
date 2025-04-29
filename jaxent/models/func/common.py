@@ -83,7 +83,7 @@ def find_common_residues(
     ic(len(common_residues), "Common residues found across all universes")
 
     # Find residues present in at least one universe but not in all (the difference)
-    excluded_residues = set.union(*ensemble_residue_sequences_set) - common_residues
+    excluded_residues = set(set.union(*ensemble_residue_sequences_set) - common_residues)
     ic(len(excluded_residues), "Residues excluded (not common across all universes)")
 
     # Raise error if no common residues were found

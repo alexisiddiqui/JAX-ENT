@@ -27,7 +27,6 @@ from jaxent.analysis.plots.optimisation import (
 )
 from jaxent.data.loader import Dataset, ExpD_Dataloader, ExpD_Datapoint
 from jaxent.data.splitting.sparse_map import create_sparse_map
-from jaxent.data.splitting.split import DataSplitter
 from jaxent.featurise import run_featurise
 from jaxent.interfaces.builder import Experiment_Builder
 from jaxent.interfaces.simulation import Simulation_Parameters
@@ -63,6 +62,7 @@ def create_datasets_with_mappings(
     feature_topology: list[Partial_Topology],
     exp_data: Sequence[ExpD_Datapoint],
     seeds: list[int],
+    train_val_split: float = 0.5,
 ) -> list[ExpD_Dataloader]:
     """
     Creates datasets with train/val splits for multiple seeds.
@@ -88,22 +88,43 @@ def create_datasets_with_mappings(
     datasets = []
     ic.enable()
 
+    print(feature_topology)
+    print(_data.top for _data in exp_data)
+
     for seed in seeds:
         # Create a dataset object
         dataset = ExpD_Dataloader(data=exp_data)
 
-        # Create a splitter with the current seed
-        splitter = DataSplitter(
-            dataset,
-            random_seed=seed,
-            ensemble=trajs,
-            common_residues=set(feature_topology),
-            peptide=False,
-        )
+        # # Create a splitter with the current seed
+        # splitter = DataSplitter(
+        #     dataset,
+        #     random_seed=seed,
+        #     ensemble=trajs,
+        #     # common_residues=set(feature_topology),
+        #     peptide=True,
+        #     centrality=False,
+        # )
 
-        # Generate train/val split
-        train_data, val_data = splitter.random_split(remove_overlap=False)
+        # # Generate train/val split
+        # train_data, val_data = splitter.random_split(remove_overlap=False)
 
+        # Generate train/val split by splitting
+        np.random.seed(seed)
+        indices = np.random.permutation(np.arange(len(exp_data)))
+        train_indices = indices[: int(len(exp_data) * train_val_split)]
+        val_indices = indices[int(len(exp_data) * train_val_split) :]
+        print(f"Train indices: {indices}")  # Track progress
+        print(len(train_indices))
+        print(len(val_indices))
+        # print overlap between train and val indices
+        print(np.intersect1d(train_indices, val_indices))
+
+        print(len(exp_data))
+
+        # pick not train indices for validation
+
+        train_data = [exp_data[i] for i in train_indices]
+        val_data = [exp_data[i] for i in val_indices]
         # Create sparse maps
         train_sparse_map = create_sparse_map(features[0], feature_topology, train_data)
         val_sparse_map = create_sparse_map(features[0], feature_topology, val_data)
@@ -129,7 +150,7 @@ def create_datasets_with_mappings(
         )
 
         datasets.append(dataset)
-
+    # breakpoint()
     return datasets
 
 
@@ -413,9 +434,7 @@ def run_MAE_max_ent_optimization_replicates(
                     frame_weights=jnp.ones(trajectory_length) / trajectory_length,
                     frame_mask=simulation.params.frame_mask,
                     model_parameters=simulation.params.model_parameters,
-                    forward_model_weights=jnp.array(
-                        [0.5, maxent_params[j], 0.1], dtype=jnp.float32
-                    ),
+                    forward_model_weights=jnp.array([0.5, maxent_params[j], 0], dtype=jnp.float32),
                     forward_model_scaling=jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
                     normalise_loss_functions=jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
                 )
@@ -509,7 +528,7 @@ def main():
     # pick script dir
     base_output_dir = "./notebooks/CrossValidation/"
 
-    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/AdamW_loreg")
+    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/AdamW_loreg_conv1e-8")
     os.makedirs(base_output_dir, exist_ok=True)
     # remove directory if it exists
 
