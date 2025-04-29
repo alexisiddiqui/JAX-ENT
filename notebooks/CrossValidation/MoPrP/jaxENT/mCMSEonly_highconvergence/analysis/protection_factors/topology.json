@@ -1,0 +1,875 @@
+[
+  {
+    "chain": "A",
+    "fragment_sequence": "LEU",
+    "residue_start": 2,
+    "residue_end": 2,
+    "peptide_trim": 2,
+    "fragment_index": 0,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLY",
+    "residue_start": 3,
+    "residue_end": 3,
+    "peptide_trim": 2,
+    "fragment_index": 1,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLY",
+    "residue_start": 4,
+    "residue_end": 4,
+    "peptide_trim": 2,
+    "fragment_index": 2,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 5,
+    "residue_end": 5,
+    "peptide_trim": 2,
+    "fragment_index": 3,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 6,
+    "residue_end": 6,
+    "peptide_trim": 2,
+    "fragment_index": 4,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "LEU",
+    "residue_start": 7,
+    "residue_end": 7,
+    "peptide_trim": 2,
+    "fragment_index": 5,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLY",
+    "residue_start": 8,
+    "residue_end": 8,
+    "peptide_trim": 2,
+    "fragment_index": 6,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "SER",
+    "residue_start": 9,
+    "residue_end": 9,
+    "peptide_trim": 2,
+    "fragment_index": 7,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ALA",
+    "residue_start": 10,
+    "residue_end": 10,
+    "peptide_trim": 2,
+    "fragment_index": 8,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 11,
+    "residue_end": 11,
+    "peptide_trim": 2,
+    "fragment_index": 9,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "SER",
+    "residue_start": 12,
+    "residue_end": 12,
+    "peptide_trim": 2,
+    "fragment_index": 10,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 13,
+    "residue_end": 13,
+    "peptide_trim": 2,
+    "fragment_index": 11,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 15,
+    "residue_end": 15,
+    "peptide_trim": 2,
+    "fragment_index": 12,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ILE",
+    "residue_start": 16,
+    "residue_end": 16,
+    "peptide_trim": 2,
+    "fragment_index": 13,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "HIS",
+    "residue_start": 17,
+    "residue_end": 17,
+    "peptide_trim": 2,
+    "fragment_index": 14,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "PHE",
+    "residue_start": 18,
+    "residue_end": 18,
+    "peptide_trim": 2,
+    "fragment_index": 15,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLY",
+    "residue_start": 19,
+    "residue_end": 19,
+    "peptide_trim": 2,
+    "fragment_index": 16,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 20,
+    "residue_end": 20,
+    "peptide_trim": 2,
+    "fragment_index": 17,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASP",
+    "residue_start": 21,
+    "residue_end": 21,
+    "peptide_trim": 2,
+    "fragment_index": 18,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TRP",
+    "residue_start": 22,
+    "residue_end": 22,
+    "peptide_trim": 2,
+    "fragment_index": 19,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 23,
+    "residue_end": 23,
+    "peptide_trim": 2,
+    "fragment_index": 20,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASP",
+    "residue_start": 24,
+    "residue_end": 24,
+    "peptide_trim": 2,
+    "fragment_index": 21,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 25,
+    "residue_end": 25,
+    "peptide_trim": 2,
+    "fragment_index": 22,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 26,
+    "residue_end": 26,
+    "peptide_trim": 2,
+    "fragment_index": 23,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 27,
+    "residue_end": 27,
+    "peptide_trim": 2,
+    "fragment_index": 24,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 28,
+    "residue_end": 28,
+    "peptide_trim": 2,
+    "fragment_index": 25,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 29,
+    "residue_end": 29,
+    "peptide_trim": 2,
+    "fragment_index": 26,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 30,
+    "residue_end": 30,
+    "peptide_trim": 2,
+    "fragment_index": 27,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 31,
+    "residue_end": 31,
+    "peptide_trim": 2,
+    "fragment_index": 28,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 32,
+    "residue_end": 32,
+    "peptide_trim": 2,
+    "fragment_index": 29,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 33,
+    "residue_end": 33,
+    "peptide_trim": 2,
+    "fragment_index": 30,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 34,
+    "residue_end": 34,
+    "peptide_trim": 2,
+    "fragment_index": 31,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 36,
+    "residue_end": 36,
+    "peptide_trim": 2,
+    "fragment_index": 32,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 37,
+    "residue_end": 37,
+    "peptide_trim": 2,
+    "fragment_index": 33,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 38,
+    "residue_end": 38,
+    "peptide_trim": 2,
+    "fragment_index": 34,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 39,
+    "residue_end": 39,
+    "peptide_trim": 2,
+    "fragment_index": 35,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 40,
+    "residue_end": 40,
+    "peptide_trim": 2,
+    "fragment_index": 36,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 41,
+    "residue_end": 41,
+    "peptide_trim": 2,
+    "fragment_index": 37,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 43,
+    "residue_end": 43,
+    "peptide_trim": 2,
+    "fragment_index": 38,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASP",
+    "residue_start": 44,
+    "residue_end": 44,
+    "peptide_trim": 2,
+    "fragment_index": 39,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 45,
+    "residue_end": 45,
+    "peptide_trim": 2,
+    "fragment_index": 40,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 46,
+    "residue_end": 46,
+    "peptide_trim": 2,
+    "fragment_index": 41,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "SER",
+    "residue_start": 47,
+    "residue_end": 47,
+    "peptide_trim": 2,
+    "fragment_index": 42,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 48,
+    "residue_end": 48,
+    "peptide_trim": 2,
+    "fragment_index": 43,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 49,
+    "residue_end": 49,
+    "peptide_trim": 2,
+    "fragment_index": 44,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 50,
+    "residue_end": 50,
+    "peptide_trim": 2,
+    "fragment_index": 45,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 51,
+    "residue_end": 51,
+    "peptide_trim": 2,
+    "fragment_index": 46,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "PHE",
+    "residue_start": 52,
+    "residue_end": 52,
+    "peptide_trim": 2,
+    "fragment_index": 47,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 53,
+    "residue_end": 53,
+    "peptide_trim": 2,
+    "fragment_index": 48,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "HIS",
+    "residue_start": 54,
+    "residue_end": 54,
+    "peptide_trim": 2,
+    "fragment_index": 49,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASP",
+    "residue_start": 55,
+    "residue_end": 55,
+    "peptide_trim": 2,
+    "fragment_index": 50,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "CYS",
+    "residue_start": 56,
+    "residue_end": 56,
+    "peptide_trim": 2,
+    "fragment_index": 51,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 57,
+    "residue_end": 57,
+    "peptide_trim": 2,
+    "fragment_index": 52,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 58,
+    "residue_end": 58,
+    "peptide_trim": 2,
+    "fragment_index": 53,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ILE",
+    "residue_start": 59,
+    "residue_end": 59,
+    "peptide_trim": 2,
+    "fragment_index": 54,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 60,
+    "residue_end": 60,
+    "peptide_trim": 2,
+    "fragment_index": 55,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ILE",
+    "residue_start": 61,
+    "residue_end": 61,
+    "peptide_trim": 2,
+    "fragment_index": 56,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "LYS",
+    "residue_start": 62,
+    "residue_end": 62,
+    "peptide_trim": 2,
+    "fragment_index": 57,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 63,
+    "residue_end": 63,
+    "peptide_trim": 2,
+    "fragment_index": 58,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "HIS",
+    "residue_start": 64,
+    "residue_end": 64,
+    "peptide_trim": 2,
+    "fragment_index": 59,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 65,
+    "residue_end": 65,
+    "peptide_trim": 2,
+    "fragment_index": 60,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 66,
+    "residue_end": 66,
+    "peptide_trim": 2,
+    "fragment_index": 61,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 67,
+    "residue_end": 67,
+    "peptide_trim": 2,
+    "fragment_index": 62,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 68,
+    "residue_end": 68,
+    "peptide_trim": 2,
+    "fragment_index": 63,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 69,
+    "residue_end": 69,
+    "peptide_trim": 2,
+    "fragment_index": 64,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 70,
+    "residue_end": 70,
+    "peptide_trim": 2,
+    "fragment_index": 65,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "LYS",
+    "residue_start": 71,
+    "residue_end": 71,
+    "peptide_trim": 2,
+    "fragment_index": 66,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLY",
+    "residue_start": 72,
+    "residue_end": 72,
+    "peptide_trim": 2,
+    "fragment_index": 67,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 73,
+    "residue_end": 73,
+    "peptide_trim": 2,
+    "fragment_index": 68,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASN",
+    "residue_start": 74,
+    "residue_end": 74,
+    "peptide_trim": 2,
+    "fragment_index": 69,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "PHE",
+    "residue_start": 75,
+    "residue_end": 75,
+    "peptide_trim": 2,
+    "fragment_index": 70,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 76,
+    "residue_end": 76,
+    "peptide_trim": 2,
+    "fragment_index": 71,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 77,
+    "residue_end": 77,
+    "peptide_trim": 2,
+    "fragment_index": 72,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 78,
+    "residue_end": 78,
+    "peptide_trim": 2,
+    "fragment_index": 73,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ASP",
+    "residue_start": 79,
+    "residue_end": 79,
+    "peptide_trim": 2,
+    "fragment_index": 74,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 80,
+    "residue_end": 80,
+    "peptide_trim": 2,
+    "fragment_index": 75,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "LYS",
+    "residue_start": 81,
+    "residue_end": 81,
+    "peptide_trim": 2,
+    "fragment_index": 76,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 82,
+    "residue_end": 82,
+    "peptide_trim": 2,
+    "fragment_index": 77,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 83,
+    "residue_end": 83,
+    "peptide_trim": 2,
+    "fragment_index": 78,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 84,
+    "residue_end": 84,
+    "peptide_trim": 2,
+    "fragment_index": 79,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ARG",
+    "residue_start": 85,
+    "residue_end": 85,
+    "peptide_trim": 2,
+    "fragment_index": 80,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 86,
+    "residue_end": 86,
+    "peptide_trim": 2,
+    "fragment_index": 81,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 87,
+    "residue_end": 87,
+    "peptide_trim": 2,
+    "fragment_index": 82,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 88,
+    "residue_end": 88,
+    "peptide_trim": 2,
+    "fragment_index": 83,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 89,
+    "residue_end": 89,
+    "peptide_trim": 2,
+    "fragment_index": 84,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "MET",
+    "residue_start": 90,
+    "residue_end": 90,
+    "peptide_trim": 2,
+    "fragment_index": 85,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "CYS",
+    "residue_start": 91,
+    "residue_end": 91,
+    "peptide_trim": 2,
+    "fragment_index": 86,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "VAL",
+    "residue_start": 92,
+    "residue_end": 92,
+    "peptide_trim": 2,
+    "fragment_index": 87,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "THR",
+    "residue_start": 93,
+    "residue_end": 93,
+    "peptide_trim": 2,
+    "fragment_index": 88,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 94,
+    "residue_end": 94,
+    "peptide_trim": 2,
+    "fragment_index": 89,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "TYR",
+    "residue_start": 95,
+    "residue_end": 95,
+    "peptide_trim": 2,
+    "fragment_index": 90,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 96,
+    "residue_end": 96,
+    "peptide_trim": 2,
+    "fragment_index": 91,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "LYS",
+    "residue_start": 97,
+    "residue_end": 97,
+    "peptide_trim": 2,
+    "fragment_index": 92,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLU",
+    "residue_start": 98,
+    "residue_end": 98,
+    "peptide_trim": 2,
+    "fragment_index": 93,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "SER",
+    "residue_start": 99,
+    "residue_end": 99,
+    "peptide_trim": 2,
+    "fragment_index": 94,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "GLN",
+    "residue_start": 100,
+    "residue_end": 100,
+    "peptide_trim": 2,
+    "fragment_index": 95,
+    "length": 1
+  },
+  {
+    "chain": "A",
+    "fragment_sequence": "ALA",
+    "residue_start": 101,
+    "residue_end": 101,
+    "peptide_trim": 2,
+    "fragment_index": 96,
+    "length": 1
+  }
+]

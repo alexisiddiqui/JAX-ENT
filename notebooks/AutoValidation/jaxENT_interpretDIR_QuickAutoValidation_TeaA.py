@@ -7,15 +7,188 @@ plots showing average performance across different parameters.
 import glob
 import os
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from MDAnalysis.analysis import rms
 from scipy import stats
 
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.utils.hdf import load_optimization_history_from_file
+
+mpl.rcParams.update(
+    {
+        "axes.titlesize": 20,
+        "axes.labelsize": 24,
+        "xtick.labelsize": 16,
+        "ytick.labelsize": 20,
+        "legend.fontsize": 16,
+        "font.size": 24,  # default for all text (fallback)
+    }
+)
+
+
+def plot_boxplots(results, metric_name, method_names=None, title=None, ylabel=None):
+    """
+    Create box plots of metric values between seeds with each method in its own panel.
+    Parameters are ordered in ascending order.
+
+    Parameters:
+    -----------
+    results : dict
+        Dictionary with metric values grouped by method and parameter
+    metric_name : str
+        Name of the metric (e.g., "KL Divergence" or "W1 Distance")
+    method_names : list, optional
+        List of method names for the legend
+    title : str, optional
+        Plot title
+    ylabel : str, optional
+        Y-axis label
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        The box plot figure
+    """
+    # Extract methods with valid data
+    valid_methods = [method for method, param_dict in results.items() if any(param_dict.values())]
+
+    if not valid_methods:
+        # Create a simple figure if no valid data
+        fig = plt.figure(figsize=(10, 6))
+        plt.text(
+            0.5,
+            0.5,
+            f"No valid {metric_name} data available",
+            ha="center",
+            va="center",
+            fontsize=14,
+        )
+        plt.tight_layout()
+        return fig
+
+    # Create figure with subplots (one for each method)
+    fig, axes = plt.subplots(
+        1,
+        len(valid_methods),
+        figsize=(7 * len(valid_methods), 7),  # Adjusted figsize
+        sharey=True,  # Share y-axis across all panels
+        gridspec_kw={"wspace": 0.05},  # Reduce space between subplots
+    )
+
+    # Handle single subplot case
+    if len(valid_methods) == 1:
+        axes = [axes]
+
+    # Process each method in its own subplot
+    for method_idx, method in enumerate(valid_methods):
+        ax = axes[method_idx]
+        param_dict = results[method]
+
+        # Prepare data for boxplot
+        method_data_filtered = []
+        method_labels = []
+        param_colors_filtered = []
+        original_indices = []  # Keep track of original parameter index for color mapping
+
+        # Convert parameters to sortable values for ordering
+        sorted_params = []
+
+        for param_idx, (param, values) in enumerate(param_dict.items()):
+            # Filter out non-numeric or invalid values
+            valid_values = [v for v in values if isinstance(v, (int, float)) and np.isfinite(v)]
+
+            if not valid_values:
+                print(f"Skipping parameter {param} for method {method} due to no valid data.")
+                continue  # Skip if no valid data after filtering
+
+            # Calculate sort value and label based on parameter type
+            if method == "HDXer" and isinstance(param, tuple) and len(param) == 2:
+                gamma, exponent = param
+                # Use actual numerical value γ × 10^exponent for sorting
+                sort_value = gamma * (10**exponent)
+                label = f"γ={gamma}×10^{exponent}"
+            elif method == "HDXer":
+                try:
+                    sort_value = float(param)
+                    label = f"γ={param}"
+                except (ValueError, TypeError):
+                    sort_value = param_idx  # Fallback sort value
+                    label = str(param)  # Fallback label
+            else:
+                try:
+                    sort_value = float(param)
+                    label = f"α={param:.2e}"
+                except (ValueError, TypeError):
+                    sort_value = param_idx  # Fallback sort value
+                    label = str(param)  # Fallback label
+
+            sorted_params.append((sort_value, param, valid_values, label, param_idx))
+
+        # Sort parameters by their numerical value in ascending order
+        sorted_params.sort(key=lambda x: x[0])
+
+        # Define colors for parameters based on the original unsorted list size
+        param_colors = plt.cm.viridis(np.linspace(0, 1, max(len(param_dict), 1)))
+
+        # Extract sorted data and map colors correctly
+        for i, (_, _, valid_values, label, original_idx) in enumerate(sorted_params):
+            method_data_filtered.append(valid_values)
+            method_labels.append(label)
+            param_colors_filtered.append(param_colors[original_idx])
+            original_indices.append(i)  # Store the new index after sorting
+
+        # Create box plot with seaborn for this method
+        if method_data_filtered:
+            # Boxplot uses positions 0, 1, 2...
+            sns.boxplot(data=method_data_filtered, ax=ax, palette=param_colors_filtered, width=0.6)
+
+            # Add individual data points using the correct positions and colors
+            for i, data in enumerate(method_data_filtered):
+                # 'i' is the position on the x-axis (0, 1, 2...)
+                # Use jitter around the integer position 'i'
+                jitter = np.random.normal(loc=i, scale=0.04, size=len(data))
+                # Use the correctly mapped color
+                ax.scatter(jitter, data, color=param_colors_filtered[i], s=10, alpha=0.5, zorder=1)
+
+            # Explicitly set x-tick positions and labels AFTER plotting
+            ax.set_xticks(range(len(method_labels)))
+            ax.set_xticklabels(method_labels, rotation=45, ha="right")
+
+            # Add method title
+            ax.set_title(method)
+
+            # Only show y-label on the first subplot
+            if method_idx == 0:
+                ax.set_ylabel(ylabel if ylabel else metric_name)
+            else:
+                ax.tick_params(labelleft=False)  # Hide y-tick labels for other subplots
+
+            # Add grid
+            ax.grid(True, axis="y", alpha=0.3)  # Grid only on y-axis
+        else:
+            ax.text(
+                0.5,
+                0.5,
+                "No valid data",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                fontsize=12,
+            )
+            ax.set_xticks([])  # No ticks if no data
+            ax.set_yticks([])  # No ticks if no data
+
+    # Add overall title
+    fig.suptitle(title if title else f"{metric_name} Comparison", fontsize=16, y=0.98)
+
+    plt.tight_layout(rect=[0, 0.1, 1, 0.95])  # Adjust rect slightly for labels
+
+    return fig
 
 
 # Reuse functions from the original script
@@ -272,7 +445,9 @@ def plot_rmsd_histogram_evolution(
     return fig
 
 
-def plot_state_ratio_evolution(cluster_assignments, interval_states, ref_names, true_ratios=None):
+def plot_state_ratio_evolution(
+    cluster_assignments, interval_states, ref_names, true_ratios=[0.6, 0.4]
+):
     """
     Plot the evolution of state ratios during optimization.
 
@@ -295,6 +470,7 @@ def plot_state_ratio_evolution(cluster_assignments, interval_states, ref_names, 
     n_frames = len(cluster_assignments)
     n_clusters = np.max(cluster_assignments) + 1
     n_intervals = len(interval_states)
+    state_colors = ["blue", "orange"]  # Colors for Open and Closed states
 
     # Calculate state ratios at each interval
     interval_ratios = np.zeros((n_intervals, n_clusters))
@@ -349,6 +525,14 @@ def plot_state_ratio_evolution(cluster_assignments, interval_states, ref_names, 
     ax.set_ylabel("State Ratio")
     ax.set_title("Evolution of State Ratios During Optimization")
     ax.legend()
+    for j, ratio in enumerate(true_ratios):
+        ax.axhline(
+            ratio,
+            color=state_colors[j],
+            linestyle="--",
+            linewidth=2,
+            label=f"True {ref_names[j]} Ratio ({ratio * 100:.0f}%)",
+        )
 
     # Set y-axis limits with some padding
     ax.set_ylim(0, 1)
@@ -432,7 +616,7 @@ def compute_weighted_rmsd_distributions(rmsd_values, histories):
     n_frames, n_refs = rmsd_values.shape
 
     # Create a grid of RMSD values for KDE
-    rmsd_grid = np.linspace(0, np.max(rmsd_values) * 1.1, 1000)
+    rmsd_grid = np.linspace(0, np.max(rmsd_values) * 1.1, 100)
 
     # Initialize arrays for KDE estimates
     kde_values = np.zeros((n_seeds, n_refs, len(rmsd_grid)))
@@ -624,7 +808,8 @@ def plot_rmsd_histograms(rmsd_values, histories, ref_names, n_bins=30):
     return fig
 
 
-def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=None):
+# Function to plot cluster ratios with state-matching colors
+def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=[0.6, 0.4]):
     n_seeds = cluster_ratios.shape[0]
     n_clusters = cluster_ratios.shape[1]
 
@@ -662,15 +847,16 @@ def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_
             )
 
     # Add true ratio reference if provided
-    if true_ratios is not None:
-        for j, ratio in enumerate(true_ratios):
-            ax.axhline(
-                ratio,
-                color=state_colors[j],
-                linestyle="--",
-                linewidth=2,
-                label=f"True {ref_names[j]} Ratio ({ratio * 100:.0f}%)",
-            )
+    # if true_ratios is not None:
+    for j, ratio in enumerate(true_ratios):
+        ax.axhline(
+            ratio,
+            color=state_colors[j],
+            linestyle="--",
+            linewidth=2,
+            label=f"True {ref_names[j]} Ratio ({ratio * 100:.0f}%)",
+        )
+    ax.set_ylim(0, 1)
 
     ax.set_xlabel("State")
     ax.set_ylabel("Weighted Ratio")
@@ -687,8 +873,11 @@ def plot_cluster_ratios(cluster_ratios, uniform_cluster_ratios, ref_names, true_
     return fig
 
 
-def plot_cluster_ratio_boxplot(cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=None):
+def plot_cluster_ratio_boxplot(
+    cluster_ratios, uniform_cluster_ratios, ref_names, true_ratios=[0.6, 0.4]
+):
     n_clusters = cluster_ratios.shape[1]
+    state_colors = ["blue", "orange"]  # Colors for Open and Closed states
 
     # Reshape for box plot
     data = []
@@ -722,7 +911,14 @@ def plot_cluster_ratio_boxplot(cluster_ratios, uniform_cluster_ratios, ref_names
                 if j == 0
                 else f"True {ref_names[j]} Ratio",
             )
-
+    for j, ratio in enumerate(true_ratios):
+        ax.axhline(
+            ratio,
+            color=state_colors[j],
+            linestyle="--",
+            linewidth=2,
+            label=f"True {ref_names[j]} Ratio ({ratio * 100:.0f}%)",
+        )
     ax.set_ylabel("Weighted Ratio")
     ax.set_title("Distribution of Weighted State Ratios Across Seeds")
 
@@ -1108,7 +1304,7 @@ def plot_parameter_comparison_rmsd(results, output_dir):
     print(f"Saved parameter comparison RMSD plots to {param_dir}")
 
 
-def plot_parameter_comparison_ratio(results, output_dir):
+def plot_parameter_comparison_ratio(results, output_dir, reverse_xscale=False):
     """
     Create plots comparing cluster ratios across different parameter values.
 
@@ -1125,7 +1321,7 @@ def plot_parameter_comparison_ratio(results, output_dir):
     # Create a directory for parameter comparison plots
     param_dir = os.path.join(output_dir, "parameter_comparison")
     os.makedirs(param_dir, exist_ok=True)
-
+    true_ratios = [0.6, 0.4]  # Example true ratios for Open and Closed states
     # Process each method separately
     for method, sorted_params in results["sorted_params_by_method"]:
         if not sorted_params:
@@ -1183,11 +1379,23 @@ def plot_parameter_comparison_ratio(results, output_dir):
                 label=f"{cluster_name} State",
             )
 
-        ax.set_xlabel("Parameter Value")
+        for cluster_idx, ratio in enumerate(true_ratios):
+            ax.axhline(
+                ratio,
+                color=["blue", "orange"][cluster_idx],
+                linestyle="--",
+                label=f"True {ref_names[cluster_idx]} ratio",
+            )
+
+        ax.set_xlabel("Convergence Threshold")
         ax.set_ylabel("State Ratio")
         ax.set_title(f"Average State Ratio by Parameter ({method})")
         ax.legend()
+        if reverse_xscale:
+            plt.gca().invert_xaxis()  # Reverse the x-axis (Noise SD)
+
         ax.grid(True)
+        ax.set_ylim(0, 1)
 
         # Adjust x-tick labels for readability
         plt.xticks(rotation=45, ha="right")
@@ -1210,8 +1418,10 @@ def plot_parameter_comparison_ratio(results, output_dir):
 
         # Create stacked bar chart
         pivot_df.plot(kind="bar", stacked=True, ax=ax, colormap="viridis")
+        if reverse_xscale:
+            plt.gca().invert_xaxis()  # Reverse the x-axis (Noise SD)
 
-        ax.set_xlabel("Parameter Value")
+        ax.set_xlabel("Convergence Threshold")
         ax.set_ylabel("State Ratio")
         ax.set_title(f"Average State Composition by Parameter ({method})")
         ax.legend(title="State")
@@ -1415,10 +1625,600 @@ def plot_summary_heatmap(results, output_dir):
     print(f"Saved summary heatmaps to {summary_dir}")
 
 
+def cluster_and_select_representative_structures(
+    weights_dict,
+    topology_path,
+    trajectory_path,
+    output_dir,
+    n_components=10,
+    n_clusters=50,
+    n_top=20,
+):
+    """
+    Cluster the MD trajectory in PCA space and select representative structures
+    based on summed weights across seeds.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Dictionary with weights for each method, parameter, and seed
+    topology_path : str
+        Path to topology file
+    trajectory_path : str
+        Path to trajectory file
+    output_dir : str
+        Directory to save output trajectories
+    n_components : int
+        Number of PCA components to use
+    n_clusters : int
+        Number of clusters for K-means
+    n_top : int
+        Number of top clusters to include
+
+    Returns:
+    --------
+    cluster_results : dict
+        Dictionary with cluster information and visualizations
+    """
+    import os
+
+    import MDAnalysis as mda
+    import numpy as np
+    from MDAnalysis.analysis import align
+    from scipy.spatial.distance import pdist
+    from sklearn.cluster import KMeans
+    from sklearn.decomposition import PCA
+
+    cluster_results = {}
+
+    try:
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Load MD universe
+        md_universe = mda.Universe(topology_path, trajectory_path)
+        n_frames = md_universe.trajectory.n_frames
+
+        # Select CA atoms for alignment
+        ca_atoms = md_universe.select_atoms("name CA")
+
+        # Align trajectory to the first frame using CA atoms
+        print("Aligning trajectory...")
+        align.AlignTraj(
+            md_universe, md_universe, select="name CA", in_memory=True, weights="mass", ref_frame=0
+        ).run()
+
+        # Extract pairwise distances for each frame
+        print(f"Extracting pairwise distances for {n_frames} frames...")
+        pairwise_distances = []
+        for ts in md_universe.trajectory:
+            coords = ca_atoms.positions
+            pairwise_dists = pdist(coords)
+            pairwise_distances.append(pairwise_dists)
+
+        pairwise_distances = np.array(pairwise_distances)
+
+        # Perform PCA with n_components
+        print(f"Performing PCA with {n_components} components...")
+        pca = PCA(n_components=n_components)
+        pca_data = pca.fit_transform(pairwise_distances)
+
+        # Perform K-means clustering
+        print(f"Clustering with K-means ({n_clusters} clusters)...")
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(pca_data)
+
+        # Create a mapping from cluster to frames
+        cluster_to_frames = {}
+        for i in range(n_clusters):
+            cluster_to_frames[i] = np.where(cluster_labels == i)[0]
+
+        # Process each method and parameter
+        for method, param_dict in weights_dict.items():
+            cluster_results[method] = {}
+
+            for param, seed_dict in param_dict.items():
+                # Skip if no valid seeds
+                valid_seeds = {k: v for k, v in seed_dict.items() if v is not None}
+                if not valid_seeds:
+                    print(f"Skipping {method}, param={param}: no valid seeds")
+                    continue
+
+                # Initialize cluster weights
+                cluster_weights = np.zeros(n_clusters)
+
+                # Sum weights for each cluster across seeds
+                for seed_key, weights in valid_seeds.items():
+                    # Ensure weights array length matches frames
+                    if len(weights) > n_frames:
+                        weights = weights[:n_frames]
+                    elif len(weights) < n_frames:
+                        # Pad weights
+                        padding = np.zeros(n_frames - len(weights))
+                        weights = np.concatenate([weights, padding])
+                        weights = weights / np.sum(weights)
+
+                    # Accumulate weights for each cluster
+                    for cluster_idx in range(n_clusters):
+                        cluster_frames = cluster_to_frames[cluster_idx]
+                        cluster_weights[cluster_idx] += np.sum(weights[cluster_frames])
+
+                # Normalize cluster weights
+                if np.sum(cluster_weights) > 0:
+                    cluster_weights = cluster_weights / np.sum(cluster_weights)
+
+                # Store cluster weights
+                cluster_results[method][param] = {
+                    "cluster_weights": cluster_weights,
+                    "cluster_to_frames": cluster_to_frames,
+                }
+
+                # Select top n_top clusters
+                top_clusters = np.argsort(cluster_weights)[-n_top:]
+
+                # Define output trajectory name
+                if method == "HDXer" and isinstance(param, tuple) and len(param) == 2:
+                    gamma, exponent = param
+                    output_name = f"{method}_gamma{gamma}_exp{exponent}_cluster{n_top}.pdb"
+                elif method == "HDXer":
+                    output_name = f"{method}_gamma{param}_cluster{n_top}.pdb"
+                else:
+                    output_name = f"{method}_{param}_cluster{n_top}.pdb"
+
+                # Full path to output trajectory
+                output_traj_path = os.path.join(output_dir, output_name)
+
+                # Create trajectory with representative structures
+                try:
+                    with mda.coordinates.PDB.PDBWriter(output_traj_path, multiframe=True) as writer:
+                        # Write each frame in order of descending cluster weight
+                        for cluster_idx in sorted(
+                            top_clusters, key=lambda x: cluster_weights[x], reverse=True
+                        ):
+                            # Find the representative frame for this cluster
+                            cluster_frames = cluster_to_frames[cluster_idx]
+
+                            # If the cluster has frames, use the one closest to centroid
+                            if len(cluster_frames) > 0:
+                                # Calculate distances to centroid in PCA space
+                                cluster_center = kmeans.cluster_centers_[cluster_idx]
+                                frames_pca = pca_data[cluster_frames]
+
+                                # Find index of frame closest to centroid
+                                distances = np.linalg.norm(frames_pca - cluster_center, axis=1)
+                                closest_idx = cluster_frames[np.argmin(distances)]
+
+                                # Write this frame to trajectory
+                                md_universe.trajectory[closest_idx]
+                                writer.write(md_universe.atoms)
+
+                    print(
+                        f"Wrote {n_top} representative structures for {method}, param={param} to {output_traj_path}"
+                    )
+
+                    # Store information about selected frames
+                    cluster_results[method][param]["top_clusters"] = top_clusters
+                    cluster_results[method][param]["representative_frames"] = [
+                        cluster_to_frames[cluster_idx][
+                            np.argmin(
+                                np.linalg.norm(
+                                    pca_data[cluster_to_frames[cluster_idx]]
+                                    - kmeans.cluster_centers_[cluster_idx],
+                                    axis=1,
+                                )
+                            )
+                        ]
+                        if len(cluster_to_frames[cluster_idx]) > 0
+                        else None
+                        for cluster_idx in top_clusters
+                    ]
+
+                except Exception as e:
+                    print(f"Error writing trajectory for {method}, param={param}: {e}")
+
+        # Add general clustering information to results
+        cluster_results["clustering_info"] = {
+            "pca": pca,
+            "kmeans": kmeans,
+            "pca_data": pca_data,
+            "cluster_labels": cluster_labels,
+        }
+
+    except Exception as e:
+        print(f"Error in cluster_and_select_representative_structures: {e}")
+
+    return cluster_results
+
+
+def plot_clustered_dataset(cluster_results, output_dir=None):
+    """
+    Visualize the clustered dataset in 2D PCA space, coloring points by cluster.
+
+    Parameters:
+    -----------
+    cluster_results : dict
+        Results from the clustering function
+    output_dir : str, optional
+        Directory to save the plot
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        The generated figure
+    """
+    import os
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Extract clustering information
+    if "clustering_info" not in cluster_results:
+        print("No clustering information found")
+        return None
+
+    clustering_info = cluster_results["clustering_info"]
+    pca_data = clustering_info["pca_data"]
+    cluster_labels = clustering_info["cluster_labels"]
+    kmeans = clustering_info["kmeans"]
+
+    # Create a 2D visualization using the first two PCA components
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Create a colormap for the clusters
+    cmap = plt.cm.get_cmap("tab20", np.max(cluster_labels) + 1)
+
+    # Plot each point, colored by cluster
+    scatter = ax.scatter(
+        pca_data[:, 0], pca_data[:, 1], c=cluster_labels, cmap=cmap, alpha=0.5, s=10
+    )
+
+    # Plot cluster centers
+    centers = kmeans.cluster_centers_
+    ax.scatter(
+        centers[:, 0],
+        centers[:, 1],
+        s=200,
+        marker="*",
+        c=range(len(centers)),
+        cmap=cmap,
+        edgecolors="k",
+        linewidths=1,
+    )
+
+    # Add grid and labels
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("PC1")
+    ax.set_ylabel("PC2")
+    ax.set_title("Clustered Trajectory in PCA Space")
+
+    # Add colorbar
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label("Cluster")
+
+    # Save figure if output directory provided
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, "clustered_trajectory.png")
+        fig.savefig(output_path, dpi=300)
+        print(f"Clustered trajectory plot saved to {output_path}")
+
+    return fig
+
+
+def compute_cluster_w1_distances(
+    cluster_results, weights_dict, reference_path, topology_path, trajectory_path
+):
+    """
+    Compute W1 distances between reference structure and representative structures
+    from the clustering approach.
+
+    Parameters:
+    -----------
+    cluster_results : dict
+        Results from the clustering function
+    weights_dict : dict
+        Original weights dictionary
+    reference_path : str
+        Path to reference PDB file
+    topology_path : str
+        Path to topology file
+    trajectory_path : str
+        Path to trajectory file
+
+    Returns:
+    --------
+    w1_results : dict
+        Dictionary with W1 distances for clustered structures
+    """
+    import MDAnalysis as mda
+    import numpy as np
+    from scipy.spatial.distance import pdist
+    from scipy.stats import wasserstein_distance
+
+    w1_results = {}
+
+    try:
+        # Load reference structure
+        ref_universe = mda.Universe(reference_path)
+        ref_ca = ref_universe.select_atoms("name CA")
+        n_ref_frames = ref_universe.trajectory.n_frames
+
+        # Extract pairwise distances from reference
+        ref_pairwise_distances = []
+        for ts in ref_universe.trajectory:
+            coords = ref_ca.positions
+            pairwise_dists = pdist(coords)
+            ref_pairwise_distances.append(pairwise_dists)
+
+        ref_pairwise_distances = np.array(ref_pairwise_distances)
+
+        # Reference weights (uniform)
+        ref_weights = np.ones(n_ref_frames) / n_ref_frames
+
+        # Compute average pairwise distances for reference
+        ref_avg_pairwise = np.average(ref_pairwise_distances, axis=0, weights=ref_weights)
+
+        # Load MD universe
+        md_universe = mda.Universe(topology_path, trajectory_path)
+        md_ca = md_universe.select_atoms("name CA")
+
+        # Extract pairwise distances from MD trajectory
+        md_pairwise_distances = []
+        for ts in md_universe.trajectory:
+            coords = md_ca.positions
+            pairwise_dists = pdist(coords)
+            md_pairwise_distances.append(pairwise_dists)
+
+        md_pairwise_distances = np.array(md_pairwise_distances)
+
+        # Process each method and parameter
+        for method, method_results in cluster_results.items():
+            if method == "clustering_info":
+                continue
+
+            w1_results[method] = {}
+
+            for param, param_results in method_results.items():
+                if (
+                    "top_clusters" not in param_results
+                    or "representative_frames" not in param_results
+                ):
+                    continue
+
+                # Get representative frames for this method/parameter
+                rep_frames = param_results["representative_frames"]
+                rep_frames = [f for f in rep_frames if f is not None]
+
+                if not rep_frames:
+                    continue
+
+                # Create binary weights (1 for representative frames, 0 for others)
+                n_frames = len(md_pairwise_distances)
+                weights = np.zeros(n_frames)
+                weights[rep_frames] = 1.0 / len(rep_frames)
+
+                # Compute W1 distance
+                try:
+                    # Calculate weighted average for MD
+                    md_avg_pairwise = np.average(md_pairwise_distances, axis=0, weights=weights)
+
+                    # Calculate Wasserstein distance
+                    w1_dist = wasserstein_distance(ref_avg_pairwise, md_avg_pairwise)
+
+                    # Store result
+                    w1_results[method][param] = [
+                        w1_dist
+                    ]  # As a list for compatibility with boxplot function
+                except Exception as e:
+                    print(f"Error computing W1 distance for {method}, param={param}: {e}")
+                    w1_results[method][param] = []
+
+    except Exception as e:
+        print(f"Error in compute_cluster_w1_distances: {e}")
+
+    return w1_results
+
+
+def plot_cluster_distribution(cluster_results, output_dir=None):
+    """
+    Create bar charts showing the distribution of clusters for each method and parameter.
+
+    Parameters:
+    -----------
+    cluster_results : dict
+        Results from the clustering function
+    output_dir : str, optional
+        Directory to save the plots
+
+    Returns:
+    --------
+    figs : dict
+        Dictionary of generated figures
+    """
+    import os
+
+    import matplotlib.pyplot as plt
+
+    figs = {}
+
+    # Skip clustering_info
+    methods = [m for m in cluster_results.keys() if m != "clustering_info"]
+
+    if not methods:
+        print("No methods found in cluster results")
+        return figs
+
+    # Process each method
+    for method in methods:
+        method_results = cluster_results[method]
+        params = list(method_results.keys())
+
+        # Skip if no parameters
+        if not params:
+            continue
+
+        # Create a figure for this method
+        n_params = len(params)
+        fig, axes = plt.subplots(
+            n_params, 1, figsize=(12, 4 * n_params), squeeze=False, sharex=True
+        )
+
+        axes = axes.flatten()
+
+        # Process each parameter
+        for i, param in enumerate(params):
+            param_results = method_results[param]
+
+            if "cluster_weights" not in param_results:
+                continue
+
+            # Get cluster weights
+            cluster_weights = param_results["cluster_weights"]
+
+            # Get top clusters if available
+            top_clusters = param_results.get("top_clusters", [])
+
+            # Create bar chart
+            ax = axes[i]
+            bars = ax.bar(range(len(cluster_weights)), cluster_weights, alpha=0.7)
+
+            # Highlight top clusters if available
+            if len(top_clusters) > 0:
+                for cluster_idx in top_clusters:
+                    bars[cluster_idx].set_color("red")
+                    bars[cluster_idx].set_alpha(1.0)
+
+            # Add grid and labels
+            ax.grid(True, alpha=0.3)
+            ax.set_xlabel("Cluster Index")
+            ax.set_ylabel("Normalized Weight")
+
+            # Set title based on parameter type
+            if method == "HDXer" and isinstance(param, tuple) and len(param) == 2:
+                gamma, exponent = param
+                title = f"{method}: γ={gamma}×10^{exponent}"
+            elif method == "HDXer":
+                title = f"{method}: γ={param}"
+            else:
+                title = f"{method}: {param}"
+
+            ax.set_title(title)
+
+        # Set overall title
+        fig.suptitle(f"Cluster Weight Distribution - {method}", fontsize=16, y=0.99)
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+
+        # Save figure
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"cluster_distribution_{method}.png")
+            fig.savefig(output_path, dpi=300)
+            print(f"Cluster distribution plot for {method} saved to {output_path}")
+
+        # Store figure
+        figs[method] = fig
+
+    return figs
+
+
+def run_clustering_analysis(
+    weights_dict,
+    reference_path,
+    topology_path,
+    trajectory_path,
+    output_dir,
+    n_components=10,
+    n_clusters=50,
+    n_top=20,
+):
+    """
+    Run the complete clustering analysis workflow.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Dictionary with weights for each method, parameter, and seed
+    reference_path : str
+        Path to reference PDB file
+    topology_path : str
+        Path to topology file
+    trajectory_path : str
+        Path to trajectory file
+    output_dir : str
+        Directory to save output files and plots
+    n_components : int
+        Number of PCA components to use
+    n_clusters : int
+        Number of clusters for K-means
+    n_top : int
+        Number of top clusters to select
+
+    Returns:
+    --------
+    results : dict
+        Dictionary with all analysis results
+    """
+    import os
+
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 1. Perform clustering and select representative structures
+    print("Performing clustering and selecting representative structures...")
+    cluster_results = cluster_and_select_representative_structures(
+        weights_dict,
+        topology_path,
+        trajectory_path,
+        os.path.join(output_dir, "cluster_trajectories"),
+        n_components=n_components,
+        n_clusters=n_clusters,
+        n_top=n_top,
+    )
+
+    # 2. Visualize the clustered dataset
+    print("Visualizing clustered dataset...")
+    cluster_plot = plot_clustered_dataset(cluster_results, output_dir=output_dir)
+
+    # 3. Compute W1 distances for clustered structures
+    print("Computing W1 distances for clustered structures...")
+    w1_results = compute_cluster_w1_distances(
+        cluster_results, weights_dict, reference_path, topology_path, trajectory_path
+    )
+
+    # 4. Visualize W1 distances
+    print("Visualizing W1 distances...")
+    w1_plot = plot_boxplots(
+        w1_results,
+        metric_name="Cluster W1 Distance",
+        title="Wasserstein-1 Distance to Reference using Clustered Structures",
+        ylabel="Wasserstein-1 Distance (Clustered Structures, Å)",
+    )
+
+    # Save W1 plot
+    w1_plot_path = os.path.join(output_dir, "cluster_w1_distance.png")
+    w1_plot.savefig(w1_plot_path, dpi=300)
+    print(f"Cluster W1 distance plot saved to {w1_plot_path}")
+
+    # 5. Create cluster distribution plots
+    print("Creating cluster distribution plots...")
+    distribution_plots = plot_cluster_distribution(cluster_results, output_dir=output_dir)
+
+    # Return all results
+    return {
+        "cluster_results": cluster_results,
+        "w1_results": w1_results,
+        "plots": {
+            "cluster_plot": cluster_plot,
+            "w1_plot": w1_plot,
+            "distribution_plots": distribution_plots,
+        },
+    }
+
+
 # Main function to run the script
 def main():
     # Set up paths - these should be adjusted based on the actual file locations
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/normalisation_exp"
+    base_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/convergence_l2long_adam_mcmse"
     open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
     closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
     topology_path = open_path
@@ -1430,7 +2230,7 @@ def main():
     reference_paths = [open_path, closed_path]
 
     # Create output directory for cross-experiment analysis
-    output_dir = os.path.join(base_dir, "_cross_experiment_analysis")
+    output_dir = os.path.join(base_dir, "_cross_experiment_analysis_convergence_l2long_adam_mcmse")
     os.makedirs(output_dir, exist_ok=True)
 
     # Run analysis across all experiments
@@ -1443,15 +2243,56 @@ def main():
     # Create parameter comparison plots
     print("\nCreating parameter comparison plots...")
     plot_parameter_comparison_rmsd(results, output_dir)
-    plot_parameter_comparison_ratio(results, output_dir)
+    plot_parameter_comparison_ratio(results, output_dir, reverse_xscale=True)
     plot_parameter_comparison_evolution(results, output_dir)
 
     # Create summary plots
     print("\nCreating summary plots...")
     plot_summary_heatmap(results, output_dir)
 
-    print("\nAnalysis completed successfully!")
-    print(f"All cross-experiment plots saved to {output_dir}")
+    # print("\nAnalysis completed successfully!")
+    # print(f"All cross-experiment plots saved to {output_dir}")
+
+    # # Create cross-experiment clustering analysis
+    # print("\n==== Running Cross-Experiment Clustering Analysis ====\n")
+    # cross_clustering_dir = os.path.join(output_dir, "cross_clustering")
+    # os.makedirs(cross_clustering_dir, exist_ok=True)
+
+    # # Collect weights from all experiments
+    # cross_experiment_weights = {}
+    # for method, sorted_params in results["sorted_params_by_method"]:
+    #     cross_experiment_weights[method] = {}
+
+    #     for _, param, directories, _ in sorted_params:
+    #         cross_experiment_weights[method][param] = {}
+
+    #         # Get weights from results
+    #         for exp_key, exp_results in results["experiments"].items():
+    #             if exp_key == (method, param):
+    #                 histories = exp_results["histories"]
+
+    #                 # Extract weights from each history (seed)
+    #                 for i, history in enumerate(histories):
+    #                     seed_key = f"seed_{i}"
+    #                     final_state = history.states[-1]
+    #                     weights = np.array(final_state.params.frame_weights).flatten()
+
+    #                     # Normalize weights
+    #                     if len(weights) > 0:
+    #                         weights = weights / np.sum(weights)
+    #                         cross_experiment_weights[method][param][seed_key] = weights
+
+    # # Run cross-experiment clustering analysis
+    # cross_clustering_results = run_clustering_analysis(
+    #     cross_experiment_weights,
+    #     reference_paths[0],  # Use open state as reference
+    #     topology_path,
+    #     trajectory_path,
+    #     cross_clustering_dir,
+    #     n_components=10,
+    #     n_clusters=100,
+    #     n_top=2,
+    # )
 
 
 if __name__ == "__main__":
