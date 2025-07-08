@@ -452,7 +452,7 @@ def run_MAE_max_ent_optimization_replicates(
                     frame_weights=jnp.ones(trajectory_length) / trajectory_length,
                     frame_mask=simulation.params.frame_mask,
                     model_parameters=simulation.params.model_parameters,
-                    forward_model_weights=jnp.array([10, maxent_params[j], 10], dtype=jnp.float32),
+                    forward_model_weights=jnp.array([20, maxent_params[j], 10], dtype=jnp.float32),
                     forward_model_scaling=jnp.array([1.0, 1.0, 1.0], dtype=jnp.float32),
                     normalise_loss_functions=jnp.ones(3, dtype=jnp.float32),
                 )
@@ -469,7 +469,10 @@ def run_MAE_max_ent_optimization_replicates(
                 new_simulation.forward(new_params)
 
                 optimiser = OptaxOptimizer(
-                    parameter_masks={Optimisable_Parameters.frame_weights},
+                    parameter_masks={
+                        Optimisable_Parameters.frame_weights,
+                        Optimisable_Parameters.model_parameters,
+                    },
                     learning_rate=5e-4,
                     optimizer="adamw",
                 )
@@ -486,7 +489,7 @@ def run_MAE_max_ent_optimization_replicates(
                     forward_models=models,
                     indexes=[0, 0, 0],
                     loss_functions=[
-                        hdx_uptake_mean_centred_MSE_loss,
+                        hdx_uptake_MSE_loss,
                         maxent_convexKL_loss,
                         regularization_fn,
                     ],
@@ -539,9 +542,9 @@ def main():
     n_replicates = 20
 
     regularization = {
-        # "MAD": hdx_uptake_MAE_loss,
-        # "mcMAD": hdx_uptake_mean_centred_MAE_loss,
-        "mABS": hdx_uptake_abs_loss,
+        "MSE20-RWBV_MAD": hdx_uptake_MAE_loss,
+        "MSE20-RWBV_mcMAD": hdx_uptake_mean_centred_MAE_loss,
+        "MSE20-RWBV_mABS": hdx_uptake_abs_loss,
         # "mean_L2": hdx_uptake_mean_centred_l2_loss,
         # "KL": HDX_uptake_KL_loss,
         # "MAE": HDX_uptake_MAE_loss,
@@ -551,7 +554,7 @@ def main():
     # pick script dir
     base_output_dir = "./notebooks/CrossValidation/"
 
-    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/mCMSE10")
+    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/compare_20_constraint_RWBV")
     os.makedirs(base_output_dir, exist_ok=True)
     # remove directory if it exists
 
