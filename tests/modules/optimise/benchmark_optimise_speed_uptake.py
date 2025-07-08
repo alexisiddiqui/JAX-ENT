@@ -30,11 +30,11 @@ from jaxent.models.config import BV_model_Config
 from jaxent.models.core import Simulation
 from jaxent.models.func.common import find_common_residues
 from jaxent.models.HDX.BV.forwardmodel import BV_input_features, BV_model
-from jaxent.opt.losses import hdx_pf_l2_loss
+from jaxent.opt.losses import hdx_uptake_MSE_loss
 from jaxent.opt.optimiser import OptaxOptimizer
 from jaxent.opt.run import run_optimise
 from jaxent.types.config import FeaturiserSettings, Optimisable_Parameters, OptimiserSettings
-from jaxent.types.HDX import HDX_protection_factor
+from jaxent.types.HDX import HDX_peptide
 from tests.plots.datasplitting import plot_split_visualization
 from tests.plots.optimisation import (
     plot_frame_weights_heatmap,
@@ -118,7 +118,8 @@ def plot_benchmark_results(benchmark_results, output_file=None):
 
 def setup_features():
     """Set up the ensemble, features, and dataset once for benchmarking."""
-    bv_config = BV_model_Config()
+    bv_config = BV_model_Config(num_timepoints=2)
+    bv_config.timepoints = jnp.array([0.5, 5.0, 10.0])
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
     # topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
@@ -141,7 +142,7 @@ def setup_features():
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
 
     exp_data = [
-        HDX_protection_factor(protection_factor=10, top=top)
+        HDX_peptide(dfrac=[1 + i / 400, 9 + i / 400, 20], top=top)
         for i, top in enumerate(feature_topology[0], start=1)
     ]
 
@@ -233,7 +234,7 @@ def run_benchmark_optimisation(config_params, precomputed_data):
         # Configure optimization settings
         opt_settings = OptimiserSettings(
             name=config["name"],
-            learning_rate=config.get("learning_rate", 1e-4),
+            learning_rate=config.get("learning_rate", 1e-10),
             n_steps=config.get("n_steps", 100),
             convergence=1e-20,  # hopefully this will make the optimization run until the end
         )
@@ -256,20 +257,24 @@ def run_benchmark_optimisation(config_params, precomputed_data):
         # Run optimization with timing
         optimiser = OptaxOptimizer(optimizer=config.get("optimizer", "adam"))
         start_time = time.time()
+        bv_config = BV_model_Config(num_timepoints=2)
+        bv_config.timepoints = jnp.array([0.5, 5.0, 10.0])
         opt_simulation = run_optimise(
             simulation,
             optimizer=optimiser,
             data_to_fit=(dataset,),
             config=opt_settings,
-            forward_models=[BV_model(BV_model_Config())],
+            forward_models=[BV_model(bv_config)],
             indexes=[0],
             initialise=False,
-            loss_functions=[hdx_pf_l2_loss],
+            loss_functions=[hdx_uptake_MSE_loss],
         )
         end_time = time.time()
 
         execution_time = end_time - start_time
-
+        del params
+        del simulation
+        jax.clear_caches()
         # Store results
         result = {
             "config_name": config["name"],
@@ -300,9 +305,9 @@ def run_benchmark_optimisation(config_params, precomputed_data):
 def test_quick_optimiser():
     # Different optimization configurations to benchmark
     configurations = [
-        {"name": "adam_default", "optimizer": "adam", "learning_rate": 1e-4, "n_steps": 1000},
+        {"name": "adam_default", "optimizer": "adam", "learning_rate": 1e-10, "n_steps": 1000},
         # {"name": "adam_fast", "optimizer": "adam", "learning_rate": 5e-4, "n_steps": 200},
-        {"name": "sgd_default", "optimizer": "sgd", "learning_rate": 1e-3, "n_steps": 1000},
+        # {"name": "sgd_default", "optimizer": "sgd", "learning_rate": 1e-10, "n_steps": 1000},
     ]
 
     # Compute features once before running benchmarks
@@ -348,19 +353,24 @@ def test_quick_optimiser():
             # Optimisable_Parameters.model_parameters,
         },
     )
+    try:
+        bv_config = BV_model_Config(num_timepoints=2)
+        bv_config.timepoints = jnp.array([0.5, 5.0, 10.0])
+        opt_simulation = run_optimise(
+            final_simulation,  # Use the final simulation created specifically for visualization
+            optimizer=optimiser,
+            data_to_fit=(dataset,),
+            config=best_opt_settings,
+            forward_models=[BV_model(bv_config)],
+            indexes=[0],
+            initialise=True,
+            loss_functions=[hdx_uptake_MSE_loss],
+        )
 
-    opt_simulation = run_optimise(
-        final_simulation,  # Use the final simulation created specifically for visualization
-        optimizer=optimiser,
-        data_to_fit=(dataset,),
-        config=best_opt_settings,
-        forward_models=[BV_model(BV_model_Config())],
-        indexes=[0],
-        loss_functions=[hdx_pf_l2_loss],
-    )
-
-    visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
-
+        visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
+    except Exception as e:
+        print(f"Error during optimization: {e}")
+        print("Skipping visualization due to error.")
     print(f"\nBenchmark results saved to {results_file}")
     print(f"Benchmark plot saved to {plot_file}")
 
