@@ -222,6 +222,61 @@ def hdx_uptake_l1_loss(
     return train_loss, val_loss
 
 
+def hdx_uptake_abs_loss(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the L1 loss between the predicted and experimental data for HDX uptake.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+
+    Returns:
+        Tuple of train and validation losses
+    """
+
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    # Get the true uptake data
+    # true_uptake = dataset.y_true
+
+    # Compute train and validation losses
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true uptake for this timepoint
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            # This handles cases where not all residues are measured
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_uptake_timepoint
+
+            # Compute L2 loss for this timepoint
+            timepoint_loss = jnp.abs(jnp.mean((pred_mapped) - jnp.mean((true_mapped)) ** 1))
+
+            # Accumulate loss
+            total_loss += timepoint_loss / true_uptake_timepoint.shape[0]
+
+        # Average loss across timepoints
+        return jnp.asarray(total_loss)
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
 def hdx_uptake_mean_centred_l1_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[Array, Array]:
@@ -369,51 +424,6 @@ def hdx_uptake_monotonicity_loss(model: Simulation, dataset: None, prediction_in
     return loss
 
 
-# def jax_pairwise_cosine_similarity(array: Array) -> Array:
-#     """
-#     Calculate the pairwise cosine similarity between vectors in an array.
-
-#     Args:
-#         array: JAX array of shape (n_samples, n_features) or (n_features,)
-#             If 1D, it's treated as a single sample with n_features
-
-#     Returns:
-#         A square matrix of shape (n_samples, n_samples) containing
-#         pairwise cosine similarities between the samples
-#     """
-#     # If input is 1D, reshape to 2D
-#     if array.ndim == 1:
-#         array = array.reshape(1, -1)
-
-#     # Handle empty array
-#     if array.shape[0] == 0 or array.shape[1] == 0:
-#         return jnp.empty((array.shape[0], array.shape[0]))
-
-#     # Normalize the array
-#     array = array / jnp.sum(array)
-
-#     # Compute dot products
-#     dot_products = jnp.matmul(array, array.T)
-
-#     # Compute norms
-#     norms = jnp.sqrt(jnp.sum(array**2, axis=1))
-
-#     # Create a 2D grid of norm products
-#     norm_products = jnp.outer(norms, norms)
-
-#     # Add small epsilon to avoid division by zero
-#     epsilon = 1e-8
-#     norm_products = jnp.maximum(norm_products, epsilon)
-
-#     # Compute cosine similarities
-#     similarity_matrix = dot_products / norm_products
-
-#     # Ensure values are in the valid range for cosine similarity [-1, 1]
-#     similarity_matrix = 1 - jnp.clip(similarity_matrix, -1.0, 1.0)
-
-#     return similarity_matrix
-
-
 def jax_pairwise_cosine_similarity(array: Array) -> Array:
     """
     Calculate the pairwise cosine similarity between vectors in an array.
@@ -436,7 +446,7 @@ def jax_pairwise_cosine_similarity(array: Array) -> Array:
     norm_products = jnp.maximum(norm_products, epsilon)
     # Compute cosine similarities
     similarity_matrix = dot_products / norm_products
-    # Ensure values are in the valid range for cosine similarity [-1, 1]
+    # Ensure values are in a better range (0 to 2)
     similarity_matrix = 1 + jnp.clip(similarity_matrix, -1.0, 1.0)
 
     # Return similarity or distance as needed
@@ -728,7 +738,7 @@ def hdx_uptake_mean_centred_MSE_loss(
             total_loss += timepoint_loss
 
         # Average loss across timepoints
-        return jnp.asarray(total_loss) / (y_true.shape[0] * y_true.shape[-1])
+        return jnp.asarray(total_loss) / (y_true.shape[0])
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
@@ -786,7 +796,7 @@ def hdx_uptake_mean_centred_MAE_loss(
             total_loss += timepoint_loss
 
         # Average loss across timepoints
-        return jnp.asarray(total_loss) / (y_true.shape[0] * y_true.shape[-1])
+        return jnp.asarray(total_loss) / (y_true.shape[0])
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
@@ -889,7 +899,7 @@ def hdx_uptake_MAE_loss(
             true_mapped = true_uptake_timepoint
 
             # Compute L2 loss for this timepoint
-            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 1)
+            timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped) ** 1)
 
             # Accumulate loss - normalize by the number of residues
             total_loss += timepoint_loss
@@ -944,7 +954,7 @@ def hdx_uptake_MSE_loss(
             true_mapped = true_uptake_timepoint
 
             # Compute L2 loss for this timepoint
-            timepoint_loss = jnp.mean((pred_mapped - true_mapped) ** 2)
+            timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped) ** 2)
 
             # Accumulate loss - normalize by the number of residues
             total_loss += timepoint_loss

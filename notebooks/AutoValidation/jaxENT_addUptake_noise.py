@@ -61,12 +61,19 @@ def add_noise_to_dfrac(
     return noisy_data, noise_added
 
 
-def save_dfrac_data(data: Dict[int, List[float]], file_path: str):
-    """Save deuterium uptake data to file in the same format as original"""
+def save_dfrac_data(data: Dict[int, List[float]], file_path: str, timepoints: List[float]):
+    """Save deuterium uptake data to file in the provided format:
+    Header line with timepoints, then each line is uptake values for a peptide (tab-separated).
+    """
     with open(file_path, "w") as f:
-        for residue_end, uptake_values in sorted(data.items()):
-            values_str = " ".join([f"{val:.6f}" for val in uptake_values])
-            f.write(f"0 {residue_end} {values_str}\n")
+        # Write header
+        header = "#\t" + "\t".join([f"{tp:.3f}" for tp in timepoints]) + "\t times/min\n"
+        f.write(header)
+        # Write uptake values for each peptide (sorted by residue_end)
+        for residue_end in sorted(data.keys()):
+            uptake_values = data[residue_end]
+            values_str = "\t".join([f"{val:.5f}" for val in uptake_values])
+            f.write(f"{values_str}\n")
 
 
 def plot_uptake_curves(
@@ -353,7 +360,7 @@ def plot_actual_vs_target_noise(
 
 def main():
     # Define input file path and output directory
-    input_file = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
+    input_file = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
     output_dir = "hdx_noise_analysis_results"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -394,7 +401,7 @@ def main():
 
         # Save noisy data in the same format as original
         noise_output_file = os.path.join(output_dir, f"noisy_dfrac_sd_{noise_sd}.dat")
-        save_dfrac_data(noisy_data, noise_output_file)
+        save_dfrac_data(noisy_data, noise_output_file, timepoints)
         print(f"Saved noisy data to {noise_output_file}")
 
         # Plot uptake curves with error bands

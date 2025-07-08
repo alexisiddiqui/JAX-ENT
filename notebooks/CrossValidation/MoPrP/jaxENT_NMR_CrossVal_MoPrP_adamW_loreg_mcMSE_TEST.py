@@ -10,6 +10,8 @@ import jax
 
 jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
+import json
+import time
 from typing import Sequence
 
 import jax
@@ -37,7 +39,11 @@ from jaxent.models.HDX.BV.features import BV_input_features
 from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.opt.base import JaxEnt_Loss
-from jaxent.opt.losses import *
+from jaxent.opt.losses import (
+    hdx_uptake_mean_centred_l1_loss,
+    hdx_uptake_mean_centred_MSE_loss,
+    maxent_convexKL_loss,
+)
 from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
 from jaxent.opt.run import run_optimise
 from jaxent.types.base import ForwardModel
@@ -436,7 +442,7 @@ def run_MAE_max_ent_optimization_replicates(
     prior_params = simulation.params
 
     trajectory_length = prior_params.frame_weights.shape[0]
-    maxent_params = np.linspace(0.1, 10, n_replicates)
+    maxent_params = np.linspace(0.1, 5, n_replicates)
 
     for i, dataset in enumerate(datasets):
         seed_results = []
@@ -536,30 +542,25 @@ def main():
 
     n_seeds = 3
     seeds = [42 + i for i in range(n_seeds)]
-    n_replicates = 20
+    n_replicates = 10
 
     regularization = {
-        # "MAD": hdx_uptake_MAE_loss,
-        # "mcMAD": hdx_uptake_mean_centred_MAE_loss,
-        "mABS": hdx_uptake_abs_loss,
-        # "mean_L2": hdx_uptake_mean_centred_l2_loss,
-        # "KL": HDX_uptake_KL_loss,
-        # "MAE": HDX_uptake_MAE_loss,
-        # "convexKL": HDX_uptake_convex_KL_loss,
+        # "L1": hdx_uptake_l1_loss,
+        "mean_L1": hdx_uptake_mean_centred_l1_loss,
+        # ...
     }
 
     # pick script dir
     base_output_dir = "./notebooks/CrossValidation/"
-
-    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/mCMSE10")
+    base_output_dir = os.path.join(
+        base_output_dir, f"{protein}/jaxENT/mCMSE10_AdamW_loreg_conv1e-8_MAD10"
+    )
     os.makedirs(base_output_dir, exist_ok=True)
-    # remove directory if it exists
 
     # setup simulation
     datasets, models, opt_settings, pf_prior_data, features, params = setup_simulation(seeds=seeds)
 
     trajectory_length = params.frame_weights.shape[0]
-
     new_params = Simulation_Parameters(
         frame_weights=jnp.ones(trajectory_length, dtype=jnp.float32) / trajectory_length,
         frame_mask=params.frame_mask,
@@ -574,12 +575,16 @@ def main():
         input_features=features,
         params=new_params,
     )
-
     simulation.initialise()
-    # Create a new simulation with the updated parameters
     simulation.forward(new_params)
 
+    # container for timings
+    timings = {}
+    total_start = time.time()
+
     for regularization_name, regularization_fn in regularization.items():
+        loop_start = time.time()
+
         output_dir = os.path.join(base_output_dir, f"{regularization_name}")
         os.system(f"rm -rf {output_dir}")
         os.makedirs(output_dir, exist_ok=True)
@@ -596,8 +601,27 @@ def main():
         )
 
         print("Optimization complete")
-        # save the results
         print(f"Saving results to {output_dir}")
+
+        loop_end = time.time()
+        elapsed = loop_end - loop_start
+        mins = int(elapsed // 60)
+        secs = elapsed % 60
+        timings[regularization_name] = {"minutes": mins, "seconds": round(secs, 2)}
+        print(f"Time for {regularization_name}: {mins}m {secs:.2f}s")
+
+    total_end = time.time()
+    total_elapsed = total_end - total_start
+    total_mins = int(total_elapsed // 60)
+    total_secs = total_elapsed % 60
+    timings["total"] = {"minutes": total_mins, "seconds": round(total_secs, 2)}
+    print(f"Total execution time: {total_mins}m {total_secs:.2f}s")
+
+    # save all timings to a JSON file
+    timings_path = os.path.join(base_output_dir, "timings.json")
+    with open(timings_path, "w") as tf:
+        json.dump(timings, tf, indent=4)
+    print(f"Timings saved to {timings_path}")
 
 
 if __name__ == "__main__":
