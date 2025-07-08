@@ -202,3 +202,6 @@ HDXer/
 .npz
 .npy
 .jpz.npz
+
+
+*.json

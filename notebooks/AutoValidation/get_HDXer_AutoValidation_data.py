@@ -97,7 +97,7 @@ def slice_trajectories(data_dir):
             else:
                 raise ValueError(f"Unsupported output format for {output_name}")
 
-            # Select and write every 20th frame
+            # Select and write every 100th frame
             for i, ts in enumerate(u.trajectory):
                 if i % 100 == 0:
                     writer.write(u.atoms)

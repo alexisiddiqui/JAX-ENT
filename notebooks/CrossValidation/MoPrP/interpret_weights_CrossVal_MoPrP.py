@@ -1517,7 +1517,7 @@ def compute_ensemble_average_pf(log_pfs, weights_dict):
     log_pfs : numpy.ndarray
         Protection factors for each frame and residue
     weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
+        Dictionary with weights and BV parameters for each method, parameter, and seed
 
     Returns:
     --------
@@ -1532,28 +1532,35 @@ def compute_ensemble_average_pf(log_pfs, weights_dict):
         for param, seed_dict in param_dict.items():
             avg_pf_dict[method][param] = {}
 
-            for seed_key, weights in seed_dict.items():
+            for seed_key, seed_data in seed_dict.items():
+                if seed_data is None:
+                    continue
+
+                # Extract weights from the data structure
+                if isinstance(seed_data, dict) and "weights" in seed_data:
+                    weights = seed_data["weights"]
+                else:
+                    # For backward compatibility with old format
+                    weights = seed_data
+
                 if weights is None:
-                    ValueError(
-                        f"Missing weights for method {method}, parameter {param}, seed {seed_key}"
-                    )
-                # check for nans
+                    continue
+
+                # Check for nans
                 if np.isnan(weights).any():
                     weights = np.ones(len(weights)) / len(weights)
 
-                # assert that weights sum is close to 1
+                # Assert that weights sum is close to 1
                 assert np.isclose(np.sum(weights), 1.0), (
                     f"Weights for method {method}, parameter {param}, seed {seed_key} do not sum to 1. "
                     f"Sum: {np.sum(weights)}"
                 )
                 weights = weights.reshape(-1)
-                # print(log_pfs.shape)
-                # print(weights.shape)
-                # reshape to 1D
+
                 # Compute weighted average of protection factors
                 avg_pf = np.average(log_pfs, axis=1, weights=weights)
                 avg_pf_dict[method][param][seed_key] = avg_pf
-    # breakpoint()
+
     return avg_pf_dict
 
 
@@ -1648,7 +1655,7 @@ def compute_uptake_mse(
     Parameters:
     -----------
     weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
+        Dictionary with weights and BV parameters for each method, parameter, and seed
     exp_residues : list
         List of experimental residue numbers
     exp_uptake : list
@@ -1658,7 +1665,7 @@ def compute_uptake_mse(
     feature_topology : list
         Topology information for the features
     parameters : BV_Model_Parameters, optional
-        Model parameters, if None, default parameters will be used
+        Default model parameters, used if no BV parameters are found in weights_dict
 
     Returns:
     --------
@@ -1734,29 +1741,45 @@ def compute_uptake_mse(
             mse_values = []
 
             # Process each seed
-            for seed_key, weights in seed_dict.items():
+            for seed_key, seed_data in seed_dict.items():
+                if seed_data is None:
+                    continue
+
+                # Extract weights and BV parameters from the data structure
+                if isinstance(seed_data, dict) and "weights" in seed_data:
+                    weights = seed_data["weights"]
+                    bv_bc = seed_data.get("bv_bc")
+                    bv_bh = seed_data.get("bv_bh")
+                else:
+                    # For backward compatibility with old format
+                    weights = seed_data
+                    bv_bc = None
+                    bv_bh = None
+
                 if weights is None:
                     continue
 
                 # Make sure weights array length matches the number of frames
                 n_frames = features.features_shape[2]
                 if len(weights) > n_frames:
-                    raise ValueError(
-                        f"Weights for method {method}, parameter {param}, seed {seed_key} exceed number of frames."
-                    )
                     weights = weights[:n_frames]
                 elif len(weights) < n_frames:
-                    raise ValueError(
-                        f"Weights for method {method}, parameter {param}, seed {seed_key} are shorter than number of frames."
-                    )
                     # Pad weights with zeros if needed
                     padding = np.zeros(n_frames - len(weights))
                     weights = np.concatenate([weights, padding])
                     # Renormalize
                     weights = weights / np.sum(weights)
 
+                # Create a copy of the default parameters and update with BV parameters if available
+                current_parameters = parameters
+                if bv_bc is not None and bv_bh is not None:
+                    # Create a modified parameters object with the seed-specific BV parameters
+                    current_parameters = BV_Model_Parameters(
+                        timepoints=parameters.timepoints, bv_bc=bv_bc, bv_bh=bv_bh
+                    )
+
                 # Compute uptake for all frames using the BV_uptake_ForwardPass
-                output_features = forward_pass(features, parameters)
+                output_features = forward_pass(features, current_parameters)
 
                 # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
                 uptake_values = output_features.uptake
@@ -2625,6 +2648,92 @@ def create_comparison_scatter_plots(
     return results
 
 
+# def compute_uptake_mae(weights_dict, features, parameters=None):
+#     """
+#     Compute Mean Absolute Error (MAE) between weighted and unweighted deuterium uptake.
+
+#     Parameters:
+#     -----------
+#     weights_dict : dict
+#         Dictionary with weights for each method, parameter, and seed
+#     features : BV_input_features
+#         Input features for the BV model
+#     parameters : BV_Model_Parameters, optional
+#         Model parameters, if None, default parameters will be used
+
+#     Returns:
+#     --------
+#     mae_results : dict
+#         Dictionary with MAE values grouped by method and parameter
+#     """
+#     import numpy as np
+
+#     from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+
+#     # Initialize BV_uptake_ForwardPass
+#     forward_pass = BV_uptake_ForwardPass()
+
+#     # Use default parameters if none provided
+#     if parameters is None:
+#         parameters = BV_Model_Parameters()
+
+#     # Initialize results dictionary
+#     mae_results = {}
+
+#     # Compute uptake for all frames using the BV_uptake_ForwardPass
+#     output_features = forward_pass(features, parameters)
+
+#     # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
+#     uptake_values = output_features.uptake
+
+#     # Compute unweighted (uniform) uptake (average across frames)
+#     n_frames = uptake_values.shape[2]
+#     uniform_weights = np.ones(n_frames) / n_frames
+
+#     # Calculate unweighted uptake for each residue and timepoint
+#     unweighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
+#     for t in range(uptake_values.shape[0]):  # For each timepoint
+#         for r in range(uptake_values.shape[1]):  # For each residue
+#             unweighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=uniform_weights)
+
+#     # Process each method
+#     for method, param_dict in weights_dict.items():
+#         mae_results[method] = {}
+
+#         # Process each parameter
+#         for param, seed_dict in param_dict.items():
+#             mae_values = []
+
+#             # Process each seed
+#             for seed_key, weights in seed_dict.items():
+#                 if weights is None:
+#                     continue
+
+#                 # Make sure weights array length matches the number of frames
+#                 n_frames = features.features_shape[2]
+#                 if len(weights) > n_frames:
+#                     weights = weights[:n_frames]
+#                 elif len(weights) < n_frames:
+#                     # Pad weights with zeros if needed
+#                     padding = np.zeros(n_frames - len(weights))
+#                     weights = np.concatenate([weights, padding])
+#                     # Renormalize
+#                     weights = weights / np.sum(weights)
+
+#                 # Compute weighted uptake for each residue and timepoint
+#                 weighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
+#                 for t in range(uptake_values.shape[0]):  # For each timepoint
+#                     for r in range(uptake_values.shape[1]):  # For each residue
+#                         weighted_uptake[t, r] = np.average(uptake_values[t, r, :], weights=weights)
+
+#                 # Compute MAE between weighted and unweighted uptake
+#                 mae = np.mean(np.abs(weighted_uptake - unweighted_uptake))
+#                 mae_values.append(mae)
+
+#             mae_results[method][param] = mae_values
+
+
+#     return mae_results
 def compute_uptake_mae(weights_dict, features, parameters=None):
     """
     Compute Mean Absolute Error (MAE) between weighted and unweighted deuterium uptake.
@@ -2632,11 +2741,11 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
     Parameters:
     -----------
     weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
+        Dictionary with weights and BV parameters for each method, parameter, and seed
     features : BV_input_features
         Input features for the BV model
     parameters : BV_Model_Parameters, optional
-        Model parameters, if None, default parameters will be used
+        Default model parameters, used if no BV parameters are found in weights_dict
 
     Returns:
     --------
@@ -2657,7 +2766,7 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
     # Initialize results dictionary
     mae_results = {}
 
-    # Compute uptake for all frames using the BV_uptake_ForwardPass
+    # Compute uptake for all frames using the BV_uptake_ForwardPass with default parameters
     output_features = forward_pass(features, parameters)
 
     # Extract uptake values - shape should be (n_timepoints, n_residues, n_frames)
@@ -2682,7 +2791,21 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
             mae_values = []
 
             # Process each seed
-            for seed_key, weights in seed_dict.items():
+            for seed_key, seed_data in seed_dict.items():
+                if seed_data is None:
+                    continue
+
+                # Extract weights and BV parameters from the data structure
+                if isinstance(seed_data, dict) and "weights" in seed_data:
+                    weights = seed_data["weights"]
+                    bv_bc = seed_data.get("bv_bc")
+                    bv_bh = seed_data.get("bv_bh")
+                else:
+                    # For backward compatibility with old format
+                    weights = seed_data
+                    bv_bc = None
+                    bv_bh = None
+
                 if weights is None:
                     continue
 
@@ -2696,6 +2819,20 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
                     weights = np.concatenate([weights, padding])
                     # Renormalize
                     weights = weights / np.sum(weights)
+
+                # Create a copy of the default parameters and update with BV parameters if available
+                current_parameters = parameters
+                if bv_bc is not None and bv_bh is not None:
+                    # Create a modified parameters object with the seed-specific BV parameters
+                    current_parameters = BV_Model_Parameters(
+                        timepoints=parameters.timepoints, bv_bc=bv_bc, bv_bh=bv_bh
+                    )
+
+                # Compute uptake using the BV_uptake_ForwardPass with seed-specific parameters
+                output_features = forward_pass(features, current_parameters)
+
+                # Extract uptake values
+                uptake_values = output_features.uptake
 
                 # Compute weighted uptake for each residue and timepoint
                 weighted_uptake = np.zeros((uptake_values.shape[0], uptake_values.shape[1]))
@@ -2717,7 +2854,7 @@ def kl_divergence(p, q):
     Calculate the KL divergence between two probability distributions.
     Adds small epsilon to avoid division by zero.
     """
-    epsilon = 1e-10
+    epsilon = 1e-8
     p = np.array(p) + epsilon
     q = np.array(q) + epsilon
 
@@ -2753,6 +2890,95 @@ def compute_w1_distance(ref_avg_pairwise, md_pairwise, md_weights):
     w1_dist = wasserstein_distance(ref_avg_pairwise, md_avg_pairwise)
 
     return w1_dist
+
+
+def extract_hdxer_weights_and_params(hdxer_dir, n_seeds, gamma_values, exponents):
+    """
+    Extract HDXer weights and BV parameters from files.
+
+    Parameters:
+    -----------
+    hdxer_dir : str
+        Directory containing HDXer weight files
+    n_seeds : int
+        Number of seeds
+    gamma_values : list
+        List of gamma values (1-9)
+    exponents : list
+        List of exponents (-1, 0, 1)
+
+    Returns:
+    --------
+    weights_dict : dict
+        Dictionary with structure {"ValDXer": {(gamma, exponent): {seed_key: {"weights": weights_array, "bv_bc": value, "bv_bh": value}}}}
+    """
+    weights_dict = {"ValDXer": {}}
+
+    for gamma in gamma_values:
+        for exponent in exponents:
+            # Create a parameter key that represents both gamma and exponent
+            param_key = (gamma, exponent)
+            weights_dict["ValDXer"][param_key] = {}
+
+            for seed_idx in range(1, n_seeds + 1):
+                seed_key = f"seed_{seed_idx - 1}"  # Using 0-indexed naming for consistency
+
+                try:
+                    # Construct path to HDXer weights file
+                    weights_file = os.path.join(
+                        hdxer_dir,
+                        f"train_MoPrP_af_clean_{seed_idx}",
+                        f"reweighting_gamma_{gamma}x10^{exponent}final_weights.dat",
+                    )
+
+                    # Construct path to HDXer iteration output file to get BV parameters
+                    iter_file = os.path.join(
+                        hdxer_dir,
+                        f"train_MoPrP_af_clean_{seed_idx}",
+                        f"reweighting_gamma_{gamma}x10^{exponent}per_iteration_output.dat",
+                    )
+
+                    # Check if files exist
+                    if os.path.exists(weights_file) and os.path.exists(iter_file):
+                        # Load weights from file
+                        weights = np.loadtxt(weights_file)
+
+                        # Normalize weights
+                        weights = weights / np.sum(weights)
+
+                        # Extract BV parameters from the last line of iteration file
+                        bv_bc = None
+                        bv_bh = None
+                        with open(iter_file, "r") as f:
+                            lines = f.readlines()
+                            # Skip comments and empty lines
+                            data_lines = [
+                                line for line in lines if line.strip() and not line.startswith("#")
+                            ]
+                            if data_lines:
+                                # Get last data line and split by whitespace
+                                last_line = data_lines[-1]
+                                columns = last_line.split()
+                                if len(columns) >= 8:  # Make sure we have enough columns
+                                    bv_bc = float(columns[6])
+                                    bv_bh = float(columns[7])
+
+                        # Store the weights and parameters
+                        weights_dict["ValDXer"][param_key][seed_key] = {
+                            "weights": weights,
+                            "bv_bc": bv_bc,
+                            "bv_bh": bv_bh,
+                        }
+                    else:
+                        print(f"ValDXer files not found: {weights_file} or {iter_file}")
+                        weights_dict["ValDXer"][param_key][seed_key] = None
+                except Exception as e:
+                    print(
+                        f"Error loading HDXer data for seed {seed_idx}, gamma {gamma}, exponent {exponent}: {e}"
+                    )
+                    weights_dict["ValDXer"][param_key][seed_key] = None
+
+    return weights_dict
 
 
 def extract_hdxer_weights(hdxer_dir, n_seeds, gamma_values, exponents):
@@ -2813,6 +3039,92 @@ def extract_hdxer_weights(hdxer_dir, n_seeds, gamma_values, exponents):
                         f"Error loading HDXer weights for seed {seed_idx}, gamma {gamma}, exponent {exponent}: {e}"
                     )
                     weights_dict["ValDXer"][param_key][seed_key] = None
+
+    return weights_dict
+
+
+def extract_weights_and_params_from_directory(base_dir, regularization_fn, n_seeds, alpha_values):
+    """
+    Extract frame weights and BV parameters from optimization history files in the given directory.
+
+    Parameters:
+    -----------
+    base_dir : str
+        Base directory containing results
+    regularization_fn : str
+        Name of the regularization function directory
+    n_seeds : int
+        Number of seeds (datasets)
+    alpha_values : list
+        List of alpha values (replicate parameters)
+
+    Returns:
+    --------
+    weights_dict : dict
+        Dictionary with structure {regularization_fn: {alpha_value: {seed_key: {"weights": weights_array, "bv_bc": value, "bv_bh": value}}}}
+    """
+    reg_dir = os.path.join(base_dir, regularization_fn)
+    weights_dict = {regularization_fn: {}}
+
+    # Initialize weights dictionary for each alpha value
+    for alpha in alpha_values:
+        weights_dict[regularization_fn][alpha] = {}
+
+    # Extract weights for each seed and replicate (which maps to an alpha value)
+    for seed_idx in range(1, n_seeds + 1):
+        seed_key = f"seed_{seed_idx - 1}"  # Using 0-indexed naming for consistency
+
+        # Map alpha values to replicate indices (1-indexed)
+        for rep_idx, alpha in enumerate(alpha_values, 1):
+            try:
+                # Construct path to optimization history file
+                history_file = os.path.join(
+                    reg_dir, f"seed_{seed_idx}_replicate_{rep_idx}optimization_history.h5"
+                )
+
+                # Check if file exists
+                if os.path.exists(history_file):
+                    # Load optimization history
+                    opt_history = load_optimization_history_from_file(
+                        history_file, default_model_params_cls=BV_Model_Parameters
+                    )
+
+                    # Extract weights from the final state
+                    if opt_history.states and len(opt_history.states) > 0:
+                        final_state = opt_history.states[-1]
+                        frame_weights = final_state.params.frame_weights
+
+                        # Extract BV parameters from model parameters
+                        bv_bc = None
+                        bv_bh = None
+                        if (
+                            final_state.params.model_parameters
+                            and len(final_state.params.model_parameters) > 0
+                        ):
+                            model_params = final_state.params.model_parameters[0]
+                            if hasattr(model_params, "bv_bc") and hasattr(model_params, "bv_bh"):
+                                bv_bc = model_params.bv_bc
+                                bv_bh = model_params.bv_bh
+
+                        # Apply mask and normalize
+                        masked_weights = np.array(frame_weights)
+                        normalized_weights = masked_weights / np.sum(masked_weights)
+
+                        # Store with alpha value as the key
+                        weights_dict[regularization_fn][alpha][seed_key] = {
+                            "weights": normalized_weights,
+                            "bv_bc": bv_bc,
+                            "bv_bh": bv_bh,
+                        }
+                    else:
+                        print(f"No states found in history for {history_file}")
+                        weights_dict[regularization_fn][alpha][seed_key] = None
+                else:
+                    print(f"History file not found: {history_file}")
+                    weights_dict[regularization_fn][alpha][seed_key] = None
+            except Exception as e:
+                print(f"Error extracting data for seed {seed_idx}, alpha {alpha}: {e}")
+                weights_dict[regularization_fn][alpha][seed_key] = None
 
     return weights_dict
 
@@ -2918,7 +3230,7 @@ def compute_pairwise_kl_divergences(weights_dict):
 
             # Skip if fewer than 2 seed keys (need at least 2 for pairwise comparison)
             if len(seed_keys) < 2:
-                print(f"Skipping {method}, param={param}: fewer than 2 valid seeds")
+                print(f"Skipping {method}, param={param}: {len(seed_keys)}fewer than 2 valid seeds")
                 kl_results[method][param] = []
                 continue
 
@@ -4361,7 +4673,13 @@ def run_clustering_analysis(
 
 
 def plot_method_histograms(
-    metrics_dict, metric_names, output_dir=None, title=None, xscales=None, bins=15, figsize=(7, 5)
+    metrics_dict,
+    metric_names,
+    output_dir=None,
+    title=None,
+    xscales=None,
+    bins=15,
+    figsize=(8, 5),  # Increased width
 ):
     """
     Create histogram plots comparing distributions of metrics between methods.
@@ -4428,7 +4746,7 @@ def plot_method_histograms(
         len(valid_metrics),
         figsize=(figsize[0] * len(valid_metrics), figsize[1]),
         sharey=False,  # Don't share y-axis as distributions might differ
-        gridspec_kw={"wspace": 0.3},  # Add space between subplots
+        gridspec_kw={"wspace": 0.4},  # Increased space between subplots for legend
     )
 
     # Handle single subplot case
@@ -4526,8 +4844,8 @@ def plot_method_histograms(
         # Add metric title
         ax.set_title(metric_name)
 
-        # Add legend
-        ax.legend(loc="upper right")
+        # Add legend outside the plot area
+        ax.legend(loc="center left", bbox_to_anchor=(1, 0.5))
 
         # Add y-label
         ax.set_ylabel("Density")
@@ -4535,16 +4853,19 @@ def plot_method_histograms(
     # Add overall title
     if title:
         fig.suptitle(title, fontsize=16, y=0.98)
-        plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for the suptitle
+        # Adjust layout to make space for legends and title
+        plt.tight_layout(rect=[0, 0, 0.9, 0.95])  # Adjust right margin for legends
     else:
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 0.9, 1])  # Adjust right margin for legends
 
     # Save figure if output directory provided
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         sanitized_title = title.replace(" ", "_").lower() if title else "method_histograms"
         output_path = os.path.join(output_dir, f"{sanitized_title}.png")
-        fig.savefig(output_path, dpi=300)
+        fig.savefig(
+            output_path, dpi=300, bbox_inches="tight"
+        )  # Use bbox_inches='tight' to include legend
         print(f"Histogram plot saved to {output_path}")
 
     return fig
@@ -4623,21 +4944,46 @@ def create_comparison_histograms(
 
 def main():
     # Base directory containing results
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/jaxENT/compare_MSE_mcMSE"
-    # base_dir = "/Users/alexi/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
-    # base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
+    base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/jaxENT/compare_20_constraint_RWBV"
+    # base_dir = "/home/alexi/Documents/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
+    # base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
     # HDXer directory
-    hdxer_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/HDXer/MoPrP_af_clean_RW_bench_r_naive_random"
+    hdxer_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/HDXer/MoPrP_af_clean_BVRW_bench_r_naive_random"
 
     # Available regularization functions
-    regularization_fns = ["jaxENT_MSE", "jaxENT_Shape-MSE"]
+
+    objective_fns = [
+        "mCMSE10",
+        "MSE10",
+        "mCMSE10-RWBV",
+        "MSE10-RWBV",
+    ]
+    objective_fns = [
+        "mCMSE20-RWBV",
+        "MSE20-RWBV",
+        "mCMSE10-RWBV",
+        "MSE10-RWBV",
+    ]
+    constraint_fns = ["mABS", "MAD", "mcMAD"]
+
+    # regularization_fns = [
+    #     "mCMSE10_MAD10",
+    #     "mCMSE10_mcMAD10",
+    #     "mCMSE10_MAD10-RWBV",
+    #     "mCMSE10_mcMAD10-RWBV",
+    # ]
+    regularization_fns = [
+        "_".join([objective, constraint])
+        for objective in objective_fns
+        for constraint in constraint_fns
+    ]
 
     # Number of seeds
     n_seeds = 3
 
     # Define alpha values (regularization parameters)
     # This replaces n_replicates - use 20 values to match the original n_replicates
-    alpha_values = np.linspace(0.1, 5, 20)
+    alpha_values = np.linspace(0.1, 10, 20)
     convergence_rates = [
         1e-4,
         1e-5,
@@ -4651,11 +4997,11 @@ def main():
     convergence_rates = [1e-6, 5e-6, 1e-7, 5e-7, 1e-8, 1e-9, 1e-10]
 
     alpha_values = convergence_rates
-    alpha_values = np.linspace(0.1, 5, 20)
+    alpha_values = np.linspace(0.1, 10, 20)
 
     # HDXer gamma values and exponents
     gamma_values = list(range(1, 10, 2))  # 1-9
-    exponents = [-1, 0, 1]
+    exponents = [0, 1]
 
     # Output directory for saving plots
     output_dir = os.path.join(base_dir, "analysis")
@@ -4664,21 +5010,35 @@ def main():
     # Combined weights dictionary
     combined_weights_dict = {}
 
-    # Process each regularization function
+    # # Process each regularization function
+    # for reg_fn in regularization_fns:
+    #     print(f"Processing regularization function: {reg_fn}")
+
+    #     # Extract weights using alpha values instead of n_replicates
+    #     weights_dict = extract_weights_from_directory(base_dir, reg_fn, n_seeds, alpha_values)
+
+    #     # Add to combined dictionary
+    #     combined_weights_dict.update(weights_dict)
+
+    # # Process HDXer weights with multiple exponents (unchanged)
+    # print("Processing HDXer weights...")
+    # hdxer_weights = extract_hdxer_weights(hdxer_dir, n_seeds, gamma_values, exponents)
+    # combined_weights_dict.update(hdxer_weights)
     for reg_fn in regularization_fns:
         print(f"Processing regularization function: {reg_fn}")
 
-        # Extract weights using alpha values instead of n_replicates
-        weights_dict = extract_weights_from_directory(base_dir, reg_fn, n_seeds, alpha_values)
+        # Extract weights and BV parameters using alpha values
+        weights_dict = extract_weights_and_params_from_directory(
+            base_dir, reg_fn, n_seeds, alpha_values
+        )
 
         # Add to combined dictionary
         combined_weights_dict.update(weights_dict)
 
-    # Process HDXer weights with multiple exponents (unchanged)
-    print("Processing HDXer weights...")
-    hdxer_weights = extract_hdxer_weights(hdxer_dir, n_seeds, gamma_values, exponents)
+    # Process HDXer weights with multiple exponents using the updated extraction function
+    print("Processing HDXer weights and parameters...")
+    hdxer_weights = extract_hdxer_weights_and_params(hdxer_dir, n_seeds, gamma_values, exponents)
     combined_weights_dict.update(hdxer_weights)
-
     # Compute KL divergences
     print("Computing KL divergences...")
     kl_results = compute_pairwise_kl_divergences(combined_weights_dict)
@@ -4712,74 +5072,66 @@ def main():
 
     # Compute W1 distances
     print("Computing W1 distances...")
-    reference_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/2L1H_MoPrP.pdb"
-    topology_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
+    reference_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/2L1H_MoPrP.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
+
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250410-193624/clusters/all_clusters.xtc"
+    HDX_NMR_pf_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_pfactors.dat"
+    segs_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
+    dfrac_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
+    w1_results = compute_ensemble_w1_distances(
+        combined_weights_dict, reference_path, topology_path, trajectory_path
     )
 
-    trajectory_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250410-193624/clusters/all_clusters.xtc"
-    HDX_NMR_pf_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_pfactors.dat"
+    # Create and save W1 distance visualization
+    fig_w1 = plot_w1_distance_boxplots(
+        w1_results,
+        method_names=method_names,
+        title="Wasserstein-1 Distance to Reference for Different Methods",
     )
-    segs_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
+
+    output_path_w1 = os.path.join(output_dir, "w1_distance_comparison.png")
+    fig_w1.savefig(output_path_w1, dpi=300)
+    print(f"W1 distance plot saved to {output_path_w1}")
+
+    # Compute W1 distances using only top 20 structures
+    print("Computing W1 distances for top 20 structures...")
+    n_top = 20
+    top_w1_results = compute_top_structures_w1_distances(
+        combined_weights_dict, reference_path, topology_path, trajectory_path, n_top=n_top
     )
-    dfrac_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
+
+    # Create and save W1 distance visualization for top structures
+    fig_top_w1 = plot_top_structures_w1_boxplots(
+        top_w1_results,
+        method_names=method_names,
+        n_top=n_top,
+        title=f"Wasserstein-1 Distance to Reference using Top {n_top} Structures",
     )
-    # w1_results = compute_ensemble_w1_distances(
-    #     combined_weights_dict, reference_path, topology_path, trajectory_path
-    # )
 
-    # # Create and save W1 distance visualization
-    # fig_w1 = plot_w1_distance_boxplots(
-    #     w1_results,
-    #     method_names=method_names,
-    #     title="Wasserstein-1 Distance to Reference for Different Methods",
-    # )
+    output_path_top_w1 = os.path.join(output_dir, f"top{n_top}_w1_distance_comparison.png")
+    fig_top_w1.savefig(output_path_top_w1, dpi=300)
+    print(f"W1 distance plot for top {n_top} structures saved to {output_path_top_w1}")
 
-    # output_path_w1 = os.path.join(output_dir, "w1_distance_comparison.png")
-    # fig_w1.savefig(output_path_w1, dpi=300)
-    # print(f"W1 distance plot saved to {output_path_w1}")
+    # Average weights and write trajectories of top structures
+    print(f"Averaging weights and writing trajectories of top {n_top} structures...")
+    traj_output_dir = os.path.join(output_dir, "top_trajectories")
+    avg_weights_dict = average_weights_and_write_top_structures(
+        combined_weights_dict, topology_path, trajectory_path, traj_output_dir, n_top=n_top
+    )
 
-    # # Compute W1 distances using only top 20 structures
-    # print("Computing W1 distances for top 20 structures...")
-    # n_top = 20
-    # top_w1_results = compute_top_structures_w1_distances(
-    #     combined_weights_dict, reference_path, topology_path, trajectory_path, n_top=n_top
-    # )
+    # Create and save PCA contour plots
+    print("Creating PCA contour plots...")
+    pca_figures = plot_pca_contours(
+        combined_weights_dict, topology_path, trajectory_path, output_dir
+    )
 
-    # # Create and save W1 distance visualization for top structures
-    # fig_top_w1 = plot_top_structures_w1_boxplots(
-    #     top_w1_results,
-    #     method_names=method_names,
-    #     n_top=n_top,
-    #     title=f"Wasserstein-1 Distance to Reference using Top {n_top} Structures",
-    # )
-
-    # output_path_top_w1 = os.path.join(output_dir, f"top{n_top}_w1_distance_comparison.png")
-    # fig_top_w1.savefig(output_path_top_w1, dpi=300)
-    # print(f"W1 distance plot for top {n_top} structures saved to {output_path_top_w1}")
-
-    # # Average weights and write trajectories of top structures
-    # print(f"Averaging weights and writing trajectories of top {n_top} structures...")
-    # traj_output_dir = os.path.join(output_dir, "top_trajectories")
-    # avg_weights_dict = average_weights_and_write_top_structures(
-    #     combined_weights_dict, topology_path, trajectory_path, traj_output_dir, n_top=n_top
-    # )
-
-    # # Create and save PCA contour plots
-    # print("Creating PCA contour plots...")
-    # pca_figures = plot_pca_contours(
-    #     combined_weights_dict, topology_path, trajectory_path, output_dir
-    # )
-
-    # # Save each PCA figure
-    # if pca_figures and output_dir:
-    #     for method, fig in pca_figures.items():
-    #         output_path = os.path.join(output_dir, f"pca_contours_{method}.png")
-    #         fig.savefig(output_path, dpi=300)
-    #         print(f"PCA contour plot for {method} saved to {output_path}")
+    # Save each PCA figure
+    if pca_figures and output_dir:
+        for method, fig in pca_figures.items():
+            output_path = os.path.join(output_dir, f"pca_contours_{method}.png")
+            fig.savefig(output_path, dpi=300)
+            print(f"PCA contour plot for {method} saved to {output_path}")
 
     # ===== NEW: Secondary Structure Analysis =====
     print("\n==== Running Secondary Structure Analysis ====\n")
@@ -4788,19 +5140,19 @@ def main():
         combined_weights_dict, topology_path, trajectory_path, ss_output_dir
     )
 
-    # # ===== Clustering Analysis =====
-    # print("\n==== Running Clustering Analysis ====\n")
-    # clustering_output_dir = os.path.join(output_dir, "clustering")
-    # clustering_results = run_clustering_analysis(
-    #     combined_weights_dict,
-    #     reference_path,
-    #     topology_path,
-    #     trajectory_path,
-    #     clustering_output_dir,
-    #     n_components=10,
-    #     n_clusters=50,
-    #     n_top=20,
-    # )
+    # ===== Clustering Analysis =====
+    print("\n==== Running Clustering Analysis ====\n")
+    clustering_output_dir = os.path.join(output_dir, "clustering")
+    clustering_results = run_clustering_analysis(
+        combined_weights_dict,
+        reference_path,
+        topology_path,
+        trajectory_path,
+        clustering_output_dir,
+        n_components=10,
+        n_clusters=50,
+        n_top=20,
+    )
 
     # ===== Protection Factor Analysis =====
     print("\n==== Running Protection Factor Analysis ====\n")
@@ -4828,30 +5180,30 @@ def main():
         uptake_output_dir,
     )
 
-    # # Extract and display MAE results
-    # mae_fig = uptake_results.get("fig_mae")
-    # if mae_fig:
-    #     output_path_mae = os.path.join(output_dir, "deuterium_uptake_mae_comparison.png")
-    #     mae_fig.savefig(output_path_mae, dpi=300)
-    #     print(f"Deuterium uptake MAE plot saved to {output_path_mae}")
+    # Extract and display MAE results
+    mae_fig = uptake_results.get("fig_mae")
+    if mae_fig:
+        output_path_mae = os.path.join(output_dir, "deuterium_uptake_mae_comparison.png")
+        mae_fig.savefig(output_path_mae, dpi=300)
+        print(f"Deuterium uptake MAE plot saved to {output_path_mae}")
 
-    # # Create scatter plots for comparison
-    # print("\n==== Creating Comparison Scatter Plots ====\n")
-    # scatter_output_dir = os.path.join(output_dir, "scatter_plots")
+    # Create scatter plots for comparison
+    print("\n==== Creating Comparison Scatter Plots ====\n")
+    scatter_output_dir = os.path.join(output_dir, "scatter_plots")
 
-    # # Get the MAE results from uptake analysis
-    # mae_results = uptake_results.get("mae_results", {})
+    # Get the MAE results from uptake analysis
+    mae_results = uptake_results.get("mae_results", {})
 
-    # # Get the MSE results from uptake analysis (changed from w1_results to mse_results)
-    # mse_results = uptake_results.get("mse_results", {})  # <-- CHANGED THIS LINE
+    # Get the MSE results from uptake analysis (changed from w1_results to mse_results)
+    mse_results = uptake_results.get("mse_results", {})  # <-- CHANGED THIS LINE
 
-    # # Create comparison scatter plots
-    # scatter_figs = create_comparison_scatter_plots(
-    #     uniform_kl_results,  # KL divergence from uniform
-    #     mae_results,  # Uptake MAE
-    #     mse_results,  # MSE distance for uptake (changed from w1_uptake_results)
-    #     scatter_output_dir,
-    # )
+    # Create comparison scatter plots
+    scatter_figs = create_comparison_scatter_plots(
+        uniform_kl_results,  # KL divergence from uniform
+        mae_results,  # Uptake MAE
+        mse_results,  # MSE distance for uptake (changed from w1_uptake_results)
+        scatter_output_dir,
+    )
     # Create histogram comparisons
     print("\n==== Creating Method Comparison Histograms ====\n")
     histogram_output_dir = os.path.join(output_dir, "histogram_comparisons")

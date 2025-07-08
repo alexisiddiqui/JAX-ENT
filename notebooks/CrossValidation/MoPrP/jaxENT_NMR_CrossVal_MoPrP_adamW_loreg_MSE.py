@@ -486,7 +486,7 @@ def run_MAE_max_ent_optimization_replicates(
                     forward_models=models,
                     indexes=[0, 0, 0],
                     loss_functions=[
-                        hdx_uptake_mean_centred_MSE_loss,
+                        hdx_uptake_MSE_loss,
                         maxent_convexKL_loss,
                         regularization_fn,
                     ],
@@ -542,7 +542,6 @@ def main():
         # "MAD": hdx_uptake_MAE_loss,
         # "mcMAD": hdx_uptake_mean_centred_MAE_loss,
         "mABS": hdx_uptake_abs_loss,
-        # "mean_L2": hdx_uptake_mean_centred_l2_loss,
         # "KL": HDX_uptake_KL_loss,
         # "MAE": HDX_uptake_MAE_loss,
         # "convexKL": HDX_uptake_convex_KL_loss,
@@ -551,7 +550,7 @@ def main():
     # pick script dir
     base_output_dir = "./notebooks/CrossValidation/"
 
-    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/mCMSE10")
+    base_output_dir = os.path.join(base_output_dir, f"{protein}/jaxENT/MSE10")
     os.makedirs(base_output_dir, exist_ok=True)
     # remove directory if it exists
 
