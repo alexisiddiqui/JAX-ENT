@@ -46,8 +46,11 @@ mpl.rcParams.update(
     }
 )
 
-from jaxent.models.config import BV_model_Config, NetHDXConfig
-from jaxent.models.func.netHDX import calculate_trajectory_hbonds, calculate_trajectory_hbonds_BV
+from jaxent.src.models.config import BV_model_Config, NetHDXConfig
+from jaxent.src.models.func.netHDX import (
+    calculate_trajectory_hbonds,
+    calculate_trajectory_hbonds_BV,
+)
 
 reference_structure_1 = "tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
 reference_structure_2 = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"

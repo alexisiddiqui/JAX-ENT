@@ -8,8 +8,11 @@ from MDAnalysis.analysis.rms import rmsd
 from scipy.stats import pearsonr, spearmanr
 from tqdm.auto import tqdm
 
-from jaxent.models.config import BV_model_Config, NetHDXConfig
-from jaxent.models.func.netHDX import calculate_trajectory_hbonds, calculate_trajectory_hbonds_BV
+from jaxent.src.models.config import BV_model_Config, NetHDXConfig
+from jaxent.src.models.func.netHDX import (
+    calculate_trajectory_hbonds,
+    calculate_trajectory_hbonds_BV,
+)
 
 
 def calculate_matrix_rmsd(matrix1: np.ndarray, matrix2: np.ndarray) -> float:

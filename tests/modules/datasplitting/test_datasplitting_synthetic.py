@@ -11,16 +11,16 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
 
-from jaxent.data.loader import ExpD_Dataloader
-from jaxent.data.splitting.sparse_map import apply_sparse_mapping, create_sparse_map
-from jaxent.data.splitting.split import DataSplitter
-from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Builder
-from jaxent.models.config import BV_model_Config
-from jaxent.models.func.common import find_common_residues
-from jaxent.models.HDX.BV.forwardmodel import BV_model
-from jaxent.types.config import FeaturiserSettings
-from jaxent.types.HDX import HDX_protection_factor
+from jaxent.src.data.loader import ExpD_Dataloader
+from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping, create_sparse_map
+from jaxent.src.data.splitting.split import DataSplitter
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.models.config import BV_model_Config
+from jaxent.src.models.func.common import find_common_residues
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model
+from jaxent.src.types.config import FeaturiserSettings
+from jaxent.src.types.HDX import HDX_protection_factor
 from tests.plots.datasplitting import plot_split_visualization
 
 

@@ -1,5 +1,5 @@
 """
-This script runs auto-validation (simulation) on the L2-only data using jaxENT. Interpretation and Analysis of the results is done in a separate script.
+This script runs auto-validation (simulation) on the L2-only data using jaxent.src. Interpretation and Analysis of the results is done in a separate script.
 
 To run this script, you require the following:
 - input ensemble that contains at least 2 states (with names)
@@ -39,18 +39,18 @@ from jaxENT_run_AutoValidation_L2only_TeaA import (
 )
 from MDAnalysis import Universe
 
-from jaxent.data.loader import ExpD_Dataloader
-from jaxent.interfaces.simulation import Simulation_Parameters
-from jaxent.models.core import Simulation
-from jaxent.models.HDX.BV.features import BV_input_features
-from jaxent.models.HDX.BV.forwardmodel import BV_model_Config
-from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
-from jaxent.opt.losses import hdx_uptake_l2_loss, maxent_convexKL_loss
-from jaxent.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
-from jaxent.opt.run import run_optimise
-from jaxent.types.base import ForwardModel
-from jaxent.types.config import OptimiserSettings
-from jaxent.utils.hdf import (
+from jaxent.src.data.loader import ExpD_Dataloader
+from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.core import Simulation
+from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.opt.losses import hdx_uptake_l2_loss, maxent_convexKL_loss
+from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
+from jaxent.src.opt.run import run_optimise
+from jaxent.src.types.base import ForwardModel
+from jaxent.src.types.config import OptimiserSettings
+from jaxent.src.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,
 )

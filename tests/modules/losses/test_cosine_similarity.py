@@ -10,7 +10,7 @@ import seaborn as sns
 from sklearn.metrics.pairwise import cosine_similarity
 
 # Import functions to test
-from jaxent.opt.losses import (
+from jaxent.src.opt.losses import (
     L1_frame_weight_consistency_loss,  # Add L1 loss import
     convex_KL_frame_weight_consistency_loss,
     corr_frame_weight_consistency_loss,

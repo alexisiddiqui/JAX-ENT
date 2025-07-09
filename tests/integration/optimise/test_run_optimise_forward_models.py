@@ -6,7 +6,7 @@ import numpy as np
 import seaborn as sns
 from MDAnalysis import Universe
 
-from jaxent.datatypes import (
+from jaxent.src.datatypes import (
     Dataset,
     Experiment_Ensemble,
     Experimental_Dataset,
@@ -15,16 +15,16 @@ from jaxent.datatypes import (
     Simulation,
     Simulation_Parameters,
 )
-from jaxent.featurise import run_featurise
-from jaxent.forwardmodels.functions import find_common_residues
-from jaxent.forwardmodels.models import (
+from jaxent.src.featurise import run_featurise
+from jaxent.src.forwardmodels.functions import find_common_residues
+from jaxent.src.forwardmodels.models import (
     BV_input_features,
     BV_model,
     BV_model_Config,
     linear_BV_model,
     linear_BV_model_Config,
 )
-from jaxent.lossfn.base import (
+from jaxent.src.lossfn.base import (
     hdx_pf_l2_loss,
     hdx_pf_mae_loss,
     hdx_uptake_l2_loss,
@@ -32,9 +32,9 @@ from jaxent.lossfn.base import (
     mask_L0_loss,
     max_entropy_loss,
 )
-from jaxent.opt import OptaxOptimizer, Optimisable_Parameters, run_optimise
-from jaxent.types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.utils.datasplitter import DataSplitter, create_sparse_map
+from jaxent.src.opt import OptaxOptimizer, Optimisable_Parameters, run_optimise
+from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
+from jaxent.src.utils.datasplitter import DataSplitter, create_sparse_map
 
 
 def plot_split_visualization(train_data, val_data, exp_data):
