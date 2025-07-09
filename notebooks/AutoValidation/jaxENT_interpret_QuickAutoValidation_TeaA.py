@@ -32,10 +32,10 @@ import numpy as np
 from MDAnalysis.analysis import rms
 from scipy import stats
 
-from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
 # Import utility functions from the provided files
-from jaxent.utils.hdf import load_optimization_history_from_file
+from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 # Set up paths - these should be adjusted based on the actual file locations
 

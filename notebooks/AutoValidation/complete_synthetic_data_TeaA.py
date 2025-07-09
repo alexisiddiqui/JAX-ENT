@@ -14,14 +14,14 @@ import jax.numpy as jnp
 import numpy as np
 from MDAnalysis import Universe
 
-from jaxent.data.loader import ExpD_Datapoint
-from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Builder
-from jaxent.interfaces.simulation import Simulation_Parameters
-from jaxent.models.core import Simulation
-from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
-from jaxent.types.config import FeaturiserSettings
-from jaxent.types.HDX import HDX_peptide
+from jaxent.src.data.loader import ExpD_Datapoint
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.core import Simulation
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
+from jaxent.src.types.config import FeaturiserSettings
+from jaxent.src.types.HDX import HDX_peptide
 
 
 def create_synthetic_data(

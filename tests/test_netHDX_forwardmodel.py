@@ -6,8 +6,8 @@ import networkx as nx
 import numpy as np
 from matplotlib.figure import Figure
 
-from jaxent.forwardmodels.models import netHDX_model
-from jaxent.forwardmodels.netHDX_functions import (
+from jaxent.src.forwardmodels.models import netHDX_model
+from jaxent.src.forwardmodels.netHDX_functions import (
     NetHDXConfig,
     build_hbond_network,
     create_average_network,

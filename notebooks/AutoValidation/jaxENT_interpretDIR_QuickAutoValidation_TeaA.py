@@ -16,8 +16,8 @@ import seaborn as sns
 from MDAnalysis.analysis import rms
 from scipy import stats
 
-from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
-from jaxent.utils.hdf import load_optimization_history_from_file
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 mpl.rcParams.update(
     {

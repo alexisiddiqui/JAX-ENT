@@ -10,9 +10,9 @@ from scipy.stats import wasserstein_distance
 from sklearn.metrics import r2_score
 from tqdm import tqdm
 
-from jaxent.models.config import BV_model_Config, NetHDXConfig
-from jaxent.models.func.netHDX import build_hbond_network
-from jaxent.models.HDX.netHDX.features import NetworkMetrics
+from jaxent.src.models.config import BV_model_Config, NetHDXConfig
+from jaxent.src.models.func.netHDX import build_hbond_network
+from jaxent.src.models.HDX.netHDX.features import NetworkMetrics
 
 # ---- Functions from the original script ----
 
