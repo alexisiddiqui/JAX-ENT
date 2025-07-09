@@ -1,8 +1,18 @@
-# JAX-ENT
+# jaxENT
+### Version: Pre-Alpha 0.1.0 
+Disclaimer: This project is currently under construction, the code is mostly functional but is far from complete as a package. \
+Initial release expected in the next few months. Want to stay up to date? Questions/Comments/Suggestions? Use our google form below to help drive the development of this tool.
+
+### Feedback and Mailing list: 
+https://forms.gle/UDzjdfViMC8i8A1X8
+
+
+
 ## Maximum Entropy Optimisation for Experimental Biophysics-Simulation Ensemble Integration using JAX.
 
+
 ### Overview 
-This package is aimed at bioinformatics researchers across a range of experience levels we aim to have a package that is batteries included but can also be extende to suit needs.
+This package is aimed at bioinformatics researchers across a range of experience levels we aim to have a package that is batteries included but can also be extended to suit needs.
 
 Currently for HDX-MS data.
 
@@ -44,7 +54,11 @@ SAXS
 NMR
 CryoEM???
 
+---
+## Known issues:
 
+- jax jit compile sometimes hangs
+- additional computations during optimisation loop
 
 
 
