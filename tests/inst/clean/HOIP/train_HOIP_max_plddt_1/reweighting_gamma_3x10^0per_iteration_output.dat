@@ -1,3 +1,0 @@
-# Iteration, weighted MSE to target, weighted RMSE to target, Total lambdas, Fractional change in lambda, Curr. stepsize, Beta_C, Beta_H 
-     1 0.016976 0.130292 0.00000000e+00 0.00000000e+00 0.00000000e+00 5.01552174e-01 6.10060261e+01 
-     1 0.016976 0.130292 0.00000000e+00 0.00000000e+00 0.00000000e+00 5.01552174e-01 6.10060261e+01 # FINAL values at convergence or max iterations
