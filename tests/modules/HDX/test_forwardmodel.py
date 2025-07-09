@@ -6,8 +6,8 @@ import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 
-from jaxent.models.func.contacts import calc_BV_contacts_universe
-from jaxent.models.func.uptake import calculate_intrinsic_rates
+from jaxent.src.models.func.contacts import calc_BV_contacts_universe
+from jaxent.src.models.func.uptake import calculate_intrinsic_rates
 
 
 def test_calculate_intrinsic_rates():

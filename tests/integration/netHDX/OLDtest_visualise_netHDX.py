@@ -10,8 +10,8 @@ from MDAnalysis import Universe
 from scipy.spatial.distance import pdist, squareform
 from sklearn.decomposition import PCA
 
-from jaxent.forwardmodels.functions import calc_BV_contacts_universe
-from jaxent.forwardmodels.netHDX_functions import NetHDXConfig, create_average_network
+from jaxent.src.forwardmodels.functions import calc_BV_contacts_universe
+from jaxent.src.forwardmodels.netHDX_functions import NetHDXConfig, create_average_network
 
 
 def plot_hbond_network_enhanced_PCA(

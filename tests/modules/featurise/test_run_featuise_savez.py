@@ -4,11 +4,11 @@ import os
 import jax.numpy as jnp
 from MDAnalysis import Universe
 
-from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Builder
-from jaxent.models.HDX.BV.features import BV_input_features
-from jaxent.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
-from jaxent.types.config import FeaturiserSettings
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
+from jaxent.src.types.config import FeaturiserSettings
 
 
 def test_featurise_save_load(trajectory_path: str, topology_path: str, output_dir: str):
@@ -97,7 +97,7 @@ def test_featurise_save_load(trajectory_path: str, topology_path: str, output_di
         loaded_topology_dicts = json.load(f)
 
     # Reconstruct Partial_Topology objects
-    from jaxent.interfaces.topology import Partial_Topology
+    from jaxent.src.interfaces.topology import Partial_Topology
 
     loaded_topology = []
     for top_dict in loaded_topology_dicts:

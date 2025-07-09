@@ -66,19 +66,19 @@ from MDAnalysis.analysis import align
 from scipy.spatial.distance import pdist
 from scipy.stats import entropy, wasserstein_distance
 
-from jaxent.featurise import run_featurise
-from jaxent.interfaces.builder import Experiment_Builder
-from jaxent.models.config import BV_model_Config
-from jaxent.models.HDX.BV.features import (
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.models.config import BV_model_Config
+from jaxent.src.models.HDX.BV.features import (
     BV_input_features,
     uptake_BV_output_features,
 )
-from jaxent.models.HDX.BV.forwardmodel import BV_model
-from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
-from jaxent.models.HDX.forward import BV_ForwardPass
-from jaxent.types.base import ForwardPass
-from jaxent.types.config import FeaturiserSettings
-from jaxent.utils.hdf import load_optimization_history_from_file
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.forward import BV_ForwardPass
+from jaxent.src.types.base import ForwardPass
+from jaxent.src.types.config import FeaturiserSettings
+from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 # globally set axes/tick/legend font‐sizes
 mpl.rcParams.update(
@@ -1372,7 +1372,7 @@ def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
         with open(topology_path_json, "r") as f:
             topology_dicts = json.load(f)
 
-        from jaxent.interfaces.topology import Partial_Topology
+        from jaxent.src.interfaces.topology import Partial_Topology
 
         feature_topology = [
             [
@@ -1674,7 +1674,7 @@ def compute_uptake_mse(
     """
     import numpy as np
 
-    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+    from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
     # Initialize BV_uptake_ForwardPass
     forward_pass = BV_uptake_ForwardPass()
@@ -2318,11 +2318,11 @@ def analyze_deuterium_uptake(
     import jax.numpy as jnp
     from MDAnalysis import Universe
 
-    from jaxent.interfaces.builder import Experiment_Builder
-    from jaxent.models.config import BV_model_Config
-    from jaxent.models.HDX.BV.features import BV_input_features
-    from jaxent.models.HDX.BV.forwardmodel import BV_model
-    from jaxent.types.config import FeaturiserSettings
+    from jaxent.src.interfaces.builder import Experiment_Builder
+    from jaxent.src.models.config import BV_model_Config
+    from jaxent.src.models.HDX.BV.features import BV_input_features
+    from jaxent.src.models.HDX.BV.forwardmodel import BV_model
+    from jaxent.src.types.config import FeaturiserSettings
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -2354,7 +2354,7 @@ def analyze_deuterium_uptake(
             with open(topology_path_json, "r") as f:
                 topology_dicts = json.load(f)
 
-            from jaxent.interfaces.topology import Partial_Topology
+            from jaxent.src.interfaces.topology import Partial_Topology
 
             feature_topology = [
                 Partial_Topology(
@@ -2668,7 +2668,7 @@ def create_comparison_scatter_plots(
 #     """
 #     import numpy as np
 
-#     from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+#     from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
 #     # Initialize BV_uptake_ForwardPass
 #     forward_pass = BV_uptake_ForwardPass()
@@ -2754,7 +2754,7 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
     """
     import numpy as np
 
-    from jaxent.models.HDX.BV.parameters import BV_Model_Parameters
+    from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
     # Initialize BV_uptake_ForwardPass
     forward_pass = BV_uptake_ForwardPass()
