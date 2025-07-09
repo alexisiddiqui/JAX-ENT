@@ -12,9 +12,9 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 # Import custom modules - uncomment these and adjust the path
 # import sys
 # sys.path.insert(0, "/path/to/jaxent")
-# from jaxent.interfaces.simulation import Simulation_Parameters
-# from jaxent.models.core import Simulation
-# from jaxent.utils.jax_fn import frame_average_features, single_pass
+# from jaxent.src.interfaces.simulation import Simulation_Parameters
+# from jaxent.src.models.core import Simulation
+# from jaxent.src.utils.jax_fn import frame_average_features, single_pass
 
 
 # Mock classes for testing if you can't import

@@ -7,9 +7,9 @@ from MDAnalysis import Universe
 from scipy.spatial.distance import pdist
 from sklearn.decomposition import PCA
 
-from jaxent.models.config import NetHDXConfig
-from jaxent.models.func.netHDX import build_hbond_network
-from jaxent.models.HDX.netHDX.features import NetworkMetrics
+from jaxent.src.models.config import NetHDXConfig
+from jaxent.src.models.func.netHDX import build_hbond_network
+from jaxent.src.models.HDX.netHDX.features import NetworkMetrics
 
 
 def prepare_metric_data(
