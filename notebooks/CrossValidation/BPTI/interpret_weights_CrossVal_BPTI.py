@@ -1407,7 +1407,7 @@ def analyze_deuterium_uptake(
     from jaxent.src.models.HDX.BV.forwardmodel import BV_model
     from jaxent.src.types.config import FeaturiserSettings
 
-    k_ints_path = "/Users/alexi/JAX-ENT/tests/inst/BPTI_Intrinsic_rates.dat"
+    k_ints_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/BPTI_Intrinsic_rates.dat"
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -3553,11 +3553,13 @@ def run_clustering_analysis(
 
 def main():
     # Base directory containing results
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MAD_scaling_1_10_25"
-    # base_dir = "/Users/alexi/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
-    # base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
+    base_dir = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MAD_scaling_1_10_25"
+    )
+    # base_dir = "/home/alexi/Documents/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
+    # base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
     # HDXer directory
-    hdxer_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/HDXer/BPTI_TFES_RW_bench_r_naive_random"
+    hdxer_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/HDXer/BPTI_TFES_RW_bench_r_naive_random"
 
     # Available regularization functions
     regularization_fns = ["mcMSE20_MAD20", "MSE25_MAD25", "MSE25_MAD10"]
@@ -3629,14 +3631,16 @@ def main():
 
     # Compute W1 distances
     print("Computing W1 distances...")
-    reference_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/1UUA_BPTI.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    HDX_NMR_pf_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_pfactors.dat"
-    segs_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
-    dfrac_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
+    reference_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/1UUA_BPTI.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
     )
+    HDX_NMR_pf_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_pfactors.dat"
+    segs_path = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
+    )
+    dfrac_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
     w1_results = compute_ensemble_w1_distances(
         combined_weights_dict, reference_path, topology_path, trajectory_path
     )

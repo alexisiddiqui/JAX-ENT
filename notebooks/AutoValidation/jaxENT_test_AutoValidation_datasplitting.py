@@ -136,7 +136,7 @@ def create_synthetic_data(
     """
     print("Creating synthetic data with ensemble clustering...")
 
-    artificial_HDX_data = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
+    artificial_HDX_data = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
 
     # load the artificial HDX data
     output = extract_hdx_data_from_file(artificial_HDX_data)
@@ -512,7 +512,7 @@ def setup_simulation(
     ic.enable()
     # check if trajectory dir has .jpz files
     traj_dir = os.path.dirname(trajectory_path)
-    k_ints_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/HDXer/TeaA_auto_VAL_RW_bench_r_naive_random/train_TeaA_auto_VAL_1/out__train_TeaA_auto_VAL_1Intrinsic_rates.dat"
+    k_ints_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/HDXer/TeaA_auto_VAL_RW_bench_r_naive_random/train_TeaA_auto_VAL_1/out__train_TeaA_auto_VAL_1Intrinsic_rates.dat"
     # open as csv - first line is header
     with open(k_ints_path, "r") as f:
         k_ints_text = [line.strip() for line in f.readlines()[1:]]
@@ -635,14 +635,12 @@ def setup_simulation(
 
 if __name__ == "__main__":
     print("Starting main script...")  # Track progress
-    open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-    closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+    open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+    closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 
     topology_path = open_path
 
-    trajectory_path = (
-        "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
-    )
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 
     reference_paths = [open_path, closed_path]
     # Configure the BV model

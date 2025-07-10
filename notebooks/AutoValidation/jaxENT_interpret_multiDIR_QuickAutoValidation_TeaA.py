@@ -882,13 +882,11 @@ def create_summary_table(results, output_dir):
 
 def main():
     # Set up paths - these should be adjusted based on the actual file locations
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation"
-    open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-    closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+    base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation"
+    open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+    closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
     topology_path = open_path
-    trajectory_path = (
-        "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
-    )
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 
     # Reference paths
     reference_paths = [open_path, closed_path]

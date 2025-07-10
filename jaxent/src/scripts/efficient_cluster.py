@@ -21,24 +21,24 @@ The script also saves the arguments and logging information using a logger.
 
 Usage Example:
 ----------------
-python cluster_trajectory.py --topology_path /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
-      --trajectory_paths /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
+python cluster_trajectory.py --topology_path /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
+      --trajectory_paths /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
       --number_of_clusters 100 \
       --num_components 5
-python /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
-      --topology_path /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
-      --trajectory_paths /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
+python /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
+      --topology_path /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
+      --trajectory_paths /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
       --number_of_clusters 500 \
       --num_components 10
 
-python /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
-      --topology_path /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
-      --trajectory_paths /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
+python /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
+      --topology_path /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
+      --trajectory_paths /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered_all_filtered.xtc \
       --number_of_clusters 500 \
       --num_components 10
-python /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
-      --topology_path /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
-      --trajectory_paths /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered.xtc \
+python /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/cluster_trajectory.py \
+      --topology_path /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb \
+      --trajectory_paths /home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_plddt_ordered.xtc \
       --number_of_clusters 500 \
       --num_components 10
 

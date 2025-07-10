@@ -391,8 +391,10 @@ def test_network_metrics_plotting():
     """Test function for network metrics visualization"""
 
     # Load test data and compute metrics
-    topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "./tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     try:
         # Create universe and compute network metrics
         universe = Universe(topology_path, trajectory_path)

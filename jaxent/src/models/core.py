@@ -186,6 +186,8 @@ class Simulation:
             self.forwardpass,
             self.length,
             self.outputs,
+            self._input_features,
+            self._jit_forward_pure,
         )
 
         return dynamic_values, aux_data
@@ -203,7 +205,7 @@ class Simulation:
             A new Simulation instance
         """
         # Unpack auxiliary data
-        input_features, forward_models, forwardpass, length, outputs = aux_data
+        input_features, forward_models, forwardpass, length, outputs, _input_features, _jit_forward_pure = aux_data
 
         # Unpack dynamic values
         (params,) = dynamic_values
@@ -213,6 +215,8 @@ class Simulation:
         instance.forwardpass = forwardpass
         instance.length = length
         instance.outputs = outputs
+        instance._input_features = _input_features
+        instance._jit_forward_pure = _jit_forward_pure
 
         return instance
 

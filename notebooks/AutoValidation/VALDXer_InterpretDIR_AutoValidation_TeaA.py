@@ -27,19 +27,19 @@ mpl.rcParams.update(
 )
 
 # Define paths (to be adjusted based on actual file locations)
-base_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/HDXer/gamma1_9_exp-2_1/data/TeaA_auto_VAL/Benchmark/RW_bench/TeaA_auto_VAL_RW_bench_r_naive_random"
+base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/HDXer/gamma1_9_exp-2_1/data/TeaA_auto_VAL/Benchmark/RW_bench/TeaA_auto_VAL_RW_bench_r_naive_random"
 # base_dir = (
-#     "/Users/alexi/JAX-ENT/notebooks/AutoValidation/HDXer/TeaA_auto_VAL_RW_bench_r_naive_random/"
+#     "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/HDXer/TeaA_auto_VAL_RW_bench_r_naive_random/"
 # )
 
 output_dir = os.path.join(base_dir, "hdxer_analysis")
 
 
-open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
 trajectory_path = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 )
 """
 This script extends the auto validation analysis to work with HDXer experiment results.

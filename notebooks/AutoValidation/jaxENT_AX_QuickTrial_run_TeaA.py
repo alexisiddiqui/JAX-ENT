@@ -12,13 +12,13 @@ The run function will simply call the TeaA quick trial function, which will perf
 
 
 
-output_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/TeaA/quick_auto_validation_results"
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA/quick_auto_validation_results"
 
-open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
 trajectory_path = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 )
 
 
@@ -419,15 +419,13 @@ def setup_experiment_complete(
     )
 
 
-output_dir = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/TeaA_testing/quick_AV_HyperParameterTuning"
-)
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA_testing/quick_AV_HyperParameterTuning"
 
-open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
 trajectory_path = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 )
 
 if __name__ == "__main__":
