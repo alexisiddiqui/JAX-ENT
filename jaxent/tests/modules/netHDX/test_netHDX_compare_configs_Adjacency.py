@@ -359,8 +359,10 @@ def test_config_comparison():
     Test function that compares different H-bond network configurations.
     """
     # Define test data paths
-    topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "./tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
 
     # Create test output directory
     test_dir = "tests/_plots/config_comparison"

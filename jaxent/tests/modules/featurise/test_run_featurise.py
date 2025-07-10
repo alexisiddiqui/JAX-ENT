@@ -11,7 +11,7 @@ def test_run_featurise():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "./tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
 
     test_universe = Universe(topology_path)
 
@@ -33,8 +33,10 @@ def test_run_featurise_ensemble():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "./tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "./tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]

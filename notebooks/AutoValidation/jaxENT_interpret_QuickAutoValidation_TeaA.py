@@ -11,15 +11,15 @@ We want to plot the distributions of RMSD the generated ensembles to each of the
 Cluster the dataset based on the minimum RMSD to each of the reference structures.
 Using the weights from the model we can then plot the distribution of weights for each cluster. Plot the weights as a histogram, hue by dataset (seed).
 
-output_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/TeaA/quick_auto_validation_results"
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA/quick_auto_validation_results"
 base_output_dir = os.path.join(
     output_dir, "_analysis"
 )  # This should match the directory used in the autovalidation script
-open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
-# trajectory_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/sliced_trajectories/TeaA_initial_sliced.xtc"
-trajectory_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+# trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/sliced_trajectories/TeaA_initial_sliced.xtc"
+trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 
 """
 
@@ -39,15 +39,15 @@ from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 # Set up paths - these should be adjusted based on the actual file locations
 
-output_dir = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/TeaA_simple_0.01_adam/quick_auto_validation_results"
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA_simple_0.01_adam/quick_auto_validation_results"
 base_output_dir = os.path.join(
     output_dir, "_analysis"
 )  # This should match the directory used in the autovalidation script
-open_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
+closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
 trajectory_path = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
 )
 
 

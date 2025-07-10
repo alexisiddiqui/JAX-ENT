@@ -29,9 +29,7 @@ from jaxENT_AX_QuickTrial_run_TeaA import (
     trajectory_path,
 )
 
-output_dir = (
-    "/Users/alexi/JAX-ENT/notebooks/AutoValidation/TeaA_complete/quick_AV_HyperParameterTuning"
-)
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA_complete/quick_AV_HyperParameterTuning"
 
 
 def create_timestamped_directory():

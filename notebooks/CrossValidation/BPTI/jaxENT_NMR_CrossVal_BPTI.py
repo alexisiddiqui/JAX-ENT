@@ -172,14 +172,16 @@ def setup_simulation(
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
 
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    segs_data = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
-    dfrac_data = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
     )
-    k_ints_path = "/Users/alexi/JAX-ENT/tests/inst/BPTI_Intrinsic_rates.dat"
+    segs_data = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
+    )
+    dfrac_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
+    k_ints_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/BPTI_Intrinsic_rates.dat"
 
     test_universe = Universe(topology_path, trajectory_path)
 

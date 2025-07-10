@@ -216,18 +216,12 @@ def setup_simulation(
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
-    )
+    topology_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
 
-    trajectory_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250417-121749/clusters/all_clusters.xtc"
-    segs_data = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
-    )
-    dfrac_data = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
-    )
-    k_ints_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/out__train_MoPrP_af_clean_1Intrinsic_rates.dat"
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250417-121749/clusters/all_clusters.xtc"
+    segs_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
+    dfrac_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
+    k_ints_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/out__train_MoPrP_af_clean_1Intrinsic_rates.dat"
 
     test_universe = Universe(topology_path, trajectory_path)
 
