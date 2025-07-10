@@ -6,25 +6,31 @@ import numpy as np
 import seaborn as sns
 from MDAnalysis import Universe
 
-from jaxent.src.datatypes import (
+from jaxent.src.data.loader import (
     Dataset,
-    Experiment_Ensemble,
-    Experimental_Dataset,
-    HDX_peptide,
-    HDX_protection_factor,
-    Simulation,
+    ExpD_Dataloader,
+)
+from jaxent.src.data.splitting.sparse_map import create_sparse_map
+from jaxent.src.data.splitting.split import DataSplitter
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import (
+    Experiment_Builder,
+)
+from jaxent.src.interfaces.simulation import (
     Simulation_Parameters,
 )
-from jaxent.src.featurise import run_featurise
-from jaxent.src.forwardmodels.functions import find_common_residues
-from jaxent.src.forwardmodels.models import (
+from jaxent.src.models.core import Simulation
+from jaxent.src.models.func.common import find_common_residues
+from jaxent.src.models.HDX.BV.features import (
     BV_input_features,
+)
+from jaxent.src.models.HDX.BV.forwardmodel import (
     BV_model,
     BV_model_Config,
     linear_BV_model,
     linear_BV_model_Config,
 )
-from jaxent.src.lossfn.base import (
+from jaxent.src.opt.losses import (
     hdx_pf_l2_loss,
     hdx_pf_mae_loss,
     hdx_uptake_l2_loss,
@@ -32,9 +38,13 @@ from jaxent.src.lossfn.base import (
     mask_L0_loss,
     max_entropy_loss,
 )
-from jaxent.src.opt import OptaxOptimizer, Optimisable_Parameters, run_optimise
+from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
+from jaxent.src.opt.run import run_optimise
 from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.src.utils.datasplitter import DataSplitter, create_sparse_map
+from jaxent.src.types.HDX import (
+    HDX_peptide,
+    HDX_protection_factor,
+)
 
 
 def plot_split_visualization(train_data, val_data, exp_data):
@@ -341,11 +351,13 @@ def test_quick_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
@@ -356,7 +368,7 @@ def test_quick_optimiser():
 
     models = [BV_model(bv_config), BV_model(bad_bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -404,7 +416,7 @@ def test_quick_optimiser():
         HDX_protection_factor(protection_factor=10, top=top)
         for i, top in enumerate(top_segments, start=1)
     ]
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -462,18 +474,20 @@ def test_quick_optimiser_REAL():
     print(bv_config.key)
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -521,7 +535,9 @@ def test_quick_optimiser_REAL():
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
-    segs_data = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
+    segs_data = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
+    )
 
     with open(segs_data, "r") as f:
         segs_text = [line.strip() for line in f.readlines()]
@@ -532,9 +548,7 @@ def test_quick_optimiser_REAL():
     print(segs_text)
     print(segs)
 
-    dfrac_data = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
-    )
+    dfrac_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
 
     with open(dfrac_data, "r") as f:
         # skip first line and then read in vals
@@ -568,7 +582,7 @@ def test_quick_optimiser_REAL():
         HDX_peptide(dfrac=df, top=top)  #
         for i, (top, df) in enumerate(zip(exp_top_segs, exp_dfracs), start=1)
     ]
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -623,11 +637,13 @@ def test_quick_max_ent_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
@@ -638,7 +654,7 @@ def test_quick_max_ent_optimiser():
 
     models = [BV_model(bv_config), BV_model(bad_bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -686,7 +702,7 @@ def test_quick_max_ent_optimiser():
         HDX_protection_factor(protection_factor=10, top=top)
         for i, top in enumerate(top_segments, start=1)
     ]
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -727,7 +743,7 @@ def test_quick_max_ent_optimiser():
         HDX_protection_factor(protection_factor=pf, top=top)
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -766,18 +782,20 @@ def test_quick_MAE_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -830,7 +848,7 @@ def test_quick_MAE_optimiser():
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
 
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -867,7 +885,7 @@ def test_quick_MAE_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -905,18 +923,20 @@ def test_quick_MAE_sparse_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config), BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -974,7 +994,7 @@ def test_quick_MAE_sparse_optimiser():
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
 
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -1011,7 +1031,7 @@ def test_quick_MAE_sparse_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -1059,18 +1079,20 @@ def test_quick_MAE_max_ent_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config), BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -1131,7 +1153,7 @@ def test_quick_MAE_max_ent_optimiser():
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
 
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -1168,7 +1190,7 @@ def test_quick_MAE_max_ent_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -1216,18 +1238,20 @@ def test_quick_MAE_sparse_max_ent_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -1286,7 +1310,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
 
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -1323,7 +1347,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -1371,18 +1395,20 @@ def test_quick_sparse_max_ent_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
 
     models = [BV_model(bv_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
@@ -1455,7 +1481,7 @@ def test_quick_sparse_max_ent_optimiser():
         for pf, top in zip(test_prediction[0].log_Pf, top_segments)
     ]
 
-    dataset = Experimental_Dataset(data=exp_data)
+    dataset = ExpD_Dataloader(data=exp_data)
 
     # create random split
     splitter = DataSplitter(dataset, random_seed=42, ensemble=universes)
@@ -1492,7 +1518,7 @@ def test_quick_sparse_max_ent_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
-    pf_prior_data = Experimental_Dataset(data=pf_prior)
+    pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
     prior_train_data, prior_val_data = prior_splitter.random_split()
@@ -1539,9 +1565,11 @@ def test_regularised_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
@@ -1554,7 +1582,7 @@ def test_regularised_optimiser():
         linear_BV_model(uptake_config),
     ]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features = run_featurise(ensemble, featuriser_settings, forward_models=models)
     assert len(features) == len(models)
@@ -1601,15 +1629,15 @@ def test_regularised_optimiser():
 
     # print(fake_pfs)
 
-    updake_dataset = Experimental_Dataset(data=fake_uptake)
+    updake_dataset = ExpD_Dataloader(data=fake_uptake)
     #
-    dataset = Experimental_Dataset(data=fake_pfs)
+    dataset = ExpD_Dataloader(data=fake_pfs)
     # extract the protection factors from the unoptimsied prediction log_Pfs
     pf_prior = [
         HDX_protection_factor(protection_factor=pf, top=None) for pf in test_prediction[0].log_Pf
     ]
 
-    pf_prior = Experimental_Dataset(data=pf_prior)
+    pf_prior = ExpD_Dataloader(data=pf_prior)
 
     print(dataset.y_true)
     print(dataset.y_true.shape)
@@ -1633,9 +1661,11 @@ def test_uptake_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
@@ -1643,7 +1673,7 @@ def test_uptake_optimiser():
 
     models = [linear_BV_model(uptake_config), linear_BV_model(uptake_config)]
 
-    ensemble = Experiment_Ensemble(universes, models)
+    ensemble = Experiment_Builder(universes, models)
 
     features = run_featurise(ensemble, featuriser_settings, forward_models=models)
     assert len(features) == len(models)
@@ -1692,15 +1722,15 @@ def test_uptake_optimiser():
 
     # print(fake_pfs)
 
-    updake_dataset = Experimental_Dataset(data=fake_uptake)
+    updake_dataset = ExpD_Dataloader(data=fake_uptake)
     #
-    dataset = Experimental_Dataset(data=fake_pfs)
+    dataset = ExpD_Dataloader(data=fake_pfs)
     # extract the protection factors from the unoptimsied prediction log_Pfs
     pf_prior = [
         HDX_protection_factor(protection_factor=pf, top=None) for pf in test_prediction[0].uptake
     ]
 
-    pf_prior = Experimental_Dataset(data=pf_prior)
+    pf_prior = ExpD_Dataloader(data=pf_prior)
 
     print(dataset.y_true)
     print(dataset.y_true.shape)

@@ -1,9 +1,19 @@
 {
-    "python.testing.pytestArgs": [
-        "-s",
-        "tests"
-    ],
-    "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "python.analysis.typeCheckingMode": "standard"
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": [
+        "jaxent/tests",
+        "-v",
+        "--tb=short",
+        "--ignore=jaxent/tests/manual",
+    ],
+    "python.testing.cwd": "${workspaceFolder}",
+    "python.testing.autoTestDiscoverOnSaveEnabled": false,
+    "python.defaultInterpreterPath": "./.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.extraPaths": [
+        "./jaxent/src"
+    ],
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.autoSearchPaths": true
 }

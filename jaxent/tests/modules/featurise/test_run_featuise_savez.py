@@ -157,8 +157,10 @@ if __name__ == "__main__":
     data_dir = os.path.join(base_dir, "data")
 
     # Define trajectory and topology paths from the example
-    open_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    open_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     topology_path = open_path
 
     # Create output directory
