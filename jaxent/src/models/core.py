@@ -133,7 +133,7 @@ class Simulation:
             print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
 
         except Exception as e:
-            RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            raise RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
             self._jit_forward_pure = self.forward_pure
 
         print("Simulation initialised successfully.")
@@ -205,7 +205,15 @@ class Simulation:
             A new Simulation instance
         """
         # Unpack auxiliary data
-        input_features, forward_models, forwardpass, length, outputs, _input_features, _jit_forward_pure = aux_data
+        (
+            input_features,
+            forward_models,
+            forwardpass,
+            length,
+            outputs,
+            _input_features,
+            _jit_forward_pure,
+        ) = aux_data
 
         # Unpack dynamic values
         (params,) = dynamic_values
