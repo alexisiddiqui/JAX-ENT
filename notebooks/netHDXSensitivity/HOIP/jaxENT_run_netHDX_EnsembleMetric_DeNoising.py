@@ -26,26 +26,26 @@ The ensemble building starts with clustering structures based on minimum RMSD to
 For each ensemble-config-cutoff combination the ensemble-average, residue-wise network metrics are calculated. For the global metrics, the distribution of the metrics is calculated across the whole ensemble.
 
 
-reference_structure_1 = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-reference_structure_2 = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+reference_structure_1 = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+reference_structure_2 = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
 
-trajectory = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_sampled_500.xtc"
-topology = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb
+trajectory = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_sampled_500.xtc"
+topology = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb
 
 Script usage
 
 python network_metrics_denoising.py \
-    --reference_structure_1 /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb \
-    --reference_structure_2 /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb \
-    --trajectory /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_sampled_500.xtc \
-    --topology /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb \
+    --reference_structure_1 /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb \
+    --reference_structure_2 /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb \
+    --trajectory /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_sampled_500.xtc \
+    --topology /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb \
     --cutoffs 2.0 5.0 None 
 
-python /Users/alexi/JAX-ENT/notebooks/netHDXSensitivity/HOIP/jaxENT_run_netHDX_EnsembleMetric_DeNoising.py \
-    --reference_structure_1 /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb \
-    --reference_structure_2 /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb \
-    --trajectory /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_sampled_500.xtc \
-    --topology /Users/alexi/JAX-ENT/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb \
+python /home/alexi/Documents/JAX-ENT/notebooks/netHDXSensitivity/HOIP/jaxENT_run_netHDX_EnsembleMetric_DeNoising.py \
+    --reference_structure_1 /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb \
+    --reference_structure_2 /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb \
+    --trajectory /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_sampled_500.xtc \
+    --topology /home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/HOIP_overall_combined_stripped.pdb \
     --cutoffs 10 15 20 25
 
 """

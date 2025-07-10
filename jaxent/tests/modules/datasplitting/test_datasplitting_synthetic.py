@@ -37,7 +37,7 @@ def test_create_sparse_map():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
 
     test_universe = Universe(topology_path)
 
@@ -115,8 +115,10 @@ def test_create_sparse_map_ensemble():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
     test_universe = Universe(topology_path, trajectory_path)
 
     universes = [test_universe]
@@ -192,7 +194,7 @@ def test_random_split():
     # Setup similar to other tests
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]
@@ -243,7 +245,7 @@ def test_spatial_split():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]
@@ -293,7 +295,7 @@ def test_stratified_split():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]
@@ -343,7 +345,7 @@ def test_cluster_split_sequence():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]
@@ -392,7 +394,7 @@ def test_cluster_split_featuress():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]

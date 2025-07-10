@@ -72,7 +72,8 @@ CryoEM???
 
 - Align the shapes of the inputs and outputs Arrays to be consistent
 - Add type hinting to the shape of the arrays (Chex?)
-
+- fix partial topology, needd methods to create and combine appropriately
+- jit boundary issues and simulation class, should the forward method be a function?
 - Printing of classes and Logging
 - CLI Interface
 - Shiny web app 

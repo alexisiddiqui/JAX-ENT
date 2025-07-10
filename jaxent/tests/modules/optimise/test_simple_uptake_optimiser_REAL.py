@@ -27,8 +27,8 @@ from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.src.opt.losses import (
     HDX_uptake_KL_loss,
-    HDX_uptake_MAE_loss,
     hdx_uptake_l2_loss,
+    hdx_uptake_MAE_loss,
     max_entropy_loss,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer
@@ -82,16 +82,18 @@ def test_uptake_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    test_universe = Universe(topology_path, trajectory_path)
-    segs_data = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
-    dfrac_data = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
     )
+    test_universe = Universe(topology_path, trajectory_path)
+    segs_data = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
+    )
+    dfrac_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
 
     with open(segs_data, "r") as f:
         segs_text = [line.strip() for line in f.readlines()]
@@ -266,7 +268,7 @@ def test_uptake_optimiser():
         loss_functions=[
             hdx_uptake_l2_loss,
             max_entropy_loss,
-            HDX_uptake_MAE_loss,
+            hdx_uptake_MAE_loss,
             HDX_uptake_KL_loss,
         ],
     )

@@ -3283,11 +3283,11 @@ def run_clustering_analysis(
 
 def main():
     # Base directory containing results
-    base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/jaxENT/AdamW_loreg"
-    # base_dir = "/Users/alexi/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
-    # base_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
+    base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/jaxENT/AdamW_loreg"
+    # base_dir = "/home/alexi/Documents/JAX-ENT/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/AdamW_loreg"
+    # base_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/jaxENT/MaxEnt"
     # HDXer directory
-    hdxer_dir = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/HDXer/MoPrP_af_clean_RW_bench_r_naive_random"
+    hdxer_dir = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/HDXer/MoPrP_af_clean_RW_bench_r_naive_random"
 
     # Available regularization functions
     regularization_fns = ["mean_L1"]
@@ -3358,21 +3358,13 @@ def main():
 
     # Compute W1 distances
     print("Computing W1 distances...")
-    reference_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/2L1H_MoPrP.pdb"
-    topology_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
-    )
+    reference_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/2L1H_MoPrP.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_max_plddt_4334.pdb"
 
-    trajectory_path = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250410-193624/clusters/all_clusters.xtc"
-    HDX_NMR_pf_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_pfactors.dat"
-    )
-    segs_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
-    )
-    dfrac_path = (
-        "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
-    )
+    trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_max_plddt_4334_clusters500_20250410-193624/clusters/all_clusters.xtc"
+    HDX_NMR_pf_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_pfactors.dat"
+    segs_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_segments.txt"
+    dfrac_path = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/output/MoPrP_dfrac.dat"
     w1_results = compute_ensemble_w1_distances(
         combined_weights_dict, reference_path, topology_path, trajectory_path
     )

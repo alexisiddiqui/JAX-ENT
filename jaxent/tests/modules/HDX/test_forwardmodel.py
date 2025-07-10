@@ -12,10 +12,10 @@ from jaxent.src.models.func.uptake import calculate_intrinsic_rates
 
 def test_calculate_intrinsic_rates():
     """Test the calculation of intrinsic rates against reference data with detailed comparison."""
-    # topology_path = "./tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    # rates_path = "./tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
-    topology_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    rates_path = "/Users/alexi/JAX-ENT/tests/inst/BPTI_Intrinsic_rates.dat"
+    # topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    # rates_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    rates_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/BPTI_Intrinsic_rates.dat"
     # Load universe
     universe = mda.Universe(topology_path)
 
@@ -168,8 +168,8 @@ def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
 
 def test_calc_contacts_universe():
     """Test the calculation of contacts against reference data with detailed comparison."""
-    topology_path = "./tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
-    data_dir = "./tests/inst/clean/HOIP/train_HOIP_high_rank_1"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    data_dir = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1"
 
     universe = mda.Universe(topology_path)
 

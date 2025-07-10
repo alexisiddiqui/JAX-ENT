@@ -33,8 +33,8 @@ def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
 
 def test_calc_contacts_mdtraj():
     """Test the calculation of contacts against reference data with detailed comparison."""
-    topology_path = "./tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
-    data_dir = "./tests/inst/clean/HOIP/train_HOIP_high_rank_1"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    data_dir = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1"
 
     # Load trajectory
     traj = md.load(topology_path)

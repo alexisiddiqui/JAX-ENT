@@ -197,8 +197,10 @@ def plot_publication_ready_heatmaps(
 
 def main():
     # Define input file path and output directory
-    input_file = "/Users/alexi/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
-    input_file = "/Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_segdfrac.dat"
+    input_file = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/artificial_HDX_data/mixed_60-40_artificial_expt_resfracs.dat"
+    input_file = (
+        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/MoPrP_segdfrac.dat"
+    )
 
     output_dir = "hdx_publication_ready_heatmaps"
     os.makedirs(output_dir, exist_ok=True)
