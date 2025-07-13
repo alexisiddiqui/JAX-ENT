@@ -183,7 +183,7 @@ def test_nethdx_model():
     ensemble = [universe for _ in range(2)]  # Small test ensemble
 
     # Initialize model
-    model = netHDX_model()
+    model = netHDX_model(config=NetHDXConfig())
 
     # Test initialization
     try:
