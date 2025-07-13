@@ -1,5 +1,6 @@
 import os
 
+import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
@@ -424,7 +425,7 @@ def test_quick_max_ent_optimiser():
         data_to_fit=(dataset, params),
         config=opt_settings,
         forward_models=models,
-        indexes=[0, 10],
+        indexes=[0, 1],
         loss_functions=[hdx_pf_l2_loss, max_entropy_loss],
     )
 
