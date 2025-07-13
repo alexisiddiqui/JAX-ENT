@@ -4,14 +4,14 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.config import OptimiserSettings
+from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.core import Simulation
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.config import OptimiserSettings
-from jaxent.src.types.features import Output_Features
 
 
 def optimise(

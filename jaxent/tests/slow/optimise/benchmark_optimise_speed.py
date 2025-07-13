@@ -20,6 +20,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.config import (
+    FeaturiserSettings,
+    Optimisable_Parameters,
+    OptimiserSettings,
+)
+from jaxent.src.custom_types.HDX import HDX_protection_factor
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -33,8 +39,6 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.src.opt.losses import hdx_pf_l2_loss
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.config import FeaturiserSettings, Optimisable_Parameters, OptimiserSettings
-from jaxent.src.types.HDX import HDX_protection_factor
 from jaxent.tests.plots.datasplitting import plot_split_visualization
 from jaxent.tests.plots.optimisation import (
     plot_frame_weights_heatmap,

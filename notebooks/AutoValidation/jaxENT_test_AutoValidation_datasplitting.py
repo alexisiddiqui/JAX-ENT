@@ -39,7 +39,7 @@ import jax.numpy as jnp
 from icecream import ic
 from jax import Array
 
-from jaxent.src.types.HDX import HDX_peptide
+from jaxent.src.custom_types.HDX import HDX_peptide
 
 jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
@@ -58,6 +58,8 @@ from jaxent.src.analysis.plots.optimisation import (
     plot_split_visualization,
     plot_total_losses,
 )
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.featurise import run_featurise
@@ -71,8 +73,6 @@ from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.opt.losses import exp_frame_weight_consistency_loss, hdx_uptake_l2_loss
 from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
 from jaxent.src.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,

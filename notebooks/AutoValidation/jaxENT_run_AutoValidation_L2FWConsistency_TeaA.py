@@ -39,6 +39,8 @@ from jaxENT_run_AutoValidation_L2only_TeaA import (
 from MDAnalysis import Universe
 from scipy.spatial.distance import pdist, squareform
 
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.config import OptimiserSettings
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.core import Simulation
@@ -52,8 +54,6 @@ from jaxent.src.opt.losses import (
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.config import OptimiserSettings
 from jaxent.src.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,

@@ -25,6 +25,12 @@ import seaborn as sns
 from matplotlib.gridspec import GridSpec
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.config import (
+    FeaturiserSettings,
+    Optimisable_Parameters,
+    OptimiserSettings,
+)
+from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -43,8 +49,6 @@ from jaxent.src.opt.losses import (
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.config import FeaturiserSettings, Optimisable_Parameters, OptimiserSettings
-from jaxent.src.types.HDX import HDX_peptide
 
 
 # Ensure output directories exist

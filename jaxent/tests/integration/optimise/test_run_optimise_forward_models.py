@@ -6,6 +6,11 @@ import numpy as np
 import seaborn as sns
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
+from jaxent.src.custom_types.HDX import (
+    HDX_peptide,
+    HDX_protection_factor,
+)
 from jaxent.src.data.loader import (
     Dataset,
     ExpD_Dataloader,
@@ -40,11 +45,6 @@ from jaxent.src.opt.losses import (
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.src.types.HDX import (
-    HDX_peptide,
-    HDX_protection_factor,
-)
 
 
 def plot_split_visualization(train_data, val_data, exp_data):

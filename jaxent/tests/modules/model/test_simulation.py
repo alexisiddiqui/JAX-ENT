@@ -1,16 +1,17 @@
-import pytest
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, FrozenSet, Sequence
+
 import jax
 import jax.numpy as jnp
-from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence, ClassVar, cast, Optional, FrozenSet
+import pytest
 
-from jaxent.src.models.core import Simulation
-from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.custom_types.base import ForwardModel, ForwardPass
+from jaxent.src.custom_types.features import Input_Features, Output_Features
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
-from jaxent.src.types.base import ForwardModel, ForwardPass
-from jaxent.src.types.features import Input_Features, Output_Features
-from jaxent.src.types.key import m_key
-from jaxent.src.utils.jax_fn import frame_average_features, single_pass # Assuming these are needed for testing forward_pure
+from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.core import Simulation
+
 
 # Mock implementations for dependencies
 @dataclass(frozen=True)
@@ -18,6 +19,7 @@ class MockModelParameters(Model_Parameters):
     key: FrozenSet[m_key] = field(default_factory=lambda: frozenset({m_key("mock_model")}))
     param1: jax.Array = field(default_factory=lambda: jnp.array(1.0))
     param2: jax.Array = field(default_factory=lambda: jnp.array(2.0))
+
 
 # Non-dataclass mock for Input_Features to avoid __slots__ conflict
 class MockInputFeatures(Input_Features[Any]):
@@ -42,10 +44,11 @@ class MockInputFeatures(Input_Features[Any]):
     def tree_unflatten(cls, aux_data, children):
         return cls(data=children[0])
 
-    def __eq__(self, other): # For comparison in tests
+    def __eq__(self, other):  # For comparison in tests
         if not isinstance(other, MockInputFeatures):
             return NotImplemented
         return jnp.array_equal(self.data, other.data)
+
 
 # Non-dataclass mock for Output_Features to avoid __slots__ conflict
 class MockOutputFeatures(Output_Features):
@@ -70,27 +73,36 @@ class MockOutputFeatures(Output_Features):
     def tree_unflatten(cls, aux_data, children):
         return cls(output_data=children[0])
 
-    def __eq__(self, other): # For comparison in tests
+    def __eq__(self, other):  # For comparison in tests
         if not isinstance(other, MockOutputFeatures):
             return NotImplemented
         return jnp.array_equal(self.output_data, other.output_data)
 
+
 class MockForwardPass(ForwardPass[MockInputFeatures, MockOutputFeatures, MockModelParameters]):
-    def __call__(self, input_features: MockInputFeatures, parameters: MockModelParameters) -> MockOutputFeatures:
+    def __call__(
+        self, input_features: MockInputFeatures, parameters: MockModelParameters
+    ) -> MockOutputFeatures:
         # Simple operation: sum input data and parameters
         output_val = jnp.sum(input_features.data) + parameters.param1 + parameters.param2
-        return MockOutputFeatures(output_data=jnp.full((input_features.data.shape[0], 1), output_val))
+        return MockOutputFeatures(
+            output_data=jnp.full((input_features.data.shape[0], 1), output_val)
+        )
+
 
 @dataclass(frozen=True)
 class MockForwardModelConfig:
     key: m_key = m_key("mock_model_config")
     forward_parameters: MockModelParameters = field(default_factory=MockModelParameters)
 
-class MockForwardModel(ForwardModel[MockModelParameters, MockInputFeatures, MockForwardModelConfig]):
+
+class MockForwardModel(
+    ForwardModel[MockModelParameters, MockInputFeatures, MockForwardModelConfig]
+):
     def __init__(self, config: MockForwardModelConfig):
         self.config = config
         self.params = config.forward_parameters
-        self._forwardpass = MockForwardPass() # Store an instance of the callable
+        self._forwardpass = MockForwardPass()  # Store an instance of the callable
 
     def initialise(self, ensemble: list[Any]) -> bool:
         return True
@@ -101,6 +113,7 @@ class MockForwardModel(ForwardModel[MockModelParameters, MockInputFeatures, Mock
     @property
     def forwardpass(self) -> ForwardPass:
         return self._forwardpass
+
 
 # Helper function to create a default Simulation_Parameters instance
 def create_default_simulation_params(num_models: int = 1) -> Simulation_Parameters:
@@ -113,9 +126,9 @@ def create_default_simulation_params(num_models: int = 1) -> Simulation_Paramete
         forward_model_scaling=jnp.ones(num_models),
     )
 
+
 # Test cases
 class TestSimulation:
-
     def test_simulation_initialization(self):
         input_features = [MockInputFeatures(data=jnp.ones((10, 5)))]
         forward_models = [MockForwardModel(MockForwardModelConfig())]
@@ -131,15 +144,15 @@ class TestSimulation:
 
         # Test initialise method
         assert simulation.initialise() is True
-        assert simulation.length == 5 # From MockInputFeatures(data=jnp.ones((10, 5)))
+        assert simulation.length == 5  # From MockInputFeatures(data=jnp.ones((10, 5)))
         assert isinstance(simulation._input_features, tuple)
         assert jnp.array_equal(simulation._input_features[0].data, input_features[0].data)
-        assert callable(simulation._jit_forward_pure) # Should be jitted or fallback
+        assert callable(simulation._jit_forward_pure)  # Should be jitted or fallback
 
     def test_simulation_initialization_no_params_raises_error(self):
         input_features = [MockInputFeatures()]
         forward_models = [MockForwardModel(MockForwardModelConfig())]
-        
+
         simulation = Simulation(input_features, forward_models, None)
         with pytest.raises(ValueError, match="No simulation parameters were provided. Exiting."):
             simulation.initialise()
@@ -147,10 +160,13 @@ class TestSimulation:
     def test_simulation_initialization_mismatched_model_counts_raises_error(self):
         input_features = [MockInputFeatures()]
         forward_models = [MockForwardModel(MockForwardModelConfig())]
-        params = create_default_simulation_params(num_models=2) # Mismatched
+        params = create_default_simulation_params(num_models=2)  # Mismatched
 
         simulation = Simulation(input_features, forward_models, params)
-        with pytest.raises(AssertionError, match="Number of forward models must be equal to number of forward model parameters"):
+        with pytest.raises(
+            AssertionError,
+            match="Number of forward models must be equal to number of forward model parameters",
+        ):
             simulation.initialise()
 
     def test_simulation_forward_pure(self):
@@ -173,7 +189,7 @@ class TestSimulation:
         params = create_default_simulation_params(num_models=1)
 
         simulation = Simulation(input_features, forward_models, params)
-        simulation.initialise() # This will attempt JIT compilation
+        simulation.initialise()  # This will attempt JIT compilation
 
         # Call forward, which uses the JIT-compiled function
         simulation.forward(params)
@@ -187,7 +203,7 @@ class TestSimulation:
         # A direct check would involve inspecting JAX's internal tracing, which is harder.
         # The fact that it runs without error after initialise implies JIT success.
         # We can also check if the _jit_forward_pure is indeed a jitted function
-        assert hasattr(simulation._jit_forward_pure, '__wrapped__') # JIT wraps the function
+        assert hasattr(simulation._jit_forward_pure, "__wrapped__")  # JIT wraps the function
 
     def test_simulation_pytree_registration(self):
         input_features = [MockInputFeatures(data=jnp.ones((10, 5)))]
@@ -196,7 +212,7 @@ class TestSimulation:
 
         original_simulation = Simulation(input_features, forward_models, params)
         original_simulation.initialise()
-        original_simulation.forward(params) # Populate outputs
+        original_simulation.forward(params)  # Populate outputs
 
         # Flatten the original simulation object
         flat_simulation, tree_def = jax.tree_util.tree_flatten(original_simulation)
@@ -208,19 +224,33 @@ class TestSimulation:
         # Note: Direct equality check might fail for JAX arrays, compare contents
         assert isinstance(reconstructed_simulation, Simulation)
         assert reconstructed_simulation.length == original_simulation.length
-        
+
         # Compare parameters (dynamic part)
-        assert jax.tree_util.tree_all(jax.tree_util.tree_map(jnp.array_equal, reconstructed_simulation.params, original_simulation.params))
+        assert jax.tree_util.tree_all(
+            jax.tree_util.tree_map(
+                jnp.array_equal, reconstructed_simulation.params, original_simulation.params
+            )
+        )
 
         # Compare static parts (aux_data) - this is where the previous issue was
         # We need to manually compare the components that were in aux_data
         # input_features, forward_models, forwardpass, length, outputs
-        assert len(reconstructed_simulation.input_features) == len(original_simulation.input_features)
-        assert jnp.array_equal(reconstructed_simulation.input_features[0].data, original_simulation.input_features[0].data)
-        
-        assert len(reconstructed_simulation.forward_models) == len(original_simulation.forward_models)
+        assert len(reconstructed_simulation.input_features) == len(
+            original_simulation.input_features
+        )
+        assert jnp.array_equal(
+            reconstructed_simulation.input_features[0].data,
+            original_simulation.input_features[0].data,
+        )
+
+        assert len(reconstructed_simulation.forward_models) == len(
+            original_simulation.forward_models
+        )
         # Cannot directly compare MockForwardModel instances, check their configs/params if possible
-        assert reconstructed_simulation.forward_models[0].config.key == original_simulation.forward_models[0].config.key
+        assert (
+            reconstructed_simulation.forward_models[0].config.key
+            == original_simulation.forward_models[0].config.key
+        )
 
         assert len(reconstructed_simulation.forwardpass) == len(original_simulation.forwardpass)
         # Cannot directly compare MockForwardPass instances, just check type
@@ -233,4 +263,7 @@ class TestSimulation:
         # The forward method will populate outputs after unflattening.
         # So, we should call forward on the reconstructed simulation and then compare outputs.
         reconstructed_simulation.forward(reconstructed_simulation.params)
-        assert jnp.allclose(reconstructed_simulation.outputs[0].output_data, original_simulation.outputs[0].output_data)
+        assert jnp.allclose(
+            reconstructed_simulation.outputs[0].output_data,
+            original_simulation.outputs[0].output_data,
+        )

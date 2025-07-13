@@ -5,9 +5,9 @@ from jax import (
 )
 from jax.tree_util import register_pytree_node
 
+from jaxent.src.custom_types.base import ForwardModel, ForwardPass
+from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.types.base import ForwardModel, ForwardPass
-from jaxent.src.types.features import Input_Features, Output_Features
 from jaxent.src.utils.jax_fn import frame_average_features, single_pass
 
 # def forward_pure(
@@ -133,7 +133,7 @@ class Simulation:
             print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
 
         except Exception as e:
-            raise RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
             self._jit_forward_pure = self.forward_pure
 
         print("Simulation initialised successfully.")

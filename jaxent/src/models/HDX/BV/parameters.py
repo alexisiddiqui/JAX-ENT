@@ -5,8 +5,8 @@ import jax.numpy as jnp
 from jax import Array
 from jax.tree_util import register_pytree_node
 
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.simulation import Model_Parameters
-from jaxent.src.types.key import m_key
 
 
 @dataclass(frozen=True, slots=True)

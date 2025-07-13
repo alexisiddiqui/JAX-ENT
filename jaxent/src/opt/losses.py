@@ -3,12 +3,12 @@ import optax  # Import optax library for the convex_kl_divergence function
 from jax import Array
 from optax.losses import safe_softmax_cross_entropy
 
+from jaxent.src.custom_types import InitialisedSimulation
+from jaxent.src.custom_types.HDX import HDX_peptide, HDX_protection_factor
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.core import Simulation
-from jaxent.src.types import InitialisedSimulation
-from jaxent.src.types.HDX import HDX_peptide, HDX_protection_factor
 
 
 def hdx_pf_l2_loss(
