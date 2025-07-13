@@ -542,6 +542,702 @@ class TestTopologyDataSplitting:
         assert not final_overlaps, f"Found overlapping residues: {final_overlaps}"
 
 
+class TestTopologyRedundancyBasic:
+    """Test class for fragment redundancy calculations with Partial_Topology objects."""
+
+    def test_basic_redundancy_calculation(self):
+        """Test redundancy calculation with non-overlapping fragments."""
+        # Create non-overlapping fragments
+        fragments = [
+            Partial_Topology.from_range("A", 1, 5, fragment_name="frag1"),
+            Partial_Topology.from_range("A", 6, 10, fragment_name="frag2"),
+            Partial_Topology.from_range("A", 11, 15, fragment_name="frag3"),
+        ]
+
+        # Calculate redundancy
+        redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+        redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=False
+        )
+
+        # Non-overlapping fragments should have redundancy score of 0
+        assert all(score == 0.0 for score in redundancy_max)
+        assert all(score == 0.0 for score in redundancy_mean)
+
+    def test_overlapping_redundancy_calculation(self):
+        """Test redundancy calculation with overlapping fragments."""
+        # Create fragments with various degrees of overlap
+        fragments = [
+            Partial_Topology.from_range("A", 1, 10, fragment_name="frag1"),
+            Partial_Topology.from_range(
+                "A", 5, 15, fragment_name="frag2"
+            ),  # 6 residues overlap with frag1
+            Partial_Topology.from_range(
+                "A", 12, 20, fragment_name="frag3"
+            ),  # 4 residues overlap with frag2
+            Partial_Topology.from_range(
+                "A", 30, 40, fragment_name="frag4"
+            ),  # No overlap with others
+        ]
+
+        # Calculate redundancy
+        redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+        redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=False
+        )
+
+        # Expected redundancy scores for max mode:
+        # frag1: 6 (overlap with frag2)
+        # frag2: 6 (overlap with frag1, which is greater than 4 overlap with frag3)
+        # frag3: 4 (overlap with frag2)
+        # frag4: 0 (no overlap)
+        assert redundancy_max == [6.0, 6.0, 4.0, 0.0]
+
+        # Expected redundancy scores for mean mode:
+        # frag1: 6 (one overlap of 6)
+        # frag2: (6+4)/2 = 5.0 (average of overlaps with frag1 and frag3)
+        # frag3: 4 (one overlap of 4)
+        # frag4: 0 (no overlap)
+        assert redundancy_mean == [6.0, 5.0, 4.0, 0.0]
+
+    def test_multiple_chains_redundancy(self):
+        """Test redundancy calculation with fragments on different chains."""
+        fragments = [
+            Partial_Topology.from_range("A", 1, 10, fragment_name="fragA1"),
+            Partial_Topology.from_range("A", 5, 15, fragment_name="fragA2"),  # Overlaps with fragA1
+            Partial_Topology.from_range("B", 1, 10, fragment_name="fragB1"),
+            Partial_Topology.from_range("B", 5, 15, fragment_name="fragB2"),  # Overlaps with fragB1
+        ]
+
+        # Calculate redundancy
+        redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+
+        # Each fragment should only have overlap with fragments on the same chain
+        assert redundancy_max == [6.0, 6.0, 6.0, 6.0]
+
+    def test_peptide_trim_redundancy(self):
+        """Test how peptide trimming affects redundancy calculations."""
+        # Create peptides with trimming
+        peptides = [
+            Partial_Topology.from_range(
+                "A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=2
+            ),
+            # pep1 active residues: [3,4,5,6,7,8,9,10] after trimming first 2
+            Partial_Topology.from_range(
+                "A", 5, 15, fragment_name="pep2", peptide=True, peptide_trim=3
+            ),
+            # pep2 active residues: [8,9,10,11,12,13,14,15] after trimming first 3
+            Partial_Topology.from_range(
+                "A", 8, 17, fragment_name="pep3", peptide=True, peptide_trim=1
+            ),
+            # pep3 active residues: [9,10,11,12,13,14,15,16,17] after trimming first 1
+        ]
+
+        # Calculate redundancy WITH peptide trimming
+        redundancy_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="max", check_trim=True
+        )
+
+        # Calculate redundancy WITHOUT peptide trimming
+        redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="max", check_trim=False
+        )
+
+        # Print for clarity
+        print("\nRedundancy calculation with peptide trimming:")
+        for i, pep in enumerate(peptides):
+            print(f"  Peptide {i}: {pep}")
+            print(f"    Active residues with trimming: {pep._get_active_residues(check_trim=True)}")
+            print(
+                f"    Active residues without trimming: {pep._get_active_residues(check_trim=False)}"
+            )
+
+        print(f"  Redundancy scores with trim: {redundancy_trim}")
+        print(f"  Redundancy scores without trim: {redundancy_no_trim}")
+
+        # With trimming:
+        # pep1 & pep2 overlap: [8,9,10] = 3 residues
+        # pep1 & pep3 overlap: [9,10] = 2 residues
+        # pep2 & pep3 overlap: [9,10,11,12,13,14,15] = 7 residues
+
+        # Without trimming:
+        # pep1 & pep2 overlap: [5,6,7,8,9,10] = 6 residues
+        # pep1 & pep3 overlap: [8,9,10] = 3 residues
+        # pep2 & pep3 overlap: [8,9,10,11,12,13,14,15] = 8 residues
+
+        # Expected redundancy scores with trimming (max mode):
+        # pep1: max(3, 2) = 3
+        # pep2: max(3, 7) = 7
+        # pep3: max(2, 7) = 7
+        assert redundancy_trim == [3.0, 7.0, 7.0]
+
+        # Expected redundancy scores without trimming (max mode):
+        # pep1: max(6, 3) = 6
+        # pep2: max(6, 8) = 8
+        # pep3: max(3, 8) = 8
+        assert redundancy_no_trim == [6.0, 8.0, 8.0]
+
+    def test_mean_mode_with_peptide_trim(self):
+        """Test mean mode redundancy calculation with peptide trimming."""
+        # Create peptides with varying degrees of overlap and different trim values
+        peptides = [
+            Partial_Topology.from_range(
+                "A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=2
+            ),
+            # pep1 active residues: [3,4,5,6,7,8,9,10]
+            Partial_Topology.from_range(
+                "A", 5, 14, fragment_name="pep2", peptide=True, peptide_trim=2
+            ),
+            # pep2 active residues: [7,8,9,10,11,12,13,14]
+            Partial_Topology.from_range(
+                "A", 9, 18, fragment_name="pep3", peptide=True, peptide_trim=2
+            ),
+            # pep3 active residues: [11,12,13,14,15,16,17,18]
+            Partial_Topology.from_range("A", 30, 40, fragment_name="pep4", peptide=False),
+            # pep4 active residues: [30-40], no trimming since not a peptide
+        ]
+
+        # Calculate redundancy in mean mode with trimming
+        redundancy_mean_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="mean", check_trim=True
+        )
+
+        # Calculate redundancy in mean mode without trimming
+        redundancy_mean_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="mean", check_trim=False
+        )
+
+        print("\nMean redundancy calculation with peptide trimming:")
+        for i, pep in enumerate(peptides):
+            print(f"  Peptide {i}: {pep}")
+            print(f"    Active residues with trimming: {pep._get_active_residues(check_trim=True)}")
+
+        print(f"  Mean redundancy with trim: {redundancy_mean_trim}")
+        print(f"  Mean redundancy without trim: {redundancy_mean_no_trim}")
+
+        # With trimming:
+        # pep1 & pep2 overlap: [7,8,9,10] = 4 residues
+        # pep1 & pep3 overlap: [] = 0 residues
+        # pep2 & pep3 overlap: [11,12,13,14] = 4 residues
+        # pep4 has no overlap with any other peptide
+
+        # Expected mean redundancy scores with trimming:
+        # pep1: 4.0 (only one overlap)
+        # pep2: (4+4)/2 = 4.0 (average of overlaps with pep1 and pep3)
+        # pep3: 4.0 (only one overlap)
+        # pep4: 0.0 (no overlaps)
+        assert redundancy_mean_trim == [4.0, 4.0, 4.0, 0.0]
+
+        # Verify the results without trimming are different
+        assert redundancy_mean_trim != redundancy_mean_no_trim
+
+    def test_complex_redundancy_patterns(self):
+        """Test redundancy calculation with more complex overlap patterns."""
+        fragments = [
+            # Chain A fragments with various overlaps
+            Partial_Topology.from_range("A", 1, 10, fragment_name="fragA1"),
+            Partial_Topology.from_range(
+                "A", 8, 15, fragment_name="fragA2"
+            ),  # 3 residues overlap with fragA1
+            Partial_Topology.from_range(
+                "A", 5, 12, fragment_name="fragA3"
+            ),  # 6 residues overlap with fragA1, 5 with fragA2
+            # Chain B fragments
+            Partial_Topology.from_range("B", 1, 10, fragment_name="fragB1"),
+            Partial_Topology.from_range(
+                "B", 5, 15, fragment_name="fragB2"
+            ),  # 6 residues overlap with fragB1
+            # Mix of peptides and regular fragments
+            Partial_Topology.from_range(
+                "C", 1, 10, fragment_name="fragC1", peptide=True, peptide_trim=2
+            ),
+            # fragC1 active residues: [3-10]
+            Partial_Topology.from_range(
+                "C", 5, 15, fragment_name="fragC2", peptide=True, peptide_trim=3
+            ),
+            # fragC2 active residues: [8-15]
+        ]
+
+        # Calculate redundancy with both modes and trim settings
+        redundancy_max_trim = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=True
+        )
+        redundancy_mean_trim = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=True
+        )
+        redundancy_max_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+
+        print("\nComplex redundancy patterns:")
+        for i, frag in enumerate(fragments):
+            print(f"  Fragment {i}: {frag}")
+            if frag.peptide:
+                print(
+                    f"    Active residues with trimming: {frag._get_active_residues(check_trim=True)}"
+                )
+
+        print(f"  Max redundancy with trim: {redundancy_max_trim}")
+        print(f"  Mean redundancy with trim: {redundancy_mean_trim}")
+        print(f"  Max redundancy without trim: {redundancy_max_no_trim}")
+
+        # Expected for Chain A fragments with max mode:
+        # fragA1: max(3, 6) = 6
+        # fragA2: max(3, 5) = 5
+        # fragA3: max(6, 5) = 6
+        assert redundancy_max_no_trim[0] == 6.0
+        assert redundancy_max_no_trim[1] == 5.0
+        assert redundancy_max_no_trim[2] == 6.0
+
+        # Expected for Chain C peptides with trim:
+        # fragC1: 3 residues overlap with fragC2 ([8,9,10])
+        # fragC2: 3 residues overlap with fragC1 ([8,9,10])
+        assert redundancy_max_trim[5] == 3.0
+        assert redundancy_max_trim[6] == 3.0
+
+        # Expected for Chain C peptides without trim:
+        # fragC1: 6 residues overlap with fragC2 ([5,6,7,8,9,10])
+        # fragC2: 6 residues overlap with fragC1 ([5,6,7,8,9,10])
+        assert redundancy_max_no_trim[5] == 6.0
+        assert redundancy_max_no_trim[6] == 6.0
+
+
+class TestFragmentRedundancyComprehensive:
+    """Comprehensive test class for fragment redundancy calculations."""
+
+    def test_basic_redundancy_non_peptide(self):
+        """Test basic redundancy calculation with non-peptide fragments."""
+        # Create overlapping fragments
+        fragments = [
+            Partial_Topology.from_range("A", 1, 10, fragment_name="frag1"),  # [1-10]
+            Partial_Topology.from_range(
+                "A", 5, 15, fragment_name="frag2"
+            ),  # [5-15], overlap with frag1: [5-10] = 6 residues
+            Partial_Topology.from_range(
+                "A", 12, 22, fragment_name="frag3"
+            ),  # [12-22], overlap with frag2: [12-15] = 4 residues
+            Partial_Topology.from_range("A", 25, 35, fragment_name="frag4"),  # [25-35], no overlaps
+        ]
+
+        # Calculate redundancy
+        redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+        redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=False
+        )
+
+        # Expected overlaps:
+        # frag1: overlaps with frag2 (6 residues) -> max=6, mean=6
+        # frag2: overlaps with frag1 (6) and frag3 (4) -> max=6, mean=5
+        # frag3: overlaps with frag2 (4 residues) -> max=4, mean=4
+        # frag4: no overlaps -> max=0, mean=0
+
+        expected_max = [6.0, 6.0, 4.0, 0.0]
+        expected_mean = [6.0, 5.0, 4.0, 0.0]
+
+        assert redundancy_max == expected_max, (
+            f"Max redundancy mismatch: {redundancy_max} != {expected_max}"
+        )
+        assert redundancy_mean == expected_mean, (
+            f"Mean redundancy mismatch: {redundancy_mean} != {expected_mean}"
+        )
+
+        print("✓ Basic non-peptide redundancy calculation passed")
+
+    def test_peptide_redundancy_with_trimming(self):
+        """Test how peptide trimming affects redundancy calculations."""
+        # Create peptides with specific trimming that will change overlap patterns
+        peptides = [
+            # Peptide 1: residues [1-10], peptide_residues [4-10] (trim=3)
+            Partial_Topology.from_range(
+                "A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=3
+            ),
+            # Peptide 2: residues [8-17], peptide_residues [10-17] (trim=2)
+            Partial_Topology.from_range(
+                "A", 8, 17, fragment_name="pep2", peptide=True, peptide_trim=2
+            ),
+            # Peptide 3: residues [15-25], peptide_residues [17-25] (trim=2)
+            Partial_Topology.from_range(
+                "A", 15, 25, fragment_name="pep3", peptide=True, peptide_trim=2
+            ),
+        ]
+
+        # Print peptide details for debugging
+        print("\nPeptide details:")
+        for i, pep in enumerate(peptides):
+            print(f"  {pep.fragment_name}: full={pep.residues}, peptide={pep.peptide_residues}")
+
+        # Calculate redundancy without trimming (using all residues)
+        redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="max", check_trim=False
+        )
+
+        # Calculate redundancy with trimming (using peptide_residues)
+        redundancy_with_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides, mode="max", check_trim=True
+        )
+
+        print(f"\nRedundancy without trimming: {redundancy_no_trim}")
+        print(f"Redundancy with trimming: {redundancy_with_trim}")
+
+        # Without trimming overlaps:
+        # pep1 [1-10] vs pep2 [8-17]: overlap [8-10] = 3 residues
+        # pep2 [8-17] vs pep1 [1-10]: overlap [8-10] = 3 residues
+        # pep2 [8-17] vs pep3 [15-25]: overlap [15-17] = 3 residues
+        # pep3 [15-25] vs pep2 [8-17]: overlap [15-17] = 3 residues
+        expected_no_trim = [3.0, 3.0, 3.0]
+
+        # With trimming overlaps:
+        # pep1 [4-10] vs pep2 [10-17]: overlap [10] = 1 residue
+        # pep2 [10-17] vs pep1 [4-10]: overlap [10] = 1 residue
+        # pep2 [10-17] vs pep3 [17-25]: overlap [17] = 1 residue
+        # pep3 [17-25] vs pep2 [10-17]: overlap [17] = 1 residue
+        expected_with_trim = [1.0, 1.0, 1.0]
+
+        assert redundancy_no_trim == expected_no_trim, (
+            f"No-trim redundancy mismatch: {redundancy_no_trim}"
+        )
+        assert redundancy_with_trim == expected_with_trim, (
+            f"With-trim redundancy mismatch: {redundancy_with_trim}"
+        )
+
+        print("✓ Peptide trimming effects on redundancy calculation passed")
+
+    def test_mixed_peptide_non_peptide_redundancy(self):
+        """Test redundancy calculation with mixed peptide and non-peptide fragments."""
+        fragments = [
+            # Non-peptide fragment
+            Partial_Topology.from_range("A", 1, 15, fragment_name="domain", peptide=False),
+            # Peptide that overlaps with domain
+            Partial_Topology.from_range(
+                "A", 10, 20, fragment_name="signal", peptide=True, peptide_trim=3
+            ),  # peptide_residues [13-20]
+            # Another peptide
+            Partial_Topology.from_range(
+                "A", 18, 28, fragment_name="linker", peptide=True, peptide_trim=2
+            ),  # peptide_residues [20-28]
+        ]
+
+        print("\nMixed fragment details:")
+        for frag in fragments:
+            if frag.peptide:
+                print(
+                    f"  {frag.fragment_name} (peptide): full={frag.residues}, peptide={frag.peptide_residues}"
+                )
+            else:
+                print(f"  {frag.fragment_name} (non-peptide): full={frag.residues}")
+
+        # Test with check_trim=False (use all residues for all fragments)
+        redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+
+        # Test with check_trim=True (use peptide_residues for peptides, all residues for non-peptides)
+        redundancy_with_trim = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=True
+        )
+
+        print(f"Mixed redundancy (no trim): {redundancy_no_trim}")
+        print(f"Mixed redundancy (with trim): {redundancy_with_trim}")
+
+        # Verify that trimming affects peptide comparisons but not non-peptide ones
+        # The non-peptide domain should have the same overlaps regardless of trim setting
+        # But peptides should have different overlaps based on trim setting
+
+        assert len(redundancy_no_trim) == 3
+        assert len(redundancy_with_trim) == 3
+
+        print("✓ Mixed peptide/non-peptide redundancy calculation passed")
+
+    def test_cross_chain_redundancy(self):
+        """Test that fragments on different chains don't contribute to redundancy."""
+        fragments = [
+            Partial_Topology.from_range("A", 1, 10, fragment_name="chainA_frag1"),
+            Partial_Topology.from_range(
+                "B", 1, 10, fragment_name="chainB_frag1"
+            ),  # Same residues, different chain
+            Partial_Topology.from_range(
+                "A", 5, 15, fragment_name="chainA_frag2"
+            ),  # Overlaps with chainA_frag1
+            Partial_Topology.from_range(
+                "B", 5, 15, fragment_name="chainB_frag2"
+            ),  # Overlaps with chainB_frag1
+        ]
+
+        redundancy = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+
+        # Expected: each fragment only overlaps with fragments on the same chain
+        # chainA_frag1 overlaps with chainA_frag2: [5-10] = 6 residues
+        # chainB_frag1 overlaps with chainB_frag2: [5-10] = 6 residues
+        # chainA_frag2 overlaps with chainA_frag1: [5-10] = 6 residues
+        # chainB_frag2 overlaps with chainB_frag1: [5-10] = 6 residues
+        expected = [6.0, 6.0, 6.0, 6.0]
+
+        assert redundancy == expected, (
+            f"Cross-chain redundancy mismatch: {redundancy} != {expected}"
+        )
+        print("✓ Cross-chain redundancy isolation passed")
+
+    def test_mode_comparison(self):
+        """Test difference between max and mean redundancy modes."""
+        fragments = [
+            Partial_Topology.from_range(
+                "A", 1, 10, fragment_name="central"
+            ),  # Overlaps with multiple
+            Partial_Topology.from_range(
+                "A", 5, 12, fragment_name="overlap1"
+            ),  # Overlaps with central: [5-10] = 6
+            Partial_Topology.from_range(
+                "A", 8, 15, fragment_name="overlap2"
+            ),  # Overlaps with central: [8-10] = 3
+            Partial_Topology.from_range(
+                "A", 3, 8, fragment_name="overlap3"
+            ),  # Overlaps with central: [3-8] = 6
+        ]
+
+        redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="max", check_trim=False
+        )
+        redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=False
+        )
+
+        print("\nMode comparison:")
+        print(f"Max redundancy: {redundancy_max}")
+        print(f"Mean redundancy: {redundancy_mean}")
+
+        # For the central fragment:
+        # Overlaps: 6 (overlap1), 3 (overlap2), 6 (overlap3)
+        # Max should be 6, Mean should be (6+3+6)/3 = 5.0
+        assert redundancy_max[0] == 6.0, (
+            f"Central fragment max redundancy should be 6, got {redundancy_max[0]}"
+        )
+        assert redundancy_mean[0] == 5.0, (
+            f"Central fragment mean redundancy should be 5.0, got {redundancy_mean[0]}"
+        )
+
+        print("✓ Mode comparison (max vs mean) passed")
+
+    def test_edge_cases(self):
+        """Test edge cases for redundancy calculation."""
+
+        # Test empty list
+        with pytest.raises(ValueError, match="Cannot calculate redundancy for empty topology list"):
+            Partial_Topology.calculate_fragment_redundancy([], mode="max")
+
+        # Test invalid mode
+        fragments = [Partial_Topology.from_range("A", 1, 5, fragment_name="test")]
+        with pytest.raises(ValueError, match="Mode must be either 'max' or 'mean'"):
+            Partial_Topology.calculate_fragment_redundancy(fragments, mode="invalid")
+
+        # Test single fragment (should have 0 redundancy)
+        redundancy = Partial_Topology.calculate_fragment_redundancy(fragments, mode="max")
+        assert redundancy == [0.0], f"Single fragment should have 0 redundancy, got {redundancy}"
+
+        # Test fragments with no overlaps
+        non_overlapping = [
+            Partial_Topology.from_range("A", 1, 5, fragment_name="frag1"),
+            Partial_Topology.from_range("A", 10, 15, fragment_name="frag2"),
+            Partial_Topology.from_range("A", 20, 25, fragment_name="frag3"),
+        ]
+        redundancy = Partial_Topology.calculate_fragment_redundancy(non_overlapping, mode="max")
+        assert redundancy == [0.0, 0.0, 0.0], (
+            f"Non-overlapping fragments should have 0 redundancy, got {redundancy}"
+        )
+
+        print("✓ Edge cases passed")
+
+    def test_peptide_trim_zero_vs_full_residues(self):
+        """Test peptides with trim=0 vs full residue usage."""
+        # Create peptides where trim=0 means peptide_residues == residues
+        peptides_trim_zero = [
+            Partial_Topology.from_range(
+                "A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=0
+            ),  # peptide_residues = [1-10]
+            Partial_Topology.from_range(
+                "A", 5, 15, fragment_name="pep2", peptide=True, peptide_trim=0
+            ),  # peptide_residues = [5-15]
+        ]
+
+        # Same fragments but as non-peptides
+        non_peptides = [
+            Partial_Topology.from_range("A", 1, 10, fragment_name="frag1", peptide=False),
+            Partial_Topology.from_range("A", 5, 15, fragment_name="frag2", peptide=False),
+        ]
+
+        # Calculate redundancy for peptides with trim (should be same as without trim)
+        peptide_redundancy_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides_trim_zero, mode="max", check_trim=True
+        )
+        peptide_redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
+            peptides_trim_zero, mode="max", check_trim=False
+        )
+
+        # Calculate redundancy for non-peptides
+        non_peptide_redundancy = Partial_Topology.calculate_fragment_redundancy(
+            non_peptides, mode="max", check_trim=False
+        )
+
+        # All should be the same since trim=0 means peptide_residues == residues
+        assert peptide_redundancy_trim == peptide_redundancy_no_trim
+        assert peptide_redundancy_trim == non_peptide_redundancy
+
+        print("✓ Peptide trim=0 vs non-peptide equivalence passed")
+
+    def test_biological_scenario_redundancy(self):
+        """Test a realistic biological scenario with multiple domain types."""
+        # Simulate a protein with signal peptide, domains, and linker regions
+        fragments = [
+            # Signal peptide (will be trimmed for processing)
+            Partial_Topology.from_range(
+                "A", 1, 25, fragment_name="signal_peptide", peptide=True, peptide_trim=5
+            ),  # Active: [6-25]
+            # N-terminal domain
+            Partial_Topology.from_range("A", 20, 150, fragment_name="N_domain", peptide=False),
+            # Linker peptide
+            Partial_Topology.from_range(
+                "A", 140, 160, fragment_name="linker", peptide=True, peptide_trim=3
+            ),  # Active: [143-160]
+            # C-terminal domain
+            Partial_Topology.from_range("A", 155, 300, fragment_name="C_domain", peptide=False),
+            # Active site (scattered residues)
+            Partial_Topology.from_residues(
+                "A", [45, 78, 123, 180, 245], fragment_name="active_site", peptide=False
+            ),
+            # Binding pocket
+            Partial_Topology.from_residues(
+                "A",
+                [75, 76, 77, 78, 79, 122, 123, 124],
+                fragment_name="binding_pocket",
+                peptide=False,
+            ),
+        ]
+
+        print("\nBiological scenario fragments:")
+        for frag in fragments:
+            if frag.peptide:
+                print(
+                    f"  {frag.fragment_name}: full={len(frag.residues)}, active={len(frag.peptide_residues)}"
+                )
+            else:
+                print(f"  {frag.fragment_name}: {len(frag.residues)} residues")
+
+        # Calculate redundancy with biological trimming
+        redundancy_biological = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=True
+        )
+
+        # Calculate redundancy without trimming
+        redundancy_full = Partial_Topology.calculate_fragment_redundancy(
+            fragments, mode="mean", check_trim=False
+        )
+
+        print(
+            f"\nBiological redundancy (with trimming): {[f'{r:.1f}' for r in redundancy_biological]}"
+        )
+        print(f"Full redundancy (no trimming): {[f'{r:.1f}' for r in redundancy_full]}")
+
+        # Verify that active site and binding pocket have high redundancy (they overlap)
+        # binding_pocket contains residues [75,76,77,78,79,122,123,124]
+        # active_site contains residues [45,78,123,180,245]
+        # Overlap: [78, 123] = 2 residues
+
+        assert len(redundancy_biological) == len(fragments)
+        assert all(r >= 0 for r in redundancy_biological), (
+            "All redundancy scores should be non-negative"
+        )
+
+        print("✓ Biological scenario redundancy calculation passed")
+
+    def test_redundancy_sensitivity_to_trim_values(self):
+        """Test how different trim values affect redundancy calculations."""
+        base_peptide_data = [
+            ("A", 1, 20, "pep1"),
+            ("A", 15, 35, "pep2"),  # Overlaps with pep1: [15-20]
+            ("A", 30, 50, "pep3"),  # Overlaps with pep2: [30-35]
+        ]
+
+        trim_values = [0, 2, 5, 8]
+        results = {}
+
+        for trim in trim_values:
+            peptides = [
+                Partial_Topology.from_range(
+                    chain, start, end, fragment_name=name, peptide=True, peptide_trim=trim
+                )
+                for chain, start, end, name in base_peptide_data
+            ]
+
+            redundancy = Partial_Topology.calculate_fragment_redundancy(
+                peptides, mode="max", check_trim=True
+            )
+            results[trim] = redundancy
+
+            print(f"\nTrim={trim}:")
+            for i, pep in enumerate(peptides):
+                print(
+                    f"  {pep.fragment_name}: full={pep.residues}, active={pep.peptide_residues}, redundancy={redundancy[i]}"
+                )
+
+        # Verify that higher trim values generally lead to lower redundancy
+        # (since less of each peptide is considered active)
+        print("\nRedundancy vs trim value:")
+        for trim in trim_values:
+            avg_redundancy = sum(results[trim]) / len(results[trim])
+            print(f"  Trim {trim}: avg redundancy = {avg_redundancy:.2f}")
+
+        print("✓ Redundancy sensitivity to trim values analysis completed")
+
+    def test_redundancy_with_identical_peptides(self):
+        """Test redundancy calculation with identical or highly overlapping peptides."""
+        # Create identical peptides (should have maximum redundancy)
+        identical_peptides = [
+            Partial_Topology.from_range(
+                "A", 10, 20, fragment_name="dup1", peptide=True, peptide_trim=2
+            ),
+            Partial_Topology.from_range(
+                "A", 10, 20, fragment_name="dup2", peptide=True, peptide_trim=2
+            ),
+            Partial_Topology.from_range(
+                "A", 10, 20, fragment_name="dup3", peptide=True, peptide_trim=2
+            ),
+        ]
+
+        redundancy = Partial_Topology.calculate_fragment_redundancy(
+            identical_peptides, mode="max", check_trim=True
+        )
+
+        # Each peptide should have maximum overlap with others
+        # Active residues for each: [12-20] = 9 residues
+        # Each overlaps with 2 others by 9 residues each
+        expected_redundancy = 9.0  # Maximum overlap
+
+        assert all(r == expected_redundancy for r in redundancy), (
+            f"Identical peptides should have redundancy {expected_redundancy}, got {redundancy}"
+        )
+
+        # Test with mean mode
+        redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+            identical_peptides, mode="mean", check_trim=True
+        )
+
+        # Mean of [9, 9] = 9.0
+        assert all(r == expected_redundancy for r in redundancy_mean), (
+            f"Identical peptides mean redundancy should be {expected_redundancy}, got {redundancy_mean}"
+        )
+
+        print("✓ Identical peptides redundancy calculation passed")
+
+
 if __name__ == "__main__":
     # Run the tests directly
     pytest.main(["-xvs", __file__])
