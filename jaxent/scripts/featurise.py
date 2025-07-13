@@ -2,10 +2,10 @@ from typing import Optional
 
 from icecream import ic  # Import icecream for debugging
 
+from jaxent.src.custom_types.base import ForwardModel, Partial_Topology
+from jaxent.src.custom_types.config import FeaturiserSettings, Settings
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.types.base import ForwardModel, Partial_Topology
-from jaxent.src.types.config import FeaturiserSettings, Settings
-from jaxent.src.types.features import Input_Features
 
 ic.disable()
 

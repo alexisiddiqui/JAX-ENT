@@ -3,6 +3,8 @@ from typing import Sequence
 import jax.numpy as jnp
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.base import ForwardModel, ForwardPass
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
@@ -16,8 +18,6 @@ from jaxent.src.models.HDX.forward import (
     BV_uptake_ForwardPass,
     linear_BV_ForwardPass,
 )
-from jaxent.src.types.base import ForwardModel, ForwardPass
-from jaxent.src.types.key import m_key
 
 
 class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Config]):
