@@ -11,7 +11,7 @@ from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 
 
-def test_featurise_save_load(trajectory_path: str, topology_path: str, output_dir: str):
+def test_featurise_save_load():
     """
     Test script to:
     1. Run featurise
@@ -21,6 +21,17 @@ def test_featurise_save_load(trajectory_path: str, topology_path: str, output_di
     5. Load feature topology back
     6. Verify data integrity using built-in comparison
     """
+
+    # Define paths
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.join(base_dir, "test_featurise_output")
+
+    # Define trajectory and topology paths
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    trajectory_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+    )
+
     print("Setting up test environment...")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -141,42 +152,12 @@ def test_featurise_save_load(trajectory_path: str, topology_path: str, output_di
             print(f"Loaded: {loaded_topology[idx]}")
             print("-" * 40)
 
-    return {
-        "features_set": features_set,
-        "loaded_features": loaded_features,
-        "topology_set": topology_set,
-        "loaded_topology": loaded_topology,
-        "features_match": features_match,
-        "topology_match": topology_match,
-    }
+    # Assert for pytest
+    assert features_match, "Features do not match after save/load"
+    assert topology_match, "Topology objects do not match after save/load"
+
+    print("✅ Test passed: Features and topology correctly saved and loaded")
 
 
 if __name__ == "__main__":
-    # Define paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(base_dir, "data")
-
-    # Define trajectory and topology paths from the example
-    open_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    topology_path = open_path
-
-    # Create output directory
-    output_dir = os.path.join(base_dir, "test_featurise_output")
-
-    # Run the test
-    results = test_featurise_save_load(
-        trajectory_path=trajectory_path, topology_path=topology_path, output_dir=output_dir
-    )
-
-    # Report summary
-    if results["features_match"] and results["topology_match"]:
-        print("✅ Test passed: Features and topology correctly saved and loaded")
-    else:
-        print("❌ Test failed: Discrepancies detected")
-        if not results["features_match"]:
-            print("  - Features do not match")
-        if not results["topology_match"]:
-            print("  - Topology objects do not match")
+    test_featurise_save_load()

@@ -17,7 +17,7 @@ from jaxent.src.models.func.common import find_common_residues
 # ic.disable()
 
 
-def find_fragment_centrality(
+def find_fragment_redundancy(
     Partial_Topologys: list[Partial_Topology], mode: str = "mean", peptide: bool = True
 ) -> list[float]:
     """
@@ -31,7 +31,7 @@ def find_fragment_centrality(
     Returns:
         A list of overlap counts for each fragment
     """
-    ic.configureOutput(prefix="CENTRALITY | ")
+    ic.configureOutput(prefix="REDUNDANCY | ")
     ic(f"Finding fragment centrality with mode={mode}, peptide={peptide}")
     ic(f"Number of fragments: {len(Partial_Topologys)}")
 
