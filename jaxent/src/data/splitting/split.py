@@ -17,79 +17,79 @@ from jaxent.src.models.func.common import find_common_residues
 # ic.disable()
 
 
-def find_fragment_redundancy(
-    Partial_Topologys: list[Partial_Topology], mode: str = "mean", peptide: bool = True
-) -> list[float]:
-    """
-    Find the overlap between Partial_Topologys in a list
+# def find_fragment_redundancy(
+#     Partial_Topologys: list[Partial_Topology], mode: str = "mean", peptide: bool = True
+# ) -> list[float]:
+#     """
+#     Find the overlap between Partial_Topologys in a list
 
-    Parameters:
-        Partial_Topologys: List of Partial_Topology objects to compare
-        mode: Either "max" or "mean" to determine how to calculate overlap
-        peptide: Whether to use peptide residues or all residues in range
+#     Parameters:
+#         Partial_Topologys: List of Partial_Topology objects to compare
+#         mode: Either "max" or "mean" to determine how to calculate overlap
+#         peptide: Whether to use peptide residues or all residues in range
 
-    Returns:
-        A list of overlap counts for each fragment
-    """
-    ic.configureOutput(prefix="REDUNDANCY | ")
-    ic(f"Finding fragment centrality with mode={mode}, peptide={peptide}")
-    ic(f"Number of fragments: {len(Partial_Topologys)}")
+#     Returns:
+#         A list of overlap counts for each fragment
+#     """
+#     ic.configureOutput(prefix="REDUNDANCY | ")
+#     ic(f"Finding fragment centrality with mode={mode}, peptide={peptide}")
+#     ic(f"Number of fragments: {len(Partial_Topologys)}")
 
-    overlaps = []
+#     overlaps = []
 
-    for i, fragment in enumerate(Partial_Topologys):
-        # Get the set of residues for current fragment
-        if peptide and cast(int, fragment.length) > 2:
-            current_residues = set(fragment.peptide_residues)
-            ic(f"Fragment {i}: Using peptide residues, count={len(current_residues)}")
-        else:
-            current_residues = set(
-                range(fragment.residue_start, cast(int, fragment.residue_end) + 1)
-            )
-            ic(f"Fragment {i}: Using all residues, count={len(current_residues)}")
+#     for i, fragment in enumerate(Partial_Topologys):
+#         # Get the set of residues for current fragment
+#         if peptide and cast(int, fragment.length) > 2:
+#             current_residues = set(fragment.peptide_residues)
+#             ic(f"Fragment {i}: Using peptide residues, count={len(current_residues)}")
+#         else:
+#             current_residues = set(
+#                 range(fragment.residue_start, cast(int, fragment.residue_end) + 1)
+#             )
+#             ic(f"Fragment {i}: Using all residues, count={len(current_residues)}")
 
-        fragment_overlaps = []
+#         fragment_overlaps = []
 
-        # Compare with all other fragments
-        for j, other in enumerate(Partial_Topologys):
-            if i != j and fragment.chain == other.chain:
-                # Get the set of residues for other fragment
-                if peptide and cast(int, other.length) > 2:
-                    other_residues = set(other.peptide_residues)
-                else:
-                    other_residues = set(
-                        range(other.residue_start, cast(int, other.residue_end) + 1)
-                    )
+#         # Compare with all other fragments
+#         for j, other in enumerate(Partial_Topologys):
+#             if i != j and fragment.chain == other.chain:
+#                 # Get the set of residues for other fragment
+#                 if peptide and cast(int, other.length) > 2:
+#                     other_residues = set(other.peptide_residues)
+#                 else:
+#                     other_residues = set(
+#                         range(other.residue_start, cast(int, other.residue_end) + 1)
+#                     )
 
-                # Calculate overlap
-                overlap = len(current_residues.intersection(other_residues))
-                if overlap > 0:
-                    fragment_overlaps.append(overlap)
-                    ic(f"Fragment {i} overlaps with {j}: {overlap} residues")
+#                 # Calculate overlap
+#                 overlap = len(current_residues.intersection(other_residues))
+#                 if overlap > 0:
+#                     fragment_overlaps.append(overlap)
+#                     ic(f"Fragment {i} overlaps with {j}: {overlap} residues")
 
-        # Calculate final overlap value based on mode
-        if fragment_overlaps:
-            if mode == "max":
-                overlaps.append(max(fragment_overlaps))
-                ic(f"Fragment {i} max overlap: {max(fragment_overlaps)}")
-            elif mode == "mean":
-                mean_overlap = sum(fragment_overlaps) / len(fragment_overlaps)
-                overlaps.append(mean_overlap)
-                ic(f"Fragment {i} mean overlap: {mean_overlap:.2f}")
-            else:
-                raise ValueError("Mode must be either 'max' or 'mean'")
-        else:
-            overlaps.append(0)
-            ic(f"Fragment {i} has no overlaps")
+#         # Calculate final overlap value based on mode
+#         if fragment_overlaps:
+#             if mode == "max":
+#                 overlaps.append(max(fragment_overlaps))
+#                 ic(f"Fragment {i} max overlap: {max(fragment_overlaps)}")
+#             elif mode == "mean":
+#                 mean_overlap = sum(fragment_overlaps) / len(fragment_overlaps)
+#                 overlaps.append(mean_overlap)
+#                 ic(f"Fragment {i} mean overlap: {mean_overlap:.2f}")
+#             else:
+#                 raise ValueError("Mode must be either 'max' or 'mean'")
+#         else:
+#             overlaps.append(0)
+#             ic(f"Fragment {i} has no overlaps")
 
-    if overlaps:
-        ic(
-            f"Centrality results: min={min(overlaps)}, max={max(overlaps)}, avg={sum(overlaps) / len(overlaps):.2f}"
-        )
-    else:
-        ic("Centrality results: No overlaps found")
-        overlaps.append(0)  # Ensure the list is not empty
-    return overlaps
+#     if overlaps:
+#         ic(
+#             f"Centrality results: min={min(overlaps)}, max={max(overlaps)}, avg={sum(overlaps) / len(overlaps):.2f}"
+#         )
+#     else:
+#         ic("Centrality results: No overlaps found")
+#         overlaps.append(0)  # Ensure the list is not empty
+#     return overlaps
 
 
 def filter_common_residues(
@@ -180,11 +180,11 @@ class DataSplitter:
         self.dataset.top = [data.top for data in self.dataset.data]
 
         ic("Calculating fragment centrality")
-        self.fragment_centrality = find_fragment_centrality(
+        self.fragment_overlaps = find_fragment_redundancy(
             self.dataset.top, mode="mean", peptide=peptide
         )
         ic(
-            f"Fragment centrality stats: min={min(self.fragment_centrality)}, max={max(self.fragment_centrality)}"
+            f"Fragment centrality stats: min={min(self.fragment_overlaps)}, max={max(self.fragment_overlaps)}"
         )
 
     def sample_by_centrality(self, threshold: float = 0.9) -> list[ExpD_Datapoint]:
@@ -192,16 +192,16 @@ class DataSplitter:
         ic.configureOutput(prefix="CENTRALITY_SAMPLE | ")
         ic("Sampling data by centrality")
         ic(f"Threshold: {threshold}")
-        ic(f"Max Centrality: {max(self.fragment_centrality)}")
+        ic(f"Max Centrality: {max(self.fragment_overlaps)}")
 
-        max_centrality = max(self.fragment_centrality)
+        max_centrality = max(self.fragment_overlaps)
         if max_centrality == 0:
             # Assign uniform weights if all weights are zero
             ic("All centrality values are zero, using uniform weights")
-            centrality_weights = [1 / len(self.fragment_centrality)] * len(self.fragment_centrality)
+            centrality_weights = [1 / len(self.fragment_overlaps)] * len(self.fragment_overlaps)
         else:
             ic("Calculating weights based on centrality")
-            centrality_weights = [1 - (c / max_centrality) for c in self.fragment_centrality]
+            centrality_weights = [1 - (c / max_centrality) for c in self.fragment_overlaps]
             total = sum(centrality_weights)
             # Normalize weights
             centrality_weights = [w / total for w in centrality_weights]
