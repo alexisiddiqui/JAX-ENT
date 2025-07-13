@@ -1,8 +1,8 @@
 import numpy as np
 
+from jaxent.src.custom_types.base import ForwardPass
 from jaxent.src.models.config import NetHDXConfig
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features, NetHDX_output_features
-from jaxent.src.types.base import ForwardPass
 
 
 class NetHDX_ForwardPass(ForwardPass):

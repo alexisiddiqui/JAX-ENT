@@ -25,6 +25,9 @@ from jaxent.src.analysis.plots.optimisation import (
     plot_split_visualization,
     plot_total_losses,
 )
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
+from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -47,9 +50,6 @@ from jaxent.src.opt.losses import (
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.src.types.HDX import HDX_peptide
 from jaxent.src.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,
