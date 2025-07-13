@@ -2,7 +2,7 @@
 
 This script loads in the csv data containing Protection Factors in Log10 these are to be converted to Ln (Log_e).
 
-log10pf_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_expt_PFs.dat"
+log10pf_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_expt_PFs.dat"
 
 
 
@@ -20,8 +20,8 @@ ResID, ln(PF)
 import numpy as np
 import pandas as pd
 
-log10pf_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_expt_PFs.dat"
-output_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_pfactors.dat"
+log10pf_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_expt_PFs.dat"
+output_path = "/Users/alexi/JAX-ENT/tests/inst/clean/BPTI/BPTI_pfactors.dat"
 
 # Read the file with whitespace as delimiter, skipping comment lines, with no header
 log10pf_df = pd.read_csv(

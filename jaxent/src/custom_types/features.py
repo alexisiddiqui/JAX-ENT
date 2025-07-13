@@ -5,8 +5,8 @@ from typing import Any, ClassVar, Generic, Protocol, Sequence
 import jax.numpy as jnp
 from jax import Array
 
-from jaxent.src.types import T_Feat_In, T_Out
-from jaxent.src.types.key import m_key
+from jaxent.src.custom_types import T_Feat_In, T_Out
+from jaxent.src.custom_types.key import m_key
 
 
 @dataclass()

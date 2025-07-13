@@ -5,9 +5,9 @@ import jax.numpy as jnp
 from jax import Array
 from jax.experimental import sparse
 
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.types.features import Input_Features
 
 
 ####################################################################################################

@@ -3,11 +3,11 @@ from typing import Optional, Sequence
 import jax.numpy as jnp
 import MDAnalysis as mda
 
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.core import Simulation
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.features import Input_Features
 
 
 class Experiment_Builder:
