@@ -676,6 +676,286 @@ class Partial_Topology:
             peptide_trim=self.peptide_trim,
         )
 
+    @classmethod
+    def from_mda_universe(
+        cls,
+        universe,
+        mode: str = "residue",
+        include_selection: str = "protein",
+        exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        fragment_name_template: str = "auto",
+        renumber_residues: bool = True,
+    ) -> list["Partial_Topology"]:
+        """Extract Partial_Topology objects from an MDAnalysis Universe
+
+        Args:
+            universe: MDAnalysis Universe object
+            mode: Extraction mode - "by_chain" (one topology per chain) or
+                  "by_residue" (one topology per residue)
+            include_selection: MDAnalysis selection string for atoms to include
+            exclude_selection: Optional MDAnalysis selection string for atoms to exclude
+            exclude_termini: If True, exclude N and C terminal residues from each chain
+            termini_chain_selection: str
+            fragment_name_template: Naming template - "auto" for automatic naming,
+                                   or custom template with {chain}, {resid}, {resname} placeholders
+            renumber_residues: If True, renumber residues starting from 1 for each chain.
+                              If False, preserve original residue numbers from MDAnalysis.
+
+        Returns:
+            List of Partial_Topology objects
+
+        Raises:
+            ValueError: If mode is not "by_chain" or "by_residue"
+            ImportError: If MDAnalysis is not available
+        """
+        try:
+            import MDAnalysis as mda
+        except ImportError:
+            raise ImportError(
+                "MDAnalysis is required for this method. Install with: pip install MDAnalysis"
+            )
+
+        if mode not in ("chain", "residue"):
+            raise ValueError("Mode must be either 'by_chain' or 'by_residue'")
+
+        # Apply include selection
+        try:
+            selected_atoms = universe.select_atoms(include_selection)
+        except Exception as e:
+            raise ValueError(f"Invalid include selection '{include_selection}': {e}")
+
+        if len(selected_atoms) == 0:
+            raise ValueError(f"No atoms found with include selection '{include_selection}'")
+
+        # Apply exclude selection if provided
+        if exclude_selection:
+            try:
+                exclude_atoms = universe.select_atoms(exclude_selection)
+                # Remove excluded atoms from selected atoms
+                selected_atoms = selected_atoms - exclude_atoms
+            except Exception as e:
+                raise ValueError(f"Invalid exclude selection '{exclude_selection}': {e}")
+
+        if len(selected_atoms) == 0:
+            raise ValueError("No atoms remaining after applying exclude selection")
+
+        # Group atoms by chain (try segid first, then chainid)
+        chains = {}
+        for atom in selected_atoms:
+            # Prefer segid, fall back to chainid, then use 'A' as default
+            chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
+            if chain_id not in chains:
+                chains[chain_id] = []
+            chains[chain_id].append(atom)
+
+        # Process each chain
+        partial_topologies = []
+
+        for chain_id, chain_atoms in chains.items():
+            # Determine the full set of residues for this chain based on termini_chain_selection
+            try:
+                termini_chain_selection_str = (
+                    f"({termini_chain_selection}) and (segid {chain_id} or chainid {chain_id})"
+                )
+                termini_atoms = universe.select_atoms(termini_chain_selection_str)
+                if len(termini_atoms) == 0:
+                    # Fallback for cases where segid/chainid might not be in the main selection string
+                    termini_atoms = selected_atoms.select_atoms(
+                        f"segid {chain_id} or chainid {chain_id}"
+                    )
+            except Exception as e:
+                raise ValueError(
+                    f"Invalid termini_chain_selection '{termini_chain_selection_str}': {e}"
+                )
+
+            if len(termini_atoms) == 0:
+                # If no atoms found for this chain in termini selection, use all selected atoms for this chain
+                termini_atoms = selected_atoms.select_atoms(
+                    f"segid {chain_id} or chainid {chain_id}"
+                )
+
+            full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
+
+            # Create renumbering mapping from the FULL chain first
+            if renumber_residues:
+                full_chain_mapping = {res.resid: i for i, res in enumerate(full_chain_residues, 1)}
+            else:
+                full_chain_mapping = {res.resid: res.resid for res in full_chain_residues}
+
+            # Apply terminal exclusion to determine which residues to include
+            if exclude_termini and len(full_chain_residues) > 2:
+                included_residues = full_chain_residues[1:-1]  # Remove first and last
+            else:
+                included_residues = full_chain_residues
+
+            # Get the set of residue IDs that should be included after terminal exclusion
+            included_resids = {res.resid for res in included_residues}
+
+            # Filter selected atoms to only include residues that pass terminal exclusion
+            chain_residues = {}
+            for atom in chain_atoms:
+                resid = atom.resid
+                if resid in included_resids and resid not in chain_residues:
+                    chain_residues[resid] = atom.residue
+
+            # Sort residues by original resid
+            sorted_residues = sorted(chain_residues.values(), key=lambda r: r.resid)
+
+            if not sorted_residues:
+                continue  # Skip if no residues left after filtering
+
+            # Extract sequence information
+            try:
+                # Try to get single-letter amino acid codes
+                sequence = []
+                for residue in sorted_residues:
+                    resname = residue.resname
+                    # Convert common 3-letter to 1-letter codes
+                    aa_map = {
+                        "ALA": "A",
+                        "ARG": "R",
+                        "ASN": "N",
+                        "ASP": "D",
+                        "CYS": "C",
+                        "GLN": "Q",
+                        "GLU": "E",
+                        "GLY": "G",
+                        "HIS": "H",
+                        "ILE": "I",
+                        "LEU": "L",
+                        "LYS": "K",
+                        "MET": "M",
+                        "PHE": "F",
+                        "PRO": "P",
+                        "SER": "S",
+                        "THR": "T",
+                        "TRP": "W",
+                        "TYR": "Y",
+                        "VAL": "V",
+                        "MSE": "M",  # Selenomethionine
+                    }
+                    sequence.append(aa_map.get(resname, "X"))  # X for unknown
+                sequence_str = "".join(sequence)
+            except:
+                # Fallback to residue names
+                sequence_str = [res.resname for res in sorted_residues]
+
+            if mode == "chain":
+                # Create one topology per chain
+                # Use the full chain mapping to get residue numbers
+                residue_numbers = [full_chain_mapping[res.resid] for res in sorted_residues]
+
+                # Generate fragment name
+                if fragment_name_template == "auto":
+                    fragment_name = f"chain_{chain_id}"
+                else:
+                    fragment_name = fragment_name_template.format(
+                        chain=chain_id,
+                        resid=f"{min(residue_numbers)}-{max(residue_numbers)}",
+                        resname="chain",
+                    )
+
+                topology = cls.from_residues(
+                    chain=chain_id,
+                    residues=residue_numbers,
+                    fragment_sequence=sequence_str,
+                    fragment_name=fragment_name,
+                    peptide=False,
+                )
+                partial_topologies.append(topology)
+
+            elif mode == "residue":
+                # Create one topology per residue
+                for i, residue in enumerate(sorted_residues):
+                    new_resid = full_chain_mapping[residue.resid]
+
+                    # Get single residue sequence
+                    if isinstance(sequence_str, str):
+                        res_sequence = sequence_str[i]
+                    else:
+                        res_sequence = sequence_str[i]
+
+                    # Generate fragment name
+                    if fragment_name_template == "auto":
+                        fragment_name = f"{chain_id}_{residue.resname}{new_resid}"
+                    else:
+                        fragment_name = fragment_name_template.format(
+                            chain=chain_id, resid=new_resid, resname=residue.resname
+                        )
+
+                    topology = cls.from_single(
+                        chain=chain_id,
+                        residue=new_resid,
+                        fragment_sequence=res_sequence,
+                        fragment_name=fragment_name,
+                        peptide=False,
+                    )
+                    partial_topologies.append(topology)
+
+        if not partial_topologies:
+            raise ValueError("No partial topologies could be created from the selection")
+
+        return partial_topologies
+
+    @classmethod
+    def calculate_fragment_redundancy(
+        cls,
+        topologies: list["Partial_Topology"],
+        mode: str = "mean",
+        check_trim: bool = False,
+    ) -> list[float]:
+        """Calculate overlap redundancy between fragments in a list
+
+        Args:
+            topologies: List of Partial_Topology objects to compare
+            mode: Either "max" or "mean" to determine how to calculate overlap scores
+            check_trim: If True, use peptide_residues for peptides; if False, use all residues
+
+        Returns:
+            List of overlap scores for each fragment (same order as input)
+
+        Raises:
+            ValueError: If mode is not "max" or "mean"
+            ValueError: If topologies list is empty
+        """
+        if not topologies:
+            raise ValueError("Cannot calculate redundancy for empty topology list")
+
+        if mode not in ("max", "mean"):
+            raise ValueError("Mode must be either 'max' or 'mean'")
+
+        redundancy_scores = []
+
+        for i, fragment in enumerate(topologies):
+            # Get active residues for current fragment
+            current_residues = set(fragment._get_active_residues(check_trim))
+
+            fragment_overlaps = []
+
+            # Compare with all other fragments
+            for j, other in enumerate(topologies):
+                if i != j and fragment.chain == other.chain:
+                    # Get active residues for other fragment
+                    other_residues = set(other._get_active_residues(check_trim))
+
+                    # Calculate overlap
+                    overlap_size = len(current_residues & other_residues)
+                    if overlap_size > 0:
+                        fragment_overlaps.append(overlap_size)
+
+            # Calculate final redundancy score based on mode
+            if fragment_overlaps:
+                if mode == "max":
+                    redundancy_scores.append(max(fragment_overlaps))
+                elif mode == "mean":
+                    redundancy_scores.append(sum(fragment_overlaps) / len(fragment_overlaps))
+            else:
+                redundancy_scores.append(0.0)
+
+        return redundancy_scores
+
 
 # Example usage and testing
 if __name__ == "__main__":
@@ -710,6 +990,85 @@ if __name__ == "__main__":
     )
     print(f"Peptide fragment: {peptide_topo}")
     print(f"Peptide residues (trimmed): {peptide_topo.peptide_residues}")
+
+    print("\n7. FRAGMENT REDUNDANCY ANALYSIS")
+    print("-" * 50)
+
+    # Create test fragments with overlaps
+    fragments = [
+        Partial_Topology.from_range("A", 1, 10, fragment_name="frag1"),
+        Partial_Topology.from_range("A", 5, 15, fragment_name="frag2"),
+        Partial_Topology.from_range("A", 20, 30, fragment_name="frag3"),
+        Partial_Topology.from_range("A", 25, 35, fragment_name="frag4"),
+        Partial_Topology.from_range("A", 12, 22, fragment_name="frag5"),
+    ]
+
+    print("Test fragments:")
+    for i, frag in enumerate(fragments):
+        print(f"  {i}: {frag}")
+
+    # Calculate redundancy scores
+    redundancy_max = Partial_Topology.calculate_fragment_redundancy(
+        fragments, mode="max", check_trim=False
+    )
+    redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
+        fragments, mode="mean", check_trim=False
+    )
+
+    print(f"\nRedundancy scores (max overlap): {redundancy_max}")
+    print(f"Redundancy scores (mean overlap): {[f'{score:.1f}' for score in redundancy_mean]}")
+
+    # Test with peptides
+    peptide_fragments = [
+        Partial_Topology.from_range("A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=2),
+        Partial_Topology.from_range("A", 5, 15, fragment_name="pep2", peptide=True, peptide_trim=3),
+        Partial_Topology.from_range(
+            "A", 20, 30, fragment_name="pep3", peptide=True, peptide_trim=1
+        ),
+    ]
+
+    print("\nPeptide fragments:")
+    for i, frag in enumerate(peptide_fragments):
+        print(f"  {i}: {frag}")
+        print(f"     Active residues: {frag._get_active_residues(check_trim=True)}")
+
+    peptide_redundancy = Partial_Topology.calculate_fragment_redundancy(
+        peptide_fragments, mode="mean", check_trim=True
+    )
+    print(
+        f"\nPeptide redundancy (with trimming): {[f'{score:.1f}' for score in peptide_redundancy]}"
+    )
+
+    peptide_redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
+        peptide_fragments, mode="mean", check_trim=False
+    )
+    print(
+        f"Peptide redundancy (no trimming): {[f'{score:.1f}' for score in peptide_redundancy_no_trim]}"
+    )
+
+    print("\n8. MDANALYSIS UNIVERSE EXTRACTION")
+    print("-" * 50)
+
+    print("Note: MDAnalysis extraction examples require MDAnalysis to be installed.")
+    print("Example usage patterns:")
+    print()
+    print("# Extract by chain (one topology per chain)")
+    print("topologies = Partial_Topology.from_mda_universe(")
+    print("    universe, mode='by_chain', include_selection='protein')")
+    print()
+    print("# Extract by residue (one topology per residue)")
+    print("topologies = Partial_Topology.from_mda_universe(")
+    print("    universe, mode='by_residue', exclude_termini=True)")
+    print()
+    print("# Custom selection with exclusions")
+    print("topologies = Partial_Topology.from_mda_universe(")
+    print("    universe, include_selection='protein and not name H*',")
+    print("    exclude_selection='resname WAT ION', exclude_termini=False)")
+    print()
+    print("# Custom naming template")
+    print("topologies = Partial_Topology.from_mda_universe(")
+    print("    universe, mode='by_residue',")
+    print("    fragment_name_template='residue_{chain}_{resname}_{resid}')")
 
     print("\n2. PEPTIDE SETTING CHANGES")
     print("-" * 50)
@@ -896,4 +1255,5 @@ if __name__ == "__main__":
     )
     print(f"TM helix: {tm_helix}")
 
+    print(f"\nDetailed repr: {repr(active_site)}")
     print(f"\nDetailed repr: {repr(active_site)}")
