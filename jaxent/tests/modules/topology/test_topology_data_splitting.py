@@ -783,10 +783,6 @@ class TestTopologyRedundancyBasic:
                     f"    Active residues with trimming: {frag._get_active_residues(check_trim=True)}"
                 )
 
-        print(f"  Max redundancy with trim: {redundancy_max_trim}")
-        print(f"  Mean redundancy with trim: {redundancy_mean_trim}")
-        print(f"  Max redundancy without trim: {redundancy_max_no_trim}")
-
         # Expected for Chain A fragments with max mode:
         # fragA1: max(3, 6) = 6
         # fragA2: max(3, 5) = 5
@@ -963,9 +959,7 @@ class TestFragmentRedundancyComprehensive:
             Partial_Topology.from_range(
                 "B", 1, 10, fragment_name="chainB_frag1"
             ),  # Same residues, different chain
-            Partial_Topology.from_range(
-                "A", 5, 15, fragment_name="chainA_frag2"
-            ),  # Overlaps with chainA_frag1
+            Partial_Topology.from_range("A", 5, 15, fragment_name="chainA_frag2"),
             Partial_Topology.from_range(
                 "B", 5, 15, fragment_name="chainB_frag2"
             ),  # Overlaps with chainB_frag1
@@ -1236,6 +1230,286 @@ class TestFragmentRedundancyComprehensive:
         )
 
         print("✓ Identical peptides redundancy calculation passed")
+
+
+class TestTopologyCommonResiduesMerged:
+    """Test class for testing find_common_residues method with merged topologies."""
+
+    def test_common_residues_against_merged_topology(self, monkeypatch):
+        """Test find_common_residues against a merged topology."""
+
+        # Mock MDAnalysis Universe class for testing
+        class MockAtom:
+            def __init__(self, segid, resid, resname):
+                self.segid = segid
+                self.chainid = segid  # Use segid as chainid for simplicity
+                self.resid = resid
+                self.resname = resname
+                self.residue = MockResidue(segid, resid, resname)
+
+        class MockResidue:
+            def __init__(self, segid, resid, resname):
+                self.segid = segid
+                self.chainid = segid
+                self.resid = resid
+                self.resname = resname
+
+        class MockAtomGroup:
+            def __init__(self, atoms=None):
+                self.atoms = atoms or []
+                self.residues = list({atom.residue for atom in self.atoms})
+
+            def select_atoms(self, selection):
+                if "protein" in selection:
+                    return self  # Just return all atoms for "protein" selection
+                elif "resname SOL" in selection:
+                    # Return empty group for solvent selection
+                    return MockAtomGroup([])
+                elif "segid" in selection:
+                    # Filter by segid
+                    segid = selection.split()[-1]
+                    return MockAtomGroup([atom for atom in self.atoms if atom.segid == segid])
+                else:
+                    return MockAtomGroup([])
+
+            def __sub__(self, other):
+                # Simple set subtraction implementation
+                return MockAtomGroup([atom for atom in self.atoms if atom not in other.atoms])
+
+        class MockUniverse:
+            def __init__(self, segids, residue_ranges):
+                self.atoms = []
+                for segid, (start, end) in zip(segids, residue_ranges):
+                    for resid in range(start, end + 1):
+                        self.atoms.append(MockAtom(segid, resid, "ALA"))
+
+            def select_atoms(self, selection):
+                return MockAtomGroup(self.atoms).select_atoms(selection)
+
+        # Create mock universes with different but overlapping residue ranges
+        # Universe 1: Chain A (1-100), Chain B (1-50)
+        # Universe 2: Chain A (1-90), Chain B (5-60)
+        # Universe 3: Chain A (5-110), Chain B (10-45)
+        # Common residues should be: Chain A (5-90), Chain B (10-45)
+        # after termini exclusion: A(6-89), B(11-44)
+        mock_universes = [
+            MockUniverse(["A", "B"], [(1, 100), (1, 50)]),
+            MockUniverse(["A", "B"], [(1, 90), (5, 60)]),
+            MockUniverse(["A", "B"], [(5, 110), (10, 45)]),
+        ]
+
+        # Patch the from_mda_universe method to use our mock universes
+        original_method = Partial_Topology.from_mda_universe
+
+        def mock_from_mda_universe(cls, universe, **kwargs):
+            # Create a simple implementation that returns chain-level topologies
+            exclude_termini = kwargs.get("exclude_termini", True)
+            result = []
+            all_segids = sorted(list(set([atom.segid for atom in universe.atoms])))
+
+            for segid in all_segids:
+                chain_residues = sorted(
+                    {atom.resid for atom in universe.atoms if atom.segid == segid}
+                )
+                if exclude_termini and len(chain_residues) > 2:
+                    residues_to_use = chain_residues[1:-1]
+                else:
+                    residues_to_use = chain_residues
+
+                if residues_to_use:
+                    result.append(
+                        Partial_Topology.from_residues(
+                            chain=segid, residues=residues_to_use, fragment_name=f"chain_{segid}"
+                        )
+                    )
+            return result
+
+        monkeypatch.setattr(
+            Partial_Topology, "from_mda_universe", classmethod(mock_from_mda_universe)
+        )
+
+        try:
+            # Test find_common_residues method
+            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+                mock_universes
+            )
+
+            # Convert to dictionary for easier verification
+            common_by_chain = {}
+            excluded_by_chain = {}
+
+            for topo in common_residues:
+                if topo.chain not in common_by_chain:
+                    common_by_chain[topo.chain] = []
+                common_by_chain[topo.chain].append(topo.residues[0])  # Each has only one residue
+
+            for topo in excluded_residues:
+                if topo.chain not in excluded_by_chain:
+                    excluded_by_chain[topo.chain] = []
+                excluded_by_chain[topo.chain].append(topo.residues[0])
+
+            # Sort for consistent comparison
+            for chain in common_by_chain:
+                common_by_chain[chain] = sorted(common_by_chain[chain])
+            for chain in excluded_by_chain:
+                excluded_by_chain[chain] = sorted(excluded_by_chain[chain])
+
+            # Expected results: common A(6-89), B(11-44) after termini exclusion
+            expected_common_A = list(range(6, 90))
+            expected_common_B = list(range(11, 45))
+
+            assert common_by_chain["A"] == expected_common_A, "Chain A common residues mismatch"
+            assert common_by_chain["B"] == expected_common_B, "Chain B common residues mismatch"
+
+            # Verify some excluded residues exist
+            assert "A" in excluded_by_chain
+            assert "B" in excluded_by_chain
+            assert 1 in excluded_by_chain["A"]  # Should be excluded (not in universe 3)
+            assert 100 in excluded_by_chain["A"]  # Should be excluded (not in universe 2)
+
+            print("✓ find_common_residues with merged topology passed")
+
+        finally:
+            # Restore the original method
+            monkeypatch.setattr(Partial_Topology, "from_mda_universe", original_method)
+
+    def test_merged_topology_against_dataset(self, monkeypatch):
+        """Test comparing a merged topology against a dataset of residue topologies."""
+        # Create a merged topology representing a consensus structure
+        merged_chain_A = Partial_Topology.from_range(
+            chain="A", start=10, end=90, fragment_name="consensus_A"
+        )
+        merged_chain_B = Partial_Topology.from_range(
+            chain="B", start=5, end=50, fragment_name="consensus_B"
+        )
+        merged_topology = [merged_chain_A, merged_chain_B]
+
+        # Create individual residue topologies
+        residue_topologies = []
+        # Chain A residues (some within consensus, some outside)
+        for i in range(1, 100):
+            residue_topologies.append(
+                Partial_Topology.from_single(chain="A", residue=i, fragment_name=f"A_{i}")
+            )
+        # Chain B residues (some within consensus, some outside)
+        for i in range(1, 60):
+            residue_topologies.append(
+                Partial_Topology.from_single(chain="B", residue=i, fragment_name=f"B_{i}")
+            )
+
+        # Find residues that match the merged topology
+        matching_residues = []
+        non_matching_residues = []
+
+        for res_topo in residue_topologies:
+            # Check if this residue is contained in any of the merged topologies
+            is_matching = False
+            for merged in merged_topology:
+                if res_topo.chain == merged.chain and merged.contains_residue(res_topo.residues[0]):
+                    matching_residues.append(res_topo)
+                    is_matching = True
+                    break
+
+            if not is_matching:
+                non_matching_residues.append(res_topo)
+
+        # Verify results
+        assert len(matching_residues) == (81 + 46), (
+            f"Expected 127 matching residues, got {len(matching_residues)}"
+        )
+        assert len(non_matching_residues) == (18 + 13), (
+            f"Expected 31 non-matching residues, got {len(non_matching_residues)}"
+        )
+
+        # Verify some specific residues
+        matching_residue_keys = {(topo.chain, topo.residues[0]) for topo in matching_residues}
+        non_matching_residue_keys = {
+            (topo.chain, topo.residues[0]) for topo in non_matching_residues
+        }
+
+        assert ("A", 10) in matching_residue_keys, "A:10 should be in matching residues"
+        assert ("A", 90) in matching_residue_keys, "A:90 should be in matching residues"
+        assert ("B", 5) in matching_residue_keys, "B:5 should be in matching residues"
+        assert ("B", 50) in matching_residue_keys, "B:50 should be in matching residues"
+
+        assert ("A", 1) in non_matching_residue_keys, "A:1 should be in non-matching residues"
+        assert ("A", 99) in non_matching_residue_keys, "A:99 should be in non-matching residues"
+        assert ("B", 1) in non_matching_residue_keys, "B:1 should be in non-matching residues"
+        assert ("B", 59) in non_matching_residue_keys, "B:59 should be in non-matching residues"
+
+        print("✓ Merged topology against dataset comparison passed")
+
+    def test_compare_ensemble_against_merged_reference(self):
+        """Test comparing an ensemble of topologies against a merged reference topology."""
+        # Create a reference merged topology
+        reference_topology = Partial_Topology.from_range(
+            chain="A", start=20, end=80, fragment_name="reference"
+        )
+
+        # Create an ensemble of topologies with varying degrees of overlap with the reference
+        ensemble = [
+            Partial_Topology.from_range("A", 10, 30, fragment_name="partial_overlap_1"),
+            Partial_Topology.from_range("A", 25, 40, fragment_name="contained_in_reference"),
+            Partial_Topology.from_range("A", 70, 100, fragment_name="partial_overlap_2"),
+            Partial_Topology.from_range("A", 90, 110, fragment_name="outside_reference"),
+            Partial_Topology.from_range("B", 20, 80, fragment_name="wrong_chain"),
+        ]
+
+        # Analyze overlap with reference
+        overlap_stats = {}
+        containment_stats = {}
+
+        for i, topo in enumerate(ensemble):
+            # Check if chains match
+            if topo.chain != reference_topology.chain:
+                overlap_stats[i] = 0
+                containment_stats[i] = False
+                continue
+
+            # Check overlap
+            overlap_residues = reference_topology.get_overlap(topo)
+            overlap_stats[i] = len(overlap_residues)
+
+            # Check containment
+            containment_stats[i] = reference_topology.contains_topology(topo)
+
+        # Verify results
+        expected_overlaps = [11, 16, 11, 0, 0]  # Number of overlapping residues for each topology
+        expected_containment = [
+            False,
+            True,
+            False,
+            False,
+            False,
+        ]  # Whether each is contained in reference
+
+        assert list(overlap_stats.values()) == expected_overlaps, (
+            f"Expected overlaps: {expected_overlaps}, got {list(overlap_stats.values())}"
+        )
+        assert list(containment_stats.values()) == expected_containment, (
+            f"Expected containment: {expected_containment}, got {list(containment_stats.values())}"
+        )
+
+        # Calculate coverage of reference by ensemble
+        all_residues = set()
+        for topo in ensemble:
+            if topo.chain == reference_topology.chain:
+                overlap = reference_topology.get_overlap(topo)
+                all_residues.update(overlap)
+
+        coverage_percentage = len(all_residues) / len(reference_topology.residues) * 100
+        # Overlaps: [10-30] & [20-80] -> [20-30] (11 res)
+        #           [25-40] & [20-80] -> [25-40] (16 res)
+        #           [70-100] & [20-80] -> [70-80] (11 res)
+        # Union of overlaps: [20-40] U [70-80] -> 21 + 11 = 32 residues
+        # Reference length: 80 - 20 + 1 = 61 residues
+        expected_coverage = 32 / 61 * 100
+
+        assert abs(coverage_percentage - expected_coverage) < 0.01, (
+            f"Expected coverage: {expected_coverage:.2f}%, got {coverage_percentage:.2f}%"
+        )
+
+        print("✓ Ensemble comparison against merged reference passed")
 
 
 if __name__ == "__main__":
