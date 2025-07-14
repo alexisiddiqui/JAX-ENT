@@ -964,6 +964,241 @@ class Partial_Topology:
         return partial_topologies
 
     @classmethod
+    def to_mda_group(
+        cls,
+        topologies: Union[set["Partial_Topology"], list["Partial_Topology"]],
+        universe: mda.Universe,
+        include_selection: str = "protein",
+        exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        renumber_residues: bool = True,
+        mda_atom_filtering: Optional[str] = None,
+    ) -> Union["mda.ResidueGroup", "mda.AtomGroup"]:
+        """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects.
+
+        This method performs the reverse mapping of from_mda_universe, converting
+        Partial_Topology objects back to MDAnalysis groups using the same logic.
+
+        Args:
+            topologies: Set or list of Partial_Topology objects to convert
+            universe: MDAnalysis Universe object to select from
+            include_selection: MDAnalysis selection string for atoms to include
+            exclude_selection: Optional MDAnalysis selection string for atoms to exclude
+            exclude_termini: If True, account for N and C terminal residue exclusion
+            termini_chain_selection: Selection string used for terminal identification
+            renumber_residues: If True, assume residue numbers were renumbered from 1.
+                              If False, use original residue numbers.
+            mda_atom_filtering: Optional atom-level filtering (e.g., "name CA")
+            return_atoms: If True, return AtomGroup. If False, return ResidueGroup.
+
+        Returns:
+            MDAnalysis ResidueGroup or AtomGroup containing the specified residues/atoms
+
+        Raises:
+            ValueError: If no matching residues found or invalid selections
+            ImportError: If MDAnalysis is not available
+        """
+        try:
+            import MDAnalysis as mda
+        except ImportError:
+            raise ImportError(
+                "MDAnalysis is required for this method. Install with: pip install MDAnalysis"
+            )
+
+        if not topologies:
+            raise ValueError("No topologies provided")
+
+        # Convert to list if set
+        if isinstance(topologies, set):
+            topologies = list(topologies)
+
+        # Apply include selection
+        try:
+            selected_atoms = universe.select_atoms(include_selection)
+        except Exception as e:
+            raise ValueError(f"Invalid include selection '{include_selection}': {e}")
+
+        if len(selected_atoms) == 0:
+            raise ValueError(f"No atoms found with include selection '{include_selection}'")
+
+        # Apply exclude selection if provided
+        if exclude_selection:
+            try:
+                exclude_atoms = universe.select_atoms(exclude_selection)
+                selected_atoms = selected_atoms - exclude_atoms
+            except Exception as e:
+                raise ValueError(f"Invalid exclude selection '{exclude_selection}': {e}")
+
+        if len(selected_atoms) == 0:
+            raise ValueError("No atoms remaining after applying exclude selection")
+
+        # Group atoms by chain
+        chains = {}
+        for atom in selected_atoms:
+            chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
+            if chain_id not in chains:
+                chains[chain_id] = []
+            chains[chain_id].append(atom)
+
+        # Group topologies by chain
+        topologies_by_chain = {}
+        for topo in topologies:
+            if topo.chain not in topologies_by_chain:
+                topologies_by_chain[topo.chain] = []
+            topologies_by_chain[topo.chain].append(topo)
+
+        # Collect target residue IDs for each chain
+        target_residues = []
+
+        for chain_id, chain_topologies in topologies_by_chain.items():
+            if chain_id not in chains:
+                continue  # Skip if chain not found in universe
+
+            # Recreate the same renumbering logic as from_mda_universe
+            try:
+                termini_chain_selection_str = (
+                    f"({termini_chain_selection}) and (segid {chain_id} or chainid {chain_id})"
+                )
+                termini_atoms = universe.select_atoms(termini_chain_selection_str)
+                if len(termini_atoms) == 0:
+                    termini_atoms = selected_atoms.select_atoms(
+                        f"segid {chain_id} or chainid {chain_id}"
+                    )
+            except Exception as e:
+                raise ValueError(f"Invalid termini_chain_selection: {e}")
+
+            if len(termini_atoms) == 0:
+                termini_atoms = selected_atoms.select_atoms(
+                    f"segid {chain_id} or chainid {chain_id}"
+                )
+
+            full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
+
+            if renumber_residues:
+                # Create the same mapping as in from_mda_universe
+                renumber_to_original = {
+                    i: res.resid for i, res in enumerate(full_chain_residues, 1)
+                }
+            else:
+                renumber_to_original = {res.resid: res.resid for res in full_chain_residues}
+
+            # Apply terminal exclusion logic to determine available residues
+            if exclude_termini and len(full_chain_residues) > 2:
+                available_residues = full_chain_residues[1:-1]
+            else:
+                available_residues = full_chain_residues
+
+            available_resids = {res.resid for res in available_residues}
+
+            # Convert topology residue numbers back to original residue IDs
+            for topo in chain_topologies:
+                for topo_resid in topo.residues:
+                    if topo_resid in renumber_to_original:
+                        original_resid = renumber_to_original[topo_resid]
+                        # Only include if this residue was available (not excluded by termini)
+                        if original_resid in available_resids:
+                            target_residues.append(original_resid)
+
+        if not target_residues:
+            raise ValueError("No matching residues found in universe")
+
+        # Remove duplicates and sort
+        unique_resids = sorted(set(target_residues))
+
+        # Select residues from universe
+        try:
+            # Create selection string for specific residue IDs
+            resid_selection = f"resid {' '.join(map(str, unique_resids))}"
+
+            # Combine with original selection to ensure consistency
+            combined_selection = f"({include_selection}) and ({resid_selection})"
+            if exclude_selection:
+                combined_selection = f"({combined_selection}) and not ({exclude_selection})"
+
+            target_atoms = universe.select_atoms(combined_selection)
+
+            if len(target_atoms) == 0:
+                raise ValueError("No atoms found matching the topology residues")
+
+        except Exception as e:
+            raise ValueError(f"Failed to select target atoms: {e}")
+
+        # Apply atom filtering if requested
+        if mda_atom_filtering:
+            try:
+                target_atoms = target_atoms.select_atoms(mda_atom_filtering)
+                if len(target_atoms) == 0:
+                    raise ValueError(f"No atoms found after applying filter '{mda_atom_filtering}'")
+            except Exception as e:
+                raise ValueError(f"Invalid atom filtering '{mda_atom_filtering}': {e}")
+
+        # Return atoms or residues as requested
+        if mda_atom_filtering:
+            return target_atoms
+        else:
+            return target_atoms.residues
+
+    @classmethod
+    def to_mda_residue_dict(
+        cls,
+        topologies: Union[set["Partial_Topology"], list["Partial_Topology"]],
+        universe: mda.Universe,
+        include_selection: str = "protein",
+        exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        renumber_residues: bool = True,
+    ) -> dict[Union[str, int], list[int]]:
+        """
+        Extract residue information as a dictionary of chain:[residue_indices].
+
+        This method uses to_mda_group to get the residues and then formats them
+        into a dictionary.
+
+        Args:
+            topologies: Set or list of Partial_Topology objects to convert.
+            universe: MDAnalysis Universe object to select from.
+            include_selection: MDAnalysis selection string for atoms to include.
+            exclude_selection: Optional MDAnalysis selection string for atoms to exclude.
+            exclude_termini: If True, account for N and C terminal residue exclusion.
+            termini_chain_selection: Selection string used for terminal identification.
+            renumber_residues: If True, assume residue numbers were renumbered from 1.
+                              If False, use original residue numbers.
+
+        Returns:
+            A dictionary mapping chain ID to a list of residue indices.
+        """
+        residue_group = cls.to_mda_group(
+            topologies=topologies,
+            universe=universe,
+            include_selection=include_selection,
+            exclude_selection=exclude_selection,
+            exclude_termini=exclude_termini,
+            termini_chain_selection=termini_chain_selection,
+            renumber_residues=renumber_residues,
+            mda_atom_filtering=None,  # We want residues, not atoms
+        )
+
+        if isinstance(residue_group, mda.AtomGroup):
+            residues = residue_group.residues
+        else:
+            residues = residue_group
+
+        residue_dict = {}
+        for res in residues:
+            chain_id = getattr(res, "segid", None) or getattr(res, "chainid", "A")
+            if chain_id not in residue_dict:
+                residue_dict[chain_id] = []
+            residue_dict[chain_id].append(res.resid)
+
+        # Sort residue indices for each chain
+        for chain_id in residue_dict:
+            residue_dict[chain_id].sort()
+
+        return residue_dict
+
+    @classmethod
     def group_set_by_chain(
         cls, topologies: set["Partial_Topology"]
     ) -> dict[Union[str, int], set["Partial_Topology"]]:
