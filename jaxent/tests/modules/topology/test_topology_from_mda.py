@@ -571,3 +571,241 @@ class TestFindCommonResidues:
         assert total_residues == baseline_total, (
             f"Total residues {total_residues} should equal baseline {baseline_total}"
         )
+
+
+class TestToMDAGroup:
+    """Test the to_mda_group method that maps Partial_Topology back to MDAnalysis groups"""
+
+    def test_basic_conversion(self, bpti_universe):
+        """Test basic conversion from Partial_Topology to MDAnalysis groups"""
+        # First extract topologies from universe
+        topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein and resid 10-20"
+        )
+
+        assert len(topologies) > 0, "Should extract some topologies"
+
+        # Convert back to MDAnalysis group
+        residue_group = Partial_Topology.to_mda_group(
+            set(topologies), bpti_universe, include_selection="protein"
+        )
+
+        # Check if we got a ResidueGroup with the expected number of residues
+        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
+        assert len(residue_group) == len(topologies), (
+            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
+        )
+
+        # Check residue IDs match what we expect
+        topology_resids = sorted([topo.residues[0] for topo in topologies])
+        mda_resids = sorted([res.resid for res in residue_group])
+
+        assert len(topology_resids) == len(mda_resids), "Residue counts should match"
+
+        # Note: We don't directly compare resids since to_mda_group maps back to original resids
+        # Instead check their lengths and that they're in the expected range
+        assert 10 <= min(mda_resids) <= 20, (
+            f"Residue IDs should be in range 10-20, got {min(mda_resids)}-{max(mda_resids)}"
+        )
+        assert 10 <= max(mda_resids) <= 20, (
+            f"Residue IDs should be in range 10-20, got {min(mda_resids)}-{max(mda_resids)}"
+        )
+
+    def test_atom_filtering(self, bpti_universe):
+        """Test atom filtering in to_mda_group"""
+        # Extract chain topology
+        chain_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="chain", include_selection="protein"
+        )
+
+        # Convert to AtomGroup with CA-only filter
+        ca_atoms = Partial_Topology.to_mda_group(
+            set(chain_topologies),
+            bpti_universe,
+            include_selection="protein",
+            mda_atom_filtering="name CA",
+        )
+
+        # Should get an AtomGroup containing only CA atoms
+        # Note: In MDAnalysis, AtomGroup objects do have a 'residues' attribute
+        # but we should verify we got atoms instead of residues directly
+        assert isinstance(ca_atoms, mda.AtomGroup), "Should return an AtomGroup"
+        assert len(ca_atoms) > 0, "Should have CA atoms"
+        assert all(atom.name == "CA" for atom in ca_atoms), "All atoms should be CA atoms"
+
+        # Number of atoms should match number of residues in the chain
+        original_residues = len(chain_topologies[0].residues)
+        assert len(ca_atoms) == original_residues, (
+            f"Should have one CA atom per residue, got {len(ca_atoms)} atoms for {original_residues} residues"
+        )
+
+    def test_subset_selection(self, bpti_universe):
+        """Test selecting a subset of residues"""
+        # Extract all residues
+        all_residue_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
+
+        # Select just the first few
+        subset = set(all_residue_topologies[:5])
+
+        # Convert to MDAnalysis group
+        subset_group = Partial_Topology.to_mda_group(
+            subset, bpti_universe, include_selection="protein"
+        )
+
+        # Check we got the expected number of residues
+        assert len(subset_group) == 5, f"Should have 5 residues, got {len(subset_group)}"
+
+        # Test a different subset
+        middle_subset = set(all_residue_topologies[10:15])
+        middle_group = Partial_Topology.to_mda_group(
+            middle_subset, bpti_universe, include_selection="protein"
+        )
+
+        assert len(middle_group) == 5, f"Should have 5 residues, got {len(middle_group)}"
+
+        # Make sure they're different groups
+        middle_resids = sorted([res.resid for res in middle_group])
+        subset_resids = sorted([res.resid for res in subset_group])
+        assert middle_resids != subset_resids, "Different subsets should give different residues"
+
+    def test_exclude_selection(self, bpti_universe):
+        """Test exclude_selection parameter"""
+        # Get all protein residues
+        all_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
+
+        # First get without exclusion
+        all_group = Partial_Topology.to_mda_group(
+            set(all_topologies), bpti_universe, include_selection="protein"
+        )
+
+        # Then with exclusion
+        exclude_group = Partial_Topology.to_mda_group(
+            set(all_topologies),
+            bpti_universe,
+            include_selection="protein",
+            exclude_selection="resid 1-5",
+        )
+
+        # Should have fewer residues with exclusion
+        assert len(exclude_group) < len(all_group), "Exclusion should reduce residue count"
+
+        # Make sure excluded residues are actually excluded
+        exclude_resids = [res.resid for res in exclude_group]
+        for i in range(1, 6):
+            assert i not in exclude_resids, f"Residue {i} should be excluded"
+
+    def test_round_trip_conversion(self, bpti_universe):
+        """Test round-trip conversion between Universe, Partial_Topology, and back"""
+        # Extract specific residues
+        original_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+        )
+
+        # Convert back to MDAnalysis group
+        mda_group = Partial_Topology.to_mda_group(
+            set(original_topologies),
+            bpti_universe,
+            include_selection="protein",
+            renumber_residues=True,
+        )
+
+        # Convert back to Partial_Topology again
+        round_trip_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection=f"protein and resid {' '.join(str(res.resid) for res in mda_group)}",
+            renumber_residues=True,
+        )
+
+        # Compare the original and round-trip topologies
+        assert len(original_topologies) == len(round_trip_topologies), (
+            "Should have same number of topologies"
+        )
+
+        # Sort both by residue number for comparison
+        original_sorted = sorted(original_topologies, key=lambda t: t.residues[0])
+        round_trip_sorted = sorted(round_trip_topologies, key=lambda t: t.residues[0])
+
+        # Check residue sequences match
+        original_resids = [t.residues[0] for t in original_sorted]
+        round_trip_resids = [t.residues[0] for t in round_trip_sorted]
+        assert original_resids == round_trip_resids, (
+            "Residue IDs should match after round-trip conversion"
+        )
+
+    def test_error_conditions(self, bpti_universe):
+        """Test error conditions in to_mda_group"""
+        # Empty topology set should raise error
+        with pytest.raises(ValueError, match="No topologies provided"):
+            Partial_Topology.to_mda_group(set(), bpti_universe, include_selection="protein")
+
+        # Invalid selection should raise error
+        valid_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
+
+        with pytest.raises(ValueError, match="Invalid include selection"):
+            Partial_Topology.to_mda_group(
+                set(valid_topologies), bpti_universe, include_selection="nonexistent_selection"
+            )
+
+        # Invalid atom filtering should raise error
+        with pytest.raises(ValueError, match="Invalid atom filtering"):
+            Partial_Topology.to_mda_group(
+                set(valid_topologies),
+                bpti_universe,
+                include_selection="protein",
+                mda_atom_filtering="invalid_atom_name",
+            )
+
+    def test_to_mda_residue_dict(self, bpti_universe):
+        """Test conversion to a dictionary of residue indices by chain."""
+        # Extract topologies for residues 10-20
+        topologies = Partial_Topology.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=False,  # Use original residue numbers for easier checking
+        )
+
+        # Convert to residue dictionary
+        residue_dict = Partial_Topology.to_mda_residue_dict(
+            set(topologies),
+            bpti_universe,
+            include_selection="protein",
+            renumber_residues=False,
+            exclude_termini=False,
+        )
+
+        # BPTI has one chain, usually 'A' or a segid
+        assert len(residue_dict) == 1, "Should find residues in one chain"
+        chain_id = list(residue_dict.keys())[0]
+
+        # Check the residue numbers
+        resids = residue_dict[chain_id]
+        expected_resids = list(range(10, 21))  # resid 10-20 is inclusive
+        assert sorted(resids) == expected_resids, (
+            f"Residue dictionary should contain resids 10-20, got {resids}"
+        )
+
+        # Test with exclusion
+        residue_dict_excluded = Partial_Topology.to_mda_residue_dict(
+            set(topologies),
+            bpti_universe,
+            include_selection="protein",
+            exclude_selection="resid 15-17",
+            renumber_residues=False,
+            exclude_termini=False,
+        )
+        resids_excluded = residue_dict_excluded[chain_id]
+        expected_excluded = [10, 11, 12, 13, 14, 18, 19, 20]
+        assert sorted(resids_excluded) == expected_excluded, (
+            f"Residue dict with exclusion is incorrect: got {resids_excluded}"
+        )
