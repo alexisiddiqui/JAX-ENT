@@ -6,7 +6,7 @@ from MDAnalysis.core.groups import ResidueGroup
 
 # ####################################################################################################
 # # Updated to use Partial_Topology methods for more robust residue identification
-# def find_common_residues(
+# defPartial_Topology.find_common_residues(
 #     ensemble: List[Universe],
 #     include_mda_selection: str = "protein",
 #     ignore_mda_selection: str = "resname SOL",

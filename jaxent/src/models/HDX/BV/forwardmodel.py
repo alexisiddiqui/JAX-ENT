@@ -8,7 +8,7 @@ from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
-from jaxent.src.models.func.common import find_common_residues, get_residue_atom_pairs
+from jaxent.src.models.func.common import get_residue_atom_pairs
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_intrinsic_rates
 from jaxent.src.models.HDX.BV.features import BV_input_features
@@ -47,7 +47,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             bool: True if initialization was successful
         """
         # Find common residues across the ensemble
-        self.common_topology: set[Partial_Topology] = find_common_residues(
+        self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
             ensemble, ignore_mda_selection="(resname PRO or resid 1)"
         )[0]
         # Calculate total number of frames in the ensemble

@@ -27,7 +27,6 @@ from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
-from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.src.models.HDX.forward import BV_ForwardPass
 from jaxent.src.opt.losses import frame_weight_consistency_loss, hdx_pf_l2_loss, hdx_uptake_l2_loss
@@ -129,7 +128,7 @@ def test_quick_optimiser():
     # create fake experimental dataset
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
@@ -239,7 +238,7 @@ def test_underscore_optimiser():
     simulation.initialise()
 
     # Create fake experimental dataset
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
@@ -395,7 +394,7 @@ def test_uptake_optimiser():
     # create fake experimental dataset
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
