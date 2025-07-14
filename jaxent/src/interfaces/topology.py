@@ -2,6 +2,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
+import MDAnalysis as mda
+from tqdm import tqdm
+
 
 @dataclass
 class Partial_Topology:
@@ -201,6 +204,11 @@ class Partial_Topology:
                 attrs.append(f"{field_name}={field_value}")
         return f"Partial_Topology({', '.join(attrs)})"
 
+    def __hash__(self) -> int:
+        """Allow topologies to be added to sets"""
+        # Hash based on
+        return hash((self.chain, tuple(self.peptide_residues if self.peptide else self.residues)))
+
     def get_residue_ranges(self) -> list[tuple[int, int]]:
         """Get contiguous ranges within the residue list"""
         if not self.residues:
@@ -246,6 +254,50 @@ class Partial_Topology:
             )
             for res in residues_to_extract
         ]
+
+    def remove_residues(self, topologies_to_remove: list["Partial_Topology"]) -> "Partial_Topology":
+        """Remove residues from this topology based on other topologies
+
+        Args:
+            topologies_to_remove: List of Partial_Topology objects whose residues
+                              should be removed from this topology
+
+        Returns:
+            A new Partial_Topology with the specified residues removed
+
+        Raises:
+            ValueError: If any topology has a different chain than this one
+            ValueError: If no residues would remain after removal
+        """
+        # Verify all topologies are on the same chain
+        for topo in topologies_to_remove:
+            if topo.chain != self.chain:
+                raise ValueError(
+                    f"Cannot remove residues from different chain: {topo.chain} != {self.chain}"
+                )
+
+        # Collect all residues to remove
+        residues_to_remove = set()
+        for topo in topologies_to_remove:
+            residues_to_remove.update(topo.residues)
+
+        # Create new residue list with specified residues removed
+        new_residues = [res for res in self.residues if res not in residues_to_remove]
+
+        # If no residues left, raise error
+        if not new_residues:
+            raise ValueError("No residues remaining after removal")
+
+        # Create new topology with remaining residues
+        return Partial_Topology.from_residues(
+            chain=self.chain,
+            residues=new_residues,
+            fragment_sequence=self.fragment_sequence,
+            fragment_name=self.fragment_name,
+            fragment_index=self.fragment_index,
+            peptide=self.peptide,
+            peptide_trim=self.peptide_trim,
+        )
 
     def _get_active_residues(self, check_trim: bool = False) -> list[int]:
         """Get the active residues for this topology
@@ -440,16 +492,18 @@ class Partial_Topology:
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
         merged_index: Optional[int] = None,
+        intersection: bool = False,
     ) -> "Partial_Topology":
         """Merge multiple topologies into a single topology
 
         Args:
             topologies: List of Partial_Topology objects to merge
             trim: If True, respect peptide trimming of input topologies.
-                  If False, use all residues and create non-peptide result.
+                    If False, use all residues and create non-peptide result.
             merged_name: Name for the merged topology (default: concatenate names)
             merged_sequence: Sequence for merged topology (default: concatenate sequences)
             merged_index: Index for merged topology (default: use first topology's index)
+            intersection: If True, only include residues that are present in all topologies
 
         Returns:
             New Partial_Topology containing merged residues
@@ -469,16 +523,26 @@ class Partial_Topology:
                     f"Found chains: {set(t.chain for t in topologies)}"
                 )
 
-        # Collect residues based on trim setting
-        all_residues = set()
-        for topo in topologies:
-            if trim:
-                # Respect individual peptide trimming
-                residues = topo._get_active_residues(check_trim=True)
-            else:
-                # Use all residues regardless of peptide settings
-                residues = topo._get_active_residues(check_trim=False)
-            all_residues.update(residues)
+        # Process residues based on intersection or union and trim setting
+        if intersection:
+            # Start with first topology's residues for intersection
+            all_residues = set(topologies[0]._get_active_residues(check_trim=trim))
+
+            # Intersect with each subsequent topology
+            for topo in topologies[1:]:
+                residues = set(topo._get_active_residues(check_trim=trim))
+                all_residues.intersection_update(residues)
+        else:
+            # Perform union of all residues (original behavior)
+            all_residues = set()
+            for topo in topologies:
+                # Use check_trim=trim to respect peptide trimming when requested
+                residues = topo._get_active_residues(check_trim=trim)
+                all_residues.update(residues)
+
+        # If intersection is empty, raise a more informative error
+        if intersection and not all_residues:
+            raise ValueError("No common residues found between all topologies")
 
         merged_residues = sorted(all_residues)
 
@@ -679,7 +743,7 @@ class Partial_Topology:
     @classmethod
     def from_mda_universe(
         cls,
-        universe,
+        universe: mda.Universe,
         mode: str = "residue",
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -956,304 +1020,146 @@ class Partial_Topology:
 
         return redundancy_scores
 
+    @classmethod
+    def find_common_residues(
+        cls,
+        ensemble: list[mda.Universe],
+        include_mda_selection: str = "protein",
+        ignore_mda_selection: str = "resname SOL",
+    ) -> tuple[set["Partial_Topology"], set["Partial_Topology"]]:
+        """Find common residues across an ensemble of MDAnalysis Universe objects.
 
-# Example usage and testing
-if __name__ == "__main__":
-    print("=" * 80)
-    print("TESTING FLEXIBLE PARTIAL TOPOLOGY CLASS")
-    print("=" * 80)
+        Args:
+            ensemble: List of MDAnalysis Universe objects to analyze
+            include_mda_selection: Selection string for atoms to include
+            ignore_mda_selection: Selection string for atoms to exclude
 
-    print("\n1. DIFFERENT CONSTRUCTION METHODS")
-    print("-" * 50)
+        Returns:
+            Tuple containing:
+            - Set of common residues present in all universes
+            - Set of excluded residues (present in some but not all universes)
 
-    # Regular fragment (not peptide)
-    range_topo = Partial_Topology.from_range(
-        chain="A",
-        start=1,
-        end=5,
-        fragment_sequence="MKLIV",  # Actual amino acid sequence
-        fragment_name="N_terminus",  # Descriptive name
-    )
-    print(f"Regular fragment: {range_topo}")
-    print(f"Sequence: {range_topo.fragment_sequence}")
-    print(f"Peptide residues: {range_topo.peptide_residues}")
+        Raises:
+            ValueError: If no common residues are found
+            ImportError: If MDAnalysis is not available
+        """
+        if not ensemble:
+            raise ValueError("Empty ensemble provided")
 
-    # Peptide fragment
-    peptide_topo = Partial_Topology.from_range(
-        chain="A",
-        start=10,
-        end=20,
-        fragment_sequence="AKLMQWERTYP",  # 11 residue peptide
-        fragment_name="signal_peptide",
-        peptide=True,
-        peptide_trim=2,
-    )
-    print(f"Peptide fragment: {peptide_topo}")
-    print(f"Peptide residues (trimmed): {peptide_topo.peptide_residues}")
+        # Extract included chain topologies from each universe
+        included_chain_topologies_by_universe = []
+        for universe in ensemble:
+            try:
+                # Extract chain topologies with filtering
+                chain_topos = cls.from_mda_universe(
+                    universe,
+                    mode="chain",
+                    include_selection=include_mda_selection,
+                    exclude_selection=ignore_mda_selection,
+                    exclude_termini=True,
+                    renumber_residues=True,
+                )
+                included_chain_topologies_by_universe.append(chain_topos)
+            except Exception as e:
+                raise ValueError(f"Failed to extract topologies from universe: {e}")
 
-    print("\n7. FRAGMENT REDUNDANCY ANALYSIS")
-    print("-" * 50)
+        # Group chain topologies by chain ID across universes
+        chain_ids = set()
+        for chain_topos in included_chain_topologies_by_universe:
+            chain_ids.update(topo.chain for topo in chain_topos)
 
-    # Create test fragments with overlaps
-    fragments = [
-        Partial_Topology.from_range("A", 1, 10, fragment_name="frag1"),
-        Partial_Topology.from_range("A", 5, 15, fragment_name="frag2"),
-        Partial_Topology.from_range("A", 20, 30, fragment_name="frag3"),
-        Partial_Topology.from_range("A", 25, 35, fragment_name="frag4"),
-        Partial_Topology.from_range("A", 12, 22, fragment_name="frag5"),
-    ]
+        # Find common residues by chain using intersection merge
+        common_residue_topologies = set()
+        for chain_id in chain_ids:
+            # Get chain topologies for this chain from each universe
+            chain_topos_for_this_chain = []
+            for chain_topos in included_chain_topologies_by_universe:
+                matching_chains = [topo for topo in chain_topos if topo.chain == chain_id]
+                if matching_chains:
+                    chain_topos_for_this_chain.append(matching_chains[0])
 
-    print("Test fragments:")
-    for i, frag in enumerate(fragments):
-        print(f"  {i}: {frag}")
+            # Only proceed if this chain exists in all universes
+            if len(chain_topos_for_this_chain) == len(ensemble):
+                try:
+                    # Find intersection of residues across all universes for this chain
+                    common_chain_topo = cls.merge(
+                        chain_topos_for_this_chain,
+                        trim=False,
+                        intersection=True,
+                        merged_name=f"common_chain_{chain_id}",
+                    )
 
-    # Calculate redundancy scores
-    redundancy_max = Partial_Topology.calculate_fragment_redundancy(
-        fragments, mode="max", check_trim=False
-    )
-    redundancy_mean = Partial_Topology.calculate_fragment_redundancy(
-        fragments, mode="mean", check_trim=False
-    )
+                    # Extract individual residues from the common chain
+                    residue_topos = common_chain_topo.extract_residues(use_peptide_trim=False)
+                    common_residue_topologies.update(residue_topos)
 
-    print(f"\nRedundancy scores (max overlap): {redundancy_max}")
-    print(f"Redundancy scores (mean overlap): {[f'{score:.1f}' for score in redundancy_mean]}")
+                except ValueError:
+                    # No common residues found for this chain
+                    continue
 
-    # Test with peptides
-    peptide_fragments = [
-        Partial_Topology.from_range("A", 1, 10, fragment_name="pep1", peptide=True, peptide_trim=2),
-        Partial_Topology.from_range("A", 5, 15, fragment_name="pep2", peptide=True, peptide_trim=3),
-        Partial_Topology.from_range(
-            "A", 20, 30, fragment_name="pep3", peptide=True, peptide_trim=1
-        ),
-    ]
+        # Extract excluded residues
+        excluded_residue_topologies = set()
 
-    print("\nPeptide fragments:")
-    for i, frag in enumerate(peptide_fragments):
-        print(f"  {i}: {frag}")
-        print(f"     Active residues: {frag._get_active_residues(check_trim=True)}")
+        # Get all possible residues (without ignore selection, without termini exclusion)
+        all_chain_topologies_by_universe = []
+        for universe in ensemble:
+            try:
+                all_chain_topos = cls.from_mda_universe(
+                    universe,
+                    mode="chain",
+                    include_selection=include_mda_selection,
+                    exclude_selection="",  # No exclusions
+                    exclude_termini=False,  # Include termini
+                    renumber_residues=True,
+                )
+                all_chain_topologies_by_universe.append(all_chain_topos)
+            except Exception as e:
+                raise ValueError(f"Failed to extract all topologies from universe: {e}")
 
-    peptide_redundancy = Partial_Topology.calculate_fragment_redundancy(
-        peptide_fragments, mode="mean", check_trim=True
-    )
-    print(
-        f"\nPeptide redundancy (with trimming): {[f'{score:.1f}' for score in peptide_redundancy]}"
-    )
+        # For each universe, find residues that are excluded
+        for i, (all_chain_topos, included_chain_topos) in enumerate(
+            zip(all_chain_topologies_by_universe, included_chain_topologies_by_universe)
+        ):
+            # Create lookup for included chains by chain ID
+            included_by_chain = {topo.chain: topo for topo in included_chain_topos}
 
-    peptide_redundancy_no_trim = Partial_Topology.calculate_fragment_redundancy(
-        peptide_fragments, mode="mean", check_trim=False
-    )
-    print(
-        f"Peptide redundancy (no trimming): {[f'{score:.1f}' for score in peptide_redundancy_no_trim]}"
-    )
+            for all_chain_topo in all_chain_topos:
+                chain_id = all_chain_topo.chain
 
-    print("\n8. MDANALYSIS UNIVERSE EXTRACTION")
-    print("-" * 50)
+                if chain_id in included_by_chain:
+                    # Remove included residues from this chain
+                    try:
+                        excluded_chain_topo = all_chain_topo.remove_residues(
+                            [included_by_chain[chain_id]]
+                        )
+                        excluded_residues = excluded_chain_topo.extract_residues(
+                            use_peptide_trim=False
+                        )
+                        excluded_residue_topologies.update(excluded_residues)
+                    except ValueError:
+                        # No residues remaining after removal
+                        continue
+                else:
+                    # Entire chain was excluded
+                    excluded_residues = all_chain_topo.extract_residues(use_peptide_trim=False)
+                    excluded_residue_topologies.update(excluded_residues)
 
-    print("Note: MDAnalysis extraction examples require MDAnalysis to be installed.")
-    print("Example usage patterns:")
-    print()
-    print("# Extract by chain (one topology per chain)")
-    print("topologies = Partial_Topology.from_mda_universe(")
-    print("    universe, mode='by_chain', include_selection='protein')")
-    print()
-    print("# Extract by residue (one topology per residue)")
-    print("topologies = Partial_Topology.from_mda_universe(")
-    print("    universe, mode='by_residue', exclude_termini=True)")
-    print()
-    print("# Custom selection with exclusions")
-    print("topologies = Partial_Topology.from_mda_universe(")
-    print("    universe, include_selection='protein and not name H*',")
-    print("    exclude_selection='resname WAT ION', exclude_termini=False)")
-    print()
-    print("# Custom naming template")
-    print("topologies = Partial_Topology.from_mda_universe(")
-    print("    universe, mode='by_residue',")
-    print("    fragment_name_template='residue_{chain}_{resname}_{resid}')")
+        # Remove duplicates from excluded set using contains_topology
+        excluded_unique = set()
+        for excluded_topo in tqdm(excluded_residue_topologies, desc="Processing excluded residues"):
+            # Check if this topology is already represented
+            is_duplicate = False
+            for existing_topo in excluded_unique:
+                if excluded_topo.contains_topology(existing_topo):
+                    is_duplicate = True
+                    break
 
-    print("\n2. PEPTIDE SETTING CHANGES")
-    print("-" * 50)
+            if not is_duplicate:
+                excluded_unique.add(excluded_topo)
 
-    # Convert regular fragment to peptide
-    print(f"Before: {range_topo} (peptide={range_topo.peptide})")
-    range_topo.set_peptide(True, trim=1)
-    print(f"After set_peptide(True, 1): {range_topo}")
-    print(f"Peptide residues: {range_topo.peptide_residues}")
+        excluded_residue_topologies = excluded_unique
 
-    # Change peptide trim
-    peptide_topo.set_peptide(True, trim=3)
-    print(f"After changing trim to 3: {peptide_topo}")
-    print(f"New peptide residues: {peptide_topo.peptide_residues}")
+        if not common_residue_topologies:
+            raise ValueError("No common residues found in the ensemble")
 
-    # Turn off peptide mode
-    peptide_topo.set_peptide(False)
-    print(f"After set_peptide(False): {peptide_topo}")
-    print(f"Peptide residues: {peptide_topo.peptide_residues}")
-
-    print("\n3. JSON SERIALIZATION WITH NEW FIELDS")
-    print("-" * 50)
-
-    complex_topo = Partial_Topology.from_residues(
-        chain="B",
-        residues=[1, 2, 3, 7, 8, 9, 15],
-        fragment_sequence="MKLIVQR",  # Actual sequence
-        fragment_name="binding_domain",  # Descriptive name
-        fragment_index=42,
-        peptide=True,
-        peptide_trim=2,
-    )
-
-    json_str = complex_topo.to_json()
-    print("JSON representation:")
-    print(json_str)
-
-    # Restore from JSON
-    restored = Partial_Topology.from_json(json_str)
-    print(f"Restored: {restored}")
-    print(f"Peptide residues restored: {restored.peptide_residues}")
-
-    print("\n4. EXTRACT RESIDUES WITH PEPTIDE BEHAVIOR")
-    print("-" * 50)
-
-    # Extract with peptide trimming
-    print("Extract with peptide trimming:")
-    for res in complex_topo.extract_residues(use_peptide_trim=True):
-        print(f"  {res}")
-
-    # Extract all residues (ignore peptide)
-    print("\nExtract all residues (ignore peptide):")
-    for res in complex_topo.extract_residues(use_peptide_trim=False):
-        print(f"  {res}")
-
-    print("\n5. ADVANCED TOPOLOGY COMPARISONS")
-    print("-" * 50)
-
-    # Create some example topologies for comparison
-    domain1 = Partial_Topology.from_range("A", 50, 150, fragment_name="domain1")
-    domain2 = Partial_Topology.from_range("A", 120, 220, fragment_name="domain2")
-    subdomain = Partial_Topology.from_range("A", 75, 125, fragment_name="subdomain")
-
-    print(f"Domain1: {domain1}")
-    print(f"Domain2: {domain2}")
-    print(f"Subdomain: {subdomain}")
-
-    # Test multiple residue containment
-    query_residues = [50, 75, 100, 125, 150, 175]
-    containment = domain1.contains_residue(query_residues)
-    print(f"\nDomain1 contains residues {query_residues}:")
-    for res, contained in containment.items():
-        print(f"  Residue {res}: {'✓' if contained else '✗'}")
-
-    # Test bulk containment checks
-    print(
-        f"\nDomain1 contains ALL of [75, 100, 125]: {domain1.contains_all_residues([75, 100, 125])}"
-    )
-    print(
-        f"Domain1 contains ANY of [200, 250, 300]: {domain1.contains_any_residues([200, 250, 300])}"
-    )
-
-    # Test topology relationships
-    print("\nTopology relationships:")
-    print(f"Domain1 intersects Domain2: {domain1.intersects(domain2)}")
-    print(f"Domain1 contains Subdomain: {domain1.contains_topology(subdomain)}")
-    print(f"Subdomain is subset of Domain1: {subdomain.is_subset_of(domain1)}")
-    print(f"Domain1 is superset of Subdomain: {domain1.is_superset_of(subdomain)}")
-
-    # Get overlaps and differences
-    overlap = domain1.get_overlap(domain2)
-    diff1 = domain1.get_difference(domain2)
-    diff2 = domain2.get_difference(domain1)
-
-    print(f"\nOverlap between Domain1 and Domain2: {len(overlap)} residues ({overlap[:5]}...)")
-    print(f"Residues unique to Domain1: {len(diff1)} residues")
-    print(f"Residues unique to Domain2: {len(diff2)} residues")
-
-    # Test adjacency and gaps
-    adjacent_domain = Partial_Topology.from_range("A", 151, 200, fragment_name="adjacent")
-    gap_domain = Partial_Topology.from_range("A", 160, 210, fragment_name="gap")
-
-    print(f"\nDomain1 is adjacent to adjacent_domain: {domain1.is_adjacent_to(adjacent_domain)}")
-    print(f"Gap between Domain1 and gap_domain: {domain1.get_gap_to(gap_domain)} residues")
-
-    print("\n5.1 PEPTIDE TRIMMING EFFECTS ON COMPARISONS")
-    print("-" * 50)
-
-    # Create peptides to demonstrate trimming effects
-    peptide_a = Partial_Topology.from_range(
-        "A", 100, 110, fragment_name="peptide_A", peptide=True, peptide_trim=3
-    )
-    # Full residues: [100-110], Peptide residues: [103-110]
-
-    peptide_b = Partial_Topology.from_range(
-        "A", 108, 118, fragment_name="peptide_B", peptide=True, peptide_trim=4
-    )
-    # Full residues: [108-118], Peptide residues: [112-118]
-
-    print(f"Peptide A: {peptide_a}")
-    print(f"  Full residues: {peptide_a.residues}")
-    print(f"  Active peptide residues: {peptide_a.peptide_residues}")
-
-    print(f"Peptide B: {peptide_b}")
-    print(f"  Full residues: {peptide_b.residues}")
-    print(f"  Active peptide residues: {peptide_b.peptide_residues}")
-
-    # Show how trimming affects comparisons
-    print("\nComparison with trimming (check_trim=True, default):")
-    print(f"  Peptides intersect: {peptide_a.intersects(peptide_b, check_trim=True)}")
-    print(f"  Overlap: {peptide_a.get_overlap(peptide_b, check_trim=True)}")
-    print(f"  Gap between them: {peptide_a.get_gap_to(peptide_b, check_trim=True)}")
-
-    print("\nComparison without trimming (check_trim=False):")
-    print(f"  Full sequences intersect: {peptide_a.intersects(peptide_b, check_trim=False)}")
-    print(f"  Full overlap: {peptide_a.get_overlap(peptide_b, check_trim=False)}")
-    print(f"  Gap between full sequences: {peptide_a.get_gap_to(peptide_b, check_trim=False)}")
-
-    # Test residue queries with trimming
-    query_res = [101, 103, 108, 110, 112]
-    print(f"\nResidue queries for {query_res}:")
-    trimmed_result = peptide_a.contains_residue(query_res, check_trim=True)
-    full_result = peptide_a.contains_residue(query_res, check_trim=False)
-    print("  With trimming (peptide residues only):")
-    for res, contained in trimmed_result.items():
-        print(f"    Residue {res}: {'✓' if contained else '✗'}")
-    print("  Without trimming (all residues):")
-    for res, contained in full_result.items():
-        print(f"    Residue {res}: {'✓' if contained else '✗'}")
-
-    print("\n6. BIOPHYSICAL EXAMPLES")
-    print("-" * 50)
-
-    # Signal peptide
-    signal_peptide = Partial_Topology.from_range(
-        chain="A",
-        start=1,
-        end=25,
-        fragment_sequence="MKLLIVLLAFGAILFVVPGCGASS",
-        fragment_name="signal_peptide",
-        peptide=True,
-        peptide_trim=3,  # Skip first 3 for cleavage site analysis
-    )
-    print(f"Signal peptide: {signal_peptide}")
-
-    # Active site (scattered residues)
-    active_site = Partial_Topology.from_residues(
-        chain="A",
-        residues=[45, 78, 123, 156, 234],
-        fragment_sequence=["H", "D", "S", "H", "E"],  # Catalytic residues
-        fragment_name="active_site",
-        fragment_index=1,
-    )
-    print(f"Active site: {active_site}")
-
-    # Transmembrane helix
-    tm_helix = Partial_Topology.from_range(
-        chain="A",
-        start=89,
-        end=112,
-        fragment_sequence="LVVFGAILFVVPGCGASSLMKDT",
-        fragment_name="TM_helix_1",
-        fragment_index=2,
-    )
-    print(f"TM helix: {tm_helix}")
-
-    print(f"\nDetailed repr: {repr(active_site)}")
-    print(f"\nDetailed repr: {repr(active_site)}")
+        return common_residue_topologies, excluded_residue_topologies
