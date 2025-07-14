@@ -964,6 +964,25 @@ class Partial_Topology:
         return partial_topologies
 
     @classmethod
+    def group_set_by_chain(
+        cls, topologies: set["Partial_Topology"]
+    ) -> dict[Union[str, int], set["Partial_Topology"]]:
+        """Group a set of Partial_Topology objects by chain.
+
+        Args:
+            topologies: Set of Partial_Topology objects to group
+
+        Returns:
+            Dictionary mapping chain ID to sets of Partial_Topology objects for that chain
+        """
+        result = {}
+        for topo in topologies:
+            if topo.chain not in result:
+                result[topo.chain] = set()
+            result[topo.chain].add(topo)
+        return result
+
+    @classmethod
     def calculate_fragment_redundancy(
         cls,
         topologies: list["Partial_Topology"],
@@ -990,17 +1009,23 @@ class Partial_Topology:
         if mode not in ("max", "mean"):
             raise ValueError("Mode must be either 'max' or 'mean'")
 
+        # Group topologies by chain for more efficient comparison
+        topology_set = set(topologies)
+        grouped_by_chain = cls.group_set_by_chain(topology_set)
+
         redundancy_scores = []
 
         for i, fragment in enumerate(topologies):
             # Get active residues for current fragment
             current_residues = set(fragment._get_active_residues(check_trim))
 
+            # Only compare with fragments from the same chain
+            same_chain_fragments = grouped_by_chain.get(fragment.chain, set())
             fragment_overlaps = []
 
-            # Compare with all other fragments
-            for j, other in enumerate(topologies):
-                if i != j and fragment.chain == other.chain:
+            # Compare with other fragments in the same chain
+            for other in same_chain_fragments:
+                if other is not fragment:  # Skip self-comparison
                     # Get active residues for other fragment
                     other_residues = set(other._get_active_residues(check_trim))
 
@@ -1063,7 +1088,7 @@ class Partial_Topology:
             except Exception as e:
                 raise ValueError(f"Failed to extract topologies from universe: {e}")
 
-        # Group chain topologies by chain ID across universes
+        # Group chain topologies by chain ID across universes using the new method
         chain_ids = set()
         for chain_topos in included_chain_topologies_by_universe:
             chain_ids.update(topo.chain for topo in chain_topos)
@@ -1120,7 +1145,7 @@ class Partial_Topology:
         for i, (all_chain_topos, included_chain_topos) in enumerate(
             zip(all_chain_topologies_by_universe, included_chain_topologies_by_universe)
         ):
-            # Create lookup for included chains by chain ID
+            # Group chain topologies by chain using the new method
             included_by_chain = {topo.chain: topo for topo in included_chain_topos}
 
             for all_chain_topo in all_chain_topos:
@@ -1145,17 +1170,26 @@ class Partial_Topology:
                     excluded_residue_topologies.update(excluded_residues)
 
         # Remove duplicates from excluded set using contains_topology
+        # Group by chain first for efficiency
+        excluded_by_chain = cls.group_set_by_chain(excluded_residue_topologies)
         excluded_unique = set()
-        for excluded_topo in tqdm(excluded_residue_topologies, desc="Processing excluded residues"):
-            # Check if this topology is already represented
-            is_duplicate = False
-            for existing_topo in excluded_unique:
-                if excluded_topo.contains_topology(existing_topo):
-                    is_duplicate = True
-                    break
 
-            if not is_duplicate:
-                excluded_unique.add(excluded_topo)
+        for chain_id, chain_topos in tqdm(
+            excluded_by_chain.items(), desc="Processing excluded residues by chain"
+        ):
+            chain_unique = set()
+            for excluded_topo in chain_topos:
+                # Check if this topology is already represented in the same chain
+                is_duplicate = False
+                for existing_topo in chain_unique:
+                    if excluded_topo.contains_topology(existing_topo):
+                        is_duplicate = True
+                        break
+
+                if not is_duplicate:
+                    chain_unique.add(excluded_topo)
+
+            excluded_unique.update(chain_unique)
 
         excluded_residue_topologies = excluded_unique
 

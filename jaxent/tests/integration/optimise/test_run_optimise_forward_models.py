@@ -25,7 +25,6 @@ from jaxent.src.interfaces.simulation import (
     Simulation_Parameters,
 )
 from jaxent.src.models.core import Simulation
-from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.HDX.BV.features import (
     BV_input_features,
 )
@@ -407,7 +406,7 @@ def test_quick_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -531,7 +530,7 @@ def test_quick_optimiser_REAL():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -693,7 +692,7 @@ def test_quick_max_ent_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -833,7 +832,7 @@ def test_quick_MAE_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -979,7 +978,7 @@ def test_quick_MAE_sparse_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -1138,7 +1137,7 @@ def test_quick_MAE_max_ent_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -1295,7 +1294,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
@@ -1466,7 +1465,7 @@ def test_quick_sparse_max_ent_optimiser():
     print(test)
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
 
