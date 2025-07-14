@@ -1249,6 +1249,91 @@ class TestFixtures:
         assert sample_topology.peptide_trim != original_trim
 
 
+class TestRemoveResidues:
+    """Test the remove_residues functionality"""
+
+    def test_basic_remove(self):
+        """Test basic residue removal"""
+        topo = Partial_Topology.from_range("A", 1, 10, fragment_name="original")
+        to_remove = Partial_Topology.from_residues("A", [3, 4, 5], fragment_name="to_remove")
+
+        result = topo.remove_residues([to_remove])
+
+        assert result.chain == "A"
+        assert result.residues == [1, 2, 6, 7, 8, 9, 10]
+        assert result.fragment_name == "original"  # Should preserve metadata
+
+    def test_remove_non_existent_residues(self):
+        """Test removing residues that don't exist in the original topology"""
+        topo = Partial_Topology.from_range("A", 1, 5, fragment_name="original")
+        to_remove = Partial_Topology.from_residues("A", [6, 7, 8], fragment_name="non_existent")
+
+        result = topo.remove_residues([to_remove])
+
+        # Should be unchanged since none of the residues exist in the original
+        assert result.residues == [1, 2, 3, 4, 5]
+
+    def test_remove_from_different_chain_raises_error(self):
+        """Test that removing from different chain raises error"""
+        topo = Partial_Topology.from_range("A", 1, 5)
+        to_remove = Partial_Topology.from_residues("B", [1, 2, 3])
+
+        with pytest.raises(ValueError, match="Cannot remove residues from different chain"):
+            topo.remove_residues([to_remove])
+
+    def test_remove_all_residues_raises_error(self):
+        """Test that removing all residues raises error"""
+        topo = Partial_Topology.from_range("A", 1, 5)
+        to_remove = Partial_Topology.from_range("A", 1, 5)
+
+        with pytest.raises(ValueError, match="No residues remaining after removal"):
+            topo.remove_residues([to_remove])
+
+    def test_remove_from_multiple_topologies(self):
+        """Test removing residues from multiple topologies at once"""
+        topo = Partial_Topology.from_range("A", 1, 20, fragment_name="original")
+        to_remove1 = Partial_Topology.from_residues("A", [3, 4, 5], fragment_name="remove_first")
+        to_remove2 = Partial_Topology.from_residues(
+            "A", [10, 11, 12], fragment_name="remove_middle"
+        )
+        to_remove3 = Partial_Topology.from_residues("A", [18, 19], fragment_name="remove_end")
+
+        result = topo.remove_residues([to_remove1, to_remove2, to_remove3])
+
+        expected_residues = [1, 2, 6, 7, 8, 9, 13, 14, 15, 16, 17, 20]
+        assert result.residues == expected_residues
+        assert result.fragment_name == "original"
+
+    def test_remove_with_peptide_trim(self):
+        """Test removing residues with peptide trimming behavior"""
+        # Create a peptide with trimming
+        peptide = Partial_Topology.from_range("A", 1, 10, peptide=True, peptide_trim=2)
+        # Full residues: [1-10], Peptide residues: [3-10]
+
+        # Remove some residues
+        to_remove = Partial_Topology.from_residues("A", [3, 4, 7, 8])
+
+        result = peptide.remove_residues([to_remove])
+
+        # Check that metadata is preserved
+        assert result.peptide is True
+        assert result.peptide_trim == 2
+
+        # Check residues
+        assert result.residues == [1, 2, 5, 6, 9, 10]
+        # Peptide residues should be recalculated after trim
+        assert result.peptide_residues == [5, 6, 9, 10]  # Skips first 2 residues
+
+        # Even with all peptide residues removed, if base residues remain, it should work
+        all_peptide_residues = Partial_Topology.from_residues("A", [3, 4, 5, 6, 7, 8, 9, 10])
+        result_no_active = peptide.remove_residues([all_peptide_residues])
+
+        # Only has untrimmed residues remaining
+        assert result_no_active.residues == [1, 2]
+        # No peptide residues after trimming
+        assert result_no_active.peptide_residues == []
+
+
 if __name__ == "__main__":
     # Run tests if script is executed directly
     pytest.main([__file__, "-v"])

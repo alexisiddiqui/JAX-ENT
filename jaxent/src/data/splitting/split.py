@@ -12,115 +12,72 @@ from sklearn.cluster import KMeans  # type: ignore
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.models.func.common import find_common_residues
-
-# ic.disable()
-
-
-# def find_fragment_redundancy(
-#     Partial_Topologys: list[Partial_Topology], mode: str = "mean", peptide: bool = True
-# ) -> list[float]:
-#     """
-#     Find the overlap between Partial_Topologys in a list
-
-#     Parameters:
-#         Partial_Topologys: List of Partial_Topology objects to compare
-#         mode: Either "max" or "mean" to determine how to calculate overlap
-#         peptide: Whether to use peptide residues or all residues in range
-
-#     Returns:
-#         A list of overlap counts for each fragment
-#     """
-#     ic.configureOutput(prefix="REDUNDANCY | ")
-#     ic(f"Finding fragment centrality with mode={mode}, peptide={peptide}")
-#     ic(f"Number of fragments: {len(Partial_Topologys)}")
-
-#     overlaps = []
-
-#     for i, fragment in enumerate(Partial_Topologys):
-#         # Get the set of residues for current fragment
-#         if peptide and cast(int, fragment.length) > 2:
-#             current_residues = set(fragment.peptide_residues)
-#             ic(f"Fragment {i}: Using peptide residues, count={len(current_residues)}")
-#         else:
-#             current_residues = set(
-#                 range(fragment.residue_start, cast(int, fragment.residue_end) + 1)
-#             )
-#             ic(f"Fragment {i}: Using all residues, count={len(current_residues)}")
-
-#         fragment_overlaps = []
-
-#         # Compare with all other fragments
-#         for j, other in enumerate(Partial_Topologys):
-#             if i != j and fragment.chain == other.chain:
-#                 # Get the set of residues for other fragment
-#                 if peptide and cast(int, other.length) > 2:
-#                     other_residues = set(other.peptide_residues)
-#                 else:
-#                     other_residues = set(
-#                         range(other.residue_start, cast(int, other.residue_end) + 1)
-#                     )
-
-#                 # Calculate overlap
-#                 overlap = len(current_residues.intersection(other_residues))
-#                 if overlap > 0:
-#                     fragment_overlaps.append(overlap)
-#                     ic(f"Fragment {i} overlaps with {j}: {overlap} residues")
-
-#         # Calculate final overlap value based on mode
-#         if fragment_overlaps:
-#             if mode == "max":
-#                 overlaps.append(max(fragment_overlaps))
-#                 ic(f"Fragment {i} max overlap: {max(fragment_overlaps)}")
-#             elif mode == "mean":
-#                 mean_overlap = sum(fragment_overlaps) / len(fragment_overlaps)
-#                 overlaps.append(mean_overlap)
-#                 ic(f"Fragment {i} mean overlap: {mean_overlap:.2f}")
-#             else:
-#                 raise ValueError("Mode must be either 'max' or 'mean'")
-#         else:
-#             overlaps.append(0)
-#             ic(f"Fragment {i} has no overlaps")
-
-#     if overlaps:
-#         ic(
-#             f"Centrality results: min={min(overlaps)}, max={max(overlaps)}, avg={sum(overlaps) / len(overlaps):.2f}"
-#         )
-#     else:
-#         ic("Centrality results: No overlaps found")
-#         overlaps.append(0)  # Ensure the list is not empty
-#     return overlaps
 
 
 def filter_common_residues(
     dataset: Sequence[ExpD_Datapoint],
     common_residues: set[Partial_Topology],
-    peptide: bool = True,
+    check_trim: bool = False,
 ) -> list[ExpD_Datapoint]:
-    # filters the dataset to only include common residues
-    # ic.configureOutput(prefix="FILTER | ")
-    # ic(f"Filtering dataset with {len(dataset)} fragments")
-    # ic(f"Common residues: {len(common_residues)}")
-    # ic(f"Using peptide residues: {peptide}")
+    """
+    Filter dataset to only include datapoints that have residues in common with the provided set.
+    Uses topology-aware methods for robust comparison including chain awareness and peptide trimming.
+
+    Args:
+        dataset: Sequence of experimental datapoints to filter
+        common_residues: Set of Partial_Topology objects representing residues to match against
+        check_trim: If True, use peptide_residues for peptides; if False, use all residues
+
+    Returns:
+        List of datapoints that have overlapping residues with common_residues
+
+    Raises:
+        ValueError: If filtered dataset is empty
+    """
+    from tqdm import tqdm
+
+    print(f"Dataset topologies ({len(dataset)}):")
     print([str(data.top) for data in dataset])
+    print(f"Common residues ({len(common_residues)}):")
     print([str(res) for res in common_residues])
 
     new_data = []
-    for i, data in enumerate(dataset):
+
+    for i, data in tqdm(enumerate(dataset), total=len(dataset), desc="Filtering fragments"):
         assert data.top is not None, "Topology is not defined in the experimental data."
-        peptide_residues = data.top.extract_residues(peptide=peptide)
-        print(peptide_residues)
-        ic(f"Fragment {i}: Found {len(peptide_residues)} residues")
 
-        in_common = any([res in common_residues for res in peptide_residues])
-        ic(f"Fragment {i}: Has common residues: {in_common}")
+        # Use the robust topology intersection method to check for overlap
+        # This automatically handles chain matching, peptide trimming, etc.
+        has_common_residues = any(
+            data.top.intersects(common_topo, check_trim=check_trim)
+            for common_topo in common_residues
+        )
 
-        if in_common:
+        # Only print detailed debugging information if no intersections found
+        if not has_common_residues:
+            ic(f"Fragment {i} ({data.top.fragment_name}): No intersecting residues found")
+            ic(f"  Fragment topology: {data.top}")
+            ic(f"  Fragment chain: {data.top.chain}")
+            ic(f"  Fragment residues: {data.top._get_active_residues(check_trim)}")
+
+            # Check each common topology individually for debugging
+            for j, common_topo in enumerate(common_residues):
+                ic(f"  Checking against common topology {j}: {common_topo}")
+                ic(f"    Same chain: {data.top.chain == common_topo.chain}")
+                if data.top.chain == common_topo.chain:
+                    overlap = data.top.get_overlap(common_topo, check_trim=check_trim)
+                    ic(f"    Overlap: {len(overlap)} residues {overlap}")
+                else:
+                    ic(f"    Skipped - different chains ({data.top.chain} vs {common_topo.chain})")
+
+        if has_common_residues:
             new_data.append(data)
 
-    ic(f"After filtering: {len(new_data)} fragments remain")
+    print(f"After filtering: {len(new_data)}/{len(dataset)} fragments remain")
+
     if not new_data:
         raise ValueError("Filtered dataset is empty. No common residues found.")
+
     return new_data
 
 
@@ -135,7 +92,7 @@ class DataSplitter:
         peptide_trim: int = 1,
         centrality: bool = True,
         train_size: float = 0.5,
-        align_sequence: bool = False,
+        check_chains: bool = True,
         mda_selection_ignore: str = "resname PRO or resid 1",
     ):
         ic.configureOutput(prefix="SPLITTER | ")
@@ -153,7 +110,9 @@ class DataSplitter:
         self.centrality = centrality
         if common_residues is None and ensemble is not None:
             ic("Finding common residues from ensemble")
-            common_residues = find_common_residues(ensemble, mda_selection_ignore)[0]
+            common_residues = Partial_Topology.find_common_residues(ensemble, mda_selection_ignore)[
+                0
+            ]
             ic(f"Found {len(common_residues)} common residues")
         elif (common_residues and ensemble) is None:
             ic.format("ERROR: Both common_residues and ensemble are None")
@@ -180,7 +139,7 @@ class DataSplitter:
         self.dataset.top = [data.top for data in self.dataset.data]
 
         ic("Calculating fragment centrality")
-        self.fragment_overlaps = find_fragment_redundancy(
+        self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
             self.dataset.top, mode="mean", peptide=peptide
         )
         ic(

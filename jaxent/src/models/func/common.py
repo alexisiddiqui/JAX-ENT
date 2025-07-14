@@ -1,104 +1,214 @@
-import warnings
-from typing import List, cast
+from typing import cast
 
 import MDAnalysis as mda
 from icecream import ic  # Import the icecream debugging library
-from MDAnalysis import Universe
 from MDAnalysis.core.groups import ResidueGroup
 
-from jaxent.src.interfaces.topology import Partial_Topology
+# ####################################################################################################
+# # Updated to use Partial_Topology methods for more robust residue identification
+# def find_common_residues(
+#     ensemble: List[Universe],
+#     include_mda_selection: str = "protein",
+#     ignore_mda_selection: str = "resname SOL",
+# ) -> tuple[set[Partial_Topology], set[Partial_Topology]]:
+#     """
+#     Find the common residues across an ensemble of MDAnalysis Universe objects.
 
+#     Args:
+#         ensemble: List of MDAnalysis Universe objects to analyze
+#         include_mda_selection: Selection string for atoms to include
+#         ignore_mda_selection: Selection string for atoms to exclude
 
-####################################################################################################
-# TODO this needs to return lists or numbered dictionaries instead of sets
-# perhaps this is fine and we simply just add an ignore str to the function
-# we need an easier way to get direct access to the residues
-def find_common_residues(
-    ensemble: List[Universe],
-    include_mda_selection: str = "protein",
-    ignore_mda_selection: str = "resname SOL",
-) -> tuple[set[Partial_Topology], set[Partial_Topology]]:
-    """
-    Find the common residues across an ensemble of MDAnalysis Universe objects.
+#     Returns:
+#         Tuple containing:
+#         - Set of common residues present in all universes
+#         - Set of excluded residues (present in some but not all universes)
 
-    Args:
-        ensemble: List of MDAnalysis Universe objects to analyze
+#     Raises:
+#         ValueError: If no common residues are found in the ensemble
+#     """
+#     ic(len(ensemble), "Starting residue comparison across ensemble")
+#     ic("Applying selection filters:", include_mda_selection, ignore_mda_selection)
 
-    Returns:
-        Tuple containing:
-        - Set of common residues (residue name, residue ID) present in all universes
-        - Set of all residues present in any universe
+#     # Extract residues from each universe using Partial_Topology.from_mda_universe()
+#     ensemble_filtered_residues = []
+#     ensemble_all_residues = []
 
-    Raises:
-        ValueError: If no common residues are found in the ensemble
-    """
-    ic(len(ensemble), "Starting residue comparison across ensemble")
+#     for i, universe in enumerate(ensemble):
+#         # Extract filtered residues (applying include/ignore selections)
+#         filtered_residues = Partial_Topology.from_mda_universe(
+#             universe,
+#             mode="residue",  # Extract individual residues
+#             include_selection=include_mda_selection,
+#             exclude_selection=ignore_mda_selection,
+#             exclude_termini=True,
+#             renumber_residues=False,  # Keep original residue numbers for comparison
+#         )
+#         ensemble_filtered_residues.append(filtered_residues)
 
-    # Extract residue sequences from each universe while applying filters
-    ic("Applying selection filters:", include_mda_selection, ignore_mda_selection)
+#         # Extract all residues (for identifying excluded residues)
+#         all_residues = Partial_Topology.from_mda_universe(
+#             universe,
+#             mode="residue",
+#             include_selection="all",  # Include everything
+#             exclude_selection="",  # Exclude nothing
+#             exclude_termini=False,  # Don't exclude termini
+#             renumber_residues=False,
+#         )
+#         ensemble_all_residues.append(all_residues)
 
-    # First, select atoms based on include criteria
-    ensemble = [u.select_atoms(include_mda_selection) for u in ensemble]
-    ic(len(ensemble), "Universes after include filter")
+#         ic(i, len(filtered_residues), len(all_residues), "Filtered vs all residues in universe")
 
-    # Then exclude atoms based on ignore criteria
-    ensemble = [u.select_atoms(f"not {ignore_mda_selection}") for u in ensemble]
-    ic(len(ensemble), "Universes after exclude filter")
+#     # Group residues by chain for each universe
+#     def group_residues_by_chain(residue_list):
+#         """Group Partial_Topology residues by chain"""
+#         chain_groups = {}
+#         for residue in residue_list:
+#             chain = residue.chain
+#             if chain not in chain_groups:
+#                 chain_groups[chain] = {}
+#             # Use residue number as key for easy lookup
+#             resid = residue.residues[0]  # Single residue
+#             chain_groups[chain][resid] = residue
+#         return chain_groups
 
-    # For each universe, create a list of Partial_Topology objects representing each residue
-    ensemble_residue_sequences = [
-        [
-            Partial_Topology(
-                chain=res.segid,
-                fragment_sequence=res.resname,
-                residue_start=res.resid,
-            )
-            for res in cast(ResidueGroup, u.residues)
-        ]
-        for u in ensemble
-    ]
+#     # Group filtered residues by chain for each universe
+#     ensemble_filtered_by_chain = [
+#         group_residues_by_chain(residues) for residues in ensemble_filtered_residues
+#     ]
 
-    # Log the number of residues found in each universe
-    for i, residues in enumerate(ensemble_residue_sequences):
-        ic(i, len(residues), "Residues in universe")
+#     # Group all residues by chain for each universe
+#     ensemble_all_by_chain = [
+#         group_residues_by_chain(residues) for residues in ensemble_all_residues
+#     ]
 
-    # Convert lists to sets for efficient comparison operations
-    # Sets can only contain unique elements, which helps validate that residue sequences are unique
-    ensemble_residue_sequences_set = [
-        set(residue_sequence) for residue_sequence in ensemble_residue_sequences
-    ]
+#     # Find chains common to all universes in the filtered sets
+#     filtered_chains_per_universe = [
+#         set(chain_dict.keys()) for chain_dict in ensemble_filtered_by_chain
+#     ]
+#     common_chains = (
+#         set.intersection(*filtered_chains_per_universe) if filtered_chains_per_universe else set()
+#     )
 
-    # Verify that each universe has unique residue identifiers (no duplicates)
-    # If the length of the list and set differ, there are duplicate residues
-    for i, (resi_list, resi_set, universe) in enumerate(
-        zip(ensemble_residue_sequences, ensemble_residue_sequences_set, ensemble)
-    ):
-        ic(i, len(resi_list), len(resi_set), "Checking for duplicates")
-        if len(resi_list) != len(resi_set):
-            ic("DUPLICATE RESIDUES FOUND", len(resi_list) - len(resi_set), "duplicates")
-            raise ValueError(f"Residue sequences are not unique in universe {universe}")
+#     ic(len(common_chains), "Common chains found:", sorted(common_chains))
 
-    # Find residues common to all universes using set intersection
-    common_residues = set.intersection(*ensemble_residue_sequences_set)
-    ic(len(common_residues), "Common residues found across all universes")
+#     if not common_chains:
+#         raise ValueError("No common chains found across all universes")
 
-    # Find residues present in at least one universe but not in all (the difference)
-    excluded_residues = set(set.union(*ensemble_residue_sequences_set) - common_residues)
-    ic(len(excluded_residues), "Residues excluded (not common across all universes)")
+#     # Find union of all chains across all universes (for excluded analysis)
+#     all_chains_per_universe = [set(chain_dict.keys()) for chain_dict in ensemble_all_by_chain]
+#     all_unique_chains = set.union(*all_chains_per_universe) if all_chains_per_universe else set()
 
-    # Raise error if no common residues were found
-    if len(common_residues) == 0:
-        ic("ERROR: No common residues found")
-        raise ValueError("No common residues found in the ensemble.")
+#     ic(len(all_unique_chains), "Total unique chains found:", sorted(all_unique_chains))
 
-    # Warn if some residues were excluded
-    if len(excluded_residues) > 0:
-        ic("WARNING", len(excluded_residues), "residues excluded")
-        warnings.warn(
-            f"Excluded {len(excluded_residues)} residues that are not common across all universes."
-        )
+#     # For each common chain, identify common and excluded residues
+#     common_residues = set()
+#     excluded_residues = set()
 
-    return common_residues, excluded_residues
+#     for chain in common_chains:
+#         ic(f"Analyzing chain {chain}")
+
+#         # Get residue sets for this chain from each universe (filtered)
+#         chain_filtered_residue_sets = []
+#         for universe_chains in ensemble_filtered_by_chain:
+#             if chain in universe_chains:
+#                 chain_filtered_residue_sets.append(set(universe_chains[chain].keys()))
+#             else:
+#                 chain_filtered_residue_sets.append(set())
+
+#         # Find residues common to all universes for this chain
+#         if chain_filtered_residue_sets:
+#             chain_common_resids = set.intersection(*chain_filtered_residue_sets)
+#             ic(f"Chain {chain}: {len(chain_common_resids)} common residues")
+
+#             # Add common residues to result set
+#             for resid in chain_common_resids:
+#                 # Get the residue object from the first universe (they should be equivalent)
+#                 residue_obj = ensemble_filtered_by_chain[0][chain][resid]
+#                 common_residues.add(residue_obj)
+
+#     # For excluded residues, look at all chains and find residues not common to all
+#     for chain in all_unique_chains:
+#         # Get all residue sets for this chain from each universe
+#         chain_all_residue_sets = []
+#         chain_filtered_residue_sets = []
+
+#         for universe_chains_all, universe_chains_filtered in zip(
+#             ensemble_all_by_chain, ensemble_filtered_by_chain
+#         ):
+#             # All residues for this chain in this universe
+#             if chain in universe_chains_all:
+#                 chain_all_residue_sets.append(set(universe_chains_all[chain].keys()))
+#             else:
+#                 chain_all_residue_sets.append(set())
+
+#             # Filtered residues for this chain in this universe
+#             if chain in universe_chains_filtered:
+#                 chain_filtered_residue_sets.append(set(universe_chains_filtered[chain].keys()))
+#             else:
+#                 chain_filtered_residue_sets.append(set())
+
+#         # Find all unique residues for this chain
+#         if chain_all_residue_sets:
+#             all_chain_resids = set.union(*chain_all_residue_sets)
+
+#             # Find residues common to all filtered sets for this chain
+#             if chain_filtered_residue_sets and chain in common_chains:
+#                 common_chain_resids = set.intersection(*chain_filtered_residue_sets)
+#             else:
+#                 common_chain_resids = set()
+
+#             # Excluded residues are those in the full set but not common to all filtered
+#             excluded_chain_resids = all_chain_resids - common_chain_resids
+
+#             ic(f"Chain {chain}: {len(excluded_chain_resids)} excluded residues")
+
+#             # Add excluded residues to result set
+#             for resid in excluded_chain_resids:
+#                 # Find the residue object from any universe that has it
+#                 residue_obj = None
+#                 for universe_chains in ensemble_all_by_chain:
+#                     if chain in universe_chains and resid in universe_chains[chain]:
+#                         residue_obj = universe_chains[chain][resid]
+#                         break
+
+#                 if residue_obj:
+#                     excluded_residues.add(residue_obj)
+
+#     ic(len(common_residues), "Total common residues found across all chains")
+#     ic(len(excluded_residues), "Total excluded residues found across all chains")
+
+#     # Validate results
+#     if len(common_residues) == 0:
+#         ic("ERROR: No common residues found")
+#         raise ValueError("No common residues found in the ensemble.")
+
+#     if len(excluded_residues) > 0:
+#         ic("WARNING", len(excluded_residues), "residues excluded")
+#         warnings.warn(
+#             f"Excluded {len(excluded_residues)} residues that are not common across all universes."
+#         )
+
+#     # Log summary by chain
+#     common_by_chain = {}
+#     excluded_by_chain = {}
+
+#     for residue in common_residues:
+#         chain = residue.chain
+#         if chain not in common_by_chain:
+#             common_by_chain[chain] = 0
+#         common_by_chain[chain] += 1
+
+#     for residue in excluded_residues:
+#         chain = residue.chain
+#         if chain not in excluded_by_chain:
+#             excluded_by_chain[chain] = 0
+#         excluded_by_chain[chain] += 1
+
+#     ic("Common residues by chain:", dict(sorted(common_by_chain.items())))
+#     ic("Excluded residues by chain:", dict(sorted(excluded_by_chain.items())))
+
+#     return common_residues, excluded_residues
 
 
 def get_residue_atom_pairs(
