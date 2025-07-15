@@ -222,7 +222,7 @@ class TestFindCommonResidues:
         )[0]
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection="resname SOL"
+            ensemble, include_selection="protein", exclude_selection="resname SOL"
         )
 
         # Common residues should match the exclude_termini=True extraction
@@ -252,7 +252,7 @@ class TestFindCommonResidues:
             ensemble = [bpti_universe] * n_universes
 
             common_residues, excluded_residues = Partial_Topology.find_common_residues(
-                ensemble, include_mda_selection="protein", ignore_mda_selection="resname SOL"
+                ensemble, include_selection="protein", exclude_selection="resname SOL"
             )
 
             # Results should be identical regardless of ensemble size for identical universes
@@ -280,7 +280,7 @@ class TestFindCommonResidues:
         )[0]
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
 
         # Common residues should match the exclude_termini=True behavior
@@ -307,13 +307,13 @@ class TestFindCommonResidues:
 
         # Test 1: Full protein shows termini exclusion effect
         common_full, excluded_full = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
         full_ids = sorted([list(topo.residues)[0] for topo in common_full])
 
         # Test 2: Restricted selection preserves original numbering
         common_restricted, excluded_restricted = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein and resid 10-20", ignore_mda_selection=""
+            ensemble, include_selection="protein and resid 10-20", exclude_selection=""
         )
         restricted_ids = sorted([list(topo.residues)[0] for topo in common_restricted])
 
@@ -349,14 +349,14 @@ class TestFindCommonResidues:
 
         # Baseline: no ignore selection
         common_baseline, excluded_baseline = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
         baseline_count = len(common_baseline)
 
         # Test hydrogen exclusion (if present)
         try:
             common_no_h, excluded_no_h = Partial_Topology.find_common_residues(
-                ensemble, include_mda_selection="protein", ignore_mda_selection="name H*"
+                ensemble, include_selection="protein", exclude_selection="name H*"
             )
             # Should have same or fewer common residues (hydrogens don't define residues)
             assert len(common_no_h) <= baseline_count, (
@@ -369,8 +369,8 @@ class TestFindCommonResidues:
         # Test backbone-only selection
         common_backbone, excluded_backbone = Partial_Topology.find_common_residues(
             ensemble,
-            include_mda_selection="protein and name CA",  # Only CA atoms
-            ignore_mda_selection="",
+            include_selection="protein and name CA",  # Only CA atoms
+            exclude_selection="",
         )
 
         # Should have same number of residues (CA defines each residue)
@@ -393,8 +393,8 @@ class TestFindCommonResidues:
         for start, end in test_ranges:
             common_residues, excluded_residues = Partial_Topology.find_common_residues(
                 ensemble,
-                include_mda_selection=f"protein and resid {start}-{end}",
-                ignore_mda_selection="",
+                include_selection=f"protein and resid {start}-{end}",
+                exclude_selection="",
             )
 
             # After renumbering and terminal exclusion, should have reasonable count
@@ -434,7 +434,7 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
 
         # Get unique chain identifiers
@@ -462,7 +462,7 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
 
         # Test every common residue
@@ -495,7 +495,7 @@ class TestFindCommonResidues:
         individual_residues = individual_chains[0].extract_residues(use_peptide_trim=False)
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
 
         # For identical universes, common residues should match the exclude_termini=True extraction
@@ -515,22 +515,22 @@ class TestFindCommonResidues:
         with pytest.raises(ValueError, match="Failed to extract topologies"):
             Partial_Topology.find_common_residues(
                 [bpti_universe],
-                include_mda_selection="resname NONEXISTENT",
-                ignore_mda_selection="",
+                include_selection="resname NONEXISTENT",
+                exclude_selection="",
             )
 
         # Test 2: Invalid atom selection
         with pytest.raises(ValueError, match="Failed to extract topologies"):
             Partial_Topology.find_common_residues(
-                [bpti_universe], include_mda_selection="name FAKEATOM", ignore_mda_selection=""
+                [bpti_universe], include_selection="name FAKEATOM", exclude_selection=""
             )
 
         # Test 3: Out of range residue selection
         with pytest.raises(ValueError, match="Failed to extract topologies"):
             Partial_Topology.find_common_residues(
                 [bpti_universe],
-                include_mda_selection="protein and resid 9999",
-                ignore_mda_selection="",
+                include_selection="protein and resid 9999",
+                exclude_selection="",
             )
 
     def test_uniqueness_and_no_overlap_strict(self, bpti_universe):
@@ -538,7 +538,7 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe, bpti_universe]  # Identical universes
 
         common_residues, excluded_residues = Partial_Topology.find_common_residues(
-            ensemble, include_mda_selection="protein", ignore_mda_selection=""
+            ensemble, include_selection="protein", exclude_selection=""
         )
 
         # Convert to lists for detailed checking
@@ -817,12 +817,15 @@ class TestPartialTopologyPairwiseDistances:
 
     def test_basic_calculation(self, bpti_universe):
         """Test basic distance calculation between a few residue topologies."""
-        # Create topologies for a few residues
-        topologies = [
-            Partial_Topology.from_single(chain="A", residue=10, renumber_residues=False),
-            Partial_Topology.from_single(chain="A", residue=20, renumber_residues=False),
-            Partial_Topology.from_single(chain="A", residue=30, renumber_residues=False),
-        ]
+        # Extract topologies from the universe to ensure they exist
+        all_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
+
+        # Select specific residues from the extracted topologies
+        # Use residues that are reasonably far apart
+        selected_indices = [0, 10, 20]  # First, 11th, and 21st residue
+        topologies = [all_topologies[i] for i in selected_indices]
 
         dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False
@@ -844,15 +847,30 @@ class TestPartialTopologyPairwiseDistances:
 
     def test_manual_comparison_single_frame(self, bpti_universe):
         """Test distance calculation against a manual calculation for a single frame."""
-        topologies = [
-            Partial_Topology.from_single(chain="A", residue=10, renumber_residues=False),
-            Partial_Topology.from_range(chain="A", start=20, end=22, renumber_residues=False),
-        ]
+        # Extract topologies from the universe to ensure they exist
+        all_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
 
-        # Manually calculate COM distances
-        res10_com = bpti_universe.select_atoms("resid 10").center_of_mass()
-        res20_22_com = bpti_universe.select_atoms("resid 20-22").center_of_mass()
-        manual_dist = np.linalg.norm(res10_com - res20_22_com)
+        # Select a single residue topology
+        single_residue = all_topologies[10]  # 11th residue
+
+        # Create a multi-residue topology by extracting consecutive residues
+        # and merging them
+        multi_residues = Partial_Topology.merge(all_topologies[20:23])  # 21st-23rd residues
+
+        topologies = [single_residue, multi_residues]
+
+        # Manually calculate COM distances using the actual resids from the topologies
+        single_resid = list(single_residue.residues)[0]
+        multi_resids = list(multi_residues.residues)
+
+        single_selection = f"resid {single_resid}"
+        multi_selection = f"resid {' '.join(map(str, multi_resids))}"
+
+        res_single_com = bpti_universe.select_atoms(single_selection).center_of_mass()
+        res_multi_com = bpti_universe.select_atoms(multi_selection).center_of_mass()
+        manual_dist = np.linalg.norm(res_single_com - res_multi_com)
 
         dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False
@@ -869,13 +887,23 @@ class TestPartialTopologyPairwiseDistances:
 
     def test_mixed_topology_types(self, bpti_universe):
         """Test that the function works with a mix of single and multi-residue topologies."""
-        topologies = [
-            Partial_Topology.from_single(chain="A", residue=5, renumber_residues=False),
-            Partial_Topology.from_range(chain="A", start=10, end=15, renumber_residues=False),
-            Partial_Topology.from_residues(
-                chain="A", residues=[20, 25, 30], renumber_residues=False
-            ),
-        ]
+        # Extract topologies from the universe to ensure they exist
+        all_topologies = Partial_Topology.from_mda_universe(
+            bpti_universe, mode="residue", include_selection="protein"
+        )
+
+        # Create a mix of single and multi-residue topologies
+        single_residue1 = all_topologies[5]  # 6th residue
+
+        # Create a range topology by merging consecutive residues
+        range_topology = Partial_Topology.merge(all_topologies[10:16])  # 11th-16th residues
+
+        # Create a non-contiguous multi-residue topology
+        noncontiguous_topology = Partial_Topology.merge(
+            [all_topologies[20], all_topologies[25], all_topologies[30]]
+        )
+
+        topologies = [single_residue1, range_topology, noncontiguous_topology]
 
         dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False

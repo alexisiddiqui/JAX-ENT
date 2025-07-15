@@ -1,14 +1,13 @@
-from typing import Sequence
+from typing import Sequence, cast
 
 import jax.numpy as jnp
-from MDAnalysis import Universe
+import MDAnalysis as mda
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
-from jaxent.src.models.func.common import get_residue_atom_pairs
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_intrinsic_rates
 from jaxent.src.models.HDX.BV.features import BV_input_features
@@ -27,6 +26,9 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     The list of universes must contain compatible residue sequences.
     """
 
+    base_include_selection: str = "protein"
+    base_exclude_selection: str = "resname PRO"
+
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
         self.common_k_ints: list[float]
@@ -36,11 +38,70 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         }
         self.compatability: dict[m_key, ExpD_Datapoint]
 
+    def _combine_selections(self, base_selection: str, additional_selection: str | None) -> str:
+        """Combine base selection with additional selection using 'and' logic."""
+        if additional_selection is None:
+            return base_selection
+        return f"({base_selection}) and ({additional_selection})"
+
+    def _prepare_selection_lists(
+        self,
+        ensemble: list[mda.Universe],
+        include_selection: str | list[str] | None | list[None],
+        exclude_selection: str | list[str] | None | list[None],
+    ) -> tuple[list[str], list[str]]:
+        """Prepare and validate selection lists for the ensemble."""
+        # Handle None cases
+        if include_selection is None:
+            include_selection = []
+        elif isinstance(include_selection, str):
+            include_selection = [include_selection]
+
+        if exclude_selection is None:
+            exclude_selection = []
+        elif isinstance(exclude_selection, str):
+            exclude_selection = [exclude_selection]
+
+        # Expand single elements to match ensemble length
+        if len(include_selection) == 1 and len(ensemble) > 1:
+            include_selection = include_selection * len(ensemble)
+        elif len(include_selection) == 0:
+            include_selection = [None] * len(ensemble)
+
+        if len(exclude_selection) == 1 and len(ensemble) > 1:
+            exclude_selection = exclude_selection * len(ensemble)
+        elif len(exclude_selection) == 0:
+            exclude_selection = [None] * len(ensemble)
+
+        # Combine with base selections
+        final_include_selection = []
+        final_exclude_selection = []
+
+        for i in range(len(ensemble)):
+            # Combine include selections
+            combined_include = self._combine_selections(
+                self.base_include_selection,
+                include_selection[i] if i < len(include_selection) else None,
+            )
+            final_include_selection.append(combined_include)
+
+            # Combine exclude selections
+            base_exclude = self.base_exclude_selection
+            additional_exclude = exclude_selection[i] if i < len(exclude_selection) else None
+
+            if additional_exclude is None:
+                combined_exclude = base_exclude
+            else:
+                combined_exclude = f"({base_exclude}) or ({additional_exclude})"
+            final_exclude_selection.append(combined_exclude)
+
+        return final_include_selection, final_exclude_selection
+
     def initialise(
         self,
-        ensemble: list[Universe],
-        include_selection: str | list[str] = "protein",
-        exclude_selection: str | list[str] = "resname PRO or resid 1",
+        ensemble: list[mda.Universe],
+        include_selection: str | list[str] | None = None,
+        exclude_selection: str | list[str] | None = None,
     ) -> bool:
         """
         Initialize the BV model with an ensemble of structures.
@@ -53,20 +114,16 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         Returns:
             bool: True if initialization was successful
         """
-        # Process selection strings - expand single elements to match ensemble length
-        if isinstance(include_selection, str):
-            include_selection = [include_selection]
-        if isinstance(exclude_selection, str):
-            exclude_selection = [exclude_selection]
+        # Process and combine selections with base selections
+        self.final_include_selection, self.final_exclude_selection = self._prepare_selection_lists(
+            ensemble, include_selection, exclude_selection
+        )
 
-        if len(include_selection) == 1 and len(ensemble) > 1:
-            include_selection = include_selection * len(ensemble)
-        if len(exclude_selection) == 1 and len(ensemble) > 1:
-            exclude_selection = exclude_selection * len(ensemble)
-
-        # Find common residues across the ensemble using provided selections
+        # Find common residues across the ensemble using combined selections
         self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
-            ensemble, include_selection=include_selection, exclude_selection=exclude_selection
+            ensemble,
+            include_selection=self.final_include_selection,
+            exclude_selection=self.final_exclude_selection,
         )[0]
 
         # Calculate total number of frames in the ensemble
@@ -82,12 +139,13 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             common_residue_group = Partial_Topology.to_mda_group(
                 self.common_topology,
                 universe,
-                include_selection=include_selection[idx],
-                exclude_selection=exclude_selection[idx],
+                include_selection=self.final_include_selection[idx],
+                exclude_selection=self.final_exclude_selection[idx],
                 exclude_termini=True,
                 renumber_residues=True,
             )
-            k_ints_res_dict = calculate_intrinsic_rates(common_residue_group)
+            common_residue_group = cast(mda.ResidueGroup, common_residue_group)
+            k_ints_res_dict = calculate_intrinsic_rates(universe, common_residue_group)
 
             # Map results back to Partial_Topology objects
             for topo in self.common_topology:
@@ -95,25 +153,26 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 topo_residue_group = Partial_Topology.to_mda_group(
                     {topo},
                     universe,
-                    include_selection=include_selection[idx],
-                    exclude_selection=exclude_selection[idx],
+                    include_selection=self.final_include_selection[idx],
+                    exclude_selection=self.final_exclude_selection[idx],
                     exclude_termini=True,
                     renumber_residues=True,
                 )
 
-                # Look up kint values for each residue in this topology's residue group
-                topo_kint_values = []
-                for residue in topo_residue_group:
+                # Each topology should represent a single residue
+                # Look up kint value for this single residue
+                if len(topo_residue_group) == 1:
+                    residue = topo_residue_group[0]
                     if residue in k_ints_res_dict:
-                        topo_kint_values.append(k_ints_res_dict[residue])
+                        kint_value = k_ints_res_dict[residue]
 
-                # Average kint values within this topology (if multiple residues)
-                if topo_kint_values:
-                    avg_kint_for_topo = sum(topo_kint_values) / len(topo_kint_values)
-
-                    if topo not in kint_values_by_topology:
-                        kint_values_by_topology[topo] = []
-                    kint_values_by_topology[topo].append(avg_kint_for_topo)
+                        if topo not in kint_values_by_topology:
+                            kint_values_by_topology[topo] = []
+                        kint_values_by_topology[topo].append(kint_value)
+                else:
+                    print(
+                        f"Warning: Topology {topo} contains {len(topo_residue_group)} residues, expected 1"
+                    )
 
         # Average kint values across ensembles for each topology
         self.common_k_ints_map = {}
@@ -124,8 +183,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
         # Convert to list format for compatibility with existing code
         # Sort by topology to ensure consistent ordering
-        sorted_topologies = sorted(
-            self.common_k_ints_map.keys(), key=lambda x: (x.chain, x.residue_start)
+        sorted_topologies = Partial_Topology.rank_and_index(
+            list(self.common_k_ints_map.keys()), check_trim=False
         )
         self.common_k_ints = [self.common_k_ints_map[topo] for topo in sorted_topologies]
         self.topology_order = sorted_topologies  # Store ordering for reference
@@ -137,8 +196,9 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     ########################################################################
     # TODO fix typing
+
     def featurise(
-        self, ensemble: list[Universe]
+        self, ensemble: list[mda.Universe]
     ) -> tuple[BV_input_features, list[Partial_Topology]]:
         """
         Calculate BV model features (heavy atom contacts and H-bond acceptor contacts)
@@ -155,51 +215,53 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             - O atom cutoff: 0.24 nm
             - Excludes residues within ±2 positions
         """
-        # concatenate all the features
-
         heavy_contacts: list[Sequence[Sequence[float]]] = []
         acceptor_contacts: list[Sequence[Sequence[float]]] = []
-        # Constants
-        ########################################################################
-        # TODO: fix the typing here - to do with the composition of generics in the parent class
+
+        # Constants from config
         HEAVY_RADIUS = self.config.heavy_radius  # 0.65 nm in Angstroms
         O_RADIUS = self.config.o_radius  # 0.24 nm in Angstroms
-        ########################################################################
 
-        ########################################################################
-        # TODO aw man in the future we gotta change the structure in order to be able to support heterogenous ensembles
-        common_residue_group = Partial_Topology.to_mda_group(self.common_topology, ensemble[0])
-        ########################################################################
+        for idx, universe in enumerate(ensemble):
+            # Get N atoms (for heavy atom contacts)
+            n_atoms = Partial_Topology.to_mda_group(
+                topologies=self.common_topology,
+                universe=universe,
+                include_selection=self.final_include_selection[idx],
+                exclude_selection=self.final_exclude_selection[idx],
+                exclude_termini=True,
+                termini_chain_selection="protein",
+                renumber_residues=True,
+                mda_atom_filtering="name N",
+            )
+            n_atoms = cast(mda.AtomGroup, n_atoms)
 
-        feature_topology = [
-            frag for frag in self.common_topology if "PRO" not in frag.fragment_sequence
-        ]
-        # skip the first residue
-        feature_topology = [frag for frag in feature_topology if frag.residue_start != 1]
+            # Get H atoms (for H-bond acceptor contacts)
+            h_atoms = Partial_Topology.to_mda_group(
+                topologies=self.common_topology,
+                universe=universe,
+                include_selection=self.final_include_selection[idx],
+                exclude_selection=self.final_exclude_selection[idx],
+                exclude_termini=True,
+                termini_chain_selection="protein",
+                renumber_residues=True,
+                mda_atom_filtering="name H or name HN",
+            )
 
-        # sort the features by residue start
-        feature_topology.sort(key=lambda x: x.residue_start)
-        # reset the fragment indices
-        for idx, frag in enumerate(feature_topology):
-            frag.fragment_index = idx
+            h_atoms = cast(mda.AtomGroup, h_atoms)
 
-        for universe in ensemble:
-            # Get residue indices and atom indices for amide N and H atoms
-            NH_residue_atom_pairs = get_residue_atom_pairs(common_residue_group, "N")
-            HN_residue_atom_pairs = get_residue_atom_pairs(common_residue_group, "H | HN")
-
-            # Calculate heavy atom contacts
+            # Calculate heavy atom contacts using N atoms
             _heavy_contacts = calc_BV_contacts_universe(
                 universe=universe,
-                residue_atom_index=NH_residue_atom_pairs,
+                target_atoms=n_atoms,
                 contact_selection="heavy",
                 radius=HEAVY_RADIUS,
             )
 
-            # Calculate O atom contacts (H-bond acceptors)
+            # Calculate O atom contacts (H-bond acceptors) using H atoms
             _o_contacts = calc_BV_contacts_universe(
                 universe=universe,
-                residue_atom_index=HN_residue_atom_pairs,
+                target_atoms=h_atoms,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
             )
@@ -207,24 +269,28 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             heavy_contacts.append(_heavy_contacts)
             acceptor_contacts.append(_o_contacts)
 
-        assert len(feature_topology) > 1, "Feature topology is None"
+        assert len(self.topology_order) > 0, "Feature topology is empty"
 
+        # Convert to JAX arrays and ensure proper 2D shape (residues, frames)
         _heavy_contacts = [jnp.asarray(contact) for contact in heavy_contacts]
         _acceptor_contacts = [jnp.asarray(contact) for contact in acceptor_contacts]
 
-        # Ensure all contact arrays are 2D for concatenation
-        _heavy_contacts = [c.reshape(-1, 1) if c.ndim == 1 else c for c in _heavy_contacts]
-        _acceptor_contacts = [c.reshape(-1, 1) if c.ndim == 1 else c for c in _acceptor_contacts]
+        # Ensure all contact arrays are 2D (residues, frames)
+        _heavy_contacts = [c.reshape(c.shape[0], -1) if c.ndim > 2 else c for c in _heavy_contacts]
+        _acceptor_contacts = [
+            c.reshape(c.shape[0], -1) if c.ndim > 2 else c for c in _acceptor_contacts
+        ]
 
-        # stack the contacts along a new axis
-        heavy_contacts_array = jnp.stack(_heavy_contacts, axis=1)
-        acceptor_contacts_array = jnp.stack(_acceptor_contacts, axis=1)
+        # Concatenate along the frames axis (axis=1) to combine frames from all universes
+        # This flattens all frames from all universes into a single frames dimension
+        heavy_contacts_array = jnp.concatenate(_heavy_contacts, axis=1)
+        acceptor_contacts_array = jnp.concatenate(_acceptor_contacts, axis=1)
 
         return BV_input_features(
             heavy_contacts=heavy_contacts_array,
             acceptor_contacts=acceptor_contacts_array,
             k_ints=jnp.array(self.common_k_ints),
-        ), feature_topology
+        ), self.topology_order
 
     # TODO this function needs to output some kind of topology information so that these can be aligned with the experimental data - not sure how best to do this
     # options are to ouput a seperate object or to tie this into input features

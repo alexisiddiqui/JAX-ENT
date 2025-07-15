@@ -37,6 +37,14 @@ class Partial_Topology:
         if not self.residues:
             raise ValueError("At least one residue must be specified")
 
+        # Ensure chain is capitalized if it's a string
+        if isinstance(self.chain, str):
+            self.chain = self.chain.upper()
+        elif isinstance(self.chain, int):
+            self.chain = str(self.chain)
+        else:
+            raise TypeError("Chain must be a string or integer")
+
         # Sort residues and remove duplicates
         self.residues = sorted(set(self.residues))
 
@@ -207,10 +215,91 @@ class Partial_Topology:
                 attrs.append(f"{field_name}={field_value}")
         return f"Partial_Topology({', '.join(attrs)})"
 
+    def __lt__(self, other: Any) -> bool:
+        """
+        Compare this topology with another for sorting.
+
+        Comparison is based on the `rank_order` method (with default settings).
+        This allows direct sorting of Partial_Topology objects.
+        e.g., `sorted(list_of_topologies)`
+        """
+        if not isinstance(other, Partial_Topology):
+            return NotImplemented
+        # Default to check_trim=False for direct comparison
+        return self.rank_order() < other.rank_order()
+
     def __hash__(self) -> int:
         """Allow topologies to be added to sets"""
         # Hash based on
         return hash((self.chain, tuple(self.peptide_residues if self.peptide else self.residues)))
+
+    def _get_chain_score(self) -> tuple:
+        """
+        Generates a score for a chain ID to allow for proper sorting.
+        Digits are scored lower than letters.
+        e.g., '1' < 'A', 'B1' < 'C0'
+        """
+        # Create a tuple of ordinal values for each character.
+        # This correctly handles alphanumeric sorting when comparing tuples.
+        return tuple(ord(c) for c in str(self.chain))
+
+    def rank_order(self, check_trim: bool = False) -> tuple:
+        """
+        Generate a sort key for ranking topologies.
+
+        Objects are sorted by:
+        1. Chain ID (shorter chains first, then alphanumerically).
+        2. Average position of active residues (lower first).
+        3. Length of the fragment (longer fragments first, descending).
+
+        Args:
+            check_trim: If True, use peptide_residues for ranking.
+
+        Returns:
+            A tuple that can be used as a sort key.
+        """
+        active_residues = self._get_active_residues(check_trim)
+        if not active_residues:
+            # Handle cases with no active residues to avoid errors
+            avg_residue = float("inf")
+            length = 0
+        else:
+            avg_residue = sum(active_residues) / len(active_residues)
+            length = len(active_residues)
+
+        # Sort key: (chain_len, chain_score, avg_residue_pos, -length)
+        # Negative length to sort longer fragments first (descending).
+        return (len(str(self.chain)), self._get_chain_score(), avg_residue, -length)
+
+    @classmethod
+    def rank_and_index(
+        cls, topologies: list["Partial_Topology"], check_trim: bool = False
+    ) -> list["Partial_Topology"]:
+        """
+        Sorts a list of topologies and assigns fragment_index.
+
+        The list is sorted based on the key from the `rank_order` method.
+        The sort is stable, so equally ranked objects retain their
+        relative order from the input list. After sorting, the
+        `fragment_index` of each topology is updated to its
+        position in the sorted list.
+
+        Args:
+            topologies: A list of Partial_Topology objects to sort and index.
+            check_trim: If True, use peptide_residues for ranking.
+
+        Returns:
+            The sorted and indexed list of topologies.
+        """
+        # Sort the list using the rank_order method as the key.
+        # Python's sort is stable.
+        topologies.sort(key=lambda t: t.rank_order(check_trim=check_trim))
+
+        # Assign fragment_index based on the new order
+        for i, topo in enumerate(topologies):
+            topo.fragment_index = i
+
+        return topologies
 
     def get_residue_ranges(self) -> list[tuple[int, int]]:
         """Get contiguous ranges within the residue list"""
@@ -744,6 +833,53 @@ class Partial_Topology:
         )
 
     @classmethod
+    def _build_chain_selection_string(
+        cls, universe: mda.Universe, chain_id: str, base_selection: Optional[str] = None
+    ) -> tuple[str, mda.AtomGroup]:
+        """
+        Utility method to build a selection string for a specific chain,
+        accounting for available attributes in the universe.
+
+        Args:
+            universe: MDAnalysis Universe object
+            chain_id: Chain ID to select
+            base_selection: Optional base selection to combine with chain selection
+
+        Returns:
+            tuple: (selection_string, fallback_atomgroup)
+            - selection_string: MDAnalysis selection string for the chain
+            - fallback_atomgroup: AtomGroup to use if selection fails
+        """
+        # Check available attributes for chain selection
+        has_segid = hasattr(universe.atoms[0], "segid") if len(universe.atoms) > 0 else False
+        has_chainid = hasattr(universe.atoms[0], "chainid") if len(universe.atoms) > 0 else False
+
+        # Build appropriate selection string based on available attributes
+        chain_selection_parts = []
+        if has_segid:
+            chain_selection_parts.append(f"segid {chain_id}")
+        if has_chainid:
+            chain_selection_parts.append(f"chainid {chain_id}")
+
+        # Initialize fallback_atoms as empty
+        fallback_atoms = mda.AtomGroup([], universe)
+
+        if not chain_selection_parts:
+            # If neither attribute is available, we can't create a selection string
+            selection_string = ""
+        else:
+            # Join selection parts with OR
+            chain_selection = " or ".join(chain_selection_parts)
+
+            # Combine with base selection if provided
+            if base_selection:
+                selection_string = f"({base_selection}) and ({chain_selection})"
+            else:
+                selection_string = chain_selection
+
+        return selection_string, fallback_atoms
+
+    @classmethod
     def from_mda_universe(
         cls,
         universe: mda.Universe,
@@ -821,27 +957,29 @@ class Partial_Topology:
         partial_topologies = []
 
         for chain_id, chain_atoms in chains.items():
-            # Determine the full set of residues for this chain based on termini_chain_selection
-            try:
-                termini_chain_selection_str = (
-                    f"({termini_chain_selection}) and (segid {chain_id} or chainid {chain_id})"
-                )
-                termini_atoms = universe.select_atoms(termini_chain_selection_str)
-                if len(termini_atoms) == 0:
-                    # Fallback for cases where segid/chainid might not be in the main selection string
-                    termini_atoms = selected_atoms.select_atoms(
-                        f"segid {chain_id} or chainid {chain_id}"
-                    )
-            except Exception as e:
-                raise ValueError(
-                    f"Invalid termini_chain_selection '{termini_chain_selection_str}': {e}"
-                )
+            # Use utility method to build chain selection string
+            chain_selection_string, fallback_atoms = cls._build_chain_selection_string(
+                universe, chain_id, termini_chain_selection
+            )
 
-            if len(termini_atoms) == 0:
-                # If no atoms found for this chain in termini selection, use all selected atoms for this chain
-                termini_atoms = selected_atoms.select_atoms(
-                    f"segid {chain_id} or chainid {chain_id}"
-                )
+            if chain_selection_string:
+                try:
+                    termini_atoms = universe.select_atoms(chain_selection_string)
+                    if len(termini_atoms) == 0:
+                        # Try without base selection
+                        chain_only_selection, _ = cls._build_chain_selection_string(
+                            universe, chain_id
+                        )
+                        if chain_only_selection:
+                            termini_atoms = universe.select_atoms(chain_only_selection)
+                        else:
+                            termini_atoms = mda.AtomGroup(chain_atoms)
+                except Exception:
+                    # Fallback if selection fails
+                    termini_atoms = mda.AtomGroup(chain_atoms)
+            else:
+                # If we couldn't build a selection string, use the chain atoms directly
+                termini_atoms = mda.AtomGroup(chain_atoms)
 
             full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
@@ -1058,26 +1196,47 @@ class Partial_Topology:
             if chain_id not in chains:
                 continue  # Skip if chain not found in universe
 
-            # Recreate the same renumbering logic as from_mda_universe
+            # Use utility method to build chain selection string
+            chain_selection_string, fallback_atoms = cls._build_chain_selection_string(
+                universe, chain_id, termini_chain_selection
+            )
+
             try:
-                termini_chain_selection_str = (
-                    f"({termini_chain_selection}) and (segid {chain_id} or chainid {chain_id})"
-                )
-                termini_atoms = universe.select_atoms(termini_chain_selection_str)
-                if len(termini_atoms) == 0:
-                    termini_atoms = selected_atoms.select_atoms(
-                        f"segid {chain_id} or chainid {chain_id}"
-                    )
+                if chain_selection_string:
+                    termini_atoms = universe.select_atoms(chain_selection_string)
+                    if len(termini_atoms) == 0:
+                        # Try without base selection
+                        chain_only_selection, _ = cls._build_chain_selection_string(
+                            universe, chain_id
+                        )
+                        if chain_only_selection:
+                            termini_atoms = universe.select_atoms(chain_only_selection)
+                        else:
+                            # Use atoms from this chain if available
+                            chain_atoms = [
+                                atom
+                                for atom in selected_atoms
+                                if (getattr(atom, "segid", None) or getattr(atom, "chainid", None))
+                                == chain_id
+                            ]
+                            termini_atoms = mda.AtomGroup(chain_atoms, universe)
+                else:
+                    # If we couldn't build a selection string, use atoms from this chain
+                    chain_atoms = [
+                        atom
+                        for atom in selected_atoms
+                        if (getattr(atom, "segid", None) or getattr(atom, "chainid", None))
+                        == chain_id
+                    ]
+                    termini_atoms = mda.AtomGroup(chain_atoms, universe)
             except Exception as e:
-                raise ValueError(f"Invalid termini_chain_selection: {e}")
+                # More informative error
+                raise ValueError(f"Failed to select chain {chain_id}: {e}")
 
-            if len(termini_atoms) == 0:
-                termini_atoms = selected_atoms.select_atoms(
-                    f"segid {chain_id} or chainid {chain_id}"
-                )
-
+            # Get residues from termini_atoms
             full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
+            # Recreate the same renumbering logic as from_mda_universe
             if renumber_residues:
                 # Create the same mapping as in from_mda_universe
                 renumber_to_original = {

@@ -104,7 +104,7 @@ class NetHDXConfig(BaseConfig):
         angle_cutoff: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         num_timepoints: int = 1,
     ) -> None:
-        # super().__init__()
+        super().__init__()
         if self.distance_cutoff is not None:
             if isinstance(distance_cutoff, float):
                 distance_cutoff = [distance_cutoff]
