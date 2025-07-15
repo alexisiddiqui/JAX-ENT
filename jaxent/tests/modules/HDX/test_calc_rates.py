@@ -285,7 +285,7 @@ class TestCalculateIntrinsicRates:
             "ASP",
             "GLU",
             "ASN",
-            "GLQ",
+            "GLN",  # Changed from "GLQ" to "GLN" (correct amino acid code for glutamine)
             "CYS",
         ]
 

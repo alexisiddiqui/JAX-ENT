@@ -216,29 +216,40 @@ from jaxent.src.utils.mda import determine_optimal_backend
 
 
 def get_residue_atom_pairs(
-    residue_group: mda.ResidueGroup, atom_name: str
+    universe: mda.Universe, common_residues: set[tuple[str, int]], atom_name: str
 ) -> list[tuple[int, int]]:
-    """Generate residue and atom index pairs for specified atoms in a residue group.
+    """Generate residue and atom index pairs for specified atoms in common residues.
 
     Args:
-        residue_group: MDAnalysis ResidueGroup to process
+        universe: MDAnalysis Universe to process
+        common_residues: Set of (resname, resid) tuples representing common residues
         atom_name: Name of the atom to select (e.g., "N" for amide nitrogen, "H" for amide hydrogen)
 
     Returns:
-        List of (residue_id, atom_index) tuples for matching atoms in the residue group
+        List of (residue_id, atom_index) tuples for matching atoms in the common residues
 
     Example:
-        NH_pairs = get_residue_atom_pairs(residue_group, "N")
-        HN_pairs = get_residue_atom_pairs(residue_group, "H")
+        common_residues = {("ALA", 2), ("VAL", 3), ("GLY", 4)}
+        NH_pairs = get_residue_atom_pairs(universe, common_residues, "N")
+        HN_pairs = get_residue_atom_pairs(universe, common_residues, "H")
     """
-    ic(len(residue_group), atom_name, "Starting residue-atom pair collection")
+    ic(len(common_residues), atom_name, "Starting residue-atom pair collection")
 
     residue_atom_pairs = []
     skipped_first = False
     skipped_pro = 0
     missing_atoms = 0
 
-    for residue in residue_group:
+    # Get protein residues from the universe
+    protein = universe.select_atoms("protein")
+
+    for residue in protein.residues:
+        residue_key = (residue.resname, residue.resid)
+
+        # Skip residues not in common_residues set
+        if residue_key not in common_residues:
+            continue
+
         ic(residue.resname, residue.resid, "Processing residue")
 
         # Skip the first residue (typically doesn't have the specified atoms in protein chains)
@@ -390,10 +401,6 @@ def compute_trajectory_average_com_distances(
 
     # Compute final averages and standard deviations
     distance_matrix = distance_sum / frame_count
-    distance_variance = (distance_sum_sq / frame_count) - (distance_matrix**2)
-    distance_std = np.sqrt(np.maximum(distance_variance, 0))  # Avoid numerical errors
-
-    return distance_matrix, distance_std
     distance_variance = (distance_sum_sq / frame_count) - (distance_matrix**2)
     distance_std = np.sqrt(np.maximum(distance_variance, 0))  # Avoid numerical errors
 
