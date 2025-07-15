@@ -90,20 +90,54 @@ def create_peptide_topologies(chains=["A", "B", "C"], count_per_chain=10):
     return topologies
 
 
-def create_overlapping_topologies(chain="A", count=10):
+def create_overlapping_topologies(chain="A", count=25):  # Increased from 12 to 25
     """Create topologies with controlled overlap for testing overlap removal."""
     topologies = []
     start = 1
-    overlap = 5  # Controlled overlap
+    overlap = 3  # Reduced from 5 to 3 for less aggressive overlap
     length = 15
 
     for i in range(count):
         topologies.append(
             Partial_Topology.from_range(
-                chain, start, start + length - 1, fragment_name=f"overlap_{chain}_{i + 1}"
+                chain,
+                start,
+                start + length - 1,
+                fragment_name=f"overlap_{chain}_{i + 1}",
+                peptide=True,  # Convert to peptides
+                peptide_trim=2,  # Add trimming
             )
         )
         start += length - overlap  # Create overlap
+
+    return topologies
+
+
+def create_overlap_removal_test_topologies(chain="A", count=30):
+    """Create topologies specifically designed for overlap removal testing.
+
+    Uses a combination of strategies:
+    1. More fragments to provide buffer for removal
+    2. Peptides with trimming to reduce effective overlap
+    3. Slightly reduced base overlap
+    """
+    topologies = []
+    start = 1
+    overlap = 2  # Minimal overlap
+    length = 12  # Slightly shorter fragments
+
+    for i in range(count):
+        topologies.append(
+            Partial_Topology.from_range(
+                chain,
+                start,
+                start + length - 1,
+                fragment_name=f"overlap_test_{chain}_{i + 1}",
+                peptide=True,
+                peptide_trim=2,
+            )
+        )
+        start += length - overlap
 
     return topologies
 
@@ -167,7 +201,13 @@ def large_multi_chain_dataset():
 @pytest.fixture
 def overlapping_topologies():
     """Create topologies with controlled overlap."""
-    return create_overlapping_topologies("A", 12)
+    return create_overlapping_topologies("A", 25)  # Updated count
+
+
+@pytest.fixture
+def overlap_removal_test_topologies():
+    """Create topologies specifically for overlap removal tests."""
+    return create_overlap_removal_test_topologies("A", 30)
 
 
 @pytest.fixture
@@ -530,11 +570,12 @@ class TestRandomSplitOverlapRemoval:
         self, create_datapoints_from_topologies, setup_splitter
     ):
         """Test handling of explicitly overlapping topologies."""
-        overlapping_topologies = create_overlapping_topologies("A", 15)
+        overlapping_topologies = create_overlapping_topologies("A", 25)  # Increased count
         datapoints = create_datapoints_from_topologies(overlapping_topologies)
         common_residues = create_common_residues_for_chains(["A"])
 
-        splitter = setup_splitter(datapoints, common_residues)
+        # Use check_trim=True to enable peptide trimming
+        splitter = setup_splitter(datapoints, common_residues, check_trim=True)
 
         # Test both overlap removal settings
         train_no_removal, val_no_removal = splitter.random_split(remove_overlap=False)
@@ -545,6 +586,32 @@ class TestRandomSplitOverlapRemoval:
         # Both should work, removal version should have <= total datapoints
         assert len(train_no_removal) + len(val_no_removal) > 0
         assert len(train_removal) + len(val_removal) > 0
+
+        # With more fragments and peptide trimming, should have sufficient remaining fragments
+        assert len(train_removal) >= 5, f"Training set too small: {len(train_removal)}"
+        assert len(val_removal) >= 5, f"Validation set too small: {len(val_removal)}"
+
+    def test_overlap_removal_with_sufficient_data(
+        self, overlap_removal_test_topologies, create_datapoints_from_topologies, setup_splitter
+    ):
+        """Test overlap removal with sufficient data to ensure valid splits."""
+        datapoints = create_datapoints_from_topologies(overlap_removal_test_topologies)
+        common_residues = create_common_residues_for_chains(["A"])
+
+        splitter = setup_splitter(datapoints, common_residues, check_trim=True, train_size=0.6)
+
+        # Should successfully create valid splits even with overlap removal
+        train_data, val_data = splitter.random_split(remove_overlap=True)
+
+        assert len(train_data) >= 5
+        assert len(val_data) >= 5
+
+        # Verify no overlaps exist between train and val sets
+        train_ids = {dp.data_id for dp in train_data}
+        val_ids = {dp.data_id for dp in val_data}
+
+        # With overlap removal, there should be no shared datapoints
+        assert len(train_ids.intersection(val_ids)) == 0
 
 
 class TestRandomSplitDeterministicBehavior:

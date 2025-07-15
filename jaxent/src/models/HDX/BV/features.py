@@ -26,16 +26,15 @@ class BV_input_features:
         if not (
             isinstance(self.heavy_contacts, Array) and isinstance(self.acceptor_contacts, Array)
         ):
-            length = len(self.heavy_contacts[0])
-            heavy_shape = len(self.heavy_contacts)
-            acceptor_shape = len(self.acceptor_contacts)
+            # For nested sequences: (residues, frames)
+            n_residues = len(self.heavy_contacts)
+            n_frames = len(self.heavy_contacts[0]) if n_residues > 0 else 0
         elif isinstance(self.heavy_contacts, Array) and isinstance(self.acceptor_contacts, Array):
-            length = self.heavy_contacts.shape[1]
-            heavy_shape = self.heavy_contacts.shape[0]
-            acceptor_shape = self.acceptor_contacts.shape[0]
+            # For JAX arrays: (residues, frames)
+            n_residues, n_frames = self.heavy_contacts.shape
         else:
             raise TypeError("heavy_contacts and acceptor_contacts must be of the same type")
-        return (heavy_shape, acceptor_shape, length)
+        return (n_residues, n_frames)
 
     def cast_to_jax(self) -> "BV_input_features":
         """Cast features to JAX arrays and return a new instance with JAX arrays"""
