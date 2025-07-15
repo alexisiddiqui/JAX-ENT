@@ -1,15 +1,14 @@
-
-import pytest
 import jax
 import jax.numpy as jnp
-from typing import Sequence
+import pytest
 
-from jaxent.src.models.core import Simulation
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
+from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 
 # --- Test Fixtures ---
+
 
 @pytest.fixture
 def real_inputs_random_data():
@@ -20,7 +19,7 @@ def real_inputs_random_data():
     key = jax.random.PRNGKey(42)
     num_residues = 20
     num_frames = 100
-    
+
     # 1. Create a real model instance
     bv_config = BV_model_Config()
     forward_models = [BV_model(bv_config)]
@@ -31,7 +30,7 @@ def real_inputs_random_data():
         BV_input_features(
             heavy_contacts=jax.random.uniform(subkeys[0], (num_residues, num_frames)),
             acceptor_contacts=jax.random.uniform(subkeys[1], (num_residues, num_frames)),
-            k_ints=jax.random.uniform(subkeys[2], (num_residues,))
+            k_ints=jax.random.uniform(subkeys[2], (num_residues,)),
         )
     ]
 
@@ -48,44 +47,56 @@ def real_inputs_random_data():
         forward_model_scaling=jnp.array([1.0]),
         normalise_loss_functions=jnp.array([0.0]),
     )
-    
+
     return input_features, forward_models, params
+
 
 # --- Test Cases ---
 
-def test_simulation_initialise_real_inputs(real_inputs_random_data):
+
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_simulation_initialise_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests that Simulation initializes correctly with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
-    
+
     simulation = Simulation(
         input_features=input_features,
         forward_models=forward_models,
-        params=params
+        params=params,
+        raise_jit_failure=raise_jit_failure,
     )
-    
+
     assert simulation.initialise(), "Initialisation should return True."
     assert simulation.length == 100
-    assert hasattr(simulation, '_jit_forward_pure')
+    assert hasattr(simulation, "_jit_forward_pure")
 
-def test_simulation_forward_jit_real_inputs(real_inputs_random_data):
+
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_simulation_forward_jit_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests the JIT-compiled forward pass with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
-    
-    simulation = Simulation(input_features, forward_models, params)
+
+    simulation = Simulation(
+        input_features, forward_models, params, raise_jit_failure=raise_jit_failure
+    )
     simulation.initialise()
-    
+
     simulation.forward(params)
-    
+
     assert simulation.outputs is not None
     assert len(simulation.outputs) == 1
     # The output of BV_model is log_Pf, which should have a shape equal to num_residues
     assert simulation.outputs[0].log_Pf.shape == (20,)
 
-def test_simulation_as_pytree_real_inputs(real_inputs_random_data):
+
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_simulation_as_pytree_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests that Simulation works as a PyTree with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
-    
-    simulation = Simulation(input_features, forward_models, params)
+
+    simulation = Simulation(
+        input_features, forward_models, params, raise_jit_failure=raise_jit_failure
+    )
     simulation.initialise()
 
     @jax.jit
@@ -101,7 +112,9 @@ def test_simulation_as_pytree_real_inputs(real_inputs_random_data):
     assert outputs1[0].log_Pf.shape == (20,)
     assert jnp.allclose(outputs1[0].log_Pf, outputs2[0].log_Pf)
 
-def test_simulation_multiple_models_real_inputs(real_inputs_random_data):
+
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_simulation_multiple_models_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests Simulation with multiple real models and inputs."""
     _, _, params = real_inputs_random_data
     key = jax.random.PRNGKey(0)
@@ -114,21 +127,21 @@ def test_simulation_multiple_models_real_inputs(real_inputs_random_data):
     # Manually set different parameters to test multi-model logic
     bv_config2.bv_bh = jnp.array([3.0])
     forward_models = [BV_model(bv_config1), BV_model(bv_config2)]
-    
+
     key, *subkeys = jax.random.split(key, 7)
     input_features = [
         BV_input_features(
             heavy_contacts=jax.random.uniform(subkeys[0], (num_residues, num_frames)),
             acceptor_contacts=jax.random.uniform(subkeys[1], (num_residues, num_frames)),
-            k_ints=jax.random.uniform(subkeys[2], (num_residues,))
+            k_ints=jax.random.uniform(subkeys[2], (num_residues,)),
         ),
         BV_input_features(
             heavy_contacts=jax.random.uniform(subkeys[3], (num_residues, num_frames)),
             acceptor_contacts=jax.random.uniform(subkeys[4], (num_residues, num_frames)),
-            k_ints=jax.random.uniform(subkeys[5], (num_residues,))
-        )
+            k_ints=jax.random.uniform(subkeys[5], (num_residues,)),
+        ),
     ]
-    
+
     new_model_parameters = [model.config.forward_parameters for model in forward_models]
     params = Simulation_Parameters(
         frame_weights=params.frame_weights,
@@ -136,10 +149,12 @@ def test_simulation_multiple_models_real_inputs(real_inputs_random_data):
         model_parameters=new_model_parameters,
         forward_model_weights=jnp.array([1.0, 1.0]),
         forward_model_scaling=jnp.array([1.0, 1.0]),
-        normalise_loss_functions=jnp.array([0.0, 0.0])
+        normalise_loss_functions=jnp.array([0.0, 0.0]),
     )
 
-    simulation = Simulation(input_features, forward_models, params)
+    simulation = Simulation(
+        input_features, forward_models, params, raise_jit_failure=raise_jit_failure
+    )
     simulation.initialise()
     simulation.forward(params)
 
