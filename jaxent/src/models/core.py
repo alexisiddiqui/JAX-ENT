@@ -63,6 +63,7 @@ class Simulation:
         input_features: list[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
+        raise_jit_failure: bool = False,
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
         self.input_features: list[Input_Features[Any]] = input_features
@@ -76,6 +77,10 @@ class Simulation:
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
         self._jit_forward_pure: Callable = None  # type: ignore
+        self.raise_jit_failure: bool = raise_jit_failure
+
+    def __repr__(self) -> str:
+        return f"Simulation(raise_jit_failure={self.raise_jit_failure})"
 
     # def __post_init__(self) -> None:
     #     # not implemented yet
@@ -133,7 +138,9 @@ class Simulation:
             print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
 
         except Exception as e:
-            raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            if self.raise_jit_failure:
+                raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            print(f"Warning - Jit failed: {e} \n Reverting to non-jit")
             self._jit_forward_pure = self.forward_pure
 
         print("Simulation initialised successfully.")
