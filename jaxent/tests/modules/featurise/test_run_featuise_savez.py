@@ -68,22 +68,8 @@ def test_featurise_save_load():
         k_ints=features_set.k_ints,
     )
 
-    # STEP 2: Convert topology to JSON-serializable format
-    def topology_to_dict(topology):
-        return {
-            "chain": topology.chain,
-            "fragment_sequence": topology.fragment_sequence,
-            "residue_start": int(topology.residue_start),  # Convert to standard Python int
-            "residue_end": int(topology.residue_end),  # Convert to standard Python int
-            "peptide_trim": int(topology.peptide_trim),
-            "fragment_index": int(topology.fragment_index)
-            if topology.fragment_index is not None
-            else None,
-            "length": int(topology.length),
-        }
-
-    # Convert all topologies to dict
-    topology_dicts = [topology_to_dict(top) for top in topology_set]
+    # STEP 2: Convert topology to JSON-serializable format using its to_dict method
+    topology_dicts = [top.to_dict() for top in topology_set]
 
     # Save topologies as JSON
     topology_path = os.path.join(output_dir, "topology.json")
@@ -107,21 +93,10 @@ def test_featurise_save_load():
     with open(topology_path, "r") as f:
         loaded_topology_dicts = json.load(f)
 
-    # Reconstruct Partial_Topology objects
+    # Reconstruct Partial_Topology objects using from_dict
     from jaxent.src.interfaces.topology import Partial_Topology
 
-    loaded_topology = []
-    for top_dict in loaded_topology_dicts:
-        loaded_topology.append(
-            Partial_Topology(
-                chain=top_dict["chain"],
-                fragment_sequence=top_dict["fragment_sequence"],
-                residue_start=top_dict["residue_start"],
-                residue_end=top_dict["residue_end"],
-                peptide_trim=top_dict["peptide_trim"],
-                fragment_index=top_dict["fragment_index"],
-            )
-        )
+    loaded_topology = [Partial_Topology.from_dict(td) for td in loaded_topology_dicts]
 
     # STEP 5: Verify data integrity
     print("Verifying data integrity...")
@@ -160,4 +135,5 @@ def test_featurise_save_load():
 
 
 if __name__ == "__main__":
+    test_featurise_save_load()
     test_featurise_save_load()

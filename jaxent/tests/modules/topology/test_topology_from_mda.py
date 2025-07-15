@@ -1,6 +1,7 @@
 import os
 
 import MDAnalysis as mda
+import numpy as np
 import pytest
 
 from jaxent.src.interfaces.topology import Partial_Topology
@@ -809,3 +810,79 @@ class TestToMDAGroup:
         assert sorted(resids_excluded) == expected_excluded, (
             f"Residue dict with exclusion is incorrect: got {resids_excluded}"
         )
+
+
+class TestPartialTopologyPairwiseDistances:
+    """Test the partial_topology_pairwise_distances method."""
+
+    def test_basic_calculation(self, bpti_universe):
+        """Test basic distance calculation between a few residue topologies."""
+        # Create topologies for a few residues
+        topologies = [
+            Partial_Topology.from_single(chain="A", residue=10, renumber_residues=False),
+            Partial_Topology.from_single(chain="A", residue=20, renumber_residues=False),
+            Partial_Topology.from_single(chain="A", residue=30, renumber_residues=False),
+        ]
+
+        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+            topologies, bpti_universe, renumber_residues=False, verbose=False
+        )
+
+        assert dist_matrix.shape == (3, 3)
+        assert dist_std.shape == (3, 3)
+
+        # Diagonal elements should be zero
+        assert np.all(np.diag(dist_matrix) == 0)
+        # Std dev for a single frame (PDB) should be zero
+        assert np.all(np.diag(dist_std) == 0)
+
+        # Off-diagonal elements should be positive
+        assert np.all(dist_matrix[np.triu_indices(3, k=1)] > 0)
+
+        # Symmetry check
+        assert np.allclose(dist_matrix, dist_matrix.T)
+
+    def test_manual_comparison_single_frame(self, bpti_universe):
+        """Test distance calculation against a manual calculation for a single frame."""
+        topologies = [
+            Partial_Topology.from_single(chain="A", residue=10, renumber_residues=False),
+            Partial_Topology.from_range(chain="A", start=20, end=22, renumber_residues=False),
+        ]
+
+        # Manually calculate COM distances
+        res10_com = bpti_universe.select_atoms("resid 10").center_of_mass()
+        res20_22_com = bpti_universe.select_atoms("resid 20-22").center_of_mass()
+        manual_dist = np.linalg.norm(res10_com - res20_22_com)
+
+        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+            topologies, bpti_universe, renumber_residues=False, verbose=False
+        )
+
+        assert np.isclose(dist_matrix[0, 1], manual_dist)
+        assert np.isclose(dist_matrix[1, 0], manual_dist)
+        assert np.allclose(dist_std, 0)  # Single frame, so no std dev
+
+    def test_empty_topologies_list_raises_error(self, bpti_universe):
+        """Test that an empty list of topologies raises a ValueError."""
+        with pytest.raises(ValueError, match="topologies list cannot be empty"):
+            Partial_Topology.partial_topology_pairwise_distances([], bpti_universe)
+
+    def test_mixed_topology_types(self, bpti_universe):
+        """Test that the function works with a mix of single and multi-residue topologies."""
+        topologies = [
+            Partial_Topology.from_single(chain="A", residue=5, renumber_residues=False),
+            Partial_Topology.from_range(chain="A", start=10, end=15, renumber_residues=False),
+            Partial_Topology.from_residues(
+                chain="A", residues=[20, 25, 30], renumber_residues=False
+            ),
+        ]
+
+        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+            topologies, bpti_universe, renumber_residues=False, verbose=False
+        )
+
+        assert dist_matrix.shape == (3, 3)
+        assert dist_std.shape == (3, 3)
+        assert np.all(np.diag(dist_matrix) == 0)
+        assert np.all(dist_matrix[np.triu_indices(3, k=1)] > 0)
+        assert np.allclose(dist_std, 0)
