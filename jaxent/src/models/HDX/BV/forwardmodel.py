@@ -27,7 +27,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     """
 
     base_include_selection: str = "protein"
-    base_exclude_selection: str = "resname PRO"
+    base_exclude_selection: str = "resname PRO or resid 1"
 
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
