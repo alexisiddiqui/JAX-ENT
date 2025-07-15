@@ -36,45 +36,102 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         }
         self.compatability: dict[m_key, ExpD_Datapoint]
 
-    def initialise(self, ensemble: list[Universe]) -> bool:
+    def initialise(
+        self,
+        ensemble: list[Universe],
+        include_selection: str | list[str] = "protein",
+        exclude_selection: str | list[str] = "resname PRO or resid 1",
+    ) -> bool:
         """
         Initialize the BV model with an ensemble of structures.
 
         Args:
             ensemble: List of MDAnalysis Universe objects
+            include_selection: MDAnalysis selection string(s) for atoms to include
+            exclude_selection: MDAnalysis selection string(s) for atoms to exclude
 
         Returns:
             bool: True if initialization was successful
         """
-        # Find common residues across the ensemble
+        # Process selection strings - expand single elements to match ensemble length
+        if isinstance(include_selection, str):
+            include_selection = [include_selection]
+        if isinstance(exclude_selection, str):
+            exclude_selection = [exclude_selection]
+
+        if len(include_selection) == 1 and len(ensemble) > 1:
+            include_selection = include_selection * len(ensemble)
+        if len(exclude_selection) == 1 and len(ensemble) > 1:
+            exclude_selection = exclude_selection * len(ensemble)
+
+        # Find common residues across the ensemble using provided selections
         self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
-            ensemble, ignore_mda_selection="(resname PRO or resid 1)"
+            ensemble, include_selection=include_selection, exclude_selection=exclude_selection
         )[0]
+
         # Calculate total number of frames in the ensemble
         self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
 
-        # Get residue indices for each universe
-        common_residue_group = Partial_Topology.to_mda_group(self.common_topology, ensemble[0])
+        # Calculate intrinsic rates for each universe and average them
+        kint_values_by_topology = {}  # Maps Partial_Topology -> list of kint values from each universe
 
-        # Calculate intrinsic rates for the common residues
+        for idx, universe in enumerate(ensemble):
+            # Calculate intrinsic rates for the entire universe
 
-        kint_list = []
-        for idx, u in enumerate(ensemble):
-            k_ints_res_idx_dict = calculate_intrinsic_rates(u)
+            # Convert common topology to MDA residue group for mapping
+            common_residue_group = Partial_Topology.to_mda_group(
+                self.common_topology,
+                universe,
+                include_selection=include_selection[idx],
+                exclude_selection=exclude_selection[idx],
+                exclude_termini=True,
+                renumber_residues=True,
+            )
+            k_ints_res_dict = calculate_intrinsic_rates(common_residue_group)
 
-            # filter by keys in common_residue_indices
-            k_ints_res_idx_tuple = [
-                k_ints_res_idx_dict[res]
-                for res in common_residue_group
-                if res in k_ints_res_idx_dict
-            ]
+            # Map results back to Partial_Topology objects
+            for topo in self.common_topology:
+                # Get the corresponding residue group for this topology from this universe
+                topo_residue_group = Partial_Topology.to_mda_group(
+                    {topo},
+                    universe,
+                    include_selection=include_selection[idx],
+                    exclude_selection=exclude_selection[idx],
+                    exclude_termini=True,
+                    renumber_residues=True,
+                )
 
-            kint_list.append(k_ints_res_idx_tuple)
+                # Look up kint values for each residue in this topology's residue group
+                topo_kint_values = []
+                for residue in topo_residue_group:
+                    if residue in k_ints_res_dict:
+                        topo_kint_values.append(k_ints_res_dict[residue])
 
-        # assert that the lists in kint_list are the same length
-        assert all(len(kint_list[0]) == len(kint_list[i]) for i in range(1, len(kint_list)))
+                # Average kint values within this topology (if multiple residues)
+                if topo_kint_values:
+                    avg_kint_for_topo = sum(topo_kint_values) / len(topo_kint_values)
 
-        self.common_k_ints = kint_list[0]
+                    if topo not in kint_values_by_topology:
+                        kint_values_by_topology[topo] = []
+                    kint_values_by_topology[topo].append(avg_kint_for_topo)
+
+        # Average kint values across ensembles for each topology
+        self.common_k_ints_map = {}
+        for topo, kint_values in kint_values_by_topology.items():
+            if kint_values:  # Only include topologies that have kint values
+                averaged_kint = sum(kint_values) / len(kint_values)
+                self.common_k_ints_map[topo] = averaged_kint
+
+        # Convert to list format for compatibility with existing code
+        # Sort by topology to ensure consistent ordering
+        sorted_topologies = sorted(
+            self.common_k_ints_map.keys(), key=lambda x: (x.chain, x.residue_start)
+        )
+        self.common_k_ints = [self.common_k_ints_map[topo] for topo in sorted_topologies]
+        self.topology_order = sorted_topologies  # Store ordering for reference
+
+        print(f"Calculated intrinsic rates for {len(self.common_k_ints_map)} common residues")
+        print(f"Averaged over {len(ensemble)} universes")
 
         return True
 
