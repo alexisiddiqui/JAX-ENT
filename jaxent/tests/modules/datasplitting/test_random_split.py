@@ -146,23 +146,85 @@ def create_common_residues_for_chains(chains, coverage_factor=0.7):
     """Create common residue topologies that cover a portion of each chain."""
     common_residues = set()
 
+    # If only one chain is provided, create two separate common residue regions
+    # to satisfy the DataSplitter requirement of at least 2 common residues.
+    if len(chains) == 1:
+        chain = chains[0]
+        # Define ranges for different chains
+        if chain == "A":
+            range1_end = int(150 * coverage_factor)
+            range2_start = 160
+            range2_end = int(range2_start + (300 - range2_start) * coverage_factor)
+        elif chain == "B":
+            range1_end = int(120 * coverage_factor)
+            range2_start = 130
+            range2_end = int(range2_start + (250 - range2_start) * coverage_factor)
+        elif chain == "C":
+            range1_end = int(90 * coverage_factor)
+            range2_start = 100
+            range2_end = int(range2_start + (200 - range2_start) * coverage_factor)
+        else:  # Default for other chains like 'D'
+            range1_end = int(90 * coverage_factor)
+            range2_start = 100
+            range2_end = int(range2_start + (200 - range2_start) * coverage_factor)
+
+        if range1_end >= 1:
+            common_residues.add(
+                Partial_Topology.from_range(
+                    chain, 1, range1_end, fragment_name=f"common_{chain}_1"
+                )
+            )
+
+        if range2_end >= range2_start:
+            common_residues.add(
+                Partial_Topology.from_range(
+                    chain, range2_start, range2_end, fragment_name=f"common_{chain}_2"
+                )
+            )
+
+        # If after this we have less than 2 topologies, add dummy ones for testing
+        # to satisfy the DataSplitter constructor, as these are edge case tests.
+        if len(common_residues) < 2:
+            dummy_start = 500
+            while len(common_residues) < 2:
+                common_residues.add(
+                    Partial_Topology.from_range(
+                        chain,
+                        dummy_start,
+                        dummy_start + 1,
+                        fragment_name=f"common_{chain}_dummy_{len(common_residues)}",
+                    )
+                )
+                dummy_start += 10
+
+        return common_residues
+
     for chain in chains:
         # Calculate coverage based on typical topology ranges
         if chain == "A":
-            end_pos = int(300 * coverage_factor)  # Cover 70% of typical A chain range
-            common_residues.add(
-                Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
-            )
+            end_pos = int(300 * coverage_factor)
+            if end_pos >= 1:
+                common_residues.add(
+                    Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                )
         elif chain == "B":
-            end_pos = int(250 * coverage_factor)  # Cover 70% of typical B chain range
-            common_residues.add(
-                Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
-            )
+            end_pos = int(250 * coverage_factor)
+            if end_pos >= 1:
+                common_residues.add(
+                    Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                )
         elif chain == "C":
-            end_pos = int(200 * coverage_factor)  # Cover 70% of typical C chain range
-            common_residues.add(
-                Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
-            )
+            end_pos = int(200 * coverage_factor)
+            if end_pos >= 1:
+                common_residues.add(
+                    Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                )
+        elif chain == "D":
+            end_pos = int(200 * coverage_factor)
+            if end_pos >= 1:
+                common_residues.add(
+                    Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                )
 
     return common_residues
 
