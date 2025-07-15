@@ -96,7 +96,7 @@ def run_featurise(
             ic.format("Error during featurisation: {} - {}", type(e).__name__, str(e))
             print(f"Failed to featurise {model}")
             # warn
-            raise UserWarning(f"Failed to featurise {model}, {e}")
+            raise e
 
     ic(
         f"Featurisation complete. Returning {len(features)} feature sets and {len(feat_top)} topology sets"

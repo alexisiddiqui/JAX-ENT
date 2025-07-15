@@ -54,7 +54,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
 
         # Get residue indices for each universe
-        common_residue_indices = [frag.residue_start for frag in self.common_topology]
+        common_residue_group = Partial_Topology.to_mda_group(self.common_topology, ensemble[0])
 
         # Calculate intrinsic rates for the common residues
 
@@ -64,7 +64,9 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
             # filter by keys in common_residue_indices
             k_ints_res_idx_tuple = [
-                k_ints_res_idx_dict[res_idx] for res_idx in common_residue_indices
+                k_ints_res_idx_dict[res]
+                for res in common_residue_group
+                if res in k_ints_res_idx_dict
             ]
 
             kint_list.append(k_ints_res_idx_tuple)
@@ -109,16 +111,25 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
         ########################################################################
         # TODO aw man in the future we gotta change the structure in order to be able to support heterogenous ensembles
-        common_residues = {
-            (frag.fragment_sequence, frag.residue_start) for frag in self.common_topology
-        }
+        common_residue_group = Partial_Topology.to_mda_group(self.common_topology, ensemble[0])
         ########################################################################
 
-        feature_topology = []
+        feature_topology = [
+            frag for frag in self.common_topology if "PRO" not in frag.fragment_sequence
+        ]
+        # skip the first residue
+        feature_topology = [frag for frag in feature_topology if frag.residue_start != 1]
+
+        # sort the features by residue start
+        feature_topology.sort(key=lambda x: x.residue_start)
+        # reset the fragment indices
+        for idx, frag in enumerate(feature_topology):
+            frag.fragment_index = idx
+
         for universe in ensemble:
             # Get residue indices and atom indices for amide N and H atoms
-            NH_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "N")
-            HN_residue_atom_pairs = get_residue_atom_pairs(universe, common_residues, "H | HN")
+            NH_residue_atom_pairs = get_residue_atom_pairs(common_residue_group, "N")
+            HN_residue_atom_pairs = get_residue_atom_pairs(common_residue_group, "H | HN")
 
             # Calculate heavy atom contacts
             _heavy_contacts = calc_BV_contacts_universe(
@@ -139,26 +150,22 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             heavy_contacts.append(_heavy_contacts)
             acceptor_contacts.append(_o_contacts)
 
-            feature_topology = [
-                frag for frag in self.common_topology if "PRO" not in frag.fragment_sequence
-            ]
-            # skip the first residue
-            feature_topology = [frag for frag in feature_topology if frag.residue_start != 1]
-
-            # sort the features by residue start
-            feature_topology.sort(key=lambda x: x.residue_start)
-            # reset the fragment indices
-            for idx, frag in enumerate(feature_topology):
-                frag.fragment_index = idx
-
         assert len(feature_topology) > 1, "Feature topology is None"
 
         _heavy_contacts = [jnp.asarray(contact) for contact in heavy_contacts]
         _acceptor_contacts = [jnp.asarray(contact) for contact in acceptor_contacts]
 
+        # Ensure all contact arrays are 2D for concatenation
+        _heavy_contacts = [c.reshape(-1, 1) if c.ndim == 1 else c for c in _heavy_contacts]
+        _acceptor_contacts = [c.reshape(-1, 1) if c.ndim == 1 else c for c in _acceptor_contacts]
+
+        # stack the contacts along a new axis
+        heavy_contacts_array = jnp.stack(_heavy_contacts, axis=1)
+        acceptor_contacts_array = jnp.stack(_acceptor_contacts, axis=1)
+
         return BV_input_features(
-            heavy_contacts=jnp.concatenate(_heavy_contacts, axis=1),
-            acceptor_contacts=jnp.concatenate(_acceptor_contacts, axis=1),
+            heavy_contacts=heavy_contacts_array,
+            acceptor_contacts=acceptor_contacts_array,
             k_ints=jnp.array(self.common_k_ints),
         ), feature_topology
 

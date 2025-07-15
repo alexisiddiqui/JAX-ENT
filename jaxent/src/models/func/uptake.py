@@ -2,7 +2,7 @@ import MDAnalysis as mda
 import numpy as np
 
 
-def calculate_intrinsic_rates(universe_or_atomgroup):
+def calculate_intrinsic_rates(universe_or_atomgroup) -> dict[mda.ResidueGroup, float]:
     """
     Calculate intrinsic exchange rates for each residue in an MDAnalysis Universe or AtomGroup.
 
@@ -13,9 +13,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
 
     Returns:
     --------
-    tuple : (rates, residue_ids)
-        residue_ids : numpy array of corresponding residue sequence numbers
-        rates : numpy array of intrinsic rates for each residue
+    dict[mda.ResidueGroup, float]: A dictionary mapping residue objects to their intrinsic rates.
     """
 
     # Default rate parameters from Bai et al., Proteins, 1993, 17, 75-86
@@ -98,15 +96,15 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
 
     # Initialize arrays
     kints = np.zeros(n_residues)
-    residue_ids = np.zeros(n_residues, dtype=int)
+    kint_dict = {}
 
     # Calculate rates for each residue
     for i, curr in enumerate(residues):
-        residue_ids[i] = curr.resid
         ########################################################################\
         # Skip first residue or PRO
         if i == 0 or curr.resname == "PRO":
             kints[i] = np.inf
+            kint_dict[curr] = np.inf
             continue
         prev = residues[i - 1]
         ########################################################################\
@@ -128,6 +126,8 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         curr_adjs.extend(rate_adjs[prev_name][2:])  # Add last two values from previous
 
         # Calculate rate
-        kints[i] = _adj_to_rates(curr_adjs)
+        rate = _adj_to_rates(curr_adjs)
+        kints[i] = rate
+        kint_dict[curr] = rate
 
-    return dict(zip(residue_ids, kints))
+    return kint_dict

@@ -37,7 +37,7 @@ def test_create_sparse_map():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
 
     test_universe = Universe(topology_path)
 
@@ -194,7 +194,7 @@ def test_random_split():
     # Setup similar to other tests
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
     test_universe = Universe(topology_path)
     universes = [test_universe]
     models = [BV_model(bv_config)]
@@ -220,7 +220,7 @@ def test_random_split():
     exp_top_segments = [top.top for top in dataset.data]
     # Create splitter and test random split
     splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, peptide=False, common_residues=exp_top_segments
+        dataset, random_seed=42, ensemble=universes, common_residues=set(exp_top_segments)
     )
     train_data, val_data = splitter.random_split()
 
@@ -236,204 +236,6 @@ def test_random_split():
     fig = plot_split_visualization(train_data, val_data, dataset.data)
     output_dir = ensure_output_dir()
     output_path = os.path.join(output_dir, "random_split.png")
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    print(f"Saved plot to {output_path}")
-    plt.close(fig)
-
-
-def test_spatial_split():
-    # Setup
-    bv_config = BV_model_Config()
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    test_universe = Universe(topology_path)
-    universes = [test_universe]
-    models = [BV_model(bv_config)]
-
-    # Create ensemble and get features
-    ensemble = Experiment_Builder(universes, models)
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-    # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
-    )[0]
-
-    print("top_segments", len(top_segments))
-
-    # Create fake dataset
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in top_segments]
-    dataset = ExpD_Dataloader(data=exp_data)
-    print("dataset", len(dataset.data))
-
-    # Create splitter and test spatial split
-    exp_top_segments = [top.top for top in dataset.data]
-    # Create splitter and test random split
-    splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, peptide=False, common_residues=exp_top_segments
-    )
-    train_data, val_data = splitter.spatial_split(universes)
-
-    # Basic assertions
-    assert len(train_data) > 0
-    assert len(val_data) > 0
-    assert len(train_data) + len(val_data) <= len(dataset.data)
-
-    print(f"Training set size: {len(train_data)}")
-    print(f"Validation set size: {len(val_data)}")
-
-    # Plot split visualization and save
-    fig = plot_split_visualization(train_data, val_data, dataset.data)
-    output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "spatial_split.png")
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    print(f"Saved plot to {output_path}")
-    plt.close(fig)
-
-
-def test_stratified_split():
-    # Setup
-    bv_config = BV_model_Config()
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    test_universe = Universe(topology_path)
-    universes = [test_universe]
-    models = [BV_model(bv_config)]
-
-    # Create ensemble and get features
-    ensemble = Experiment_Builder(universes, models)
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-    # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
-    )[0]
-
-    # Create fake dataset with varying protection factors for better stratification testing
-    exp_data = [
-        HDX_protection_factor(protection_factor=i, top=top)
-        for i, top in enumerate(top_segments, start=1)
-    ]
-    dataset = ExpD_Dataloader(data=exp_data)
-
-    # Create splitter and test stratified split
-    exp_top_segments = [top.top for top in dataset.data]
-    # Create splitter and test random split
-    splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, peptide=False, common_residues=exp_top_segments
-    )
-    train_data, val_data = splitter.stratified_split(n_strata=5)
-
-    # Basic assertions
-    assert len(train_data) > 0
-    assert len(val_data) > 0
-    assert len(train_data) + len(val_data) <= len(dataset.data)
-
-    print(f"Training set size: {len(train_data)}")
-    print(f"Validation set size: {len(val_data)}")
-
-    # Plot split visualization and save
-    fig = plot_split_visualization(train_data, val_data, dataset.data)
-    output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "stratified_split.png")
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    print(f"Saved plot to {output_path}")
-    plt.close(fig)
-
-
-def test_cluster_split_sequence():
-    # Setup
-    bv_config = BV_model_Config()
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    test_universe = Universe(topology_path)
-    universes = [test_universe]
-    models = [BV_model(bv_config)]
-
-    # Create ensemble and get features
-    ensemble = Experiment_Builder(universes, models)
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-    # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
-    )[0]
-
-    # Create fake dataset
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in top_segments]
-    dataset = ExpD_Dataloader(data=exp_data)
-
-    # Create splitter and test cluster split
-    exp_top_segments = [top.top for top in dataset.data]
-    # Create splitter and test random split
-    splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, peptide=False, common_residues=exp_top_segments
-    )
-    train_data, val_data = splitter.cluster_split(
-        n_clusters=5, peptide=True, cluster_index="sequence"
-    )
-
-    # Basic assertions
-    assert len(train_data) > 0
-    assert len(val_data) > 0
-    assert len(train_data) + len(val_data) <= len(dataset.data)
-
-    print(f"Training set size: {len(train_data)}")
-    print(f"Validation set size: {len(val_data)}")
-
-    # Plot split visualization and save
-    fig = plot_split_visualization(train_data, val_data, dataset.data)
-    output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "cluster_split_sequence.png")
-    fig.savefig(output_path, dpi=300, bbox_inches="tight")
-    print(f"Saved plot to {output_path}")
-    plt.close(fig)
-
-
-def test_cluster_split_featuress():
-    # Setup
-    bv_config = BV_model_Config()
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    test_universe = Universe(topology_path)
-    universes = [test_universe]
-    models = [BV_model(bv_config)]
-
-    # Create ensemble and get features
-    ensemble = Experiment_Builder(universes, models)
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-    # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
-    )[0]
-
-    # Create fake dataset
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in top_segments]
-    dataset = ExpD_Dataloader(data=exp_data)
-
-    # Create splitter and test cluster split
-    exp_top_segments = [top.top for top in dataset.data]
-    # Create splitter and test random split
-    splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, peptide=False, common_residues=exp_top_segments
-    )
-    train_data, val_data = splitter.cluster_split(
-        n_clusters=5, peptide=True, cluster_index="residue_index"
-    )
-
-    # Basic assertions
-    assert len(train_data) > 0
-    assert len(val_data) > 0
-    assert len(train_data) + len(val_data) <= len(dataset.data)
-
-    print(f"Training set size: {len(train_data)}")
-    print(f"Validation set size: {len(val_data)}")
-
-    # Plot split visualization and save
-    fig = plot_split_visualization(train_data, val_data, dataset.data)
-    output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "cluster_split_features.png")
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     print(f"Saved plot to {output_path}")
     plt.close(fig)

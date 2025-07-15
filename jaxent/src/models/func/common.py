@@ -1,13 +1,17 @@
-from typing import cast
+from typing import Optional, Union
 
 import MDAnalysis as mda
+import numpy as np
 from icecream import ic  # Import the icecream debugging library
-from MDAnalysis.core.groups import ResidueGroup
+from MDAnalysis.analysis import distances
+from tqdm import tqdm
+
+from jaxent.src.utils.mda import determine_optimal_backend
 
 # ####################################################################################################
 # # Updated to use Partial_Topology methods for more robust residue identification
 # defPartial_Topology.find_common_residues(
-#     ensemble: List[Universe],
+#     ensemble: list[Universe],
 #     include_mda_selection: str = "protein",
 #     ignore_mda_selection: str = "resname SOL",
 # ) -> tuple[set[Partial_Topology], set[Partial_Topology]]:
@@ -212,61 +216,57 @@ from MDAnalysis.core.groups import ResidueGroup
 
 
 def get_residue_atom_pairs(
-    universe: mda.Universe, common_residues: set[tuple[str, int]], atom_name: str
+    residue_group: mda.ResidueGroup, atom_name: str
 ) -> list[tuple[int, int]]:
-    """Generate residue and atom index pairs for specified atoms in common residues.
+    """Generate residue and atom index pairs for specified atoms in a residue group.
 
     Args:
-        universe: MDAnalysis Universe containing the structure
-        common_residues: Set of (resname, resid) tuples indicating residues to process
+        residue_group: MDAnalysis ResidueGroup to process
         atom_name: Name of the atom to select (e.g., "N" for amide nitrogen, "H" for amide hydrogen)
 
     Returns:
-        List of (residue_id, atom_index) tuples for matching atoms in common residues
+        List of (residue_id, atom_index) tuples for matching atoms in the residue group
 
     Example:
-        NH_pairs = get_residue_atom_pairs(universe, common_residues, "N")
-        HN_pairs = get_residue_atom_pairs(universe, common_residues, "H")
+        NH_pairs = get_residue_atom_pairs(residue_group, "N")
+        HN_pairs = get_residue_atom_pairs(residue_group, "H")
     """
-    ic(len(common_residues), atom_name, "Starting residue-atom pair collection")
+    ic(len(residue_group), atom_name, "Starting residue-atom pair collection")
 
     residue_atom_pairs = []
     skipped_first = False
     skipped_pro = 0
     missing_atoms = 0
 
-    for residue in cast(ResidueGroup, universe.residues):
-        res_identifier = (residue.resname, residue.resid)
-        # Check if this residue is in our set of common residues
-        if res_identifier in common_residues:
-            ic(residue.resname, residue.resid, "Processing residue")
+    for residue in residue_group:
+        ic(residue.resname, residue.resid, "Processing residue")
 
-            # Skip the first residue (typically doesn't have the specified atoms in protein chains)
-            if residue.resid == 1:
-                ic("Skipping first residue", residue.resid, residue.resname)
-                skipped_first = True
-                continue
+        # Skip the first residue (typically doesn't have the specified atoms in protein chains)
+        if residue.resid == 1:
+            ic("Skipping first residue", residue.resid, residue.resname)
+            skipped_first = True
+            continue
 
-            # Skip proline residues (e.g., no amide hydrogen)
-            if residue.resname == "PRO":
-                ic("Skipping PRO residue", residue.resid)
-                skipped_pro += 1
-                continue
+        # Skip proline residues (e.g., no amide hydrogen)
+        if residue.resname == "PRO":
+            ic("Skipping PRO residue", residue.resid)
+            skipped_pro += 1
+            continue
 
-            try:
-                # Try to find the specified atom in this residue
-                atom_selection = residue.atoms.select_atoms(f"name {atom_name}")
-                ic(residue.resid, f"Found {len(atom_selection)} atoms named", atom_name)
+        try:
+            # Try to find the specified atom in this residue
+            atom_selection = residue.atoms.select_atoms(f"name {atom_name}")
+            ic(residue.resid, f"Found {len(atom_selection)} atoms named", atom_name)
 
-                atom_idx = atom_selection[0].index
-                residue_atom_pairs.append((residue.resid, atom_idx))
-                ic(residue.resid, atom_idx, "Added residue-atom pair")
+            atom_idx = atom_selection[0].index
+            residue_atom_pairs.append((residue.resid, atom_idx))
+            ic(residue.resid, atom_idx, "Added residue-atom pair")
 
-            except IndexError:
-                # If the atom is not found in this residue
-                missing_atoms += 1
-                ic(residue.resid, residue.resname, f"Missing {atom_name} atom")
-                continue
+        except IndexError:
+            # If the atom is not found in this residue
+            missing_atoms += 1
+            ic(residue.resid, residue.resname, f"Missing {atom_name} atom")
+            continue
 
     ic(len(residue_atom_pairs), "Total residue-atom pairs found")
     ic(
@@ -277,3 +277,124 @@ def get_residue_atom_pairs(
     )
 
     return residue_atom_pairs
+
+
+def compute_trajectory_average_com_distances(
+    universe: mda.Universe,
+    group_list: list[Union[mda.AtomGroup, mda.ResidueGroup]],
+    start: Optional[int] = None,
+    stop: Optional[int] = None,
+    step: Optional[int] = None,
+    compound: str = "residues",
+    pbc: bool = True,
+    backend: str = "auto",
+    verbose: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute trajectory-averaged pairwise center-of-mass distances between groups.
+
+    Parameters
+    ----------
+    universe : mda.Universe
+        MDAnalysis Universe containing the trajectory
+    group_list : List[Union[mda.AtomGroup, mda.ResidueGroup]]
+        List of atom or residue groups to compute distances between
+    start : int, optional
+        Start frame for analysis (default: first frame)
+    stop : int, optional
+        Stop frame for analysis (default: last frame)
+    step : int, optional
+        Step size for frame iteration (default: 1)
+    compound : str, default 'residues'
+        How to compute center of mass ('group', 'residues', 'segments', 'molecules', 'fragments')
+    pbc : bool, default True
+        Whether to account for periodic boundary conditions
+    backend : str, default 'auto'
+        Backend for distance calculations ('serial', 'OpenMP', or 'auto' for automatic fallback)
+    verbose : bool, default True
+        Whether to show progress bar
+
+    Returns
+    -------
+    distance_matrix : np.ndarray
+        Trajectory-averaged distance matrix of shape (n_groups, n_groups)
+    distance_std : np.ndarray
+        Standard deviation of distances over trajectory
+    """
+    if not group_list:
+        raise ValueError("group_list cannot be empty")
+
+    n_groups = len(group_list)
+
+    # Set up trajectory iteration parameters
+    if start is None:
+        start = 0
+    if stop is None:
+        stop = universe.trajectory.n_frames
+    if step is None:
+        step = 1
+
+    n_frames = len(range(start, stop, step))
+
+    if n_frames == 0:
+        raise ValueError("No frames selected for analysis")
+
+    # Initialize online statistics accumulators
+    distance_sum = np.zeros((n_groups, n_groups))
+    distance_sum_sq = np.zeros((n_groups, n_groups))
+    frame_count = 0
+
+    # Determine optimal backend
+    backend = determine_optimal_backend(backend, verbose)
+
+    # Get box dimensions for the first frame to check if PBC is possible
+    universe.trajectory[start]
+    has_box = universe.dimensions is not None
+
+    if pbc and not has_box:
+        print("Warning: PBC requested but no box dimensions found. Disabling PBC.")
+        pbc = False
+
+    # Iterate through trajectory frames
+    frame_iterator = enumerate(universe.trajectory[start:stop:step])
+    if verbose:
+        frame_iterator = tqdm(frame_iterator, total=n_frames, desc="Computing COM distances")
+
+    for frame_idx, ts in frame_iterator:
+        # Get current box dimensions if using PBC
+        box = ts.dimensions if pbc else None
+
+        # Compute center of mass for each group
+        com_coords = np.zeros((n_groups, 3))
+        for i, group in enumerate(group_list):
+            com_coords[i] = group.center_of_mass(pbc=pbc, compound=compound)
+
+        # Compute pairwise distances with fallback
+        try:
+            dist_matrix = distances.distance_array(com_coords, com_coords, box=box, backend=backend)
+        except Exception as e:
+            if backend == "OpenMP":
+                if verbose:
+                    print(f"OpenMP backend failed ({e}), falling back to serial")
+                backend = "serial"
+                dist_matrix = distances.distance_array(
+                    com_coords, com_coords, box=box, backend=backend
+                )
+            else:
+                raise e
+
+        # Update online statistics
+        distance_sum += dist_matrix
+        distance_sum_sq += dist_matrix**2
+        frame_count += 1
+
+    # Compute final averages and standard deviations
+    distance_matrix = distance_sum / frame_count
+    distance_variance = (distance_sum_sq / frame_count) - (distance_matrix**2)
+    distance_std = np.sqrt(np.maximum(distance_variance, 0))  # Avoid numerical errors
+
+    return distance_matrix, distance_std
+    distance_variance = (distance_sum_sq / frame_count) - (distance_matrix**2)
+    distance_std = np.sqrt(np.maximum(distance_variance, 0))  # Avoid numerical errors
+
+    return distance_matrix, distance_std
