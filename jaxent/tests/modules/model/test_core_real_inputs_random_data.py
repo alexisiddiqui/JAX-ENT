@@ -1,3 +1,7 @@
+import os
+
+os.environ["JAX_PLATFORMS"] = "cpu"
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -6,6 +10,7 @@ from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
+from jaxent.src.utils.jit_fn import jit_Guard
 
 # --- Test Fixtures ---
 
@@ -54,7 +59,8 @@ def real_inputs_random_data():
 # --- Test Cases ---
 
 
-@pytest.mark.parametrize("raise_jit_failure", [True, False])
+@jit_Guard.test_isolation()
+@pytest.mark.parametrize("raise_jit_failure", [False, True])
 def test_simulation_initialise_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests that Simulation initializes correctly with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
@@ -71,7 +77,8 @@ def test_simulation_initialise_real_inputs(real_inputs_random_data, raise_jit_fa
     assert hasattr(simulation, "_jit_forward_pure")
 
 
-@pytest.mark.parametrize("raise_jit_failure", [True, False])
+@jit_Guard.test_isolation()
+@pytest.mark.parametrize("raise_jit_failure", [False, True])
 def test_simulation_forward_jit_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests the JIT-compiled forward pass with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
@@ -89,7 +96,8 @@ def test_simulation_forward_jit_real_inputs(real_inputs_random_data, raise_jit_f
     assert simulation.outputs[0].log_Pf.shape == (20,)
 
 
-@pytest.mark.parametrize("raise_jit_failure", [True, False])
+@jit_Guard.test_isolation()
+@pytest.mark.parametrize("raise_jit_failure", [False, True])
 def test_simulation_as_pytree_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests that Simulation works as a PyTree with real input classes."""
     input_features, forward_models, params = real_inputs_random_data
@@ -113,7 +121,8 @@ def test_simulation_as_pytree_real_inputs(real_inputs_random_data, raise_jit_fai
     assert jnp.allclose(outputs1[0].log_Pf, outputs2[0].log_Pf)
 
 
-@pytest.mark.parametrize("raise_jit_failure", [True, False])
+@jit_Guard.test_isolation()
+@pytest.mark.parametrize("raise_jit_failure", [False, True])
 def test_simulation_multiple_models_real_inputs(real_inputs_random_data, raise_jit_failure):
     """Tests Simulation with multiple real models and inputs."""
     _, _, params = real_inputs_random_data
