@@ -18,7 +18,7 @@ class Partial_Topology:
     Fully JSON-serializable.
     """
 
-    chain: Union[str, int]
+    chain: Union[str, int] = "A"  # Chain identifier (string or integer)
     residues: list[int] = field(default_factory=list)  # Canonical representation
     fragment_sequence: Union[str, list[str]] = ""  # Actual amino acid sequence
     fragment_name: str = "seg"  # Fragment identifier/name
@@ -1279,8 +1279,8 @@ class Partial_Topology:
                 topologies_by_chain[topo.chain] = []
             topologies_by_chain[topo.chain].append(topo)
 
-        # Collect target residue IDs for each chain
-        target_residues = []
+        # Create selection parts for each chain to handle multi-chain systems correctly
+        per_chain_selection_parts = []
 
         for chain_id, chain_topologies in topologies_by_chain.items():
             if chain_id not in chains:
@@ -1302,7 +1302,6 @@ class Partial_Topology:
                         if chain_only_selection:
                             termini_atoms = universe.select_atoms(chain_only_selection)
                         else:
-                            # Use atoms from this chain if available
                             chain_atoms = [
                                 atom
                                 for atom in selected_atoms
@@ -1311,7 +1310,6 @@ class Partial_Topology:
                             ]
                             termini_atoms = mda.AtomGroup(chain_atoms, universe)
                 else:
-                    # If we couldn't build a selection string, use atoms from this chain
                     chain_atoms = [
                         atom
                         for atom in selected_atoms
@@ -1320,51 +1318,52 @@ class Partial_Topology:
                     ]
                     termini_atoms = mda.AtomGroup(chain_atoms, universe)
             except Exception as e:
-                # More informative error
                 raise ValueError(f"Failed to select chain {chain_id}: {e}")
 
-            # Get residues from termini_atoms
             full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
-            # Recreate the same renumbering logic as from_mda_universe
             if renumber_residues:
-                # Create the same mapping as in from_mda_universe
                 renumber_to_original = {
                     i: res.resid for i, res in enumerate(full_chain_residues, 1)
                 }
             else:
                 renumber_to_original = {res.resid: res.resid for res in full_chain_residues}
 
-            # Apply terminal exclusion logic to determine available residues
             if exclude_termini and len(full_chain_residues) > 2:
                 available_residues = full_chain_residues[1:-1]
             else:
                 available_residues = full_chain_residues
-
             available_resids = {res.resid for res in available_residues}
 
-            # Convert topology residue numbers back to original residue IDs
+            chain_target_resids = []
             for topo in chain_topologies:
                 for topo_resid in topo.residues:
                     if topo_resid in renumber_to_original:
                         original_resid = renumber_to_original[topo_resid]
-                        # Only include if this residue was available (not excluded by termini)
                         if original_resid in available_resids:
-                            target_residues.append(original_resid)
+                            chain_target_resids.append(original_resid)
 
-        if not target_residues:
+            if not chain_target_resids:
+                continue
+
+            unique_resids = sorted(set(chain_target_resids))
+            resid_selection = f"resid {' '.join(map(str, unique_resids))}"
+
+            chain_sel_str, _ = cls._build_chain_selection_string(universe, chain_id)
+            if chain_sel_str:
+                per_chain_selection_parts.append(f"(({chain_sel_str}) and ({resid_selection}))")
+            else:
+                per_chain_selection_parts.append(f"({resid_selection})")
+
+        if not per_chain_selection_parts:
             raise ValueError("No matching residues found in universe")
 
-        # Remove duplicates and sort
-        unique_resids = sorted(set(target_residues))
+        final_resid_selection = " or ".join(per_chain_selection_parts)
 
         # Select residues from universe
         try:
-            # Create selection string for specific residue IDs
-            resid_selection = f"resid {' '.join(map(str, unique_resids))}"
-
             # Combine with original selection to ensure consistency
-            combined_selection = f"({include_selection}) and ({resid_selection})"
+            combined_selection = f"({include_selection}) and ({final_resid_selection})"
             if exclude_selection:
                 combined_selection = f"({combined_selection}) and not ({exclude_selection})"
 
@@ -1593,34 +1592,39 @@ class Partial_Topology:
         for chain_topos in included_chain_topologies_by_universe:
             chain_ids.update(topo.chain for topo in chain_topos)
 
+        # Group all chain topologies by chain ID across all universes
+        all_topos_by_chain = {}
+        for chain_topos in included_chain_topologies_by_universe:
+            for topo in chain_topos:
+                if topo.chain not in all_topos_by_chain:
+                    all_topos_by_chain[topo.chain] = []
+                all_topos_by_chain[topo.chain].append(topo)
+
         # Find common residues by chain using intersection merge
         common_residue_topologies = set()
-        for chain_id in chain_ids:
-            # Get chain topologies for this chain from each universe
-            chain_topos_for_this_chain = []
-            for chain_topos in included_chain_topologies_by_universe:
-                matching_chains = [topo for topo in chain_topos if topo.chain == chain_id]
-                if matching_chains:
-                    chain_topos_for_this_chain.append(matching_chains[0])
+        for chain_id, topos_for_chain in all_topos_by_chain.items():
+            if not topos_for_chain:
+                continue
 
-            # Only proceed if this chain exists in all universes
-            if len(chain_topos_for_this_chain) == len(ensemble):
-                try:
-                    # Find intersection of residues across all universes for this chain
-                    common_chain_topo = cls.merge(
-                        chain_topos_for_this_chain,
-                        trim=False,
-                        intersection=True,
-                        merged_name=f"common_chain_{chain_id}",
-                    )
+            try:
+                # Find intersection of residues across all universes for this chain
+                common_chain_topo = cls.merge(
+                    topos_for_chain,
+                    trim=False,
+                    intersection=True,
+                    merged_name=f"common_chain_{chain_id}",
+                )
 
-                    # Extract individual residues from the common chain
-                    residue_topos = common_chain_topo.extract_residues(use_peptide_trim=False)
-                    common_residue_topologies.update(residue_topos)
+                # Extract individual residues from the common chain
+                residue_topos = common_chain_topo.extract_residues(use_peptide_trim=False)
+                common_residue_topologies.update(residue_topos)
 
-                except ValueError:
-                    # No common residues found for this chain
+            except ValueError as e:
+                # If merge fails because there are no common residues, continue
+                if "No common residues found" in str(e):
                     continue
+                # Re-raise other ValueErrors
+                raise e
 
         # Extract excluded residues
         excluded_residue_topologies = set()

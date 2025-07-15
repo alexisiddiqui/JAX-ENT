@@ -137,6 +137,11 @@ class DataSplitter:
             f"Common residues must be a set of Partial_Topology objects {common_residues}"
         )
 
+        if len(common_residues) < 2:
+            raise ValueError(
+                f"Common residues must contain at least 2 residues for splitting, got {len(common_residues)}"
+            )
+
         # Store original common_residues
         self.common_residues = common_residues
 
@@ -148,6 +153,10 @@ class DataSplitter:
             self.dataset.data, common_residues, check_trim=check_trim
         )
 
+        # If dataset is empty after filtering, raise an error
+        if not self.dataset.data:
+            raise ValueError("Filtered dataset is empty. No common residues found in the dataset.")
+
         # Create splittable_residues - these are the merged topology objects per chain
         # that define the splittable space for data splitting
         self.splittable_residues = self._create_splittable_residues()
@@ -157,9 +166,13 @@ class DataSplitter:
             print(f"  Chain {chain}: {topo}")
 
         # Calculate fragment overlaps for centrality sampling
-        self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
-            [data.top for data in self.dataset.data], mode="mean", check_trim=check_trim
-        )
+        if self.dataset.data:  # Only calculate if we have data
+            self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
+                [data.top for data in self.dataset.data], mode="mean", check_trim=check_trim
+            )
+        else:
+            # Handle empty dataset case
+            self.fragment_overlaps = []
 
         # Initialize storage for last split results
         self.last_split_train_topologies_by_chain = {}
@@ -249,6 +262,11 @@ class DataSplitter:
         Sample fragments by centrality to select the most central fragments from the dataset.
         This is crucial for effective splitting with peptide data.
         """
+        if not self.fragment_overlaps:
+            # If no fragment overlaps calculated, return the entire dataset
+            print("No fragment overlaps available, returning entire dataset")
+            return self.dataset.data
+
         max_centrality = max(self.fragment_overlaps)
         if max_centrality == 0:
             # Assign uniform weights if all weights are zero
@@ -256,8 +274,12 @@ class DataSplitter:
         else:
             centrality_weights = [1 - (c / max_centrality) for c in self.fragment_overlaps]
             total = sum(centrality_weights)
-            # Normalize weights
-            centrality_weights = [w / total for w in centrality_weights]
+            if total == 0:
+                # If total is zero, all weights are zero. Assign uniform weights.
+                centrality_weights = [1 / len(self.fragment_overlaps)] * len(self.fragment_overlaps)
+            else:
+                # Normalize weights
+                centrality_weights = [w / total for w in centrality_weights]
 
         # randomly sample data based on centrality as weights
         sample_size = int(threshold * len(self.dataset.data))
@@ -308,11 +330,11 @@ class DataSplitter:
         Process:
         1. Randomly select training datapoints (optionally using centrality sampling)
         2. Create merged topologies for train/val sets using class method
-        3. Use filter_common_residues to assign datapoints to train/val sets
-        4. Remove overlaps between train/val sets if requested
+        3. Remove overlaps between merged topologies if requested (using Partial_Topology methods)
+        4. Use filter_common_residues to assign datapoints to train/val sets
 
         Args:
-            remove_overlap: If True, remove datapoints that intersect with both train and val sets
+            remove_overlap: If True, remove overlaps between train and val merged topologies
 
         Returns:
             Tuple of (training_datapoints, validation_datapoints)
@@ -352,7 +374,58 @@ class DataSplitter:
             val_topologies, self.check_trim, "val"
         )
 
-        # Step 3: Use filter_common_residues to create train/val sets
+        # Step 3: Remove overlaps between merged topologies if requested
+        if remove_overlap:
+            print("Removing overlaps between merged train/val topologies...")
+
+            updated_val_topologies = {}
+
+            for chain in merged_val_topologies.keys():
+                val_topo = merged_val_topologies[chain]
+
+                if chain in merged_train_topologies:
+                    train_topo = merged_train_topologies[chain]
+
+                    # Check if there's overlap between train and val topologies for this chain
+                    if val_topo.intersects(train_topo, check_trim=self.check_trim):
+                        overlap_residues = val_topo.get_overlap(
+                            train_topo, check_trim=self.check_trim
+                        )
+                        print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
+
+                        # Create a temporary topology with overlapping residues to remove
+                        overlap_topo = Partial_Topology.from_residues(
+                            chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
+                        )
+
+                        try:
+                            # Remove overlapping residues from validation topology
+                            updated_val_topo = val_topo.remove_residues([overlap_topo])
+                            updated_val_topologies[chain] = updated_val_topo
+                            print(
+                                f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
+                            )
+                        except ValueError as e:
+                            # If no residues remain after removal, skip this chain for validation
+                            print(
+                                f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
+                            )
+                            continue
+                    else:
+                        # No overlap, keep original topology
+                        updated_val_topologies[chain] = val_topo
+                else:
+                    # No corresponding train topology for this chain, keep original
+                    updated_val_topologies[chain] = val_topo
+
+            # Update merged topologies
+            merged_val_topologies = updated_val_topologies
+
+            # Check if we still have validation topologies after overlap removal
+            if not merged_val_topologies:
+                raise ValueError("No validation topologies remain after overlap removal")
+
+        # Step 4: Use filter_common_residues to create train/val sets
         # Convert merged topologies back to sets for filtering
         train_topology_set = set(merged_train_topologies.values())
         val_topology_set = set(merged_val_topologies.values())
@@ -364,29 +437,6 @@ class DataSplitter:
         final_val_data = filter_common_residues(
             self.dataset.data, val_topology_set, check_trim=self.check_trim
         )
-
-        # Step 4: Remove overlaps if requested
-        if remove_overlap:
-            print("Removing overlapping fragments between train/val sets...")
-
-            # Remove datapoints from val that intersect with train topologies
-            # This ensures that the validation set is completely separate from the training set
-            # We only need to filter one way to ensure no overlap.
-            # Filtering train against val as well can lead to empty sets if they fully overlap.
-            filtered_val_data = []
-            for datapoint in final_val_data:
-                dp_chain = datapoint.top.chain
-                train_intersects = dp_chain in merged_train_topologies and datapoint.top.intersects(
-                    merged_train_topologies[dp_chain], check_trim=self.check_trim
-                )
-                if not train_intersects:
-                    filtered_val_data.append(datapoint)
-
-            print(
-                f"Removed {len(final_val_data) - len(filtered_val_data)} overlapping validation fragments"
-            )
-
-            final_val_data = filtered_val_data
 
         # Store merged topologies for reference
         self.last_split_train_topologies_by_chain = merged_train_topologies
