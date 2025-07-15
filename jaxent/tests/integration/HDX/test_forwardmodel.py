@@ -15,7 +15,9 @@ def test_calculate_intrinsic_rates():
     # topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
     # rates_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
     topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    rates_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/BPTI_Intrinsic_rates.dat"
+    rates_path = (
+        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_Intrinsic_rates.dat"
+    )
     # Load universe
     universe = mda.Universe(topology_path)
 
@@ -31,7 +33,7 @@ def test_calculate_intrinsic_rates():
         header = f.readline().strip()
     print(f"Header from file: {header}")
 
-    df = pd.read_csv(rates_path, delim_whitespace=True)
+    df = pd.read_csv(rates_path, sep="\s+")
     print(f"Columns in DataFrame: {df.columns.tolist()}")
     print(f"Shape of DataFrame: {df.shape}")
     # Rename columns
@@ -41,8 +43,14 @@ def test_calculate_intrinsic_rates():
     exp_kints = df["k_int"].values
     residue_ids = np.array([res.resid for res in universe.residues])
     resnames = np.array([res.resname for res in universe.residues])
-    pred_dict = {res: rate for res, rate in pred_rates.items()}
+
+    # Create mapping from residue ID to Residue object
+    residue_id_to_residue = {res.resid: res for res in universe.residues}
+
+    # Create dictionaries using residue IDs as keys for easier comparison
+    pred_dict = {res.resid: rate for res, rate in pred_rates.items()}
     exp_dict = {res: rate for res, rate in zip(exp_residues, exp_kints)}
+
     # Get the residue numbers that match the exp_residues
     res_indexes = [np.where(residue_ids == res)[0][0] for res in exp_residues]
     print(res_indexes)
