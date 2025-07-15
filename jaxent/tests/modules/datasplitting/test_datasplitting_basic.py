@@ -138,7 +138,7 @@ class TestDataSplitter:
         train_data = create_test_datapoints * 3  # 18 datapoints
         val_data = create_test_datapoints * 2  # 12 datapoints
 
-        assert splitter.validate_split(train_data, val_data) == True
+        assert splitter.validate_split(train_data, val_data) is True
 
     def test_validate_too_small_split(self, setup_datasplitter, create_test_datapoints):
         """Test validation with too few samples in one split."""
@@ -148,7 +148,7 @@ class TestDataSplitter:
         train_data = create_test_datapoints[:4]  # Only 4 datapoints
         val_data = create_test_datapoints * 2  # 12 datapoints
 
-        with pytest.raises(ValueError, match="Training or validation set is too small"):
+        with pytest.raises(ValueError, match="set is too small"):
             splitter.validate_split(train_data, val_data)
 
     def test_validate_empty_split(self, setup_datasplitter):

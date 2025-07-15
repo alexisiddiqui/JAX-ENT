@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Generic, Protocol, Sequence
 
 import jax.numpy as jnp
@@ -95,7 +95,7 @@ class Output_Features(Protocol):
 class Input_Features(Protocol, Generic[T_Feat_In]):
     __slots__: ClassVar[tuple[str]]
     __features__: ClassVar[set[str]]
-    key: ClassVar[set[m_key]]
+    key: m_key | None = field(default=None)
 
     @property
     def features_shape(self) -> tuple[float | int, ...]: ...

@@ -1,5 +1,4 @@
-import copy
-from typing import Sequence, cast
+from typing import Sequence
 
 import jax.numpy as jnp
 from jax import Array
@@ -10,23 +9,21 @@ from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 
 
-####################################################################################################
-# TODO this needs to be modified to handle timepoints - variable sizing of experimental fragments
-# The input features will be output for every residue regardless - so the sparse mapping should just expanded out to match the number of timepoints
 def create_sparse_map(
     input_features: Input_Features,
     feature_topology: Sequence[Partial_Topology],
     output_features: Sequence[ExpD_Datapoint],
+    check_trim: bool = False,
 ) -> sparse.BCOO:
-    ####################################################################################################
     """
     Creates a sparse mapping matrix in BCOO format to map residue-wise features
-    to experimental fragment features.
+    to experimental fragment features using robust topology intersection methods.
 
     Args:
         input_features: Input features with shape (..., n_residues)
         feature_topology: List of topology fragments matching input features
         output_features: List of experimental fragments to map to
+        check_trim: If True, use peptide_residues for peptides when checking intersections
 
     Returns:
         BCOO sparse matrix that maps from residue-wise features to experimental fragments
@@ -37,162 +34,152 @@ def create_sparse_map(
     print(f"Number of feature topology fragments: {len(feature_topology)}")
     print(f"Number of output features: {len(output_features)}")
 
+    # Validate inputs
     assert all([isinstance(top, Partial_Topology) for top in feature_topology]), (
         "Feature topology must be a list of Partial_Topology objects"
     )
     assert all([isinstance(frag, ExpD_Datapoint) for frag in output_features]), (
-        "Output features must be a list of Experimental_Fragment objects"  # noqa
+        "Output features must be a list of ExpD_Datapoint objects"
     )
-
-    # Print some example fragments
-    print("\nSample feature topology:")
-    for i, top in enumerate(feature_topology[:3]):  # First 3 fragments
-        print(f"Fragment {i}: chain={top.chain}, start={top.residue_start}, end={top.residue_end}")
-
-    print("\nSample output features:")
-    for i, frag in enumerate(output_features[:3]):  # First 3 fragments
-        print(
-            f"Fragment {i}: chain={frag.top.chain}, start={frag.top.residue_start}, end={frag.top.residue_end}"
-        )
-
     assert input_features.features_shape[0] == len(feature_topology), (
         "Input features and topology do not match"
     )
+
+    # Validate and organize feature topology indices
     try:
-        # assert that fragment indices are present and unique
         assert all([top.fragment_index is not None for top in feature_topology]), (
             "Fragment indices are not present in feature topology"
         )
         assert len(set([top.fragment_index for top in feature_topology])) == len(
             feature_topology
         ), "Fragment indices are not unique in feature topology"
-
-        assert all([out_feat.top.fragment_index is not None for out_feat in output_features]), (
-            "Fragment indices are not present in output features"
-        )
-        assert all(feat_top.fragment_index is not None for feat_top in feature_topology), (
-            "Fragment indices are not present in feature topology"
-        )
     except AssertionError as e:
-        UserWarning(f"Fragment indices are not present in feature topology: {e}")
+        raise ValueError(f"Fragment indices are invalid in feature topology: {e}")
 
-    print(feature_topology)
-
-    # sort feature_topology by fragment index
-    feature_topology = sorted(
+    # Sort feature topology by fragment index to ensure alignment with input features
+    feature_topology_sorted = sorted(
         feature_topology, key=lambda x: x.fragment_index if x.fragment_index is not None else -1
     )
-    print(feature_topology)
 
-    assert all([top.fragment_index == i for i, top in enumerate(feature_topology)]), (
+    assert all([top.fragment_index == i for i, top in enumerate(feature_topology_sorted)]), (
         "Topology fragments are not indexed from 0 - have they been matched with the input features?"
     )
 
-    stripped_feature_topology = copy.deepcopy(feature_topology)
-    for top in stripped_feature_topology:
-        top.fragment_index = None
-    stripped_output_topology = copy.deepcopy(output_features)
-    for frag in stripped_output_topology:
-        frag.top.fragment_index = None
+    print("\nSample feature topology:")
+    for i, top in enumerate(feature_topology_sorted[:3]):
+        print(f"Fragment {i}: {top}")
 
-    # # assert that set of feature topology is contained within output features topologies
-    # assert set([f.top for f in stripped_output_topology]).issubset(
-    #     set(stripped_feature_topology)
-    # ), f"""Feature topology is not contained within output features: ≈
-    #         \n Output features: \n
-    #         {set([f.top for f in output_features])}
-    #         \n Stripped Feature topology: \n
-    #         {set(stripped_feature_topology)}"""
-    if not set([f.top for f in stripped_output_topology]).issubset(set(stripped_feature_topology)):
-        UserWarning(
-            f"Feature topology is not contained within output features: \n Output features: \n {set([f.top for f in output_features])} \n Stripped Feature topology: \n {set(stripped_feature_topology)}"
-        )
+    print("\nSample output features:")
+    for i, frag in enumerate(output_features[:3]):
+        print(f"Fragment {i}: {frag.top}")
 
-    n_residues = len(feature_topology)
+    # Group topologies by chain for efficient processing
+    feature_topologies_by_chain = Partial_Topology.group_set_by_chain(set(feature_topology_sorted))
+    output_topologies_by_chain = {}
+    for i, exp_frag in enumerate(output_features):
+        chain = exp_frag.top.chain
+        if chain not in output_topologies_by_chain:
+            output_topologies_by_chain[chain] = []
+        output_topologies_by_chain[chain].append((i, exp_frag.top))
+
+    print(f"\nFeature topologies grouped by chain: {list(feature_topologies_by_chain.keys())}")
+    print(f"Output topologies grouped by chain: {list(output_topologies_by_chain.keys())}")
+
+    n_residues = len(feature_topology_sorted)
     n_fragments = len(output_features)
 
     # Initialize lists to store indices and values for BCOO matrix
-    rows = []  # Fragment indices
-    cols = []  # Residue indices
+    rows = []  # Fragment indices (output)
+    cols = []  # Residue indices (input features)
     values = []  # Contribution weights
 
-    # For each experimental fragment
+    # Process each output fragment using robust topology methods
     for frag_idx, exp_frag in enumerate(output_features):
-        # Get the residues covered by this fragment
-        if cast(int, exp_frag.top.length) > 2:  # For peptides
-            frag_residues = exp_frag.top.peptide_residues
-        else:  # For single residues
-            frag_residues = range(
-                exp_frag.top.residue_start, cast(int, exp_frag.top.residue_end) + 1
-            )
+        exp_topology = exp_frag.top
+        chain = exp_topology.chain
 
-        # Find matching residues in feature topology
-        for res_id in frag_residues:
-            for res_idx, feat_top in enumerate(feature_topology):
-                if (
-                    feat_top.chain == exp_frag.top.chain
-                    and feat_top.residue_start <= res_id <= cast(int, feat_top.residue_end)
-                ):
-                    # Add indices for this residue's contribution
+        # Get active residues for this experimental fragment
+        exp_active_residues = exp_topology._get_active_residues(check_trim=check_trim)
+        exp_residue_count = len(exp_active_residues)
+
+        if exp_residue_count == 0:
+            print(f"Warning: Experimental fragment {frag_idx} has no active residues")
+            continue
+
+        # Only check feature topologies from the same chain
+        if chain not in feature_topologies_by_chain:
+            print(f"Warning: No feature topologies found for chain {chain}")
+            continue
+
+        same_chain_features = feature_topologies_by_chain[chain]
+
+        # Find intersecting feature topologies using robust methods
+        for feat_topology in same_chain_features:
+            # Check if topologies intersect
+            if exp_topology.intersects(feat_topology, check_trim=check_trim):
+                # Get the overlapping residues
+                overlap_residues = exp_topology.get_overlap(feat_topology, check_trim=check_trim)
+
+                if overlap_residues:
+                    # Get the feature index (this should be the position in the sorted list)
+                    feat_idx = feat_topology.fragment_index
+
+                    if feat_idx is None:
+                        print(f"Warning: Feature topology {feat_topology} has no fragment_index")
+                        continue
+
+                    # Calculate contribution weight based on overlap
+                    # Weight by the proportion of overlapping residues relative to experimental fragment
+                    overlap_count = len(overlap_residues)
+                    contribution_weight = overlap_count / exp_residue_count
+
+                    # Add this mapping
                     rows.append(frag_idx)
-                    cols.append(res_idx)
-                    # Weight by 1/number of residues in fragment
-                    values.append(1.0 / len(frag_residues))
-    # Debug prints
+                    cols.append(feat_idx)
+                    values.append(contribution_weight)
+
+                    print(
+                        f"  Mapping: exp_frag[{frag_idx}] <- feat[{feat_idx}] "
+                        f"(overlap: {overlap_count}/{exp_residue_count} residues, "
+                        f"weight: {contribution_weight:.3f})"
+                    )
+
+    print("\nSparse matrix statistics:")
     print(f"Number of non-zero elements: {len(values)}")
     print(f"Matrix shape: ({n_fragments}, {n_residues})")
+    if n_fragments * n_residues > 0:
+        print(f"Sparsity: {len(values) / (n_fragments * n_residues):.4f}")
+    else:
+        print("Sparsity: N/A (zero dimension matrix)")
 
     if not values:
-        raise ValueError("No matching residues found - sparse matrix would be empty")
+        raise ValueError(
+            "No matching residues found - sparse matrix would be empty. "
+            "Check that feature_topology and output_features have overlapping residues."
+        )
 
     # Convert to JAX arrays
     indices = jnp.array([rows, cols], dtype=jnp.int32)
-    values = jnp.array(values)
+    values_array = jnp.array(values, dtype=jnp.float32)
 
-    # More debug prints
-    print(f"Indices shape: {indices.shape}")
-    print(f"Values shape: {values.shape}")
+    print(f"Final indices shape: {indices.shape}")
+    print(f"Final values shape: {values_array.shape}")
 
-    print("Debug info before BCOO creation:")
-    print(f"indices array shape: {indices.shape}")
-    print(f"values array shape: {values.shape}")
-    print(f"target matrix shape: {(n_fragments, n_residues)}")
-    print(
-        f"Sample indices: {indices[:, :5] if indices.size > 0 else 'empty'}"
-    )  # Show first 5 indices
-    print(f"Sample values: {values[:5] if values.size > 0 else 'empty'}")  # Show first 5 values
-
-    # Need to ensure indices and values are properly shaped for BCOO
-    if indices.size > 0:
-        # Ensure indices has correct shape (2, N) where N is number of non-zero elements
-        indices = indices.reshape(2, -1)
-        # Ensure values has shape (N,)
-        values = values.reshape(-1)
-    indices = jnp.asarray(indices, dtype=jnp.int32)
-    values = jnp.asarray(values, dtype=jnp.float32)
-
-    # Explicitly specify the n_batch and n_dense parameters
-    dense = jnp.zeros((n_fragments, n_residues))
-
-    # Convert indices and values to numpy for indexing
-    indices_np = jnp.asarray(indices).astype(jnp.int32)
-    values_np = jnp.asarray(values).astype(jnp.float32)
-
-    # Create dense matrix with the sparse values
-    dense = dense.at[indices_np[0], indices_np[1]].set(values_np)
+    # Create dense matrix first, then convert to BCOO
+    dense_matrix = jnp.zeros((n_fragments, n_residues), dtype=jnp.float32)
+    dense_matrix = dense_matrix.at[indices[0], indices[1]].set(values_array)
 
     # Convert to BCOO format
-    bcoo_mat = sparse.bcoo_fromdense(dense)
+    bcoo_matrix = sparse.bcoo_fromdense(dense_matrix)
 
-    return bcoo_mat
+    print(f"Created BCOO matrix with shape {bcoo_matrix.shape}")
 
-
-####################################################################################################
+    return bcoo_matrix
 
 
 def apply_sparse_mapping(sparse_map: sparse.BCOO, features: Array) -> Array:
     """
-    Applies the sparse mapping to input features using bcoo_multiply_dense.
+    Applies the sparse mapping to input features.
 
     Args:
         sparse_map: BCOO sparse matrix mapping residues to fragments
@@ -201,5 +188,5 @@ def apply_sparse_mapping(sparse_map: sparse.BCOO, features: Array) -> Array:
     Returns:
         Mapped features with shape (..., n_fragments)
     """
+    # Use matrix multiplication for proper broadcasting
     return sparse_map.todense() @ features
-    return sparse.bcoo_multiply_dense(sparse_map, features)

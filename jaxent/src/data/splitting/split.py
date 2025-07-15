@@ -4,7 +4,6 @@ from typing import Sequence
 
 import MDAnalysis as mda
 
-# import kmeans from sklearn.cluster
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 
@@ -48,10 +47,6 @@ def filter_common_residues(
             for common_topo in common_residues
         )
 
-        # Only print detailed debugging information if no intersections found
-        if not has_common_residues:
-            pass
-
         if has_common_residues:
             new_data.append(data)
 
@@ -69,36 +64,13 @@ class DataSplitter:
     It supports various splitting strategies including random, stratified, spatial, and clustering.
     It also allows for centrality-based sampling to prioritize more central fragments in the dataset.
 
-    The process requries either an ensemble of MDAnalysis Universes or a set of precomputed common residues to ensure that fragments
-    share a common set of residues, which is crucial for effective splitting, especially with peptide data. Partial_Topology objects only cover an individual chain and so comparisons must be made for each chain separately.
+    The process requires either an ensemble of MDAnalysis Universes or a set of precomputed common residues to ensure that fragments
+    share a common set of residues, which is crucial for effective splitting, especially with peptide data.
 
-    If no common residues are provided, it will attempt to compute them from the ensemble.
-    - This uses the 'find_common_residues' method from the Partial_Topology class to identify residues that are shared across all fragments in the ensemble.
-    - find_common_residues produces a set of Partial_Topology objects representing these common residues. These are then grouped by chain and are then merged to create Partial_Topologies that cover entire chains.
-
-    The Experimental Dataset is then filtered to only include fragments that contain these common residues for each chain.
-    - To save computation this is performed against the chain partial topologies, which are then used to filter the dataset.
-
-    The overlap between experimental data points is calculated using the 'calculate_fragment_redundancy' method from the Partial_Topology class.
-
-    Splitting:
-    The overall process of splitting the dataset involves selecting residue parital_topologies using the splitting algorithm specified and then builing merged Partial_Topology objects from these residues for the training and validation sets.
-    The datapoints are then filtered to only include those that match the selected training/validation partial_topologies for each chain.
-    Overlapping fragments are removed by checking against the merged Partial_Topology objects for each chain of the opposite training/validation set.
-
-    - Random Split:
-    This randomly selects the datapoints - merges them into Partial_Topology objects and then filters the dataset to only include those that match the selected training/validation partial_topologies for each chain.
-
-    - Stratified Split:
-    This extracts the y values from the dataset and applies z scoring to each dimension (ex: timepoints in HDX-uptake) across the datapoints. This ensures that y values can be binned into strata by averaging across z scores.
-    The dataset is binned into strata based on these z scores and then an equal number of datapoints are sampled from each stratum to create the training and validation sets. Each training/validation set is merged across chains to create Partial_Topology objects that cover the entire chain for training and validation set.
-
-    - Spatial Split:
-    This performs a split based on the proximal residues in the ensemble. This is achieved by calculating the COM pairwise-residue distances from the averaged coordiantes of residudes across ensembles. This uses the 'to_mda_group' method from the Partial_Topology class to convert the common residues to MDAnalysis ResidueGroup objects. These objects are then used to calculate the average coordinates for each residue across the ensemble.
-    From these pairwise distacnes a seed residue is selected at random from a selected chain (most common if not provided) and the closest residues to it are selected up to the specified train_size. This is then used to create Partial_Topology objects for the training and validation sets.
-
-    - Cluster Split:
-    This performs a clustering of the dataset based on the specified clustering type (sequence, residue_index, fragment_index, or features (z-score normalised by dimension/timepoint)). Clustering is performed using k-means clustering based on the data. Merged Partial_Topology objects are created for the training and validation sets for each chain based on the cluster labels assigned to each datapoint.
+    Key improvements:
+    - Simplified topology merging with reusable class method
+    - Pre-computed splittable_residues for efficient splitting
+    - Streamlined splitting logic using filter_common_residues
     """
 
     def __init__(
@@ -107,52 +79,176 @@ class DataSplitter:
         random_seed: int = 42,
         ensemble: list[mda.Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
-        peptide: bool = True,
-        peptide_trim: int = 1,
+        check_trim: bool = False,
+        peptide_trim: int = 2,
         centrality: bool = True,
         train_size: float = 0.5,
-        check_chains: bool = True,
-        mda_selection_ignore: str = "resname PRO or resid 1",
+        include_selection: str | list[str] = "protein",
+        exclude_selection: str | list[str] = "resname PRO or resid 1",
+        max_retry_depth: int = 10,
     ):
         self.dataset = copy.deepcopy(dataset)
-
         self.random_seed = random_seed
+        self.original_random_seed = random_seed  # Store original for retry logic
         random.seed(random_seed)
-
         self.train_size = train_size
         self.centrality = centrality
+        self.check_trim = check_trim
+        self.check_trim_trim = peptide_trim
+        self.max_retry_depth = max_retry_depth
+        self.current_retry_count = 0
+
+        # Process selection strings - convert to lists and ensure same length
+        include_selection = self._process_selection_strings(include_selection)
+        exclude_selection = self._process_selection_strings(exclude_selection)
+
+        # Ensure both lists are the same length
+        if len(include_selection) != len(exclude_selection):
+            # If one is length 1, repeat it to match the other
+            if len(include_selection) == 1 and len(exclude_selection) > 1:
+                include_selection = include_selection * len(exclude_selection)
+            elif len(exclude_selection) == 1 and len(include_selection) > 1:
+                exclude_selection = exclude_selection * len(include_selection)
+            else:
+                raise ValueError(
+                    f"include_selection and exclude_selection must be the same length or one must be length 1. "
+                    f"Got lengths {len(include_selection)} and {len(exclude_selection)}"
+                )
+
+        self.include_selection = include_selection
+        self.exclude_selection = exclude_selection
+
+        print(
+            f"Using selection strings: include_selection={include_selection}, exclude_selection={exclude_selection}"
+        )
+
+        # Handle common_residues - either provided or computed from ensemble
         if common_residues is None and ensemble is not None:
+            # For now, use the first selection string - could be enhanced to use all
             common_residues, excluded_residues = Partial_Topology.find_common_residues(
-                ensemble, mda_selection_ignore
+                ensemble,
+                include_selection=self.include_selection,
+                exclude_selection=self.exclude_selection,
             )
-        elif (common_residues and ensemble) is None:
-            pass
-        elif common_residues and ensemble:
-            pass
-        else:
+        elif common_residues is None and ensemble is None:
             raise ValueError("Either common_residues or ensemble must be provided")
 
         assert isinstance(common_residues, set), (
             f"Common residues must be a set of Partial_Topology objects {common_residues}"
         )
 
+        # Store original common_residues
         self.common_residues = common_residues
 
         print(f"Common residues: {len(common_residues)}")
         print(f"Dataset size: {len(dataset.data)}")
 
+        # Filter dataset using common residues
         self.dataset.data = filter_common_residues(
-            self.dataset.data, common_residues, peptide=peptide
+            self.dataset.data, common_residues, check_trim=check_trim
         )
 
-        self.dataset.top = [data.top for data in self.dataset.data]
+        # Create splittable_residues - these are the merged topology objects per chain
+        # that define the splittable space for data splitting
+        self.splittable_residues = self._create_splittable_residues()
 
+        print(f"Created splittable residues for {len(self.splittable_residues)} chains:")
+        for chain, topo in self.splittable_residues.items():
+            print(f"  Chain {chain}: {topo}")
+
+        # Calculate fragment overlaps for centrality sampling
         self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
-            self.dataset.top, mode="mean", peptide=peptide
+            [data.top for data in self.dataset.data], mode="mean", check_trim=check_trim
         )
+
+        # Initialize storage for last split results
+        self.last_split_train_topologies_by_chain = {}
+        self.last_split_val_topologies_by_chain = {}
+
+    def _process_selection_strings(self, selection: str | list[str]) -> list[str]:
+        """
+        Process selection strings to ensure they are lists.
+
+        Args:
+            selection: Either a string or list of strings
+
+        Returns:
+            List of selection strings
+        """
+        if isinstance(selection, str):
+            return [selection]
+        elif isinstance(selection, list):
+            return selection
+        else:
+            raise ValueError(f"Selection must be string or list of strings, got {type(selection)}")
+
+    def _create_splittable_residues(self) -> dict[str, Partial_Topology]:
+        """
+        Create merged topology objects per chain from common_residues.
+        These define the splittable space for each chain.
+
+        Returns:
+            Dictionary mapping chain -> merged Partial_Topology for that chain
+        """
+        common_residues_by_chain = Partial_Topology.group_set_by_chain(self.common_residues)
+        splittable_residues = {}
+
+        for chain, chain_residues in common_residues_by_chain.items():
+            if chain_residues:
+                try:
+                    merged_topo = Partial_Topology.merge(
+                        list(chain_residues),
+                        trim=self.check_trim,
+                        merged_name=f"splittable_chain_{chain}",
+                    )
+                    splittable_residues[chain] = merged_topo
+                except ValueError as e:
+                    print(f"Warning: Could not merge common residues for chain {chain}: {e}")
+
+        return splittable_residues
+
+    def _merge_topologies_by_chain(
+        self,
+        topologies: list[Partial_Topology],
+        check_trim: bool = False,
+        name_prefix: str = "merged",
+    ) -> dict[str, Partial_Topology]:
+        """
+        Group topologies by chain and merge them.
+
+        Args:
+            topologies: List of Partial_Topology objects to group and merge
+            check_trim: Whether to apply trimming during merge
+            name_prefix: Prefix for naming merged topologies
+
+        Returns:
+            Dictionary mapping chain -> merged Partial_Topology for that chain
+        """
+        topologies_by_chain = Partial_Topology.group_set_by_chain(set(topologies))
+        merged_topologies = {}
+
+        for chain, chain_topologies in topologies_by_chain.items():
+            if chain_topologies:
+                try:
+                    merged_topo = Partial_Topology.merge(
+                        list(chain_topologies),
+                        trim=check_trim,
+                        merged_name=f"{name_prefix}_chain_{chain}",
+                    )
+                    merged_topologies[chain] = merged_topo
+                    print(
+                        f"Merged {len(chain_topologies)} topologies for chain {chain}: {merged_topo}"
+                    )
+                except ValueError as e:
+                    print(f"Warning: Could not merge topologies for chain {chain}: {e}")
+
+        return merged_topologies
 
     def sample_by_centrality(self, threshold: float = 0.9) -> list[ExpD_Datapoint]:
-        # this helps us select the most central fragments from the dataset - this is crucial for effective splitting with peptide data
+        """
+        Sample fragments by centrality to select the most central fragments from the dataset.
+        This is crucial for effective splitting with peptide data.
+        """
         max_centrality = max(self.fragment_overlaps)
         if max_centrality == 0:
             # Assign uniform weights if all weights are zero
@@ -167,19 +263,23 @@ class DataSplitter:
         sample_size = int(threshold * len(self.dataset.data))
         train_data = random.choices(self.dataset.data, weights=centrality_weights, k=sample_size)
 
-        # only need to sample the training data - rest is discarded
+        print(f"Sampled {len(train_data)} fragments by centrality (threshold={threshold})")
         return train_data
 
     def validate_split(
         self, train_data: list[ExpD_Datapoint], val_data: list[ExpD_Datapoint]
     ) -> bool:
-        # this needs to check that the split is suitable for training - i.e. that datsets are not too small
-        assert (len(train_data) and len(val_data)) > 0, (
+        """
+        Validate that the split is suitable for training - i.e. that datasets are not too small
+        """
+        assert len(train_data) > 0 and len(val_data) > 0, (
             "No data found in training or validation set"
         )
 
         if len(train_data) < 5 or len(val_data) < 5:
-            raise ValueError("Training or validation set is too small")
+            raise ValueError(
+                f"Training ({len(train_data)}) or validation ({len(val_data)}) set is too small"
+            )
 
         # check they are a sufficient proportion of the dataset
         train_ratio = len(train_data) / len(self.dataset.data)
@@ -187,43 +287,129 @@ class DataSplitter:
 
         if train_ratio < 0.1 or val_ratio < 0.1:
             raise ValueError(
-                f"Training or validation set is too small: {len(train_data)} / {len(self.dataset.data)}, {len(val_data)} / {len(self.dataset.data)}"
+                f"Training or validation set is too small: "
+                f"train={len(train_data)}/{len(self.dataset.data)} ({train_ratio:.2%}), "
+                f"val={len(val_data)}/{len(self.dataset.data)} ({val_ratio:.2%})"
             )
         return True
+
+    def _reset_retry_counter(self):
+        """Reset retry counter for new split attempts."""
+        self.current_retry_count = 0
+        self.random_seed = self.original_random_seed
+        random.seed(self.random_seed)
 
     def random_split(
         self, remove_overlap: bool = False
     ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
-        # just performs a random split
+        """
+        Perform random split using simplified approach with pre-computed splittable residues.
+
+        Process:
+        1. Randomly select training datapoints (optionally using centrality sampling)
+        2. Create merged topologies for train/val sets using class method
+        3. Use filter_common_residues to assign datapoints to train/val sets
+        4. Remove overlaps between train/val sets if requested
+
+        Args:
+            remove_overlap: If True, remove datapoints that intersect with both train and val sets
+
+        Returns:
+            Tuple of (training_datapoints, validation_datapoints)
+        """
+
+        print(
+            f"Starting random split with train_size={self.train_size}, remove_overlap={remove_overlap}"
+        )
+
+        # Step 1: Apply centrality sampling if requested, then randomly select training datapoints
         if self.centrality:
-            dataset = self.sample_by_centrality()
+            source_dataset = self.sample_by_centrality()
         else:
-            dataset = self.dataset.data
+            source_dataset = self.dataset.data
 
-        train_size = int(self.train_size * len(dataset))
-        train_data = random.sample(dataset, train_size)
+        if len(source_dataset) < 2:
+            raise ValueError(
+                f"Source dataset is too small to split ({len(source_dataset)} datapoints)."
+            )
 
-        val_data = [d for d in dataset if d not in train_data]
+        train_size = int(self.train_size * len(source_dataset))
+        selected_train_data = random.sample(source_dataset, train_size)
+        selected_val_data = [d for d in source_dataset if d not in selected_train_data]
 
-        train_fragments = set([d.top for d in train_data])
-        val_fragments = set([d.top for d in val_data])
+        print(
+            f"Randomly selected {len(selected_train_data)} training and {len(selected_val_data)} validation datapoints"
+        )
 
-        intersecting_fragments = train_fragments.intersection(val_fragments)
+        # Step 2: Create merged topologies using the class method
+        train_topologies = [d.top for d in selected_train_data]
+        val_topologies = [d.top for d in selected_val_data]
 
+        merged_train_topologies = self._merge_topologies_by_chain(
+            train_topologies, self.check_trim, "train"
+        )
+        merged_val_topologies = self._merge_topologies_by_chain(
+            val_topologies, self.check_trim, "val"
+        )
+
+        # Step 3: Use filter_common_residues to create train/val sets
+        # Convert merged topologies back to sets for filtering
+        train_topology_set = set(merged_train_topologies.values())
+        val_topology_set = set(merged_val_topologies.values())
+
+        # Filter entire dataset using the merged topologies
+        final_train_data = filter_common_residues(
+            self.dataset.data, train_topology_set, check_trim=self.check_trim
+        )
+        final_val_data = filter_common_residues(
+            self.dataset.data, val_topology_set, check_trim=self.check_trim
+        )
+
+        # Step 4: Remove overlaps if requested
         if remove_overlap:
-            # remove overlapping fragments from validation set
-            val_data = [d for d in val_data if d.top not in intersecting_fragments]
-            train_data = [d for d in train_data if d.top not in intersecting_fragments]
+            print("Removing overlapping fragments between train/val sets...")
+
+            # Remove datapoints from val that intersect with train topologies
+            # This ensures that the validation set is completely separate from the training set
+            # We only need to filter one way to ensure no overlap.
+            # Filtering train against val as well can lead to empty sets if they fully overlap.
+            filtered_val_data = []
+            for datapoint in final_val_data:
+                dp_chain = datapoint.top.chain
+                train_intersects = dp_chain in merged_train_topologies and datapoint.top.intersects(
+                    merged_train_topologies[dp_chain], check_trim=self.check_trim
+                )
+                if not train_intersects:
+                    filtered_val_data.append(datapoint)
+
+            print(
+                f"Removed {len(final_val_data) - len(filtered_val_data)} overlapping validation fragments"
+            )
+
+            final_val_data = filtered_val_data
+
+        # Store merged topologies for reference
+        self.last_split_train_topologies_by_chain = merged_train_topologies
+        self.last_split_val_topologies_by_chain = merged_val_topologies
+
+        print(f"Final split: {len(final_train_data)} training, {len(final_val_data)} validation")
 
         try:
-            is_valid = self.validate_split(train_data, val_data)
-            return train_data, val_data
-        except Exception:
-            print(f"Split is not valid - trying again {self.random_seed}")
+            self.validate_split(final_train_data, final_val_data)
+            return final_train_data, final_val_data
+        except Exception as e:
+            if self.current_retry_count >= self.max_retry_depth:
+                raise ValueError(
+                    f"Failed to create valid split after {self.max_retry_depth} attempts. "
+                    f"Last error: {e}. Consider adjusting train_size or other parameters."
+                )
 
-            # change random seed
+            print(
+                f"Split is not valid - trying again (attempt {self.current_retry_count + 1}/{self.max_retry_depth}, seed {self.random_seed}): {e}"
+            )
+            # Increment retry count and random seed
+            self.current_retry_count += 1
             self.random_seed += 1
             print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
-
             return self.random_split(remove_overlap=remove_overlap)

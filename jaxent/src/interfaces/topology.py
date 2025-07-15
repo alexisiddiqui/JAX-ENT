@@ -3,7 +3,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 import MDAnalysis as mda
+import numpy as np
 from tqdm import tqdm
+
+from jaxent.src.models.func.common import compute_trajectory_average_com_distances
 
 
 @dataclass
@@ -1284,15 +1287,17 @@ class Partial_Topology:
     def find_common_residues(
         cls,
         ensemble: list[mda.Universe],
-        include_mda_selection: str = "protein",
-        ignore_mda_selection: str = "resname SOL",
+        include_selection: Union[str, list[str]] = "protein",
+        exclude_selection: Union[str, list[str]] = "resname SOL",
     ) -> tuple[set["Partial_Topology"], set["Partial_Topology"]]:
         """Find common residues across an ensemble of MDAnalysis Universe objects.
 
         Args:
             ensemble: List of MDAnalysis Universe objects to analyze
-            include_mda_selection: Selection string for atoms to include
-            ignore_mda_selection: Selection string for atoms to exclude
+            include_selection: Selection string or list of strings for atoms to include.
+                               If a list, it must have the same length as the ensemble.
+            exclude_selection: Selection string or list of strings for atoms to exclude.
+                               If a list, it must have the same length as the ensemble.
 
         Returns:
             Tuple containing:
@@ -1300,28 +1305,39 @@ class Partial_Topology:
             - Set of excluded residues (present in some but not all universes)
 
         Raises:
-            ValueError: If no common residues are found
+            ValueError: If no common residues are found or if selection list lengths are incorrect.
             ImportError: If MDAnalysis is not available
         """
         if not ensemble:
             raise ValueError("Empty ensemble provided")
 
+        # Normalize selection strings to lists
+        if isinstance(include_selection, str):
+            include_selection = [include_selection] * len(ensemble)
+        if isinstance(exclude_selection, str):
+            exclude_selection = [exclude_selection] * len(ensemble)
+
+        if len(include_selection) != len(ensemble):
+            raise ValueError("include_selection list must have the same length as the ensemble")
+        if len(exclude_selection) != len(ensemble):
+            raise ValueError("exclude_selection list must have the same length as the ensemble")
+
         # Extract included chain topologies from each universe
         included_chain_topologies_by_universe = []
-        for universe in ensemble:
+        for i, universe in enumerate(ensemble):
             try:
                 # Extract chain topologies with filtering
                 chain_topos = cls.from_mda_universe(
                     universe,
                     mode="chain",
-                    include_selection=include_mda_selection,
-                    exclude_selection=ignore_mda_selection,
+                    include_selection=include_selection[i],
+                    exclude_selection=exclude_selection[i],
                     exclude_termini=True,
                     renumber_residues=True,
                 )
                 included_chain_topologies_by_universe.append(chain_topos)
             except Exception as e:
-                raise ValueError(f"Failed to extract topologies from universe: {e}")
+                raise ValueError(f"Failed to extract topologies from universe {i}: {e}")
 
         # Group chain topologies by chain ID across universes using the new method
         chain_ids = set()
@@ -1362,19 +1378,19 @@ class Partial_Topology:
 
         # Get all possible residues (without ignore selection, without termini exclusion)
         all_chain_topologies_by_universe = []
-        for universe in ensemble:
+        for i, universe in enumerate(ensemble):
             try:
                 all_chain_topos = cls.from_mda_universe(
                     universe,
                     mode="chain",
-                    include_selection=include_mda_selection,
+                    include_selection=include_selection[i],
                     exclude_selection="",  # No exclusions
                     exclude_termini=False,  # Include termini
                     renumber_residues=True,
                 )
                 all_chain_topologies_by_universe.append(all_chain_topos)
             except Exception as e:
-                raise ValueError(f"Failed to extract all topologies from universe: {e}")
+                raise ValueError(f"Failed to extract all topologies from universe {i}: {e}")
 
         # For each universe, find residues that are excluded
         for i, (all_chain_topos, included_chain_topos) in enumerate(
@@ -1432,3 +1448,111 @@ class Partial_Topology:
             raise ValueError("No common residues found in the ensemble")
 
         return common_residue_topologies, excluded_residue_topologies
+
+    @classmethod
+    def partial_topology_pairwise_distances(
+        cls,
+        topologies: list["Partial_Topology"],
+        universe: mda.Universe,
+        include_selection: str = "protein",
+        exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        renumber_residues: bool = True,
+        start: Optional[int] = None,
+        stop: Optional[int] = None,
+        step: Optional[int] = None,
+        compound: str = "group",
+        pbc: bool = True,
+        backend: str = "OpenMP",
+        verbose: bool = True,
+        check_trim: bool = False,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Compute trajectory-averaged pairwise center-of-mass distances between Partial_Topology objects.
+
+        Parameters
+        ----------
+        topologies : List[Partial_Topology]
+            List of Partial_Topology objects to compute distances between
+        universe : mda.Universe
+            MDAnalysis Universe containing the trajectory
+        include_selection : str, default "protein"
+            MDAnalysis selection string for atoms to include
+        exclude_selection : str, optional
+            MDAnalysis selection string for atoms to exclude
+        exclude_termini : bool, default True
+            If True, account for N and C terminal residue exclusion
+        termini_chain_selection : str, default "protein"
+            Selection string used for terminal identification
+        renumber_residues : bool, default True
+            If True, assume residue numbers were renumbered from 1
+        start : int, optional
+            Start frame for analysis
+        stop : int, optional
+            Stop frame for analysis
+        step : int, optional
+            Step size for frame iteration
+        compound : str, default 'group'
+            How to compute center of mass for each topology
+        pbc : bool, default True
+            Whether to account for periodic boundary conditions
+        backend : str, default 'OpenMP'
+            Backend for distance calculations
+        verbose : bool, default True
+            Whether to show progress bar
+        check_trim : bool, default False
+            If True, use peptide_residues for peptides
+
+        Returns
+        -------
+        distance_matrix : np.ndarray
+            Trajectory-averaged distance matrix of shape (n_topologies, n_topologies)
+        distance_std : np.ndarray
+            Standard deviation of distances over trajectory
+        """
+        if not topologies:
+            raise ValueError("topologies list cannot be empty")
+
+        # Convert Partial_Topology objects to MDAnalysis groups
+        mda_groups = []
+        for topo in topologies:
+            try:
+                # Use existing to_mda_group method from Partial_Topology
+                group = cls.to_mda_group(
+                    topologies={topo},  # Convert single topology to set
+                    universe=universe,
+                    include_selection=include_selection,
+                    exclude_selection=exclude_selection,
+                    exclude_termini=exclude_termini,
+                    termini_chain_selection=termini_chain_selection,
+                    renumber_residues=renumber_residues,
+                    mda_atom_filtering=None,  # Get residues, not atoms
+                )
+
+                # Convert ResidueGroup to AtomGroup for COM calculations
+                if isinstance(group, mda.ResidueGroup):
+                    group = group.atoms
+
+                mda_groups.append(group)
+
+            except Exception as e:
+                raise ValueError(f"Failed to convert topology {topo} to MDAnalysis group: {e}")
+
+        if verbose:
+            print(f"Converted {len(topologies)} topologies to MDAnalysis groups")
+
+        # Compute distances
+        distance_matrix, distance_std = compute_trajectory_average_com_distances(
+            universe=universe,
+            group_list=mda_groups,
+            start=start,
+            stop=stop,
+            step=step,
+            compound=compound,
+            pbc=pbc,
+            backend=backend,
+            verbose=verbose,
+        )
+
+        return distance_matrix, distance_std
