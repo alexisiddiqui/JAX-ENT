@@ -56,7 +56,7 @@ def test_create_sparse_map():
 
     # create top segments from universe
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print(len(top_segments))
     top_segments = list(top_segments)
@@ -136,7 +136,7 @@ def test_create_sparse_map_ensemble():
 
     # create top segments from universe
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print(len(top_segments))
     top_segments = list(top_segments)
@@ -205,7 +205,7 @@ def test_random_split():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print("top_segments", len(top_segments))
 

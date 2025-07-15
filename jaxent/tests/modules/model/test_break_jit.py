@@ -96,7 +96,7 @@ def create_parameter_variants(
         frame_weights = jax.random.uniform(subkeys[0], base_params.frame_weights.shape)
         frame_weights = frame_weights / jnp.sum(frame_weights)
 
-        # Vary frame mask (some frames on/off)
+        # Vary frame mask (some framesz on/off)
         frame_mask = jax.random.choice(
             subkeys[1], 2, base_params.frame_mask.shape, p=jnp.array([0.2, 0.8])
         )
@@ -132,7 +132,8 @@ def create_parameter_variants(
     return variants
 
 
-def test_jit_permutations_comprehensive(real_inputs_random_data):
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_jit_permutations_comprehensive(real_inputs_random_data, raise_jit_failure):
     """
     Comprehensive test for JIT failures across different permutations of:
     - Parameter variations
@@ -164,32 +165,32 @@ def test_jit_permutations_comprehensive(real_inputs_random_data):
         try:
             if scenario == "init_once_multiple_params":
                 scenario_results = _test_init_once_multiple_params(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
             elif scenario == "reinit_each_param":
                 scenario_results = _test_reinit_each_param(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
             elif scenario == "init_forward_reinit_forward":
                 scenario_results = _test_init_forward_reinit_forward(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
             elif scenario == "multiple_forwards_same_param":
                 scenario_results = _test_multiple_forwards_same_param(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
             elif scenario == "param_cycling":
                 scenario_results = _test_param_cycling(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
             elif scenario == "jit_cache_invalidation":
                 scenario_results = _test_jit_cache_invalidation(
-                    input_features, forward_models, param_variants
+                    input_features, forward_models, param_variants, raise_jit_failure
                 )
 
         except Exception as e:
@@ -203,11 +204,15 @@ def test_jit_permutations_comprehensive(real_inputs_random_data):
     return results
 
 
-def _test_init_once_multiple_params(input_features, forward_models, param_variants):
+def _test_init_once_multiple_params(
+    input_features, forward_models, param_variants, raise_jit_failure
+):
     """Initialize once, then try multiple different parameters."""
     results = []
 
-    simulation = Simulation(input_features, forward_models, param_variants[0])
+    simulation = Simulation(
+        input_features, forward_models, param_variants[0], raise_jit_failure=raise_jit_failure
+    )
 
     try:
         with timeout_context(30):
@@ -245,13 +250,15 @@ def _test_init_once_multiple_params(input_features, forward_models, param_varian
     return results
 
 
-def _test_reinit_each_param(input_features, forward_models, param_variants):
+def _test_reinit_each_param(input_features, forward_models, param_variants, raise_jit_failure):
     """Reinitialize simulation for each parameter set."""
     results = []
 
     for i, params in enumerate(param_variants):
         try:
-            simulation = Simulation(input_features, forward_models, params)
+            simulation = Simulation(
+                input_features, forward_models, params, raise_jit_failure=raise_jit_failure
+            )
 
             with timeout_context(30):
                 init_success = simulation.initialise()
@@ -285,14 +292,21 @@ def _test_reinit_each_param(input_features, forward_models, param_variants):
     return results
 
 
-def _test_init_forward_reinit_forward(input_features, forward_models, param_variants):
+def _test_init_forward_reinit_forward(
+    input_features, forward_models, param_variants, raise_jit_failure
+):
     """Alternating pattern: init->forward->reinit->forward."""
     results = []
 
     for i in range(0, len(param_variants) - 1, 2):
         try:
             # First init and forward
-            simulation = Simulation(input_features, forward_models, param_variants[i])
+            simulation = Simulation(
+                input_features,
+                forward_models,
+                param_variants[i],
+                raise_jit_failure=raise_jit_failure,
+            )
 
             with timeout_context(30):
                 simulation.initialise()
@@ -323,11 +337,15 @@ def _test_init_forward_reinit_forward(input_features, forward_models, param_vari
     return results
 
 
-def _test_multiple_forwards_same_param(input_features, forward_models, param_variants):
+def _test_multiple_forwards_same_param(
+    input_features, forward_models, param_variants, raise_jit_failure
+):
     """Multiple forward calls with the same parameters to test JIT caching."""
     results = []
 
-    simulation = Simulation(input_features, forward_models, param_variants[0])
+    simulation = Simulation(
+        input_features, forward_models, param_variants[0], raise_jit_failure=raise_jit_failure
+    )
 
     try:
         with timeout_context(30):
@@ -358,11 +376,13 @@ def _test_multiple_forwards_same_param(input_features, forward_models, param_var
     return results
 
 
-def _test_param_cycling(input_features, forward_models, param_variants):
+def _test_param_cycling(input_features, forward_models, param_variants, raise_jit_failure):
     """Cycle through parameters multiple times to test for accumulating issues."""
     results = []
 
-    simulation = Simulation(input_features, forward_models, param_variants[0])
+    simulation = Simulation(
+        input_features, forward_models, param_variants[0], raise_jit_failure=raise_jit_failure
+    )
 
     try:
         with timeout_context(30):
@@ -407,11 +427,13 @@ def _test_param_cycling(input_features, forward_models, param_variants):
     return results
 
 
-def _test_jit_cache_invalidation(input_features, forward_models, param_variants):
+def _test_jit_cache_invalidation(input_features, forward_models, param_variants, raise_jit_failure):
     """Test manual JIT cache clearing and recompilation."""
     results = []
 
-    simulation = Simulation(input_features, forward_models, param_variants[0])
+    simulation = Simulation(
+        input_features, forward_models, param_variants[0], raise_jit_failure=raise_jit_failure
+    )
 
     try:
         with timeout_context(30):
@@ -505,12 +527,15 @@ def _analyze_results(results):
 
 
 # Additional helper test for edge cases
-def test_extreme_jit_edge_cases(real_inputs_random_data):
+@pytest.mark.parametrize("raise_jit_failure", [True, False])
+def test_extreme_jit_edge_cases(real_inputs_random_data, raise_jit_failure):
     """Test specific edge cases that are known to cause JIT issues."""
     input_features, forward_models, base_params = real_inputs_random_data
 
     # Test rapid parameter switching
-    simulation = Simulation(input_features, forward_models, base_params)
+    simulation = Simulation(
+        input_features, forward_models, base_params, raise_jit_failure=raise_jit_failure
+    )
     simulation.initialise()
 
     param_variants = create_parameter_variants(base_params, 10)
