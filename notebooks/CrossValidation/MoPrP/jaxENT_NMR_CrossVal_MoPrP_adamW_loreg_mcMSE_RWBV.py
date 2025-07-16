@@ -25,6 +25,9 @@ from jaxent.src.analysis.plots.optimisation import (
     plot_split_visualization,
     plot_total_losses,
 )
+from jaxent.src.custom_types.base import ForwardModel
+from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
+from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.featurise import run_featurise
@@ -32,7 +35,6 @@ from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.core import Simulation
-from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
@@ -40,9 +42,6 @@ from jaxent.src.opt.base import JaxEnt_Loss
 from jaxent.src.opt.losses import *
 from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters, OptimizationHistory
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.base import ForwardModel
-from jaxent.src.types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.src.types.HDX import HDX_peptide
 from jaxent.src.utils.hdf import (
     load_optimization_history_from_file,
     save_optimization_history_to_file,
@@ -229,7 +228,7 @@ def setup_simulation(
 
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
     print(len(features[0].heavy_contacts))

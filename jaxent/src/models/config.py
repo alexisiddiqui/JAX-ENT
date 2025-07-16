@@ -4,11 +4,11 @@ from typing import Protocol
 import jax.numpy as jnp
 from jax import Array
 
+from jaxent.src.custom_types.config import BaseConfig
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.simulation import Model_Parameters
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
-from jaxent.src.types.config import BaseConfig
-from jaxent.src.types.key import m_key
 
 
 class Model_Config(Protocol):
@@ -104,10 +104,14 @@ class NetHDXConfig(BaseConfig):
         angle_cutoff: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         num_timepoints: int = 1,
     ) -> None:
-        # super().__init__()
+        super().__init__()
         if self.distance_cutoff is not None:
+            if isinstance(distance_cutoff, float):
+                distance_cutoff = [distance_cutoff]
             self.distance_cutoff = distance_cutoff
         if self.angle_cutoff is not None:
+            if isinstance(angle_cutoff, float):
+                angle_cutoff = [angle_cutoff]
             self.angle_cutoff = angle_cutoff
 
         assert len(list(self.distance_cutoff)) == len(list(self.angle_cutoff)), (

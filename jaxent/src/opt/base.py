@@ -12,10 +12,10 @@ import jax.numpy as jnp
 import optax
 from jax import Array
 
+from jaxent.src.custom_types import InitialisedSimulation
+from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Model_Parameters, Simulation_Parameters
-from jaxent.src.types import InitialisedSimulation
-from jaxent.src.types.features import Output_Features
 
 # @runtime_checkable
 # class InitialisedSimulation(Protocol):

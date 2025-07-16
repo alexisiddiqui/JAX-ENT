@@ -8,9 +8,9 @@ import numpy as np
 from jax import Array
 from jax.experimental import sparse
 
+from jaxent.src.custom_types import T_ExpD
+from jaxent.src.custom_types.key import m_id, m_key
 from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.types import T_ExpD
-from jaxent.src.types.key import m_id, m_key
 
 
 @dataclass()
