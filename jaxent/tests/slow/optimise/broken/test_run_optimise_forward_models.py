@@ -413,7 +413,7 @@ def test_quick_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -537,7 +537,7 @@ def test_quick_optimiser_REAL():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     segs_data = (
@@ -699,7 +699,7 @@ def test_quick_max_ent_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -839,7 +839,7 @@ def test_quick_MAE_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -985,7 +985,7 @@ def test_quick_MAE_sparse_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -1131,7 +1131,7 @@ def test_quick_MAE_max_ent_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -1276,7 +1276,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -1447,7 +1447,7 @@ def test_quick_sparse_max_ent_optimiser():
 
     # Get common residues
     top_segments = Partial_Topology.find_common_residues(
-        universes, ignore_mda_selection="(resname PRO or resid 1) "
+        universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
     # Create fake dataset with varying protection factors for better stratification testing
@@ -1532,7 +1532,7 @@ def test_quick_sparse_max_ent_optimiser():
         simulation,
         data_to_fit=(dataset, pf_prior_data),
         config=opt_settings,
-        forward_models=[models[0], models[0]],
+        forward_models=models,
         indexes=[0, 0],
         optimizer=custom_optimizer,
         loss_functions=[hdx_pf_l2_loss, hdx_pf_mae_loss],
