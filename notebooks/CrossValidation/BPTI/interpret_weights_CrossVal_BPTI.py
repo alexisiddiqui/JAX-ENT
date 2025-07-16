@@ -66,6 +66,8 @@ from MDAnalysis.analysis import align
 from scipy.spatial.distance import pdist
 from scipy.stats import entropy, wasserstein_distance
 
+from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.models.config import BV_model_Config
@@ -76,8 +78,6 @@ from jaxent.src.models.HDX.BV.features import (
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.models.HDX.forward import BV_ForwardPass
-from jaxent.src.types.base import ForwardPass
-from jaxent.src.types.config import FeaturiserSettings
 from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 # globally set axes/tick/legend font‐sizes
@@ -1401,11 +1401,11 @@ def analyze_deuterium_uptake(
     import jax.numpy as jnp
     from MDAnalysis import Universe
 
+    from jaxent.src.custom_types.config import FeaturiserSettings
     from jaxent.src.interfaces.builder import Experiment_Builder
     from jaxent.src.models.config import BV_model_Config
     from jaxent.src.models.HDX.BV.features import BV_input_features
     from jaxent.src.models.HDX.BV.forwardmodel import BV_model
-    from jaxent.src.types.config import FeaturiserSettings
 
     k_ints_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/BPTI_Intrinsic_rates.dat"
 

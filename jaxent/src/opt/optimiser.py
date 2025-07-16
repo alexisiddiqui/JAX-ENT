@@ -7,6 +7,9 @@ import optax
 from jax import Array
 from jax.tree_util import register_pytree_node_class
 
+from jaxent.src.custom_types import InitialisedSimulation
+from jaxent.src.custom_types.config import Optimisable_Parameters
+from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
@@ -16,9 +19,6 @@ from jaxent.src.opt.base import (
     OptimizationHistory,
     OptimizationState,
 )
-from jaxent.src.types import InitialisedSimulation
-from jaxent.src.types.config import Optimisable_Parameters
-from jaxent.src.types.features import Output_Features
 
 # jit_test_args = TypeVar(
 #     "jit_test_args",

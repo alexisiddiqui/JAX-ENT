@@ -1,4 +1,4 @@
-from typing import Literal, Sequence, cast
+from typing import Literal, Sequence
 
 import MDAnalysis as mda
 import numpy as np
@@ -9,7 +9,7 @@ from MDAnalysis.lib.distances import distance_array  # type: ignore
 
 def calc_BV_contacts_universe(
     universe: mda.Universe,
-    residue_atom_index: list[tuple[int, int]],
+    target_atoms: AtomGroup,
     contact_selection: Literal["heavy", "oxygen"],
     radius: float,
     residue_ignore: tuple[int, int] = (-2, 2),
@@ -21,7 +21,7 @@ def calc_BV_contacts_universe(
 
     Args:
         universe: MDAnalysis Universe object containing trajectory
-        residue_atom_index: List of (residue_idx, atom_idx) tuples for target atoms (usually amide N)
+        target_atoms: AtomGroup containing target atoms (usually amide N or H atoms)
         contact_selection: Type of atoms to count contacts with:
             - "heavy": All heavy atoms
             - "oxygen": Only oxygen atoms
@@ -40,7 +40,7 @@ def calc_BV_contacts_universe(
     ic.configureOutput(prefix="DEBUG | ")
     ic(
         universe.trajectory.n_frames,
-        len(residue_atom_index),
+        len(target_atoms),
         contact_selection,
         radius,
         residue_ignore,
@@ -59,7 +59,7 @@ def calc_BV_contacts_universe(
 
     # Initialize results array
     n_frames = len(universe.trajectory)
-    n_targets = len(residue_atom_index)
+    n_targets = len(target_atoms)
     results = np.zeros((n_targets, n_frames))
     ic(n_frames, n_targets, results.shape)
 
@@ -72,13 +72,12 @@ def calc_BV_contacts_universe(
     # Process each frame
     for ts in universe.trajectory:
         ic(f"Processing frame {ts.frame} of {n_frames}")
+
         # For each target atom
-        for i, (res_idx, atom_idx) in enumerate(residue_atom_index):
-            ic(f"Target {i}: res_idx={res_idx}, atom_idx={atom_idx}")
-            # Get the target atom
-            target_atom = cast(AtomGroup, universe.atoms)[atom_idx]
+        for i, target_atom in enumerate(target_atoms):
+            ic(f"Target {i}: atom={target_atom}, residue={target_atom.residue.resid}")
+
             target_res = target_atom.residue
-            ic(f"Target atom: {target_atom}, residue: {target_res.resid}")
 
             # Get residue range to exclude
             exclude_start = target_res.resid + residue_ignore[0]
@@ -117,7 +116,6 @@ def calc_BV_contacts_universe(
                 ic(f"Hard cutoff mode: counted {contacts_count} contacts within {radius}Å")
 
     ic(f"Final results shape: {np.array(results).shape}")  # results (residues, frames)
-    ################################################################################
     return results.tolist()
 
 

@@ -25,6 +25,12 @@ import seaborn as sns
 from matplotlib.gridspec import GridSpec
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.config import (
+    FeaturiserSettings,
+    Optimisable_Parameters,
+    OptimiserSettings,
+)
+from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -33,7 +39,6 @@ from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
-from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.src.opt.losses import (
     HDX_uptake_KL_loss,
@@ -43,8 +48,6 @@ from jaxent.src.opt.losses import (
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import run_optimise
-from jaxent.src.types.config import FeaturiserSettings, Optimisable_Parameters, OptimiserSettings
-from jaxent.src.types.HDX import HDX_peptide
 
 
 # Ensure output directories exist
@@ -219,7 +222,7 @@ def setup_model_and_data():
     trajectory_length = BV_features.features_shape[2]
 
     # Get common residues
-    top_segments = find_common_residues(
+    top_segments = Partial_Topology.find_common_residues(
         universes, ignore_mda_selection="(resname PRO or resid 1) "
     )[0]
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)

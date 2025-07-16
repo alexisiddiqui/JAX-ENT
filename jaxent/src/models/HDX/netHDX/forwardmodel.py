@@ -1,14 +1,13 @@
 import MDAnalysis as mda
 
+from jaxent.src.custom_types.base import ForwardModel, ForwardPass
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import NetHDXConfig
-from jaxent.src.models.func.common import find_common_residues
 from jaxent.src.models.func.netHDX import build_hbond_network
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
 from jaxent.src.models.HDX.netHDX.netHDX_functions import NetHDX_ForwardPass
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
-from jaxent.src.types.base import ForwardModel, ForwardPass
-from jaxent.src.types.key import m_key
 
 
 class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, NetHDXConfig]):
@@ -25,7 +24,7 @@ class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, 
         ########################################################################
         # TODO needs to ensure that there are backbone protons
         # also need to check whether hydrogen bonds analysis requires Hbonds - maybe could be skippable if angles are not required
-        self.common_topology: set[Partial_Topology] = find_common_residues(
+        self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
             ensemble, ignore_mda_selection="(resname PRO or resid 1)"
         )[0]
         # Calculate total number of frames in the ensemble

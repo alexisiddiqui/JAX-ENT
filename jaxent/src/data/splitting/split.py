@@ -1,568 +1,465 @@
 import copy
 import random
-from typing import Sequence, cast
+from typing import Sequence
 
 import MDAnalysis as mda
-import numpy as np
-from icecream import ic  # Import icecream for debugging
-from MDAnalysis.core.groups import ResidueGroup
-
-# import kmeans from sklearn.cluster
-from sklearn.cluster import KMeans  # type: ignore
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.models.func.common import find_common_residues
-
-# ic.disable()
-
-
-def find_fragment_centrality(
-    Partial_Topologys: list[Partial_Topology], mode: str = "mean", peptide: bool = True
-) -> list[float]:
-    """
-    Find the overlap between Partial_Topologys in a list
-
-    Parameters:
-        Partial_Topologys: List of Partial_Topology objects to compare
-        mode: Either "max" or "mean" to determine how to calculate overlap
-        peptide: Whether to use peptide residues or all residues in range
-
-    Returns:
-        A list of overlap counts for each fragment
-    """
-    ic.configureOutput(prefix="CENTRALITY | ")
-    ic(f"Finding fragment centrality with mode={mode}, peptide={peptide}")
-    ic(f"Number of fragments: {len(Partial_Topologys)}")
-
-    overlaps = []
-
-    for i, fragment in enumerate(Partial_Topologys):
-        # Get the set of residues for current fragment
-        if peptide and cast(int, fragment.length) > 2:
-            current_residues = set(fragment.peptide_residues)
-            ic(f"Fragment {i}: Using peptide residues, count={len(current_residues)}")
-        else:
-            current_residues = set(
-                range(fragment.residue_start, cast(int, fragment.residue_end) + 1)
-            )
-            ic(f"Fragment {i}: Using all residues, count={len(current_residues)}")
-
-        fragment_overlaps = []
-
-        # Compare with all other fragments
-        for j, other in enumerate(Partial_Topologys):
-            if i != j and fragment.chain == other.chain:
-                # Get the set of residues for other fragment
-                if peptide and cast(int, other.length) > 2:
-                    other_residues = set(other.peptide_residues)
-                else:
-                    other_residues = set(
-                        range(other.residue_start, cast(int, other.residue_end) + 1)
-                    )
-
-                # Calculate overlap
-                overlap = len(current_residues.intersection(other_residues))
-                if overlap > 0:
-                    fragment_overlaps.append(overlap)
-                    ic(f"Fragment {i} overlaps with {j}: {overlap} residues")
-
-        # Calculate final overlap value based on mode
-        if fragment_overlaps:
-            if mode == "max":
-                overlaps.append(max(fragment_overlaps))
-                ic(f"Fragment {i} max overlap: {max(fragment_overlaps)}")
-            elif mode == "mean":
-                mean_overlap = sum(fragment_overlaps) / len(fragment_overlaps)
-                overlaps.append(mean_overlap)
-                ic(f"Fragment {i} mean overlap: {mean_overlap:.2f}")
-            else:
-                raise ValueError("Mode must be either 'max' or 'mean'")
-        else:
-            overlaps.append(0)
-            ic(f"Fragment {i} has no overlaps")
-
-    if overlaps:
-        ic(
-            f"Centrality results: min={min(overlaps)}, max={max(overlaps)}, avg={sum(overlaps) / len(overlaps):.2f}"
-        )
-    else:
-        ic("Centrality results: No overlaps found")
-        overlaps.append(0)  # Ensure the list is not empty
-    return overlaps
 
 
 def filter_common_residues(
     dataset: Sequence[ExpD_Datapoint],
     common_residues: set[Partial_Topology],
-    peptide: bool = True,
+    check_trim: bool = False,
 ) -> list[ExpD_Datapoint]:
-    # filters the dataset to only include common residues
-    # ic.configureOutput(prefix="FILTER | ")
-    # ic(f"Filtering dataset with {len(dataset)} fragments")
-    # ic(f"Common residues: {len(common_residues)}")
-    # ic(f"Using peptide residues: {peptide}")
+    """
+    Filter dataset to only include datapoints that have residues in common with the provided set.
+    Uses topology-aware methods for robust comparison including chain awareness and peptide trimming.
+
+    Args:
+        dataset: Sequence of experimental datapoints to filter
+        common_residues: Set of Partial_Topology objects representing residues to match against
+        check_trim: If True, use peptide_residues for peptides; if False, use all residues
+
+    Returns:
+        List of datapoints that have overlapping residues with common_residues
+
+    Raises:
+        ValueError: If filtered dataset is empty
+    """
+    from tqdm import tqdm
+
+    print(f"Dataset topologies ({len(dataset)}):")
     print([str(data.top) for data in dataset])
+    print(f"Common residues ({len(common_residues)}):")
     print([str(res) for res in common_residues])
 
     new_data = []
-    for i, data in enumerate(dataset):
+
+    for i, data in tqdm(enumerate(dataset), total=len(dataset), desc="Filtering fragments"):
         assert data.top is not None, "Topology is not defined in the experimental data."
-        peptide_residues = data.top.extract_residues(peptide=peptide)
-        print(peptide_residues)
-        ic(f"Fragment {i}: Found {len(peptide_residues)} residues")
 
-        in_common = any([res in common_residues for res in peptide_residues])
-        ic(f"Fragment {i}: Has common residues: {in_common}")
+        # Use the robust topology intersection method to check for overlap
+        # This automatically handles chain matching, peptide trimming, etc.
+        has_common_residues = any(
+            data.top.intersects(common_topo, check_trim=check_trim)
+            for common_topo in common_residues
+        )
 
-        if in_common:
+        if has_common_residues:
             new_data.append(data)
 
-    ic(f"After filtering: {len(new_data)} fragments remain")
+    print(f"After filtering: {len(new_data)}/{len(dataset)} fragments remain")
+
     if not new_data:
         raise ValueError("Filtered dataset is empty. No common residues found.")
+
     return new_data
 
 
 class DataSplitter:
+    """
+    This class handles data splitting for experimental datasets.
+    It supports various splitting strategies including random, stratified, spatial, and clustering.
+    It also allows for centrality-based sampling to prioritize more central fragments in the dataset.
+
+    The process requires either an ensemble of MDAnalysis Universes or a set of precomputed common residues to ensure that fragments
+    share a common set of residues, which is crucial for effective splitting, especially with peptide data.
+
+    Key improvements:
+    - Simplified topology merging with reusable class method
+    - Pre-computed splittable_residues for efficient splitting
+    - Streamlined splitting logic using filter_common_residues
+    """
+
     def __init__(
         self,
         dataset: ExpD_Dataloader,
         random_seed: int = 42,
         ensemble: list[mda.Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
-        peptide: bool = True,
-        peptide_trim: int = 1,
+        check_trim: bool = False,
+        peptide_trim: int = 2,
         centrality: bool = True,
         train_size: float = 0.5,
-        align_sequence: bool = False,
-        mda_selection_ignore: str = "resname PRO or resid 1",
+        include_selection: str | list[str] = "protein",
+        exclude_selection: str | list[str] = "resname PRO or resid 1",
+        max_retry_depth: int = 10,
     ):
-        ic.configureOutput(prefix="SPLITTER | ")
-        ic(f"Initializing DataSplitter with random_seed={random_seed}")
-        ic(f"Train size: {train_size}, Use centrality: {centrality}")
-        ic(f"Dataset size: {len(dataset.data)}")
-
         self.dataset = copy.deepcopy(dataset)
-
         self.random_seed = random_seed
+        self.original_random_seed = random_seed  # Store original for retry logic
         random.seed(random_seed)
-        ic(f"Random seed set to {random_seed}")
-
         self.train_size = train_size
         self.centrality = centrality
+        self.check_trim = check_trim
+        self.check_trim_trim = peptide_trim
+        self.max_retry_depth = max_retry_depth
+        self.current_retry_count = 0
+
+        # Process selection strings - convert to lists and ensure same length
+        include_selection = self._process_selection_strings(include_selection)
+        exclude_selection = self._process_selection_strings(exclude_selection)
+
+        # Ensure both lists are the same length
+        if len(include_selection) != len(exclude_selection):
+            # If one is length 1, repeat it to match the other
+            if len(include_selection) == 1 and len(exclude_selection) > 1:
+                include_selection = include_selection * len(exclude_selection)
+            elif len(exclude_selection) == 1 and len(include_selection) > 1:
+                exclude_selection = exclude_selection * len(include_selection)
+            else:
+                raise ValueError(
+                    f"include_selection and exclude_selection must be the same length or one must be length 1. "
+                    f"Got lengths {len(include_selection)} and {len(exclude_selection)}"
+                )
+
+        self.include_selection = include_selection
+        self.exclude_selection = exclude_selection
+
+        print(
+            f"Using selection strings: include_selection={include_selection}, exclude_selection={exclude_selection}"
+        )
+
+        # Handle common_residues - either provided or computed from ensemble
         if common_residues is None and ensemble is not None:
-            ic("Finding common residues from ensemble")
-            common_residues = find_common_residues(ensemble, mda_selection_ignore)[0]
-            ic(f"Found {len(common_residues)} common residues")
-        elif (common_residues and ensemble) is None:
-            ic.format("ERROR: Both common_residues and ensemble are None")
-        elif common_residues and ensemble:
-            ic(f"Using provided common residues: {len(common_residues)}")
-        else:
+            # For now, use the first selection string - could be enhanced to use all
+            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+                ensemble,
+                include_selection=self.include_selection,
+                exclude_selection=self.exclude_selection,
+            )
+        elif common_residues is None and ensemble is None:
             raise ValueError("Either common_residues or ensemble must be provided")
 
         assert isinstance(common_residues, set), (
             f"Common residues must be a set of Partial_Topology objects {common_residues}"
         )
 
+        if len(common_residues) < 2:
+            raise ValueError(
+                f"Common residues must contain at least 2 residues for splitting, got {len(common_residues)}"
+            )
+
+        # Store original common_residues
         self.common_residues = common_residues
 
         print(f"Common residues: {len(common_residues)}")
         print(f"Dataset size: {len(dataset.data)}")
 
-        ic("Filtering dataset to common residues")
+        # Filter dataset using common residues
         self.dataset.data = filter_common_residues(
-            self.dataset.data, common_residues, peptide=peptide
+            self.dataset.data, common_residues, check_trim=check_trim
         )
-        ic(f"After filtering: {len(self.dataset.data)} fragments")
 
-        self.dataset.top = [data.top for data in self.dataset.data]
+        # If dataset is empty after filtering, raise an error
+        if not self.dataset.data:
+            raise ValueError("Filtered dataset is empty. No common residues found in the dataset.")
 
-        ic("Calculating fragment centrality")
-        self.fragment_centrality = find_fragment_centrality(
-            self.dataset.top, mode="mean", peptide=peptide
-        )
-        ic(
-            f"Fragment centrality stats: min={min(self.fragment_centrality)}, max={max(self.fragment_centrality)}"
-        )
+        # Create splittable_residues - these are the merged topology objects per chain
+        # that define the splittable space for data splitting
+        self.splittable_residues = self._create_splittable_residues()
+
+        print(f"Created splittable residues for {len(self.splittable_residues)} chains:")
+        for chain, topo in self.splittable_residues.items():
+            print(f"  Chain {chain}: {topo}")
+
+        # Calculate fragment overlaps for centrality sampling
+        if self.dataset.data:  # Only calculate if we have data
+            self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
+                [data.top for data in self.dataset.data], mode="mean", check_trim=check_trim
+            )
+        else:
+            # Handle empty dataset case
+            self.fragment_overlaps = []
+
+        # Initialize storage for last split results
+        self.last_split_train_topologies_by_chain = {}
+        self.last_split_val_topologies_by_chain = {}
+
+    def _process_selection_strings(self, selection: str | list[str]) -> list[str]:
+        """
+        Process selection strings to ensure they are lists.
+
+        Args:
+            selection: Either a string or list of strings
+
+        Returns:
+            List of selection strings
+        """
+        if isinstance(selection, str):
+            return [selection]
+        elif isinstance(selection, list):
+            return selection
+        else:
+            raise ValueError(f"Selection must be string or list of strings, got {type(selection)}")
+
+    def _create_splittable_residues(self) -> dict[str, Partial_Topology]:
+        """
+        Create merged topology objects per chain from common_residues.
+        These define the splittable space for each chain.
+
+        Returns:
+            Dictionary mapping chain -> merged Partial_Topology for that chain
+        """
+        common_residues_by_chain = Partial_Topology.group_set_by_chain(self.common_residues)
+        splittable_residues = {}
+
+        for chain, chain_residues in common_residues_by_chain.items():
+            if chain_residues:
+                try:
+                    merged_topo = Partial_Topology.merge(
+                        list(chain_residues),
+                        trim=self.check_trim,
+                        merged_name=f"splittable_chain_{chain}",
+                    )
+                    splittable_residues[chain] = merged_topo
+                except ValueError as e:
+                    print(f"Warning: Could not merge common residues for chain {chain}: {e}")
+
+        return splittable_residues
+
+    def _merge_topologies_by_chain(
+        self,
+        topologies: list[Partial_Topology],
+        check_trim: bool = False,
+        name_prefix: str = "merged",
+    ) -> dict[str, Partial_Topology]:
+        """
+        Group topologies by chain and merge them.
+
+        Args:
+            topologies: List of Partial_Topology objects to group and merge
+            check_trim: Whether to apply trimming during merge
+            name_prefix: Prefix for naming merged topologies
+
+        Returns:
+            Dictionary mapping chain -> merged Partial_Topology for that chain
+        """
+        topologies_by_chain = Partial_Topology.group_set_by_chain(set(topologies))
+        merged_topologies = {}
+
+        for chain, chain_topologies in topologies_by_chain.items():
+            if chain_topologies:
+                try:
+                    merged_topo = Partial_Topology.merge(
+                        list(chain_topologies),
+                        trim=check_trim,
+                        merged_name=f"{name_prefix}_chain_{chain}",
+                    )
+                    merged_topologies[chain] = merged_topo
+                    print(
+                        f"Merged {len(chain_topologies)} topologies for chain {chain}: {merged_topo}"
+                    )
+                except ValueError as e:
+                    print(f"Warning: Could not merge topologies for chain {chain}: {e}")
+
+        return merged_topologies
 
     def sample_by_centrality(self, threshold: float = 0.9) -> list[ExpD_Datapoint]:
-        # this helps us select the most central fragments from the dataset - this is crucial for effective splitting with peptide data
-        ic.configureOutput(prefix="CENTRALITY_SAMPLE | ")
-        ic("Sampling data by centrality")
-        ic(f"Threshold: {threshold}")
-        ic(f"Max Centrality: {max(self.fragment_centrality)}")
+        """
+        Sample fragments by centrality to select the most central fragments from the dataset.
+        This is crucial for effective splitting with peptide data.
+        """
+        if not self.fragment_overlaps:
+            # If no fragment overlaps calculated, return the entire dataset
+            print("No fragment overlaps available, returning entire dataset")
+            return self.dataset.data
 
-        max_centrality = max(self.fragment_centrality)
+        max_centrality = max(self.fragment_overlaps)
         if max_centrality == 0:
             # Assign uniform weights if all weights are zero
-            ic("All centrality values are zero, using uniform weights")
-            centrality_weights = [1 / len(self.fragment_centrality)] * len(self.fragment_centrality)
+            centrality_weights = [1 / len(self.fragment_overlaps)] * len(self.fragment_overlaps)
         else:
-            ic("Calculating weights based on centrality")
-            centrality_weights = [1 - (c / max_centrality) for c in self.fragment_centrality]
+            centrality_weights = [1 - (c / max_centrality) for c in self.fragment_overlaps]
             total = sum(centrality_weights)
-            # Normalize weights
-            centrality_weights = [w / total for w in centrality_weights]
-            ic(
-                f"Weight range: min={min(centrality_weights):.5f}, max={max(centrality_weights):.5f}"
-            )
+            if total == 0:
+                # If total is zero, all weights are zero. Assign uniform weights.
+                centrality_weights = [1 / len(self.fragment_overlaps)] * len(self.fragment_overlaps)
+            else:
+                # Normalize weights
+                centrality_weights = [w / total for w in centrality_weights]
 
         # randomly sample data based on centrality as weights
         sample_size = int(threshold * len(self.dataset.data))
-        ic(f"Sampling {sample_size} fragments")
         train_data = random.choices(self.dataset.data, weights=centrality_weights, k=sample_size)
-        ic(f"Sampled {len(train_data)} fragments")
 
-        # only need to sample the training data - rest is discarded
+        print(f"Sampled {len(train_data)} fragments by centrality (threshold={threshold})")
         return train_data
 
     def validate_split(
         self, train_data: list[ExpD_Datapoint], val_data: list[ExpD_Datapoint]
     ) -> bool:
-        # this needs to check that the split is suitable for training - i.e. that datsets are not too small
-        ic.configureOutput(prefix="VALIDATE_SPLIT | ")
-        ic(f"Validating split: train={len(train_data)}, val={len(val_data)}")
-
-        assert (len(train_data) and len(val_data)) > 0, (
+        """
+        Validate that the split is suitable for training - i.e. that datasets are not too small
+        """
+        assert len(train_data) > 0 and len(val_data) > 0, (
             "No data found in training or validation set"
         )
-        ic("Both sets contain data")
 
         if len(train_data) < 5 or len(val_data) < 5:
-            ic.format("ERROR: Set too small - train={}, val={}", len(train_data), len(val_data))
-            raise ValueError("Training or validation set is too small")
+            raise ValueError(
+                f"Training ({len(train_data)}) or validation ({len(val_data)}) set is too small"
+            )
 
         # check they are a sufficient proportion of the dataset
         train_ratio = len(train_data) / len(self.dataset.data)
         val_ratio = len(val_data) / len(self.dataset.data)
-        ic(f"Train ratio: {train_ratio:.3f}, Val ratio: {val_ratio:.3f}")
 
         if train_ratio < 0.1 or val_ratio < 0.1:
-            ic.format(
-                "ERROR: Set ratio too small - train={:.3f}, val={:.3f}", train_ratio, val_ratio
-            )
             raise ValueError(
-                f"Training or validation set is too small: {len(train_data)} / {len(self.dataset.data)}, {len(val_data)} / {len(self.dataset.data)}"
+                f"Training or validation set is too small: "
+                f"train={len(train_data)}/{len(self.dataset.data)} ({train_ratio:.2%}), "
+                f"val={len(val_data)}/{len(self.dataset.data)} ({val_ratio:.2%})"
             )
-        ic("Split is valid - continuing")
         return True
+
+    def _reset_retry_counter(self):
+        """Reset retry counter for new split attempts."""
+        self.current_retry_count = 0
+        self.random_seed = self.original_random_seed
+        random.seed(self.random_seed)
 
     def random_split(
         self, remove_overlap: bool = False
     ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
-        # just performs a random split
-        ic.configureOutput(prefix="RANDOM_SPLIT | ")
-        ic(f"Performing random split with remove_overlap={remove_overlap}")
+        """
+        Perform random split using simplified approach with pre-computed splittable residues.
 
+        Process:
+        1. Randomly select training datapoints (optionally using centrality sampling)
+        2. Create merged topologies for train/val sets using class method
+        3. Remove overlaps between merged topologies if requested (using Partial_Topology methods)
+        4. Use filter_common_residues to assign datapoints to train/val sets
+
+        Args:
+            remove_overlap: If True, remove overlaps between train and val merged topologies
+
+        Returns:
+            Tuple of (training_datapoints, validation_datapoints)
+        """
+
+        print(
+            f"Starting random split with train_size={self.train_size}, remove_overlap={remove_overlap}"
+        )
+
+        # Step 1: Apply centrality sampling if requested, then randomly select training datapoints
         if self.centrality:
-            ic("Using centrality-based sampling")
-            dataset = self.sample_by_centrality()
+            source_dataset = self.sample_by_centrality()
         else:
-            ic("Using full dataset for sampling")
-            dataset = self.dataset.data
-        ic(f"Dataset size for splitting: {len(dataset)}")
+            source_dataset = self.dataset.data
 
-        train_size = int(self.train_size * len(dataset))
-        ic(f"Train size: {train_size}")
-        train_data = random.sample(dataset, train_size)
+        if len(source_dataset) < 2:
+            raise ValueError(
+                f"Source dataset is too small to split ({len(source_dataset)} datapoints)."
+            )
 
-        val_data = [d for d in dataset if d not in train_data]
-        ic(f"Validation size: {len(val_data)}")
+        train_size = int(self.train_size * len(source_dataset))
+        selected_train_data = random.sample(source_dataset, train_size)
+        selected_val_data = [d for d in source_dataset if d not in selected_train_data]
 
-        # print some stats
-        ic(f"Number of training fragments: {len(train_data)}")
-        ic(f"Number of validation fragments: {len(val_data)}")
+        print(
+            f"Randomly selected {len(selected_train_data)} training and {len(selected_val_data)} validation datapoints"
+        )
 
-        train_fragments = set([d.top for d in train_data])
-        val_fragments = set([d.top for d in val_data])
+        # Step 2: Create merged topologies using the class method
+        train_topologies = [d.top for d in selected_train_data]
+        val_topologies = [d.top for d in selected_val_data]
 
-        intersecting_fragments = train_fragments.intersection(val_fragments)
-        ic(f"Number of intersecting fragments: {len(intersecting_fragments)}")
+        merged_train_topologies = self._merge_topologies_by_chain(
+            train_topologies, self.check_trim, "train"
+        )
+        merged_val_topologies = self._merge_topologies_by_chain(
+            val_topologies, self.check_trim, "val"
+        )
 
+        # Step 3: Remove overlaps between merged topologies if requested
         if remove_overlap:
-            ic("Removing overlapping fragments")
-            # remove overlapping fragments from validation set
-            val_data = [d for d in val_data if d.top not in intersecting_fragments]
-            train_data = [d for d in train_data if d.top not in intersecting_fragments]
-            ic(f"After removal: train={len(train_data)}, val={len(val_data)}")
+            print("Removing overlaps between merged train/val topologies...")
+
+            updated_val_topologies = {}
+
+            for chain in merged_val_topologies.keys():
+                val_topo = merged_val_topologies[chain]
+
+                if chain in merged_train_topologies:
+                    train_topo = merged_train_topologies[chain]
+
+                    # Check if there's overlap between train and val topologies for this chain
+                    if val_topo.intersects(train_topo, check_trim=self.check_trim):
+                        overlap_residues = val_topo.get_overlap(
+                            train_topo, check_trim=self.check_trim
+                        )
+                        print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
+
+                        # Create a temporary topology with overlapping residues to remove
+                        overlap_topo = Partial_Topology.from_residues(
+                            chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
+                        )
+
+                        try:
+                            # Remove overlapping residues from validation topology
+                            updated_val_topo = val_topo.remove_residues([overlap_topo])
+                            updated_val_topologies[chain] = updated_val_topo
+                            print(
+                                f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
+                            )
+                        except ValueError as e:
+                            # If no residues remain after removal, skip this chain for validation
+                            print(
+                                f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
+                            )
+                            continue
+                    else:
+                        # No overlap, keep original topology
+                        updated_val_topologies[chain] = val_topo
+                else:
+                    # No corresponding train topology for this chain, keep original
+                    updated_val_topologies[chain] = val_topo
+
+            # Update merged topologies
+            merged_val_topologies = updated_val_topologies
+
+            # Check if we still have validation topologies after overlap removal
+            if not merged_val_topologies:
+                raise ValueError("No validation topologies remain after overlap removal")
+
+        # Step 4: Use filter_common_residues to create train/val sets
+        # Convert merged topologies back to sets for filtering
+        train_topology_set = set(merged_train_topologies.values())
+        val_topology_set = set(merged_val_topologies.values())
+
+        # Filter entire dataset using the merged topologies
+        final_train_data = filter_common_residues(
+            self.dataset.data, train_topology_set, check_trim=self.check_trim
+        )
+        final_val_data = filter_common_residues(
+            self.dataset.data, val_topology_set, check_trim=self.check_trim
+        )
+
+        # Store merged topologies for reference
+        self.last_split_train_topologies_by_chain = merged_train_topologies
+        self.last_split_val_topologies_by_chain = merged_val_topologies
+
+        print(f"Final split: {len(final_train_data)} training, {len(final_val_data)} validation")
 
         try:
-            is_valid = self.validate_split(train_data, val_data)
-            ic(f"Split validation result: {is_valid}")
-            return train_data, val_data
+            self.validate_split(final_train_data, final_val_data)
+            return final_train_data, final_val_data
         except Exception as e:
-            ic.format("Split validation failed: {}", str(e))
-            print(f"Split is not valid - trying again {self.random_seed}")
+            if self.current_retry_count >= self.max_retry_depth:
+                raise ValueError(
+                    f"Failed to create valid split after {self.max_retry_depth} attempts. "
+                    f"Last error: {e}. Consider adjusting train_size or other parameters."
+                )
 
-            # change random seed
+            print(
+                f"Split is not valid - trying again (attempt {self.current_retry_count + 1}/{self.max_retry_depth}, seed {self.random_seed}): {e}"
+            )
+            # Increment retry count and random seed
+            self.current_retry_count += 1
             self.random_seed += 1
             print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
-
             return self.random_split(remove_overlap=remove_overlap)
-
-    def stratified_split(
-        self, n_strata: int = 5
-    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
-        """
-        Performs a stratified split across y values of the dataset.
-        This ensures that the distribution of y values is similar in both train and validation sets.
-
-        Args:
-            n_strata: Number of strata to create from the y values
-
-        Returns:
-            Tuple of (train_data, val_data) lists containing Experimental_Fragment objects
-        """
-        ic.configureOutput(prefix="STRATIFIED_SPLIT | ")
-        ic(f"Performing stratified split with {n_strata} strata")
-
-        # Get the y values for the dataset
-        y_vals = self.dataset.y_true
-        ic(
-            f"Y values statistics: min={np.min(y_vals):.3f}, max={np.max(y_vals):.3f}, mean={np.mean(y_vals):.3f}"
-        )
-
-        # Create strata by binning y values
-        bin_edges = np.linspace(np.min(y_vals), np.max(y_vals), n_strata + 1)
-        ic(f"Bin edges: {bin_edges}")
-        bin_indices = np.digitize(y_vals, bin_edges[:-1])
-
-        # Count samples in each stratum
-        stratum_counts = [np.sum(bin_indices == i) for i in range(1, n_strata + 1)]
-        ic(f"Samples per stratum: {stratum_counts}")
-
-        train_data = []
-        val_data = []
-
-        # Split each stratum according to train_size
-        for stratum in range(1, n_strata + 1):
-            stratum_indices = np.where(bin_indices == stratum)[0]
-            ic(f"Stratum {stratum}: {len(stratum_indices)} samples")
-
-            if len(stratum_indices) == 0:
-                ic(f"Stratum {stratum} is empty, skipping")
-                continue
-
-            # Get fragments for this stratum
-            stratum_fragments = [self.dataset.data[i] for i in stratum_indices]
-
-            # Sample train data from this stratum
-            n_train = int(self.train_size * len(stratum_fragments))
-            ic(f"Stratum {stratum}: Selecting {n_train} samples for training")
-            train_fragments = random.sample(stratum_fragments, n_train)
-
-            # Remaining fragments go to validation
-            val_fragments = [f for f in stratum_fragments if f not in train_fragments]
-            ic(f"Stratum {stratum}: {len(val_fragments)} samples for validation")
-
-            train_data.extend(train_fragments)
-            val_data.extend(val_fragments)
-
-        ic(f"Final split: {len(train_data)} training, {len(val_data)} validation")
-
-        # Validate the split
-        try:
-            is_valid = self.validate_split(train_data, val_data)
-            ic(f"Split validation result: {is_valid}")
-            return train_data, val_data
-        except Exception as e:
-            ic.format("Split validation failed: {}", str(e))
-            print("Split is not valid - trying again with different random seed")
-            self.random_seed += 1
-            ic(f"Incrementing random seed to {self.random_seed}")
-            random.seed(self.random_seed)
-            return self.stratified_split(n_strata)
-
-    def spatial_split(
-        self, ensemble: list[mda.Universe]
-    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
-        """
-        Performs a split along the average coordinates of the provided ensemble.
-        Selects a residue at random and then selects the closest residues to it up to train_size.
-
-        Args:
-            ensemble: List of MDAnalysis Universe objects containing structure information
-
-        Returns:
-            Tuple of (train_data, val_data) lists containing Experimental_Fragment objects
-        """
-        ic.configureOutput(prefix="SPATIAL_SPLIT | ")
-        ic(f"Performing spatial split with {len(ensemble)} ensemble members")
-
-        ###############################################################################
-        # TODO this needs to be modified to use common_resiues
-        # Calculate average coordinates for each residue
-        ic("Calculating average coordinates for residues")
-        avg_coords = {}
-        for residue in cast(ResidueGroup, ensemble[0].residues):
-            ic(f"Processing residue {residue.resid}")
-            coords = []
-            for universe in ensemble:
-                res = cast(ResidueGroup, universe.residues)[residue.ix]
-                coords.append(res.atoms.center_of_mass())
-            avg_coords[residue.resid] = np.mean(coords, axis=0)
-
-        ic(f"Calculated coordinates for {len(avg_coords)} residues")
-
-        # Select a random seed residue
-        seed_resid = random.choice(list(avg_coords.keys()))
-        seed_coords = avg_coords[seed_resid]
-        ic(f"Selected seed residue {seed_resid} at coordinates {seed_coords}")
-
-        # Calculate distances from seed to all other residues
-        ic("Calculating distances from seed residue")
-        distances = {
-            resid: np.linalg.norm(coords - seed_coords) for resid, coords in avg_coords.items()
-        }
-        ic(f"Distance range: min={min(distances.values()):.3f}, max={max(distances.values()):.3f}")
-
-        # Sort residues by distance
-        sorted_resids = sorted(distances.keys(), key=lambda x: float(distances[x]))
-        ic(f"Sorted {len(sorted_resids)} residues by distance")
-        ################################################################################
-        # Take closest residues for training set up to train_size
-        n_train = int(self.train_size * len(sorted_resids))
-        train_resids = set(sorted_resids[:n_train])
-        ic(f"Selected {len(train_resids)} residues for training")
-        # val_resids = set(sorted_resids[n_train:])
-
-        # Split fragments based on residue assignments
-        train_data = []
-        val_data = []
-
-        ic("Assigning fragments to train/val sets")
-        for i, fragment in enumerate(self.dataset.data):
-            if fragment.top.residue_start in train_resids:
-                train_data.append(fragment)
-                ic(f"Fragment {i} assigned to training")
-            else:
-                val_data.append(fragment)
-                ic(f"Fragment {i} assigned to validation")
-
-        ic(f"Initial split: {len(train_data)} training, {len(val_data)} validation")
-
-        # Validate the split
-        try:
-            is_valid = self.validate_split(train_data, val_data)
-            ic(f"Split validation result: {is_valid}")
-            return train_data, val_data
-        except Exception as e:
-            ic.format("Split validation failed: {}", str(e))
-            print("Split is not valid - trying again with different seed residue")
-            self.random_seed += 1
-            ic(f"Incrementing random seed to {self.random_seed}")
-            random.seed(self.random_seed)
-            return self.spatial_split(ensemble)
-
-    def cluster_split(
-        self, n_clusters: int = 10, peptide: bool = True, cluster_index: str = "residue_index"
-    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
-        """
-        Clusters data along the specified index and performs splitting based on clusters.
-
-        Args:
-            n_clusters: Number of clusters to create
-            peptide: Whether to use peptide residues or all residues
-            cluster_index: What to cluster on ("sequence", "residue_index", "fragment_index", "features")
-
-        Returns:
-            Tuple of (train_data, val_data) lists containing Experimental_Fragment objects
-        """
-        ic.configureOutput(prefix="CLUSTER_SPLIT | ")
-        ic(f"Performing cluster split with {n_clusters} clusters")
-        ic(f"Peptide: {peptide}, Cluster index: {cluster_index}")
-
-        possible_indexes = {"sequence", "residue_index", "fragment_index", "features"}
-        if cluster_index not in possible_indexes:
-            ic.format("Invalid cluster index: {}", cluster_index)
-            raise ValueError(f"Cluster index must be one of {possible_indexes}")
-
-        # Create feature vectors based on clustering index
-        ic("Creating feature vectors for clustering")
-        features = []
-        for i, fragment in enumerate(self.dataset.data):
-            if cluster_index == "sequence":
-                # Use one-hot encoding of amino acid sequence
-                aa_dict = {aa: i for i, aa in enumerate("ACDEFGHIKLMNPQRSTVWY")}
-                feature = [aa_dict.get(aa, -1) for aa in fragment.top.fragment_sequence]
-                ic(f"Fragment {i}: sequence feature vector length {len(feature)}")
-            elif cluster_index == "residue_index":
-                # Use start and end residue indices
-                feature = [fragment.top.residue_start, fragment.top.residue_end]
-                ic(f"Fragment {i}: residue indices {feature}")
-            elif cluster_index == "fragment_index":
-                # Use fragment index directly
-                feature = [fragment.top.fragment_index]
-                ic(f"Fragment {i}: fragment index {feature}")
-            else:  # features
-                # Use experimental values
-                feature = fragment.extract_features()
-                ic(f"Fragment {i}: extracted features length {len(feature)}")
-
-            features.append(feature)
-
-        # Convert to numpy array and normalize
-        features = np.array(features)
-        ic(f"Features array shape: {features.shape}")
-
-        # Check for NaN values
-        if np.isnan(features).any():
-            ic.format("WARNING: Features contain NaN values")
-
-        # Normalize features
-        features = (features - np.mean(features, axis=0)) / (np.std(features, axis=0) + 1e-10)
-        ic("Features normalized")
-
-        # Perform k-means clustering
-        ic(f"Performing k-means clustering with {n_clusters} clusters")
-        kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_seed)
-        cluster_labels = kmeans.fit_predict(features)
-
-        # Count samples in each cluster
-        cluster_counts = [np.sum(cluster_labels == i) for i in range(n_clusters)]
-        ic(f"Samples per cluster: {cluster_counts}")
-
-        train_data = []
-        val_data = []
-
-        # Split each cluster according to train_size
-        for cluster in range(n_clusters):
-            cluster_indices = np.where(cluster_labels == cluster)[0]
-            ic(f"Cluster {cluster}: {len(cluster_indices)} samples")
-
-            if len(cluster_indices) == 0:
-                ic(f"Cluster {cluster} is empty, skipping")
-                continue
-
-            # Get fragments for this cluster
-            cluster_fragments = [self.dataset.data[i] for i in cluster_indices]
-
-            # Sample train data from this cluster
-            n_train = int(self.train_size * len(cluster_fragments))
-            ic(f"Cluster {cluster}: Selecting {n_train} samples for training")
-            train_fragments = random.sample(cluster_fragments, n_train)
-
-            # Remaining fragments go to validation
-            val_fragments = [f for f in cluster_fragments if f not in train_fragments]
-            ic(f"Cluster {cluster}: {len(val_fragments)} samples for validation")
-
-            train_data.extend(train_fragments)
-            val_data.extend(val_fragments)
-
-        ic(f"Final split: {len(train_data)} training, {len(val_data)} validation")
-
-        # Validate the split
-        try:
-            is_valid = self.validate_split(train_data, val_data)
-            ic(f"Split validation result: {is_valid}")
-            return train_data, val_data
-        except Exception as e:
-            ic.format("Split validation failed: {}", str(e))
-            print("Split is not valid - trying again with different random seed")
-            self.random_seed += 1
-            ic(f"Incrementing random seed to {self.random_seed}")
-            random.seed(self.random_seed)
-            return self.cluster_split(n_clusters, peptide, cluster_index)

@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 
-from jaxent.src.types.key import m_key
+from jaxent.src.custom_types.key import m_key
 
 
 @dataclass(frozen=True)

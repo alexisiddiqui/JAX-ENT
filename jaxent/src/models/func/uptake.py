@@ -1,25 +1,30 @@
+from typing import Dict, List, Optional
+
 import MDAnalysis as mda
 import numpy as np
+from MDAnalysis.core.groups import Residue  # Import Residue class
 
 
-def calculate_intrinsic_rates(universe_or_atomgroup):
+def calculate_intrinsic_rates(
+    universe: mda.Universe, residue_group: Optional[mda.ResidueGroup] = None
+) -> Dict[Residue, float]:
     """
-    Calculate intrinsic exchange rates for each residue in an MDAnalysis Universe or AtomGroup.
+    Calculate intrinsic exchange rates for each residue in an MDAnalysis Universe or a specific ResidueGroup.
 
     Parameters:
     -----------
-    universe_or_atomgroup : MDAnalysis.Universe or MDAnalysis.AtomGroup
-        MDAnalysis Universe or AtomGroup containing protein structure information
+    universe : MDAnalysis.Universe
+        MDAnalysis Universe containing protein structure information
+    residue_group : MDAnalysis.ResidueGroup, optional
+        Specific residue group to calculate rates for. If None, all protein residues will be used.
 
     Returns:
     --------
-    tuple : (rates, residue_ids)
-        residue_ids : numpy array of corresponding residue sequence numbers
-        rates : numpy array of intrinsic rates for each residue
+    Dict[mda.Residue, float]: A dictionary mapping residue objects to their intrinsic rates.
     """
 
     # Default rate parameters from Bai et al., Proteins, 1993, 17, 75-86
-    rate_params = {
+    rate_params: Dict[str, float] = {
         "lgkAref": 2.04,
         "lgkBref": 10.36,
         "lgkWref": -1.5,
@@ -35,7 +40,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
 
     # Rate adjustments from Nguyen et al., J. Am. Soc. Mass Spec., 2018, 29, 1936-1939
     # Each value is [lgAL, lgBL, lgAR, lgBR]
-    rate_adjs = {
+    rate_adjs: Dict[str, List[float]] = {
         "ALA": [0.00, 0.00, 0.00, 0.00],
         "ARG": [-0.59, 0.08, -0.32, 0.22],
         "ASN": [-0.58, 0.49, -0.13, 0.32],
@@ -65,7 +70,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         "CTH": [0.05, 0.00, 0.00, 0.00],  # C-term COOH
     }
 
-    def _adj_to_rates(rate_adjs):
+    def _adj_to_rates(rate_adjs: List[float]) -> float:
         """Helper function to calculate intrinsic rates from adjustments"""
         # Calculate reference rates at experimental temperature
         lgkAexp = rate_params["lgkAref"] - (rate_params["EaA"] / np.log(10) / rate_params["R"]) * (
@@ -85,31 +90,55 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
 
         return 10**lgkA + 10**lgkB + 10**lgkW
 
-    # Handle input type
-    if isinstance(universe_or_atomgroup, mda.Universe):
-        u = universe_or_atomgroup
-        protein = u.select_atoms("protein")
-    else:  # AtomGroup
-        protein = universe_or_atomgroup.select_atoms("protein")
+    # Identify first residues of each chain using original universe topology
+    first_residues_per_chain = set()
+    for segment in universe.segments:
+        # Get protein atoms in this segment, then their residues
+        segment_protein_atoms = segment.atoms.select_atoms("protein")
+        if len(segment_protein_atoms) > 0:
+            protein_residues_in_segment = segment_protein_atoms.residues
+            if len(protein_residues_in_segment) > 0:
+                first_residues_per_chain.add(protein_residues_in_segment[0])
 
-    # Get unique residues (MDAnalysis specific)
-    residues = protein.residues
-    n_residues = len(residues)
+    # Handle input selection for which residues to calculate rates for
+    if residue_group is None:
+        # No residue group provided, select all protein residues
+        protein = universe.select_atoms("protein")
+        residues = protein.residues
+    else:
+        # Use the provided residue group directly
+        residues = residue_group
 
-    # Initialize arrays
-    kints = np.zeros(n_residues)
-    residue_ids = np.zeros(n_residues, dtype=int)
+    # Initialize dictionary
+    kint_dict: Dict[Residue, float] = {}
 
     # Calculate rates for each residue
-    for i, curr in enumerate(residues):
-        residue_ids[i] = curr.resid
-        ########################################################################\
-        # Skip first residue or PRO
-        if i == 0 or curr.resname == "PRO":
-            kints[i] = np.inf
+    for curr in residues:
+        # Skip first residue of each chain or PRO
+        if curr in first_residues_per_chain or curr.resname == "PRO":
+            kint_dict[curr] = np.inf
             continue
-        prev = residues[i - 1]
-        ########################################################################\
+
+        # Find previous residue in the same chain/segment
+        curr_segment = curr.segment
+        curr_segment_protein_atoms = curr_segment.atoms.select_atoms("protein")
+        curr_segment_residues = curr_segment_protein_atoms.residues
+
+        # Find current residue index within its segment
+        try:
+            curr_idx_in_segment = list(curr_segment_residues).index(curr)
+        except ValueError:
+            # Current residue not found in protein residues of its segment
+            kint_dict[curr] = np.inf
+            continue
+
+        if curr_idx_in_segment == 0:
+            # This is the first residue in the segment (already handled above)
+            kint_dict[curr] = np.inf
+            continue
+
+        # Get previous residue
+        prev = curr_segment_residues[curr_idx_in_segment - 1]
 
         # Get rate adjustments
         curr_name = (
@@ -118,9 +147,9 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         prev_name = prev.resname if prev.resname in rate_adjs else "ALA"
 
         # Special handling for termini
-        if i == 0:  # First non-PRO residue
+        if curr_idx_in_segment == 1:  # Second residue in chain (first non-terminal)
             prev_name = "NT"
-        if i == n_residues - 1:  # Last residue
+        if curr_idx_in_segment == len(curr_segment_residues) - 1:  # Last residue in chain
             curr_name = "CT"
 
         # Combine adjustments
@@ -128,6 +157,7 @@ def calculate_intrinsic_rates(universe_or_atomgroup):
         curr_adjs.extend(rate_adjs[prev_name][2:])  # Add last two values from previous
 
         # Calculate rate
-        kints[i] = _adj_to_rates(curr_adjs)
+        rate = _adj_to_rates(curr_adjs)
+        kint_dict[curr] = rate
 
-    return dict(zip(residue_ids, kints))
+    return kint_dict

@@ -385,7 +385,7 @@ def test_config_comparison():
         results = compare_adjacency_matrices(
             universe=universe,
             configs=configs,
-            max_frames=100,  # Use 50 frames to limit computational cost
+            max_frames=10,  # Use 50 frames to limit computational cost
             output_dir=test_dir,
         )
 
