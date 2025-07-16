@@ -207,3 +207,6 @@ HDXer/
 *.json
 
 !__init__.py
+
+
+**/tests/inst/
