@@ -1096,12 +1096,15 @@ class Partial_Topology:
             if not sorted_residues:
                 continue  # Skip if no residues left after filtering
 
-            # --- [FIX] ---
-            # Create renumbering mapping from the FINAL list of residues after all filtering.
+            # Create renumbering mapping from the list of ALL included residues for the chain,
+            # not just the ones in the current selection. This ensures consistent numbering.
             if renumber_residues:
-                final_residue_mapping = {res.resid: i for i, res in enumerate(sorted_residues, 1)}
+                final_residue_mapping = {
+                    res.resid: i for i, res in enumerate(included_residues, 1)
+                }
             else:
-                final_residue_mapping = {res.resid: res.resid for res in sorted_residues}
+                # When not renumbering, the mapping is identity for all residues in the chain
+                final_residue_mapping = {res.resid: res.resid for res in full_chain_residues}
 
             # Extract sequence information
             try:
@@ -1316,9 +1319,11 @@ class Partial_Topology:
 
             # Create renumbering mapping from the FINAL list of residues after all filtering - SAME as from_mda_universe
             if renumber_residues:
-                renumber_to_original = {i: res.resid for i, res in enumerate(sorted_residues, 1)}
+                renumber_to_original = {
+                    i: res.resid for i, res in enumerate(included_residues, 1)
+                }
             else:
-                renumber_to_original = {res.resid: res.resid for res in sorted_residues}
+                renumber_to_original = {res.resid: res.resid for res in full_chain_residues}
 
             # Map topology residues to original residues
             chain_target_resids = []
