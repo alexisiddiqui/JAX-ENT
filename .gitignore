@@ -195,7 +195,7 @@ tests/_*
 *.npy
 *.svg
 *.dat
-_*
+_*/
 
 # exclude folders called HDXer
 HDXer/
@@ -205,3 +205,5 @@ HDXer/
 
 
 *.json
+
+!__init__.py

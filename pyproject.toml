@@ -24,6 +24,15 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["jaxent/src"]
 
+[tool.pytest.ini_options]
+testpaths = [
+    "jaxent/tests",
+]
+pythonpath = [
+    "jaxent/src"
+]
+
+
 [tool.setuptools.package-dir]
 "" = "jaxent/src"
 [build-system]
