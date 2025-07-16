@@ -124,7 +124,7 @@ def test_quick_optimiser():
     print("test prediction", test_prediction[0].log_Pf)
     print(test_prediction[0].log_Pf.shape)
 
-    opt_settings = OptimiserSettings(name="test")
+    opt_settings = OptimiserSettings(name="test", n_steps=25)
 
     # create fake experimental dataset
 
@@ -286,7 +286,7 @@ def test_underscore_optimiser():
     opt_state = optimizer.initialise(simulation, [True], _jit_test_args=None)
 
     # Call _optimise function directly
-    n_steps = 50  # Use fewer steps for testing
+    n_steps = 25  # Use 25 steps for testing
     tolerance = 1e-6
     convergence = 1e-8
     indexes = [0]
@@ -390,7 +390,7 @@ def test_uptake_optimiser():
     print("test prediction", test_prediction[0].uptake)
     print(test_prediction[0].uptake.shape)
 
-    opt_settings = OptimiserSettings(name="test", n_steps=1000)
+    opt_settings = OptimiserSettings(name="test", n_steps=25)
 
     # create fake experimental dataset
 

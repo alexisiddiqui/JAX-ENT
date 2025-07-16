@@ -73,6 +73,88 @@ def create_test_universe(residue_names, n_atoms_per_residue=3, n_frames=1):
     return universe
 
 
+def create_multi_chain_universe(chain_residues, n_frames=1):
+    """
+    Create a test MDAnalysis Universe with multiple chains.
+
+    The order of chains in the input dictionary determines the order of atoms
+    in the created Universe.
+
+    Parameters:
+    -----------
+    chain_residues : dict
+        Dict mapping chain ID to a list of residue names.
+        e.g., {'B': ["ALA", "GLY"], 'A': ["SER", "VAL"]}
+    n_frames : int
+        Number of trajectory frames
+
+    Returns:
+    --------
+    MDAnalysis.Universe
+        A properly constructed Universe object
+    """
+    n_atoms_per_residue = 3
+    n_total_residues = sum(len(res) for res in chain_residues.values())
+    n_total_atoms = n_total_residues * n_atoms_per_residue
+
+    # --- Topology Attributes ---
+    atom_resindices = np.zeros(n_total_atoms, dtype=int)
+    resnames = []
+    resids = np.zeros(n_total_residues, dtype=int)
+    atom_names = []
+    atom_types = []  # FIX: Initialize list for atom types
+
+    # Segment-related attributes
+    unique_segids = sorted(list(chain_residues.keys()))
+    residue_segindices = np.zeros(n_total_residues, dtype=int)
+
+    atom_idx = 0
+    residue_idx = 0
+    # Iterate through chains in the user-provided order to create a non-sorted universe.
+    for chain_id, res_name_list in chain_residues.items():
+        seg_idx = unique_segids.index(chain_id)
+        for i, res_name in enumerate(res_name_list):
+            resnames.append(res_name)
+            resids[residue_idx] = i + 1  # Resids are 1-based per chain
+            residue_segindices[residue_idx] = seg_idx
+            atom_resindices[atom_idx : atom_idx + n_atoms_per_residue] = residue_idx
+            atom_names.extend(["N", "H", "O"])
+            atom_types.extend(["N", "H", "O"])  # FIX: Populate atom types
+
+            atom_idx += n_atoms_per_residue
+            residue_idx += 1
+
+    # --- Coordinates ---
+    coordinates = np.zeros((n_frames, n_total_atoms, 3), dtype=np.float32)
+    for frame in range(n_frames):
+        for i in range(n_total_atoms):
+            coordinates[frame, i] = [i * 3.0 + frame * 0.1, 0, 0]
+
+    # --- Create Universe ---
+    universe = mda.Universe.empty(
+        n_total_atoms,
+        n_residues=n_total_residues,
+        n_segments=len(unique_segids),
+        atom_resindex=atom_resindices,
+        residue_segindex=residue_segindices,
+        trajectory=False,
+    )
+
+    universe.add_TopologyAttr("names", atom_names)
+    universe.add_TopologyAttr("types", atom_types)  # FIX: Add types attribute to topology
+    universe.add_TopologyAttr("resnames", resnames)
+    universe.add_TopologyAttr("resids", resids)
+    universe.add_TopologyAttr("segids", unique_segids)
+
+    from MDAnalysis.coordinates.memory import MemoryReader
+
+    universe.trajectory = MemoryReader(
+        coordinates, dimensions=np.array([[200, 200, 200, 90, 90, 90]] * n_frames), dt=1.0
+    )
+
+    return universe
+
+
 class TestBVModel:
     """Test suite for BV_model class."""
 
@@ -344,6 +426,52 @@ class TestBVModel:
         assert np.all(features.heavy_contacts >= 0)
         assert np.all(features.acceptor_contacts >= 0)
         assert np.all(features.k_ints > 0)
+
+    def test_featurise_output_order(self):
+        """Test that features are ordered correctly according to topology ranking."""
+        # 1. Create a universe with multiple chains in a non-alphabetical order
+        # The featurization should reorder them to be alphabetical (A then B).
+        multi_chain_residues = {
+            "B": ["MET", "ALA", "GLY", "SER", "VAL"],  # Chain B
+            "A": ["MET", "CYS", "THR", "PHE", "TYR"],  # Chain A
+        }
+        multi_chain_universe = create_multi_chain_universe(multi_chain_residues, n_frames=2)
+        ensemble = [multi_chain_universe]
+
+        # 2. Initialise the model
+        success = self.model.initialise(ensemble)
+        assert success is True
+
+        # 3. Check the initial topology order from `initialise`
+        # After exclusion (resid 1 and 5 from each chain) and renumbering, we expect:
+        # Chain A: [CYS(1), THR(2), PHE(3)]
+        # Chain B: [ALA(1), GLY(2), SER(3)]
+        # Ranking is by chain ID, so A comes before B.
+        assert len(self.model.topology_order) == 6  # (5-2) + (5-2)
+        expected_chains = ["A"] * 3 + ["B"] * 3
+        expected_resids = [1, 2, 3, 1, 2, 3]
+        actual_chains = [t.chain for t in self.model.topology_order]
+        actual_resids = [t.residues[0] for t in self.model.topology_order]
+
+        assert actual_chains == expected_chains
+        assert actual_resids == expected_resids
+
+        # 4. Featurise
+        features, topology_order_from_featurise = self.model.featurise(ensemble)
+
+        # 5. Verify the order
+        # The topology list from featurise should be the same as from initialise
+        assert topology_order_from_featurise == self.model.topology_order
+
+        # The features should be ordered according to this topology list.
+        # We can verify this using the intrinsic rates (k_ints), which are stored
+        # in a map during initialise and then ordered.
+        for i, topo in enumerate(topology_order_from_featurise):
+            # The topo object itself is the key in the map
+            assert topo in self.model.common_k_ints_map
+            expected_k_int = self.model.common_k_ints_map[topo]
+            actual_k_int = features.k_ints[i]
+            np.testing.assert_allclose(actual_k_int, expected_k_int, rtol=1e-6)
 
     def test_featurise_before_initialise_fails(self):
         """Test that featurise fails if called before initialise."""
@@ -621,14 +749,4 @@ class TestBVModelEdgeCases:
 
 
 if __name__ == "__main__":
-    pytest.main([__file__])
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
-    pytest.main([__file__])
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
     pytest.main([__file__])
