@@ -29,15 +29,46 @@ Analysis
 ---
 
 
-CLI wrappers will be included under 'scripts'.
+## Installation
+
+This project uses `uv` for package management. If you don't have `uv` installed, you can install it via `pipx`:
+
+```bash
+pip install uv
+```
+
+Once `uv` is installed, navigate to the project root directory and install the dependencies and the package in editable mode:
+
+```bash
+uv venc
+source .venv/bin/activate
+uv pip install -e .[flag]
+```
+Please ensure that JAX is correctly installed with CUDA/ROCm if desired, following the official JAX installation instructions for your specific hardware.
 
 
-uses uv for package management
 
-Please check that jax is correctly installed with CUDA/ROCm if desired.
+Tests can be found in jaxent/tests. Some of these tests require the test files found in jaxent/tests/inst.zip - this needs to be extracted to jaxent/tests/inst/ - a search and replace is then performed to correct the suffix before 'JAX-ENT'.
+Tests also require the dev branch (for pytest).
 
-To do:
-Add CUDA/ROCm flag to uv installation
+```bash
+uv venc
+source .venv/bin/activate
+uv pip install -e .[dev]
+```
+
+
+
+
+## CLI Tools
+
+The following command-line interface (CLI) tools are available after installation:
+
+*   `jaxent-featurise`: For featurising molecular dynamics trajectories.
+*   `jaxent-predict`: For running predictions with a single set of model parameters.
+*   `jaxent-forward`: For running forward predictions across multiple sets of simulation parameters.
+
+
 
 
 ---
