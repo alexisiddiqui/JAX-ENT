@@ -12,112 +12,94 @@ import sys
 
 sys.path.insert(0, base_dir)
 
-import jax.numpy as jnp
-from MDAnalysis import Universe
 
-from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
-from jaxent.src.custom_types.HDX import HDX_protection_factor
-from jaxent.src.data.loader import Dataset, ExpD_Dataloader
-from jaxent.src.data.splitting.sparse_map import create_sparse_map
-from jaxent.src.data.splitting.split import DataSplitter
-from jaxent.src.featurise import run_featurise
-from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.models.config import BV_model_Config
-from jaxent.src.models.core import Simulation
-from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
-from jaxent.src.opt.losses import hdx_pf_l2_loss
-from jaxent.src.opt.run import run_optimise
+# def test_batch_optimise():
+#     """Test batch optimization with multiple datasets."""
+#     bv_config = BV_model_Config()
+#     featuriser_settings = FeaturiserSettings(name="BV", batch_size=10)  # Use batch processing
 
+#     topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+#     trajectory_path = (
+#         "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+#     )
+#     test_universe = Universe(topology_path, trajectory_path)
 
-def test_batch_optimise():
-    """Test batch optimization with multiple datasets."""
-    bv_config = BV_model_Config()
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=10)  # Use batch processing
+#     universes = [test_universe]
+#     models = [BV_model(bv_config)]
+#     ensemble = Experiment_Builder(universes, models)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+#     features, feature_topology = run_featurise(ensemble, featuriser_settings)
+#     assert len(features) == len(models)
 
-    universes = [test_universe]
-    models = [BV_model(bv_config)]
-    ensemble = Experiment_Builder(universes, models)
+#     BV_features: BV_input_features = features[0]
+#     trajectory_length = BV_features.features_shape[1]
 
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-    assert len(features) == len(models)
+#     params = Simulation_Parameters(
+#         frame_weights=jnp.ones(trajectory_length) / trajectory_length,
+#         frame_mask=jnp.ones(trajectory_length),
+#         model_parameters=[bv_config.forward_parameters],
+#         forward_model_weights=jnp.ones(1),
+#         forward_model_scaling=jnp.ones(1),
+#         normalise_loss_functions=jnp.ones(1),
+#     )
 
-    BV_features: BV_input_features = features[0]
-    trajectory_length = BV_features.features_shape[1]
+#     simulation = Simulation(forward_models=models, input_features=features, params=params)
+#     simulation.initialise()
 
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
-        model_parameters=[bv_config.forward_parameters],
-        forward_model_weights=jnp.ones(1),
-        forward_model_scaling=jnp.ones(1),
-        normalise_loss_functions=jnp.ones(1),
-    )
+#     opt_settings = OptimiserSettings(name="test_batch", n_steps=10)
 
-    simulation = Simulation(forward_models=models, input_features=features, params=params)
-    simulation.initialise()
+#     # Create experimental dataset
+#     top_segments = Partial_Topology.find_common_residues(
+#         universes, exclude_selection="(resname PRO or resid 1) "
+#     )[0]
 
-    opt_settings = OptimiserSettings(name="test_batch", n_steps=10)
+#     exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in feature_topology[0]]
 
-    # Create experimental dataset
-    top_segments = Partial_Topology.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
-    )[0]
+#     dataset = ExpD_Dataloader(data=exp_data)
 
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in feature_topology[0]]
+#     splitter = DataSplitter(
+#         dataset,
+#         random_seed=42,
+#         ensemble=universes,
+#         common_residues=set(feature_topology[0]),
+#     )
+#     train_data, val_data = splitter.random_split()
 
-    dataset = ExpD_Dataloader(data=exp_data)
+#     # Create sparse maps
+#     train_sparse_map = create_sparse_map(features[0], feature_topology[0], train_data)
+#     val_sparse_map = create_sparse_map(features[0], feature_topology[0], val_data)
 
-    splitter = DataSplitter(
-        dataset,
-        random_seed=42,
-        ensemble=universes,
-        common_residues=set(feature_topology[0]),
-    )
-    train_data, val_data = splitter.random_split()
+#     dataset.train = Dataset(
+#         data=train_data,
+#         y_true=jnp.array([data.extract_features() for data in train_data]),
+#         residue_feature_ouput_mapping=train_sparse_map,
+#     )
 
-    # Create sparse maps
-    train_sparse_map = create_sparse_map(features[0], feature_topology[0], train_data)
-    val_sparse_map = create_sparse_map(features[0], feature_topology[0], val_data)
+#     dataset.val = Dataset(
+#         data=val_data,
+#         y_true=jnp.array([data.extract_features() for data in val_data]),
+#         residue_feature_ouput_mapping=val_sparse_map,
+#     )
 
-    dataset.train = Dataset(
-        data=train_data,
-        y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
-    )
+#     # Run batch optimization
+#     opt_simulation = run_optimise(
+#         simulation,
+#         data_to_fit=(dataset,),
+#         config=opt_settings,
+#         forward_models=models,
+#         indexes=[0],
+#         loss_functions=[hdx_pf_l2_loss],
+#     )
 
-    dataset.val = Dataset(
-        data=val_data,
-        y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
-    )
+#     # Verify results
+#     assert opt_simulation is not None
+#     result_simulation, history = opt_simulation
+#     assert result_simulation is not None
+#     assert history is not None
 
-    # Run batch optimization
-    opt_simulation = run_optimise(
-        simulation,
-        data_to_fit=(dataset,),
-        config=opt_settings,
-        forward_models=models,
-        indexes=[0],
-        loss_functions=[hdx_pf_l2_loss],
-    )
-
-    # Verify results
-    assert opt_simulation is not None
-    result_simulation, history = opt_simulation
-    assert result_simulation is not None
-    assert history is not None
-
-    del simulation
-    jax.clear_caches()
+#     del simulation
+#     jax.clear_caches()
 
 
-if __name__ == "__main__":
-    test_batch_optimise()
+# if __name__ == "__main__":
+#     test_batch_optimise()

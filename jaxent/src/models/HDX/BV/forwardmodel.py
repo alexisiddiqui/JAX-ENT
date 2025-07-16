@@ -247,7 +247,6 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 renumber_residues=True,
                 mda_atom_filtering="name H or name HN",
             )
-
             h_atoms = cast(mda.AtomGroup, h_atoms)
 
             # Calculate heavy atom contacts using N atoms
@@ -265,6 +264,14 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 contact_selection="oxygen",
                 radius=O_RADIUS,
             )
+
+            # --- Ensure ordering matches self.topology_order ---
+            # Get reordering indices for this universe
+            reorder_indices = Partial_Topology.get_residuegroup_reordering_indices(n_atoms)
+            # Reorder contacts accordingly
+            _heavy_contacts = [_heavy_contacts[i] for i in reorder_indices]
+            _o_contacts = [_o_contacts[i] for i in reorder_indices]
+            # ---------------------------------------------------
 
             heavy_contacts.append(_heavy_contacts)
             acceptor_contacts.append(_o_contacts)

@@ -68,51 +68,48 @@ import gc
 import weakref
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, Optional, TypeVar
+from typing import Any, Callable, Generator, Generic, TypeVar
 
 import jax
 
 # Type variable for decorator return type preservation
 F = TypeVar("F", bound=Callable[..., Any])
+# Type variable for simulation object
+T = TypeVar("T")
 
 
-class jit_Guard:
+class jit_Guard(Generic[T]):
     """
     Context manager for handling JAX JIT compilation issues by managing
     simulation objects and clearing JAX caches.
 
     Usage:
-        # As context manager with automatic cleanup
-        with jit_Guard(simulation) as guard:
-            simulation.initialise()
-            result = simulation.forward()
+        # Type checker automatically infers simulation type
+        with jit_Guard(simulation) as sim:
+            sim.initialise()  # sim is correctly typed as your simulation object
+            result = sim.forward()
 
-        # Manual cache clearing
+        # For manual cache clearing, just use static method
         jit_Guard.clear_all_caches()
-
-        # For testing - force cleanup after operations
-        with jit_Guard(simulation, cleanup_on_exit=True):
-            # ... simulation operations
-            pass  # simulation object will be deleted on exit
     """
 
-    def __init__(self, simulation_obj: Optional[Any] = None, cleanup_on_exit: bool = False):
+    def __init__(self, simulation_obj: T, cleanup_on_exit: bool = False):
         """
         Initialize the jit_Guard.
 
         Args:
-            simulation_obj: Optional simulation object to manage
+            simulation_obj: Simulation object to manage
             cleanup_on_exit: If True, delete simulation object on context exit
         """
+        self.simulation_obj = simulation_obj
         self.simulation_ref = weakref.ref(simulation_obj) if simulation_obj is not None else None
         self.cleanup_on_exit = cleanup_on_exit
-        self.simulation_obj = simulation_obj if cleanup_on_exit else None
 
-    def __enter__(self):
-        """Enter the context manager."""
+    def __enter__(self) -> T:
+        """Enter the context manager and return the managed simulation object."""
         # Clear caches before starting
         self.clear_all_caches()
-        return self
+        return self.simulation_obj
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit the context manager with cleanup."""
@@ -135,13 +132,10 @@ class jit_Guard:
             gc.collect()
 
         except Exception as cleanup_error:
-            # Don't suppress original exceptions with cleanup errors
             if exc_type is None:
                 raise cleanup_error
-            # Log cleanup error but let original exception propagate
             print(f"Warning: Cleanup error in jit_Guard: {cleanup_error}")
 
-        # Return False to propagate any original exceptions
         return False
 
     @staticmethod
@@ -355,18 +349,16 @@ class jit_Guard:
 
 # Convenience context manager function
 @contextmanager
-def jit_guard(
-    simulation_obj: Optional[Any] = None, cleanup_on_exit: bool = False
-) -> Generator[jit_Guard, None, None]:
+def jit_guard(simulation_obj: T, cleanup_on_exit: bool = False) -> Generator[T, None, None]:
     """
     Convenience function to create jit_Guard context manager.
 
     Args:
-        simulation_obj: Optional simulation object to manage
+        simulation_obj: Simulation object to manage
         cleanup_on_exit: If True, delete simulation object on context exit
 
     Yields:
-        jit_Guard instance
+        The managed simulation object
     """
     guard = jit_Guard(simulation_obj, cleanup_on_exit)
     try:

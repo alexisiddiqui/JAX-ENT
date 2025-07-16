@@ -914,3 +914,920 @@ class TestPartialTopologyPairwiseDistances:
         assert np.all(np.diag(dist_matrix) == 0)
         assert np.all(dist_matrix[np.triu_indices(3, k=1)] > 0)
         assert np.allclose(dist_std, 0)
+
+
+class TestGetMDAGroupSortKey:
+    """Test the get_mda_group_sort_key static method."""
+
+    def test_sort_key_residuegroup(self, bpti_universe):
+        # Extract a ResidueGroup for a range of residues
+        residues = bpti_universe.select_atoms("protein and resid 10-15").residues
+        sort_key = Partial_Topology.get_mda_group_sort_key(residues)
+        # Should be a tuple of length 4
+        assert isinstance(sort_key, tuple) and len(sort_key) == 4
+        # Chain ID length should be int
+        assert isinstance(sort_key[0], int)
+        # Chain score should be tuple of ints
+        assert isinstance(sort_key[1], tuple)
+        # Average residue should be float
+        assert isinstance(sort_key[2], float)
+        # Length should be negative int
+        assert isinstance(sort_key[3], int) and sort_key[3] < 0
+
+    def test_sort_key_atomgroup(self, bpti_universe):
+        # Extract an AtomGroup for a range of residues
+        atoms = bpti_universe.select_atoms("protein and resid 10-15")
+        sort_key = Partial_Topology.get_mda_group_sort_key(atoms)
+        assert isinstance(sort_key, tuple) and len(sort_key) == 4
+
+    def test_sort_key_single_residue(self, bpti_universe):
+        # Single residue as ResidueGroup
+        residue = bpti_universe.select_atoms("protein and resid 10").residues
+        sort_key = Partial_Topology.get_mda_group_sort_key(residue)
+        assert isinstance(sort_key, tuple) and len(sort_key) == 4
+
+    # def test_error_on_multiple_chains(self, bpti_universe):
+    #     # Select atoms from two chains (if present), else skip
+    #     # For BPTI, only one chain, so we simulate by combining two selections
+    #     residues = bpti_universe.select_atoms("protein and resid 10-12").residues
+    #     # Manually set chainid for test if only one chain exists
+    #     if len(set(res.atoms[0].segid for res in residues)) == 1:
+    #         # Simulate a second chain by copying and patching segid
+    #         import copy
+
+    #         fake_res = copy.copy(residues[0])
+    #         fake_res.atoms[0].segid = "B"
+    #         residues = list(residues) + [fake_res]
+    #     with pytest.raises(ValueError):
+    #         Partial_Topology.get_mda_group_sort_key(residues)
+
+    def test_error_on_empty_group(self, bpti_universe):
+        # Empty ResidueGroup
+        from MDAnalysis.core.groups import ResidueGroup
+
+        empty_group = ResidueGroup([], bpti_universe)
+        with pytest.raises(ValueError):
+            Partial_Topology.get_mda_group_sort_key(empty_group)
+
+    def test_error_on_invalid_type(self):
+        with pytest.raises(TypeError):
+            Partial_Topology.get_mda_group_sort_key("not_a_group")
+
+
+class TestGetResidueGroupReorderingIndices:
+    """Test the get_residuegroup_reordering_indices method and compare with Partial_Topology ordering"""
+
+    def test_basic_residuegroup_reordering(self, bpti_universe):
+        """Test basic reordering of a ResidueGroup"""
+        # Select a range of residues in reverse order
+        residues = bpti_universe.select_atoms("protein and resid 15 14 13 12 11 10").residues
+
+        # Get reordering indices
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+
+        # Apply reordering
+        reordered_residues = [residues[i] for i in indices]
+
+        # Check that residues are now in ascending order
+        resids = [res.resid for res in reordered_residues]
+        assert resids == sorted(resids), f"Residues should be in ascending order: {resids}"
+
+        # Check indices are valid
+        assert len(indices) == len(residues)
+        assert all(0 <= i < len(residues) for i in indices)
+
+    def test_atomgroup_reordering(self, bpti_universe):
+        """Test reordering of an AtomGroup"""
+        # Select atoms from multiple residues
+        atoms = bpti_universe.select_atoms("protein and name CA and resid 20 18 16 14 12 10")
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(atoms)
+        reordered_residues = [atoms.residues[i] for i in indices]
+
+        # Check ordering
+        resids = [res.resid for res in reordered_residues]
+        assert resids == sorted(resids), f"Residues should be in ascending order: {resids}"
+
+    def test_single_residue_returns_identity(self, bpti_universe):
+        """Test that single residue returns identity ordering"""
+        residue = bpti_universe.select_atoms("protein and resid 10").residues
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residue)
+
+        assert indices == [0], "Single residue should return identity index [0]"
+
+    def test_empty_group_raises_error(self, bpti_universe):
+        """Test that empty group raises ValueError"""
+        from MDAnalysis.core.groups import ResidueGroup
+
+        empty_group = ResidueGroup([], bpti_universe)
+
+        with pytest.raises(ValueError, match="Group contains no residues"):
+            Partial_Topology.get_residuegroup_reordering_indices(empty_group)
+
+    def test_invalid_type_raises_error(self):
+        """Test that invalid group type raises TypeError"""
+        with pytest.raises(TypeError, match="residue_group must be a ResidueGroup or AtomGroup"):
+            Partial_Topology.get_residuegroup_reordering_indices("not_a_group")
+
+    def test_already_ordered_residues(self, bpti_universe):
+        """Test reordering residues that are already in correct order"""
+        residues = bpti_universe.select_atoms("protein and resid 10-15").residues
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+
+        # Should return identity ordering
+        expected_indices = list(range(len(residues)))
+        assert indices == expected_indices, (
+            f"Already ordered residues should return identity: {indices}"
+        )
+
+    def test_comparison_with_partial_topology_ordering(self, bpti_universe):
+        """Test that ordering matches Partial_Topology ordering methods"""
+        # Create a mixed set of residues from different positions
+        residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
+
+        # Get reordering indices
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        reordered_residues = [residues[i] for i in indices]
+
+        # Create corresponding Partial_Topology objects
+        partial_topologies = []
+        for res in residues:
+            chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
+            topo = Partial_Topology.from_single(
+                chain=chain_id,
+                residue=res.resid,
+                fragment_name=f"{chain_id}_{res.resname}{res.resid}",
+            )
+            partial_topologies.append(topo)
+
+        # Sort using Partial_Topology method
+        sorted_topologies = Partial_Topology.rank_and_index(partial_topologies.copy())
+
+        # Compare orderings
+        mda_ordered_resids = [res.resid for res in reordered_residues]
+        topo_ordered_resids = [topo.residues[0] for topo in sorted_topologies]
+
+        assert mda_ordered_resids == topo_ordered_resids, (
+            f"MDA ordering {mda_ordered_resids} should match Partial_Topology ordering {topo_ordered_resids}"
+        )
+
+    def test_ordering_with_mixed_chains(self, bpti_universe):
+        """Test ordering behavior with mixed chains (if available)"""
+        # For BPTI (single chain), simulate by manually creating multi-chain scenario
+        all_residues = bpti_universe.select_atoms("protein and resid 10-15").residues
+
+        # Get indices for single chain
+        indices = Partial_Topology.get_residuegroup_reordering_indices(all_residues)
+        reordered = [all_residues[i] for i in indices]
+
+        # Should be ordered by residue number within chain
+        resids = [res.resid for res in reordered]
+        assert resids == sorted(resids), "Single chain residues should be ordered by resid"
+
+    def test_sort_key_consistency(self, bpti_universe):
+        """Test that get_mda_group_sort_key produces consistent results"""
+        residues = bpti_universe.select_atoms("protein and resid 10-20").residues
+
+        # Generate sort keys manually and compare with method results
+        manual_keys = []
+        for res in residues:
+            key = Partial_Topology.get_mda_group_sort_key(res)
+            manual_keys.append(key)
+
+        # Sort using manual keys
+        indexed_keys = [(key, i) for i, key in enumerate(manual_keys)]
+        indexed_keys.sort(key=lambda x: x[0])
+        manual_indices = [i for _, i in indexed_keys]
+
+        # Compare with method result
+        method_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+
+        assert manual_indices == method_indices, (
+            f"Manual sort indices {manual_indices} should match method indices {method_indices}"
+        )
+
+    def test_residue_ordering_edge_cases(self, bpti_universe):
+        """Test edge cases in residue ordering"""
+        # Test with gaps in residue numbering
+        scattered_residues = bpti_universe.select_atoms("protein and resid 10 12 14 16 18").residues
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(scattered_residues)
+        reordered = [scattered_residues[i] for i in indices]
+
+        # Should still be ordered by residue number
+        resids = [res.resid for res in reordered]
+        assert resids == [10, 12, 14, 16, 18], f"Scattered residues should be ordered: {resids}"
+
+    def test_ordering_preserves_residue_properties(self, bpti_universe):
+        """Test that reordering preserves residue properties"""
+        residues = bpti_universe.select_atoms("protein and resid 20 15 10").residues
+        original_resnames = [res.resname for res in residues]
+        original_resids = [res.resid for res in residues]
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        reordered = [residues[i] for i in indices]
+
+        # Check that residue properties are preserved
+        reordered_resnames = [res.resname for res in reordered]
+        reordered_resids = [res.resid for res in reordered]
+
+        # Properties should be preserved but in new order
+        assert set(original_resnames) == set(reordered_resnames), (
+            "Residue names should be preserved"
+        )
+        assert set(original_resids) == set(reordered_resids), "Residue IDs should be preserved"
+        assert reordered_resids == sorted(reordered_resids), "Residues should be ordered by ID"
+
+    def test_comparison_with_direct_topology_creation(self, bpti_universe):
+        """Test that ordering matches direct Partial_Topology creation and sorting"""
+        # Select residues in random order
+        residues = bpti_universe.select_atoms("protein and resid 30 10 25 15 20").residues
+
+        # Method 1: Use get_residuegroup_reordering_indices
+        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        method1_order = [residues[i].resid for i in indices]
+
+        # Method 2: Create individual topologies and sort
+        topologies = []
+        for res in residues:
+            chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
+            topo = Partial_Topology.from_single(
+                chain=chain_id, residue=res.resid, fragment_name=f"res_{res.resid}"
+            )
+            topologies.append(topo)
+
+        # Sort topologies using standard method
+        sorted_topologies = sorted(topologies)
+        method2_order = [topo.residues[0] for topo in sorted_topologies]
+
+        assert method1_order == method2_order, (
+            f"get_residuegroup_reordering_indices order {method1_order} should match "
+            f"direct topology sorting {method2_order}"
+        )
+
+    def test_large_residue_group_ordering(self, bpti_universe):
+        """Test ordering with a large number of residues"""
+        # Select all protein residues
+        all_residues = bpti_universe.select_atoms("protein").residues
+
+        # Shuffle the order by selecting in reverse
+        residue_ids = [res.resid for res in all_residues]
+        shuffled_selection = f"protein and resid {' '.join(map(str, reversed(residue_ids)))}"
+        shuffled_residues = bpti_universe.select_atoms(shuffled_selection).residues
+
+        indices = Partial_Topology.get_residuegroup_reordering_indices(shuffled_residues)
+        reordered = [shuffled_residues[i] for i in indices]
+
+        # Check that all residues are included and ordered
+        reordered_ids = [res.resid for res in reordered]
+        assert len(reordered_ids) == len(residue_ids), "All residues should be included"
+        assert reordered_ids == sorted(reordered_ids), "All residues should be ordered"
+
+    def test_ordering_with_get_mda_group_sort_key_directly(self, bpti_universe):
+        """Test that get_mda_group_sort_key works correctly for individual residues"""
+        # Test with individual residues
+        res1 = bpti_universe.select_atoms("protein and resid 10").residues[0]
+        res2 = bpti_universe.select_atoms("protein and resid 20").residues[0]
+
+        key1 = Partial_Topology.get_mda_group_sort_key(res1)
+        key2 = Partial_Topology.get_mda_group_sort_key(res2)
+
+        # Earlier residue should have smaller sort key
+        assert key1 < key2, f"Earlier residue should have smaller sort key: {key1} < {key2}"
+
+        # Test with residue groups
+        res_group = bpti_universe.select_atoms("protein and resid 10-12").residues
+        group_key = Partial_Topology.get_mda_group_sort_key(res_group)
+
+        assert isinstance(group_key, tuple), "Sort key should be a tuple"
+        assert len(group_key) == 4, "Sort key should have 4 elements"
+
+    def test_consistency_across_multiple_calls(self, bpti_universe):
+        """Test that multiple calls to the method produce consistent results"""
+        residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
+
+        # Call method multiple times
+        indices1 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices2 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices3 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+
+        # All calls should produce identical results
+        assert indices1 == indices2 == indices3, "Multiple calls should produce identical results"
+
+        # Verify ordering is stable
+        reordered1 = [residues[i].resid for i in indices1]
+        reordered2 = [residues[i].resid for i in indices2]
+
+        assert reordered1 == reordered2, "Reordered results should be identical"
+
+    def test_ordering_matches_rank_order_method(self, bpti_universe):
+        """Test that ordering exactly matches Partial_Topology.rank_order method"""
+        # Create residues in mixed order
+        residues = bpti_universe.select_atoms("protein and resid 35 15 25 10 20 30").residues
+
+        # Get MDA ordering
+        mda_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        mda_ordered_resids = [residues[i].resid for i in mda_indices]
+
+        # Create corresponding topologies and sort using rank_order
+        topologies = []
+        for res in residues:
+            chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
+            topo = Partial_Topology.from_single(
+                chain=chain_id, residue=res.resid, fragment_name=f"{chain_id}_{res.resid}"
+            )
+            topologies.append(topo)
+
+        # Sort using rank_order
+        sorted_by_rank = sorted(topologies, key=lambda t: t.rank_order())
+        rank_ordered_resids = [topo.residues[0] for topo in sorted_by_rank]
+
+        assert mda_ordered_resids == rank_ordered_resids, (
+            f"MDA ordering {mda_ordered_resids} should exactly match "
+            f"rank_order method {rank_ordered_resids}"
+        )
+
+    def test_ordering_with_rank_and_index_method(self, bpti_universe):
+        """Test that ordering matches Partial_Topology.rank_and_index method"""
+        residues = bpti_universe.select_atoms("protein and resid 40 20 30 10").residues
+
+        # Get MDA ordering
+        mda_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        mda_ordered_resids = [residues[i].resid for i in mda_indices]
+
+        # Create topologies and use rank_and_index
+        topologies = []
+        for res in residues:
+            chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
+            topo = Partial_Topology.from_single(
+                chain=chain_id, residue=res.resid, fragment_name=f"res_{res.resid}"
+            )
+            topologies.append(topo)
+
+        # Use rank_and_index to sort and assign indices
+        ranked_topologies = Partial_Topology.rank_and_index(topologies)
+        ranked_resids = [topo.residues[0] for topo in ranked_topologies]
+
+        assert mda_ordered_resids == ranked_resids, (
+            f"MDA ordering {mda_ordered_resids} should match rank_and_index method {ranked_resids}"
+        )
+
+        # Also check that fragment_index is assigned correctly
+        expected_indices = list(range(len(ranked_topologies)))
+        actual_indices = [topo.fragment_index for topo in ranked_topologies]
+        assert actual_indices == expected_indices, "Fragment indices should be assigned correctly"
+
+    def test_ordering_stability_with_identical_residues(self, bpti_universe):
+        """Test ordering stability when residues have identical sort keys"""
+        # Select residues that should have identical sort keys (same chain, same resid)
+        # This is a bit artificial since we can't have truly identical residues in one structure
+        residues = bpti_universe.select_atoms("protein and resid 10 11 12").residues
+
+        # Test multiple orderings to ensure stability
+        indices1 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices2 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+
+        # Should be identical (stable sort)
+        assert indices1 == indices2, "Sorting should be stable"
+
+        # Final order should be by residue number
+        final_order = [residues[i].resid for i in indices1]
+        assert final_order == [10, 11, 12], f"Should be ordered by resid: {final_order}"
+
+
+class TestBuildRenumberingMapping:
+    """Test the _build_renumbering_mapping class method"""
+
+    def test_basic_renumbering_mapping(self, bpti_universe):
+        """Test basic renumbering mapping creation"""
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        assert isinstance(mapping, dict), "Should return a dictionary"
+        assert len(mapping) > 0, "Should have mappings for at least some residues"
+
+        # Check that all keys are (chain_id, new_resid) tuples
+        for key in mapping.keys():
+            assert isinstance(key, tuple), "Keys should be tuples"
+            assert len(key) == 2, "Keys should be (chain_id, new_resid) pairs"
+            chain_id, new_resid = key
+            assert isinstance(chain_id, str), "Chain ID should be string"
+            assert isinstance(new_resid, int), "New resid should be integer"
+
+        # Check that all values are original residue IDs
+        for orig_resid in mapping.values():
+            assert isinstance(orig_resid, (int, np.integer)), (
+                "Original resid should be integer or numpy integer"
+            )
+
+    def test_renumbering_with_termini_exclusion(self, bpti_universe):
+        """Test renumbering mapping with terminal exclusion"""
+        mapping_with_termini = Partial_Topology._build_renumbering_mapping(
+            bpti_universe, exclude_termini=False
+        )
+        mapping_without_termini = Partial_Topology._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
+
+        # Should have fewer mappings when excluding termini
+        assert len(mapping_without_termini) < len(mapping_with_termini), (
+            "Should have fewer mappings when excluding termini"
+        )
+
+        # Check that renumbering starts from 1
+        min_new_resid = min(key[1] for key in mapping_without_termini.keys())
+        assert min_new_resid == 1, "Renumbering should start from 1"
+
+        # Check that renumbering is contiguous
+        chain_mappings = {}
+        for (chain_id, new_resid), orig_resid in mapping_without_termini.items():
+            if chain_id not in chain_mappings:
+                chain_mappings[chain_id] = []
+            chain_mappings[chain_id].append(new_resid)
+
+        for chain_id, new_resids in chain_mappings.items():
+            sorted_resids = sorted(new_resids)
+            expected_resids = list(range(1, len(sorted_resids) + 1))
+            assert sorted_resids == expected_resids, (
+                f"Chain {chain_id} should have contiguous renumbering: {sorted_resids}"
+            )
+
+    def test_renumbering_preserves_chain_separation(self, bpti_universe):
+        """Test that renumbering preserves chain separation"""
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        # Group mappings by chain
+        chain_mappings = {}
+        for (chain_id, new_resid), orig_resid in mapping.items():
+            if chain_id not in chain_mappings:
+                chain_mappings[chain_id] = {}
+            chain_mappings[chain_id][new_resid] = orig_resid
+
+        # For each chain, verify that renumbering is independent
+        for chain_id, chain_mapping in chain_mappings.items():
+            new_resids = sorted(chain_mapping.keys())
+            orig_resids = [chain_mapping[new_resid] for new_resid in new_resids]
+
+            # New resids should start from 1 for each chain
+            assert new_resids[0] == 1, f"Chain {chain_id} should start renumbering from 1"
+
+            # New resids should be contiguous
+            expected_new_resids = list(range(1, len(new_resids) + 1))
+            assert new_resids == expected_new_resids, (
+                f"Chain {chain_id} renumbering should be contiguous"
+            )
+
+            # Original resids should be in ascending order
+            assert orig_resids == sorted(orig_resids), (
+                f"Chain {chain_id} original resids should be in ascending order"
+            )
+
+    def test_renumbering_with_single_residue_chain(self, bpti_universe):
+        """Test renumbering behavior with very short chains"""
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        # BPTI typically has one chain, so test the general behavior
+        chain_mappings = {}
+        for (chain_id, new_resid), orig_resid in mapping.items():
+            if chain_id not in chain_mappings:
+                chain_mappings[chain_id] = []
+            chain_mappings[chain_id].append((new_resid, orig_resid))
+
+        # Each chain should have at least some residues after terminal exclusion
+        for chain_id, mappings in chain_mappings.items():
+            assert len(mappings) > 0, f"Chain {chain_id} should have residues after exclusion"
+
+    def test_renumbering_consistency_with_from_mda_universe(self, bpti_universe):
+        """Test that renumbering mapping is consistent with from_mda_universe"""
+        # Get the renumbering mapping
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        # Extract topologies with renumbering
+        topologies = Partial_Topology.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection="protein",
+            exclude_termini=True,
+            renumber_residues=True,
+        )
+
+        # Verify that topologies use the same renumbering as the mapping
+        for topo in topologies:
+            topo_resid = topo.residues[0]  # Single residue topology
+            chain_id = topo.chain
+
+            # Get the actual chain ID from the universe for comparison
+            actual_chain_id = (
+                bpti_universe.select_atoms("protein").segments[0].segid
+                if bpti_universe.select_atoms("protein").segments
+                else "A"
+            )
+            if not actual_chain_id:
+                actual_chain_id = (
+                    bpti_universe.select_atoms("protein").segments[0].chainid
+                    if bpti_universe.select_atoms("protein").segments
+                    else "A"
+                )
+
+            # Find corresponding entry in mapping
+            mapping_key = (chain_id, topo_resid)
+            assert mapping_key in mapping, (
+                f"Topology residue {topo_resid} in chain {chain_id} should be in mapping. "
+                f"Actual chain ID in universe: {actual_chain_id}. Mapping keys: {list(mapping.keys())}"
+            )
+
+    def test_empty_universe_handling(self, bpti_universe):
+        """Test handling of edge cases in universe structure"""
+        # This is hard to test without creating artificial universes
+        # But we can test the basic functionality
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+
+        # Should have mappings for all residues
+        assert len(mapping) > 0, "Should have mappings even without terminal exclusion"
+
+    def test_renumbering_bidirectional_lookup(self, bpti_universe):
+        """Test that renumbering mapping can be used for bidirectional lookup"""
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        # Create reverse mapping
+        reverse_mapping = {}
+        for (chain_id, new_resid), orig_resid in mapping.items():
+            reverse_mapping[(chain_id, orig_resid)] = new_resid
+
+        # Test that both directions work
+        for (chain_id, new_resid), orig_resid in mapping.items():
+            # Forward lookup
+            assert mapping[(chain_id, new_resid)] == orig_resid
+
+            # Reverse lookup
+            assert reverse_mapping[(chain_id, orig_resid)] == new_resid
+
+    def test_renumbering_with_no_terminal_exclusion(self, bpti_universe):
+        """Test renumbering without terminal exclusion"""
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+
+        # Should include all residues
+        assert len(mapping) > 0, "Should have mappings for all residues"
+
+        # Check that first residue maps to residue 1
+        chain_mappings = {}
+        for (chain_id, new_resid), orig_resid in mapping.items():
+            if chain_id not in chain_mappings:
+                chain_mappings[chain_id] = []
+            chain_mappings[chain_id].append(new_resid)
+
+        for chain_id, new_resids in chain_mappings.items():
+            min_resid = min(new_resids)
+            assert min_resid == 1, f"Chain {chain_id} should start from residue 1"
+
+
+class TestValidateTopologyContainment:
+    """Test the _validate_topology_containment class method"""
+
+    @pytest.fixture(autouse=True)
+    def setup_method(self, bpti_universe):
+        # Get the actual chain ID from the universe once for all tests in this class
+        self.actual_chain_id = (
+            bpti_universe.select_atoms("protein").segments[0].segid
+            if bpti_universe.select_atoms("protein").segments
+            else "A"
+        )
+        if not self.actual_chain_id:
+            self.actual_chain_id = (
+                bpti_universe.select_atoms("protein").segments[0].chainid
+                if bpti_universe.select_atoms("protein").segments
+                else "A"
+            )
+
+    def test_valid_topology_containment(self, bpti_universe):
+        """Test validation of valid topology containment"""
+        # Create a topology that should be valid
+        # Use a residue that is known to be valid after exclusion (e.g., 2, as 1 is usually excluded)
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=2,  # Should be within range after terminal exclusion
+            fragment_name="test_residue",
+        )
+
+        # Should not raise any errors
+        try:
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+        except ValueError as e:
+            pytest.fail(f"Valid topology should not raise ValueError, but raised: {e}")
+
+    def test_invalid_topology_residue_out_of_range(self, bpti_universe):
+        """Test validation fails for out-of-range residues"""
+        # Create topology with residue number that's too high
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=9999,  # Should be out of range
+            fragment_name="invalid_residue",
+        )
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_invalid_topology_residue_negative(self, bpti_universe):
+        """Test validation fails for negative residue numbers"""
+        # Create topology with negative residue number
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=-1,  # Invalid residue number
+            fragment_name="negative_residue",
+        )
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_invalid_topology_residue_zero(self, bpti_universe):
+        """Test validation fails for zero residue number"""
+        # Create topology with zero residue number
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=0,  # Invalid residue number
+            fragment_name="zero_residue",
+        )
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_validation_with_terminal_exclusion(self, bpti_universe):
+        """Test validation behavior with terminal exclusion"""
+        # Get the actual range of available residues
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        # Find the range of valid residues for chain A
+        chain_resids = [
+            new_resid
+            for (chain_id, new_resid) in mapping.keys()
+            if chain_id == self.actual_chain_id
+        ]
+        if not chain_resids:
+            pytest.skip("No residues found for the actual chain ID after terminal exclusion")
+
+        min_resid = min(chain_resids)
+        max_resid = max(chain_resids)
+
+        # Test valid residue (should pass)
+        valid_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=min_resid, fragment_name="valid_residue"
+        )
+
+        # Should not raise
+        Partial_Topology._validate_topology_containment(
+            valid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
+
+        # Test invalid residue (should fail)
+        invalid_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=max_resid + 1,  # One beyond range
+            fragment_name="invalid_residue",
+        )
+
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                invalid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_validation_without_terminal_exclusion(self, bpti_universe):
+        """Test validation behavior without terminal exclusion"""
+        # Get the range with all residues included
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+
+        chain_resids = [
+            new_resid
+            for (chain_id, new_resid) in mapping.keys()
+            if chain_id == self.actual_chain_id
+        ]
+        if not chain_resids:
+            pytest.skip("No residues found for the actual chain ID without terminal exclusion")
+
+        max_resid = max(chain_resids)
+
+        # Test residue that would be valid without terminal exclusion
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=max_resid, fragment_name="terminal_residue"
+        )
+
+        # Should not raise when terminals are not excluded
+        Partial_Topology._validate_topology_containment(
+            topology, bpti_universe, exclude_termini=False, renumber_residues=True
+        )
+
+    def test_validation_without_renumbering(self, bpti_universe):
+        """Test validation behavior without renumbering"""
+        # Get original residue numbers
+        protein_residues = bpti_universe.select_atoms("protein").residues
+        original_resids = [res.resid for res in protein_residues]
+
+        if not original_resids:
+            pytest.skip("No protein residues found")
+
+        # Test with original residue number (should pass)
+        valid_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id,
+            residue=original_resids[len(original_resids) // 2],  # Middle residue
+            fragment_name="original_residue",
+        )
+
+        # Should not raise
+        Partial_Topology._validate_topology_containment(
+            valid_topology, bpti_universe, exclude_termini=False, renumber_residues=False
+        )
+
+        # Test with invalid original residue number (should fail)
+        invalid_resid = max(original_resids) + 100
+        invalid_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=invalid_resid, fragment_name="invalid_original"
+        )
+
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                invalid_topology, bpti_universe, exclude_termini=False, renumber_residues=False
+            )
+
+    def test_validation_with_multi_residue_topology(self, bpti_universe):
+        """Test validation with topology containing multiple residues"""
+        # Create a topology with multiple residues
+        # Use residues that are known to be valid after exclusion
+        valid_residues_for_multi = list(range(2, 7))  # Example range, adjust if needed
+        if not valid_residues_for_multi:
+            pytest.skip("Not enough valid residues for multi-residue topology test")
+
+        topology = Partial_Topology.from_residues(
+            chain=self.actual_chain_id,
+            residues=valid_residues_for_multi,  # Should be valid range
+            fragment_name="multi_residue",
+        )
+
+        # Should not raise
+        Partial_Topology._validate_topology_containment(
+            topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
+
+        # Test with some invalid residues
+        invalid_topology = Partial_Topology.from_residues(
+            chain=self.actual_chain_id,
+            residues=[
+                valid_residues_for_multi[0],
+                valid_residues_for_multi[1],
+                9999,
+            ],  # Mix of valid and invalid
+            fragment_name="mixed_residues",
+        )
+
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                invalid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_validation_with_nonexistent_chain(self, bpti_universe):
+        """Test validation fails for nonexistent chain"""
+        # Create topology with nonexistent chain
+        topology = Partial_Topology.from_single(
+            chain="Z",  # Likely nonexistent
+            residue=1,
+            fragment_name="nonexistent_chain",
+        )
+
+        # Should raise ValueError about no residues found for chain
+        with pytest.raises(ValueError, match="No residues found for chain"):
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_validation_error_messages(self, bpti_universe):
+        """Test that validation error messages are informative"""
+        # Create topology with out-of-range residue
+        topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=9999, fragment_name="test_residue"
+        )
+
+        # Check that error message contains useful information
+        with pytest.raises(ValueError) as exc_info:
+            Partial_Topology._validate_topology_containment(
+                topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+        error_msg = str(exc_info.value)
+        assert "9999" in error_msg, "Error message should contain the invalid residue number"
+        assert f"chain {self.actual_chain_id}" in error_msg, (
+            "Error message should contain the chain ID"
+        )
+        assert "Available residues" in error_msg, "Error message should show available residues"
+
+    def test_validation_with_peptide_topology(self, bpti_universe):
+        """Test validation with peptide topology"""
+        # Create peptide topology
+        # Use residues that are known to be valid after exclusion
+        valid_peptide_res = list(range(2, 12))  # Example range, adjust if needed
+        if len(valid_peptide_res) < 10:
+            pytest.skip("Not enough valid residues for peptide topology test")
+
+        peptide_topology = Partial_Topology.from_residues(
+            chain=self.actual_chain_id,
+            residues=valid_peptide_res,
+            fragment_name="peptide_test",
+            peptide=True,
+            peptide_trim=2,
+        )
+
+        # Should validate based on full residue list, not trimmed
+        Partial_Topology._validate_topology_containment(
+            peptide_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
+
+    def test_validation_boundary_conditions(self, bpti_universe):
+        """Test validation at boundary conditions"""
+        # Get the actual range of available residues
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        chain_resids = [
+            new_resid
+            for (chain_id, new_resid) in mapping.keys()
+            if chain_id == self.actual_chain_id
+        ]
+        if not chain_resids:
+            pytest.skip("No residues found for the actual chain ID after terminal exclusion")
+
+        min_resid = min(chain_resids)
+        max_resid = max(chain_resids)
+
+        # Test minimum valid residue
+        min_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=min_resid, fragment_name="min_residue"
+        )
+
+        # Should not raise
+        Partial_Topology._validate_topology_containment(
+            min_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
+
+        # Test maximum valid residue
+        max_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=max_resid, fragment_name="max_residue"
+        )
+
+        # Should not raise
+        Partial_Topology._validate_topology_containment(
+            max_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
+
+        # Test one below minimum (should fail)
+        if min_resid > 1:
+            below_min_topology = Partial_Topology.from_single(
+                chain=self.actual_chain_id, residue=min_resid - 1, fragment_name="below_min"
+            )
+
+            with pytest.raises(ValueError, match="contains residues .* that are not available"):
+                Partial_Topology._validate_topology_containment(
+                    below_min_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+                )
+
+        # Test one above maximum (should fail)
+        above_max_topology = Partial_Topology.from_single(
+            chain=self.actual_chain_id, residue=max_resid + 1, fragment_name="above_max"
+        )
+
+        with pytest.raises(ValueError, match="contains residues .* that are not available"):
+            Partial_Topology._validate_topology_containment(
+                above_max_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+            )
+
+    def test_validation_performance_with_large_topology(self, bpti_universe):
+        """Test validation performance with large topology"""
+        # Create topology with many residues
+        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+
+        chain_resids = [
+            new_resid
+            for (chain_id, new_resid) in mapping.keys()
+            if chain_id == self.actual_chain_id
+        ]
+        if len(chain_resids) < 10:
+            pytest.skip("Need at least 10 residues for this test")
+
+        # Test with large but valid topology
+        large_topology = Partial_Topology.from_residues(
+            chain=self.actual_chain_id,
+            residues=chain_resids,  # All valid residues
+            fragment_name="large_topology",
+        )
+
+        # Should not raise and should complete reasonably quickly
+        Partial_Topology._validate_topology_containment(
+            large_topology, bpti_universe, exclude_termini=True, renumber_residues=True
+        )
