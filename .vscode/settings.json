@@ -6,6 +6,8 @@
         "-vv",
         "--tb=short",
         "--ignore=jaxent/tests/manual",
+        "--ignore=jaxent/tests/slow",
+
     ],
     "python.testing.cwd": "${workspaceFolder}",
     "python.testing.autoTestDiscoverOnSaveEnabled": false,
