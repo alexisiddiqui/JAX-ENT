@@ -4,17 +4,15 @@ import jax
 import jax.numpy as jnp
 from tqdm import tqdm
 
-# Uncomment the following line to force JAX to use the CPU
-# os.environ["JAX_PLATFORM_NAME"] = "cpu"
+jax.config.update("jax_platforms", "cpu")
 
 
 def test_cpu_available():
-    """Test that a CPU is available and is the default backend."""
+    """Test that a CPU is available among JAX devices."""
     print("\nTesting CPU availability...")
-    assert len(jax.devices()) > 0
-    assert jax.default_backend() == "cpu"
-    assert len(jax.devices("cpu")) > 0
-    print("CPU is available and is the default backend.")
+    cpu_devices = [d for d in jax.devices() if "cpu" in d.platform.lower()]
+    assert len(cpu_devices) > 0, f"No CPU device found, available devices: {jax.devices()}"
+    print("CPU is available among JAX devices.")
 
 
 def test_cpu_memory():
@@ -64,7 +62,9 @@ def test_cpu_operations():
 def test_cpu_info():
     """Test that CPU information can be retrieved."""
     print("\nTesting CPU information retrieval...")
-    device = jax.devices()[0]
+    cpu_devices = [d for d in jax.devices() if d.platform == "cpu"]
+    assert len(cpu_devices) > 0, "No CPU device found"
+    device = cpu_devices[0]
     assert hasattr(device, "device_kind")
     assert isinstance(device.device_kind, str)
     assert hasattr(device, "platform")

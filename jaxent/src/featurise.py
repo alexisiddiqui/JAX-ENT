@@ -2,35 +2,35 @@ from typing import Optional
 
 from icecream import ic  # Import icecream for debugging
 
+from jaxent.src.custom_types.base import ForwardModel, Partial_Topology
+from jaxent.src.custom_types.config import FeaturiserSettings, Settings
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.types.base import ForwardModel, Partial_Topology
-from jaxent.src.types.config import FeaturiserSettings, Settings
-from jaxent.src.types.features import Input_Features
 
 ic.disable()
 
 
-def featurise(
-    ensemble_paths: list[tuple[str, str]],
-    output_path: str,
-    config_paths: list[str],
-    name: str,
-    batch_size: Optional[int],
-    forward_models: list[str],
-    log_path: Optional[str],
-    overwrite: bool,
-):
-    # this function will be the input for the cli
-    # this will take in paths and configurations and create the individual objects for analysis
-    # TODO create reusable builder methods to generate objects from configuration
-    ic.configureOutput(prefix="FEATURISE | ")
-    ic("Starting featurisation process")
-    ic(ensemble_paths, output_path, config_paths, name)
-    ic(batch_size, forward_models, log_path, overwrite)
+# def featurise(
+#     ensemble_paths: list[tuple[str, str]],
+#     output_path: str,
+#     config_paths: list[str],
+#     name: str,
+#     batch_size: Optional[int],
+#     forward_models: list[str],
+#     log_path: Optional[str],
+#     overwrite: bool,
+# ):
+#     # this function will be the input for the cli
+#     # this will take in paths and configurations and create the individual objects for analysis
+#     # TODO create reusable builder methods to generate objects from configuration
+#     ic.configureOutput(prefix="FEATURISE | ")
+#     ic("Starting featurisation process")
+#     ic(ensemble_paths, output_path, config_paths, name)
+#     ic(batch_size, forward_models, log_path, overwrite)
 
-    # Placeholder for future implementation
-    ic("Function currently not implemented")
-    pass
+#     # Placeholder for future implementation
+#     ic("Function currently not implemented")
+#     pass
 
 
 def run_featurise(
@@ -96,7 +96,7 @@ def run_featurise(
             ic.format("Error during featurisation: {} - {}", type(e).__name__, str(e))
             print(f"Failed to featurise {model}")
             # warn
-            raise UserWarning(f"Failed to featurise {model}, {e}")
+            raise e
 
     ic(
         f"Featurisation complete. Returning {len(features)} feature sets and {len(feat_top)} topology sets"

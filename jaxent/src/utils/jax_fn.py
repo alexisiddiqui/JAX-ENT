@@ -3,9 +3,9 @@ from typing import TypeVar
 import jax.numpy as jnp
 from jax import Array
 
+from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.interfaces.model import Model_Parameters
-from jaxent.src.types.base import ForwardPass
-from jaxent.src.types.features import Input_Features
 
 T_In = TypeVar("T_In", bound=Input_Features)
 
@@ -61,7 +61,9 @@ def frame_average_features(
         Frame-averaged features
     """
     # Get all slots from the features class
-    feature_slots = frame_wise_features.__features__ # Assuming __features__ is the correct way to get dynamic slots
+    feature_slots = (
+        frame_wise_features.__features__
+    )  # Assuming __features__ is the correct way to get dynamic slots
 
     # Create dict to store averaged features
     averaged_features = {}
@@ -74,12 +76,12 @@ def frame_average_features(
 
         # Calculate weighted average across frames
         # Expand weights to match feature dimensions if needed
-        weights = frame_weights.reshape(1, -1) 
+        weights = frame_weights.reshape(1, -1)
         averaged = jnp.sum(feature_array * weights, axis=-1)
         averaged_features[slot] = averaged
-    
+
     # Also copy static slots if any
-    all_slots = frame_wise_features.__slots__ if hasattr(frame_wise_features, '__slots__') else []
+    all_slots = frame_wise_features.__slots__ if hasattr(frame_wise_features, "__slots__") else []
     static_slots = [slot for slot in all_slots if slot not in feature_slots]
     for slot in static_slots:
         averaged_features[slot] = getattr(frame_wise_features, slot)

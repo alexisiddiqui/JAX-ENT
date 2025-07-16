@@ -1,14 +1,14 @@
 import jax
 import jax.numpy as jnp
 
+from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.models.HDX.BV.features import (
     BV_input_features,
     BV_output_features,
     uptake_BV_output_features,
 )
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.types.base import ForwardPass
-from jaxent.src.types.key import m_key
 
 
 # fix the typing to use jax arrays

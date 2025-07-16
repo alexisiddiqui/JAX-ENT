@@ -1,53 +1,15 @@
-from typing import Any, Callable, Optional, Sequence, cast
+from typing import Any, Callable, Optional, Sequence, Union, cast
 
 from jax import (
     jit,
 )
 from jax.tree_util import register_pytree_node
 
+from jaxent.src.custom_types.base import ForwardModel, ForwardPass
+from jaxent.src.custom_types.features import Input_Features, Output_Features
+from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.types.base import ForwardModel, ForwardPass
-from jaxent.src.types.features import Input_Features, Output_Features
 from jaxent.src.utils.jax_fn import frame_average_features, single_pass
-
-# def forward_pure(
-#     params: Simulation_Parameters,
-#     input_features: Sequence[Input_Features],
-#     forwardpass: Sequence[ForwardPass],
-# ) -> Sequence[Output_Features]:
-#     """
-#     Pure function for forward computation that is jittable.
-
-#     Args:
-#         params: Simulation parameters
-#         input_features: Input features
-#         forwardpass: Forward pass functions
-
-#     Returns:
-#         Output features
-#     """
-#     # Normalize weights
-#     params = Simulation_Parameters.normalize_weights(params)
-
-#     # Mask the frame weights
-#     masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-#     masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
-#     # First map operation using tree_map
-#     average_features = tree_map(
-#         lambda feature: frame_average_features(feature, params.frame_weights),
-#         input_features,
-#     )
-
-#     # Second map operation using tree_map
-#     output_features = tree_map(
-#         lambda fp, feat, param: single_pass(fp, feat, param),
-#         forwardpass,
-#         average_features,
-#         params.model_parameters,
-#     )
-
-#     return output_features
 
 
 class Simulation:
@@ -63,6 +25,7 @@ class Simulation:
         input_features: list[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
+        raise_jit_failure: bool = False,
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
         self.input_features: list[Input_Features[Any]] = input_features
@@ -76,6 +39,10 @@ class Simulation:
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
         self._jit_forward_pure: Callable = None  # type: ignore
+        self.raise_jit_failure: bool = raise_jit_failure
+
+    def __repr__(self) -> str:
+        return f"Simulation(raise_jit_failure={self.raise_jit_failure})"
 
     # def __post_init__(self) -> None:
     #     # not implemented yet
@@ -133,7 +100,9 @@ class Simulation:
             print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
 
         except Exception as e:
-            raise RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            if self.raise_jit_failure:
+                raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            print(f"Warning - Jit failed: {e} \n Reverting to non-jit")
             self._jit_forward_pure = self.forward_pure
 
         print("Simulation initialised successfully.")
@@ -166,6 +135,45 @@ class Simulation:
         #     raise ValueError(f"Failed to apply forward models: {e}")
 
         self.outputs = outputs
+
+    def predict(
+        self, params: Union[Simulation_Parameters, Sequence[Model_Parameters]]
+    ) -> Sequence[Output_Features]:
+        """
+        Apply forward pass to non-averaged features, returning frame-wise predictions.
+
+        Args:
+            params: Either Simulation_Parameters or sequence of Model_Parameters
+
+        Returns:
+            Sequence of output features with frame-wise predictions for each forward model
+        """
+        # Check if simulation is initialized
+        if not hasattr(self, "_input_features"):
+            raise RuntimeError("Simulation must be initialized before calling predict")
+
+        # Extract model parameters
+        if isinstance(params, Simulation_Parameters):
+            # Normalize weights if using Simulation_Parameters
+            normalized_params = Simulation_Parameters.normalize_weights(params)
+            model_parameters = normalized_params.model_parameters
+        else:
+            model_parameters = params
+
+        # Validate number of parameters matches number of forward models
+        if len(model_parameters) != len(self.forwardpass):
+            raise ValueError(
+                f"Number of model parameters ({len(model_parameters)}) must match "
+                f"number of forward models ({len(self.forwardpass)})"
+            )
+
+        # Apply forward pass to non-averaged input features (preserving frame dimension)
+        output_features = [
+            single_pass(fp, feat, param)
+            for fp, feat, param in zip(self.forwardpass, self._input_features, model_parameters)
+        ]
+
+        return output_features
 
     def tree_flatten(self):
         """
