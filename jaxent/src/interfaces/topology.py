@@ -987,15 +987,15 @@ class Partial_Topology:
         Args:
             universe: MDAnalysis Universe object
             mode: Extraction mode - "by_chain" (one topology per chain) or
-                  "by_residue" (one topology per residue)
+                "by_residue" (one topology per residue)
             include_selection: MDAnalysis selection string for atoms to include
             exclude_selection: Optional MDAnalysis selection string for atoms to exclude
             exclude_termini: If True, exclude N and C terminal residues from each chain
             termini_chain_selection: str
             fragment_name_template: Naming template - "auto" for automatic naming,
-                                   or custom template with {chain}, {resid}, {resname} placeholders
+                                or custom template with {chain}, {resid}, {resname} placeholders
             renumber_residues: If True, renumber residues starting from 1 for each chain.
-                              If False, preserve original residue numbers from MDAnalysis.
+                            If False, preserve original residue numbers from MDAnalysis.
 
         Returns:
             List of Partial_Topology objects
@@ -1074,12 +1074,6 @@ class Partial_Topology:
 
             full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
-            # Create renumbering mapping from the FULL chain first
-            if renumber_residues:
-                full_chain_mapping = {res.resid: i for i, res in enumerate(full_chain_residues, 1)}
-            else:
-                full_chain_mapping = {res.resid: res.resid for res in full_chain_residues}
-
             # Apply terminal exclusion to determine which residues to include
             if exclude_termini and len(full_chain_residues) > 2:
                 included_residues = full_chain_residues[1:-1]  # Remove first and last
@@ -1101,6 +1095,13 @@ class Partial_Topology:
 
             if not sorted_residues:
                 continue  # Skip if no residues left after filtering
+
+            # --- [FIX] ---
+            # Create renumbering mapping from the FINAL list of residues after all filtering.
+            if renumber_residues:
+                final_residue_mapping = {res.resid: i for i, res in enumerate(sorted_residues, 1)}
+            else:
+                final_residue_mapping = {res.resid: res.resid for res in sorted_residues}
 
             # Extract sequence information
             try:
@@ -1140,8 +1141,8 @@ class Partial_Topology:
 
             if mode == "chain":
                 # Create one topology per chain
-                # Use the full chain mapping to get residue numbers
-                residue_numbers = [full_chain_mapping[res.resid] for res in sorted_residues]
+                # Use the corrected mapping to get residue numbers
+                residue_numbers = [final_residue_mapping[res.resid] for res in sorted_residues]
 
                 # Generate fragment name
                 if fragment_name_template == "auto":
@@ -1165,7 +1166,8 @@ class Partial_Topology:
             elif mode == "residue":
                 # Create one topology per residue
                 for i, residue in enumerate(sorted_residues):
-                    new_resid = full_chain_mapping[residue.resid]
+                    # Use the corrected mapping to get the new resid
+                    new_resid = final_residue_mapping[residue.resid]
 
                     # Get single residue sequence
                     if isinstance(sequence_str, str):
@@ -1207,30 +1209,7 @@ class Partial_Topology:
         renumber_residues: bool = True,
         mda_atom_filtering: Optional[str] = None,
     ) -> Union["mda.ResidueGroup", "mda.AtomGroup"]:
-        """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects.
-
-        This method performs the reverse mapping of from_mda_universe, converting
-        Partial_Topology objects back to MDAnalysis groups using the same logic.
-
-        Args:
-            topologies: Set or list of Partial_Topology objects to convert
-            universe: MDAnalysis Universe object to select from
-            include_selection: MDAnalysis selection string for atoms to include
-            exclude_selection: Optional MDAnalysis selection string for atoms to exclude
-            exclude_termini: If True, account for N and C terminal residue exclusion
-            termini_chain_selection: Selection string used for terminal identification
-            renumber_residues: If True, assume residue numbers were renumbered from 1.
-                              If False, use original residue numbers.
-            mda_atom_filtering: Optional atom-level filtering (e.g., "name CA")
-            return_atoms: If True, return AtomGroup. If False, return ResidueGroup.
-
-        Returns:
-            MDAnalysis ResidueGroup or AtomGroup containing the specified residues/atoms
-
-        Raises:
-            ValueError: If no matching residues found or invalid selections
-            ImportError: If MDAnalysis is not available
-        """
+        """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects."""
         try:
             import MDAnalysis as mda
         except ImportError:
@@ -1245,7 +1224,7 @@ class Partial_Topology:
         if isinstance(topologies, set):
             topologies = list(topologies)
 
-        # Apply include selection
+        # Apply include selection - SAME as from_mda_universe
         try:
             selected_atoms = universe.select_atoms(include_selection)
         except Exception as e:
@@ -1254,7 +1233,7 @@ class Partial_Topology:
         if len(selected_atoms) == 0:
             raise ValueError(f"No atoms found with include selection '{include_selection}'")
 
-        # Apply exclude selection if provided
+        # Apply exclude selection if provided - SAME as from_mda_universe
         if exclude_selection:
             try:
                 exclude_atoms = universe.select_atoms(exclude_selection)
@@ -1265,7 +1244,7 @@ class Partial_Topology:
         if len(selected_atoms) == 0:
             raise ValueError("No atoms remaining after applying exclude selection")
 
-        # Group atoms by chain
+        # Group atoms by chain - SAME as from_mda_universe
         chains = {}
         for atom in selected_atoms:
             chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
@@ -1280,14 +1259,17 @@ class Partial_Topology:
                 topologies_by_chain[topo.chain] = []
             topologies_by_chain[topo.chain].append(topo)
 
-        # Create selection parts for each chain to handle multi-chain systems correctly
+        # Create selection parts for each chain
         per_chain_selection_parts = []
 
         for chain_id, chain_topologies in topologies_by_chain.items():
             if chain_id not in chains:
                 continue  # Skip if chain not found in universe
 
-            # Use utility method to build chain selection string
+            # Get chain_atoms (from include/exclude selections) - SAME as from_mda_universe
+            chain_atoms = chains[chain_id]
+
+            # Use utility method to build chain selection string for terminal exclusion
             chain_selection_string, fallback_atoms = cls._build_chain_selection_string(
                 universe, chain_id, termini_chain_selection
             )
@@ -1296,53 +1278,55 @@ class Partial_Topology:
                 if chain_selection_string:
                     termini_atoms = universe.select_atoms(chain_selection_string)
                     if len(termini_atoms) == 0:
-                        # Try without base selection
                         chain_only_selection, _ = cls._build_chain_selection_string(
                             universe, chain_id
                         )
                         if chain_only_selection:
                             termini_atoms = universe.select_atoms(chain_only_selection)
                         else:
-                            chain_atoms = [
-                                atom
-                                for atom in selected_atoms
-                                if (getattr(atom, "segid", None) or getattr(atom, "chainid", None))
-                                == chain_id
-                            ]
-                            termini_atoms = mda.AtomGroup(chain_atoms, universe)
+                            termini_atoms = mda.AtomGroup(chain_atoms)
                 else:
-                    chain_atoms = [
-                        atom
-                        for atom in selected_atoms
-                        if (getattr(atom, "segid", None) or getattr(atom, "chainid", None))
-                        == chain_id
-                    ]
-                    termini_atoms = mda.AtomGroup(chain_atoms, universe)
+                    termini_atoms = mda.AtomGroup(chain_atoms)
             except Exception as e:
                 raise ValueError(f"Failed to select chain {chain_id}: {e}")
 
             full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
-            if renumber_residues:
-                renumber_to_original = {
-                    i: res.resid for i, res in enumerate(full_chain_residues, 1)
-                }
-            else:
-                renumber_to_original = {res.resid: res.resid for res in full_chain_residues}
-
+            # Apply terminal exclusion to determine which residues to include - SAME as from_mda_universe
             if exclude_termini and len(full_chain_residues) > 2:
-                available_residues = full_chain_residues[1:-1]
+                included_residues = full_chain_residues[1:-1]  # Remove first and last
             else:
-                available_residues = full_chain_residues
-            available_resids = {res.resid for res in available_residues}
+                included_residues = full_chain_residues
 
+            # Get the set of residue IDs that should be included after terminal exclusion
+            included_resids = {res.resid for res in included_residues}
+
+            # Filter chain atoms to only include residues that pass terminal exclusion - SAME as from_mda_universe
+            chain_residues = {}
+            for atom in chain_atoms:
+                resid = atom.resid
+                if resid in included_resids and resid not in chain_residues:
+                    chain_residues[resid] = atom.residue
+
+            # Sort residues by original resid - SAME as from_mda_universe
+            sorted_residues = sorted(chain_residues.values(), key=lambda r: r.resid)
+
+            if not sorted_residues:
+                continue
+
+            # Create renumbering mapping from the FINAL list of residues after all filtering - SAME as from_mda_universe
+            if renumber_residues:
+                renumber_to_original = {i: res.resid for i, res in enumerate(sorted_residues, 1)}
+            else:
+                renumber_to_original = {res.resid: res.resid for res in sorted_residues}
+
+            # Map topology residues to original residues
             chain_target_resids = []
             for topo in chain_topologies:
                 for topo_resid in topo.residues:
-                    if topo_resid in renumber_to_original:
-                        original_resid = renumber_to_original[topo_resid]
-                        if original_resid in available_resids:
-                            chain_target_resids.append(original_resid)
+                    original_resid = renumber_to_original.get(topo_resid)
+                    if original_resid is not None:
+                        chain_target_resids.append(original_resid)
 
             if not chain_target_resids:
                 continue
@@ -1538,15 +1522,18 @@ class Partial_Topology:
         ensemble: list[mda.Universe],
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str]] = "resname SOL",
+        renumber_residues: bool = True,  # Changed default to False
     ) -> tuple[set["Partial_Topology"], set["Partial_Topology"]]:
         """Find common residues across an ensemble of MDAnalysis Universe objects.
 
         Args:
             ensemble: List of MDAnalysis Universe objects to analyze
             include_selection: Selection string or list of strings for atoms to include.
-                               If a list, it must have the same length as the ensemble.
+                            If a list, it must have the same length as the ensemble.
             exclude_selection: Selection string or list of strings for atoms to exclude.
-                               If a list, it must have the same length as the ensemble.
+                            If a list, it must have the same length as the ensemble.
+            renumber_residues: If True, renumber residues starting from 1 for each chain.
+                            If False, preserve original residue numbers.
 
         Returns:
             Tuple containing:
@@ -1582,7 +1569,7 @@ class Partial_Topology:
                     include_selection=include_selection[i],
                     exclude_selection=exclude_selection[i],
                     exclude_termini=True,
-                    renumber_residues=True,
+                    renumber_residues=renumber_residues,  # Use parameter
                 )
                 included_chain_topologies_by_universe.append(chain_topos)
             except Exception as e:
@@ -1640,7 +1627,7 @@ class Partial_Topology:
                     include_selection=include_selection[i],
                     exclude_selection="",  # No exclusions
                     exclude_termini=False,  # Include termini
-                    renumber_residues=True,
+                    renumber_residues=renumber_residues,  # Use parameter
                 )
                 all_chain_topologies_by_universe.append(all_chain_topos)
             except Exception as e:
@@ -2098,54 +2085,75 @@ class Partial_Topology:
         cls,
         universe: mda.Universe,
         exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
     ) -> dict[tuple[str, int], int]:
         """Build mapping from (chain, renumbered_resid) to original_resid."""
         renumber_mapping = {}
 
-        # Get all chains in the universe
-        all_chains = set()
-        for atom in universe.atoms:
-            chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
-            all_chains.add(chain_id)
+        # Apply the same selection logic as from_mda_universe
+        try:
+            selected_atoms = universe.select_atoms(termini_chain_selection)
+        except Exception:
+            # Fallback to all atoms if selection fails
+            selected_atoms = universe.atoms
 
-        for chain_id in all_chains:
-            # Get chain selection
-            chain_selection_string, _ = cls._build_chain_selection_string(universe, chain_id)
+        if len(selected_atoms) == 0:
+            return renumber_mapping
+
+        # Group atoms by chain
+        chains = {}
+        for atom in selected_atoms:
+            chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
+            if chain_id not in chains:
+                chains[chain_id] = []
+            chains[chain_id].append(atom)
+
+        for chain_id, chain_atoms in chains.items():
+            # Get chain selection for terminal exclusion
+            chain_selection_string, _ = cls._build_chain_selection_string(
+                universe, chain_id, termini_chain_selection
+            )
 
             if chain_selection_string:
                 try:
-                    chain_residues = universe.select_atoms(chain_selection_string).residues
-                except:
-                    # Fallback: filter residues by chain manually
-                    chain_residues = [
-                        r
-                        for r in universe.residues
-                        if (
-                            getattr(r.atoms[0], "segid", None)
-                            or getattr(r.atoms[0], "chainid", "A")
+                    termini_atoms = universe.select_atoms(chain_selection_string)
+                    if len(termini_atoms) == 0:
+                        chain_only_selection, _ = cls._build_chain_selection_string(
+                            universe, chain_id
                         )
-                        == chain_id
-                    ]
+                        if chain_only_selection:
+                            termini_atoms = universe.select_atoms(chain_only_selection)
+                        else:
+                            termini_atoms = mda.AtomGroup(chain_atoms)
+                except:
+                    termini_atoms = mda.AtomGroup(chain_atoms)
             else:
-                # Fallback: filter residues by chain manually
-                chain_residues = [
-                    r
-                    for r in universe.residues
-                    if (getattr(r.atoms[0], "segid", None) or getattr(r.atoms[0], "chainid", "A"))
-                    == chain_id
-                ]
+                termini_atoms = mda.AtomGroup(chain_atoms)
 
             # Sort by original resid
-            full_chain_residues = sorted(chain_residues, key=lambda r: r.resid)
+            full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
-            # Apply terminal exclusion
+            # Apply terminal exclusion BEFORE creating the renumbering mapping
             if exclude_termini and len(full_chain_residues) > 2:
-                available_residues = full_chain_residues[1:-1]
+                included_residues = full_chain_residues[1:-1]
             else:
-                available_residues = full_chain_residues
+                included_residues = full_chain_residues
 
-            # Create renumbering mapping
-            for new_resid, residue in enumerate(available_residues, 1):
+            # Get the set of residue IDs that should be included after terminal exclusion
+            included_resids = {res.resid for res in included_residues}
+
+            # Filter chain atoms to only include residues that pass terminal exclusion
+            chain_residues = {}
+            for atom in chain_atoms:
+                resid = atom.resid
+                if resid in included_resids and resid not in chain_residues:
+                    chain_residues[resid] = atom.residue
+
+            # Sort residues by original resid
+            sorted_residues = sorted(chain_residues.values(), key=lambda r: r.resid)
+
+            # Create renumbering mapping from the final filtered residues
+            for new_resid, residue in enumerate(sorted_residues, 1):
                 renumber_mapping[(chain_id, new_resid)] = residue.resid
 
         return renumber_mapping
@@ -2215,32 +2223,7 @@ class Partial_Topology:
     def get_mda_group_sort_key(
         group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
     ) -> tuple[int, tuple[int, ...], float, int]:
-        """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking.
-
-        This generates the same sort key that would be used by Partial_Topology.rank_order(),
-        allowing direct comparison and sorting of MDAnalysis groups using the same logic.
-
-        The sort key is based on:
-        1. Chain ID length (shorter chains first)
-        2. Chain ID alphabetically (A < B < ... < 1 < 2 < ...)
-        3. Average residue position (lower first)
-        4. Length of the fragment (longer fragments first, hence negative length)
-
-        Args:
-            group: MDAnalysis Residue, ResidueGroup, or AtomGroup (should represent single residue or
-                contiguous residues from same chain)
-
-        Returns:
-            Tuple that can be used as a sort key: (chain_len, chain_score, avg_residue, -length)
-
-        Raises:
-            ValueError: If group contains atoms from multiple chains
-            TypeError: If group is not a Residue, ResidueGroup, or AtomGroup
-
-        Example:
-            >>> residue_groups = [res_group1, res_group2, res_group3]
-            >>> sorted_groups = sorted(residue_groups, key=get_mda_group_sort_key)
-        """
+        """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         if isinstance(group, Residue):
             residues = [group]
             chain_id = getattr(group.atoms[0], "segid", None) or getattr(
@@ -2303,7 +2286,5 @@ class Partial_Topology:
         chain_score = tuple(ord(c) for c in chain_id)
 
         # Return sort key: (chain_len, chain_score, avg_residue, -length)
-        # Negative length to sort longer fragments first (descending)
-        return (len(chain_id), chain_score, avg_residue, -length)
         # Negative length to sort longer fragments first (descending)
         return (len(chain_id), chain_score, avg_residue, -length)
