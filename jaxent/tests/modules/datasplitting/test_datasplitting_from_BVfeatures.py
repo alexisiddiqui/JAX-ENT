@@ -539,8 +539,8 @@ class TestDataSplittingFromBVFeatures:
         # Verify splitting results
         assert len(train_data) > 0
         assert len(val_data) > 0
-        train_ids = {dp.data_id for dp in train_data}
-        val_ids = {dp.data_id for dp in val_data}
+        train_ids = {dp.top for dp in train_data}
+        val_ids = {dp.top for dp in val_data}
         assert len(train_ids | val_ids) <= len(experimental_data)
 
         # Verify that split data contains datapoints that intersect with feature topology
@@ -1127,8 +1127,8 @@ class TestDataSplittingIntegrationEdgeCases:
 
         assert len(train_data) > 0
         assert len(val_data) > 0
-        train_ids = {dp.data_id for dp in train_data}
-        val_ids = {dp.data_id for dp in val_data}
+        train_ids = {dp.top for dp in train_data}
+        val_ids = {dp.top for dp in val_data}
         assert len(train_ids | val_ids) <= len(experimental_data)
 
         # Verify reasonable split ratio
