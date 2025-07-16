@@ -10,29 +10,6 @@ from jaxent.src.interfaces.builder import Experiment_Builder
 ic.disable()
 
 
-# def featurise(
-#     ensemble_paths: list[tuple[str, str]],
-#     output_path: str,
-#     config_paths: list[str],
-#     name: str,
-#     batch_size: Optional[int],
-#     forward_models: list[str],
-#     log_path: Optional[str],
-#     overwrite: bool,
-# ):
-#     # this function will be the input for the cli
-#     # this will take in paths and configurations and create the individual objects for analysis
-#     # TODO create reusable builder methods to generate objects from configuration
-#     ic.configureOutput(prefix="FEATURISE | ")
-#     ic("Starting featurisation process")
-#     ic(ensemble_paths, output_path, config_paths, name)
-#     ic(batch_size, forward_models, log_path, overwrite)
-
-#     # Placeholder for future implementation
-#     ic("Function currently not implemented")
-#     pass
-
-
 def run_featurise(
     ensemble: Experiment_Builder,
     config: Settings | FeaturiserSettings,
