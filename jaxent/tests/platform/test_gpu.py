@@ -11,17 +11,11 @@ from tqdm import tqdm
 def test_gpu_available():
     """Test that a GPU is available and is the default backend."""
     print("\nTesting GPU availability...")
+    available_platforms = [d.platform for d in jax.devices()]
     assert len(jax.devices()) > 0
-    assert any(
-        [
-            jax.default_backend() == "gpu",
-            jax.default_backend() == "tpu",
-            jax.default_backend() == "METAL",
-        ]
-    )
-    assert any(
-        [len(jax.devices("gpu")) > 0, len(jax.devices("tpu")) > 0, len(jax.devices("METAL")) > 0],
-    )
+    # Accept both 'gpu' and 'cuda' as valid GPU platforms
+    assert jax.default_backend() in ("gpu", "cuda")
+    assert any(p in ("gpu", "cuda") for p in available_platforms)
     print("GPU is available and is the default backend.")
 
 
@@ -137,6 +131,12 @@ def test_gpu_performance():
 
 
 if __name__ == "__main__":
+    test_gpu_available()
+    test_gpu_memory()
+    test_basic_computation()
+    test_gpu_operations()
+    test_gpu_info()
+    test_gpu_performance()
     test_gpu_available()
     test_gpu_memory()
     test_basic_computation()

@@ -300,7 +300,9 @@ def run_optimization_step(
     try:
         if use_run_optimise:
             # Use high-level interface
-            opt_settings = OptimiserSettings(name="test")
+            opt_settings = OptimiserSettings(
+                name="test", n_steps=n_steps, tolerance=1e-6, convergence=1e-8
+            )
             result = run_optimise(
                 simulation,
                 data_to_fit=(dataset,),

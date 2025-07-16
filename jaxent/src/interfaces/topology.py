@@ -5,6 +5,7 @@ from typing import Any, Optional, Union
 
 import MDAnalysis as mda
 import numpy as np
+from MDAnalysis.core.groups import Residue
 from tqdm import tqdm
 
 from jaxent.src.models.func.common import compute_trajectory_average_com_distances
@@ -1809,3 +1810,500 @@ class Partial_Topology:
         )
 
         return distance_matrix, distance_std
+
+    @classmethod
+    def get_atomgroup_reordering_indices(
+        cls,
+        mda_groups: list[Union[mda.ResidueGroup, mda.AtomGroup]],
+        universe: mda.Universe,
+        target_topologies: Optional[list["Partial_Topology"]] = None,
+        # include_selection: str = "protein",
+        # exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        renumber_residues: bool = True,
+    ) -> list[int]:
+        """Get indices to reorder a list of MDAnalysis groups to match topology order.
+
+        This method is essential for the BV_model.featurise() method to ensure that
+        feature calculation results are ordered consistently with Partial_Topology ranking.
+
+        Args:
+            mda_groups: List of MDAnalysis ResidueGroup or AtomGroup objects to be reordered
+            universe: MDAnalysis Universe object
+            target_topologies: Optional list of Partial_Topology objects in desired order.
+                             If None, will extract topologies from mda_groups and use default ranking.
+            include_selection: Selection string for atoms to include
+            exclude_selection: Selection string for atoms to exclude
+            exclude_termini: Whether to exclude terminal residues
+            termini_chain_selection: Selection for terminal identification
+            renumber_residues: Whether residues were renumbered from 1
+
+        Returns:
+            List of indices for reordering mda_groups to match target topology order.
+            Use as: reordered_features = [original_features[i] for i in indices]
+
+        Raises:
+            ValueError: If any topology cannot be mapped to mda_groups, or if
+                       topology residues are not contained within the chain bounds
+        """
+        if not mda_groups:
+            return []
+
+        # If no target topologies provided, extract them from mda_groups and rank them
+        if target_topologies is None:
+            target_topologies = []
+            for mda_group in mda_groups:
+                # Convert each MDA group to a Partial_Topology
+                if isinstance(mda_group, mda.ResidueGroup):
+                    residues = [res for res in mda_group]  # Iterate explicitly
+                    if not residues:
+                        continue
+
+                    if len(residues) == 1:
+                        # Single residue
+                        res = residues[0]
+                        chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                            res.atoms[0], "chainid", "A"
+                        )
+                        topo = cls.from_single(
+                            chain=chain_id,
+                            residue=res.resid,
+                            fragment_name=f"{chain_id}_{res.resname}{res.resid}",
+                        )
+                    else:
+                        # Multiple residues
+                        chain_ids = set()
+                        resids = []
+                        for res in residues:
+                            chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                                res.atoms[0], "chainid", "A"
+                            )
+                            chain_ids.add(chain_id)
+                            resids.append(res.resid)
+
+                        if len(chain_ids) > 1:
+                            raise ValueError(
+                                f"ResidueGroup contains residues from multiple chains: {chain_ids}"
+                            )
+
+                        chain_id = list(chain_ids)[0]
+                        topo = cls.from_residues(
+                            chain=chain_id,
+                            residues=resids,
+                            fragment_name=f"{chain_id}_multi",
+                        )
+                elif isinstance(mda_group, mda.AtomGroup):
+                    residues = list(mda_group.residues)
+                    if len(residues) == 1:
+                        # Single residue
+                        res = residues[0]
+                        chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                            res.atoms[0], "chainid", "A"
+                        )
+                        topo = cls.from_single(
+                            chain=chain_id,
+                            residue=res.resid,
+                            fragment_name=f"{chain_id}_{res.resname}{res.resid}",
+                        )
+                    else:
+                        # Multiple residues
+                        chain_ids = set()
+                        resids = []
+                        for res in residues:
+                            chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                                res.atoms[0], "chainid", "A"
+                            )
+                            chain_ids.add(chain_id)
+                            resids.append(res.resid)
+
+                        if len(chain_ids) > 1:
+                            raise ValueError(
+                                f"AtomGroup contains residues from multiple chains: {chain_ids}"
+                            )
+
+                        chain_id = list(chain_ids)[0]
+                        topo = cls.from_residues(
+                            chain=chain_id,
+                            residues=resids,
+                            fragment_name=f"{chain_id}_multi",
+                        )
+                else:
+                    raise TypeError(f"Unsupported group type: {type(mda_group)}")
+
+                target_topologies.append(topo)
+
+            # Rank and index the topologies using default ordering
+            target_topologies = cls.rank_and_index(target_topologies, check_trim=False)
+
+        # Build a mapping from topology characteristics to mda_groups index
+        mda_group_lookup = {}
+
+        # Build renumbering mapping if needed
+        if renumber_residues:
+            renumber_mapping = cls._build_renumbering_mapping(
+                universe, exclude_termini, termini_chain_selection
+            )
+
+        for i, mda_group in enumerate(mda_groups):
+            if isinstance(mda_group, mda.ResidueGroup):
+                residues = [res for res in mda_group]  # Iterate explicitly
+                if not residues:
+                    continue
+
+                chain_ids = set()
+                resids = []
+                for res in residues:
+                    chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                        res.atoms[0], "chainid", "A"
+                    )
+                    chain_ids.add(chain_id)
+
+                    if renumber_residues:
+                        original_resid = res.resid
+                        renumbered_resid = None
+                        for (ch, new_id), orig_id in renumber_mapping.items():
+                            if ch == chain_id and orig_id == original_resid:
+                                renumbered_resid = new_id
+                                break
+                        if renumbered_resid is not None:
+                            resids.append(renumbered_resid)
+                    else:
+                        resids.append(res.resid)
+
+                if len(chain_ids) > 1:
+                    raise ValueError(
+                        f"ResidueGroup contains residues from multiple chains: {chain_ids}"
+                    )
+
+                if not resids:
+                    continue  # Skip if no valid resids
+
+                chain_id = list(chain_ids)[0]
+                lookup_key = (chain_id, frozenset(resids))
+
+            elif isinstance(mda_group, mda.AtomGroup):
+                residues = list(mda_group.residues)
+                if not residues:
+                    continue
+
+                chain_ids = set()
+                resids = []
+                for res in residues:
+                    chain_id = getattr(res.atoms[0], "segid", None) or getattr(
+                        res.atoms[0], "chainid", "A"
+                    )
+                    chain_ids.add(chain_id)
+
+                    if renumber_residues:
+                        original_resid = res.resid
+                        renumbered_resid = None
+                        for (ch, new_id), orig_id in renumber_mapping.items():
+                            if ch == chain_id and orig_id == original_resid:
+                                renumbered_resid = new_id
+                                break
+                        if renumbered_resid is not None:
+                            resids.append(renumbered_resid)
+                    else:
+                        resids.append(res.resid)
+
+                if len(chain_ids) > 1:
+                    raise ValueError(
+                        f"AtomGroup contains residues from multiple chains: {chain_ids}"
+                    )
+
+                if not resids:
+                    continue  # Skip if no valid resids
+
+                chain_id = list(chain_ids)[0]
+                lookup_key = (chain_id, frozenset(resids))
+
+            mda_group_lookup[lookup_key] = i
+
+        # Find indices for each target topology
+        result_indices = []
+
+        for target_topo in target_topologies:
+            # Validate topology containment
+            cls._validate_topology_containment(
+                target_topo, universe, exclude_termini, termini_chain_selection, renumber_residues
+            )
+
+            chain_id = target_topo.chain
+            active_residues = target_topo._get_active_residues(check_trim=False)
+            lookup_key = (chain_id, frozenset(active_residues))
+
+            if lookup_key not in mda_group_lookup:
+                available_keys = list(mda_group_lookup.keys())
+                raise ValueError(
+                    f"Cannot find MDA group for topology {target_topo} "
+                    f"(chain={chain_id}, resids={sorted(active_residues)}). "
+                    f"Available groups: {available_keys[:5]}{'...' if len(available_keys) > 5 else ''}"
+                )
+
+            result_indices.append(mda_group_lookup[lookup_key])
+
+        return result_indices
+
+    @classmethod
+    def get_residuegroup_reordering_indices(
+        cls,
+        residue_group: Union[mda.ResidueGroup, mda.AtomGroup],
+    ) -> list[int]:
+        """Get indices to reorder individual residues in a ResidueGroup/AtomGroup by topology ranking.
+
+        This method takes a single ResidueGroup or AtomGroup containing multiple residues
+        and returns indices to sort the individual residues according to Partial_Topology
+        ranking logic.
+
+        Args:
+            residue_group: MDAnalysis ResidueGroup or AtomGroup containing multiple residues
+
+        Returns:
+            List of indices for reordering individual residues within the group.
+            Use as: sorted_residues = [residue_group.residues[i] for i in indices]
+
+        Raises:
+            ValueError: If group contains no residues
+            TypeError: If group is not a ResidueGroup or AtomGroup
+
+        Example:
+            >>> indices = Partial_Topology.get_residuegroup_reordering_indices(protein_residues)
+            >>> sorted_residues = [protein_residues.residues[i] for i in indices]
+        """
+        if isinstance(residue_group, mda.AtomGroup):
+            residues = list(residue_group.residues)
+        elif isinstance(residue_group, mda.ResidueGroup):
+            residues = [res for res in residue_group]  # Iterate explicitly
+        else:
+            raise TypeError("residue_group must be a ResidueGroup or AtomGroup")
+
+        if not residues:
+            raise ValueError("Group contains no residues")
+
+        # Create (sort_key, original_index) pairs
+        keyed_residues = []
+        for i, residue in enumerate(residues):
+            sort_key = cls.get_mda_group_sort_key(residue)
+            keyed_residues.append((sort_key, i))
+
+        # Sort by sort_key and extract original indices
+        keyed_residues.sort(key=lambda x: x[0])
+        reorder_indices = [original_idx for _, original_idx in keyed_residues]
+
+        return reorder_indices
+
+    @classmethod
+    def _build_renumbering_mapping(
+        cls,
+        universe: mda.Universe,
+        exclude_termini: bool = True,
+    ) -> dict[tuple[str, int], int]:
+        """Build mapping from (chain, renumbered_resid) to original_resid."""
+        renumber_mapping = {}
+
+        # Get all chains in the universe
+        all_chains = set()
+        for atom in universe.atoms:
+            chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
+            all_chains.add(chain_id)
+
+        for chain_id in all_chains:
+            # Get chain selection
+            chain_selection_string, _ = cls._build_chain_selection_string(universe, chain_id)
+
+            if chain_selection_string:
+                try:
+                    chain_residues = universe.select_atoms(chain_selection_string).residues
+                except:
+                    # Fallback: filter residues by chain manually
+                    chain_residues = [
+                        r
+                        for r in universe.residues
+                        if (
+                            getattr(r.atoms[0], "segid", None)
+                            or getattr(r.atoms[0], "chainid", "A")
+                        )
+                        == chain_id
+                    ]
+            else:
+                # Fallback: filter residues by chain manually
+                chain_residues = [
+                    r
+                    for r in universe.residues
+                    if (getattr(r.atoms[0], "segid", None) or getattr(r.atoms[0], "chainid", "A"))
+                    == chain_id
+                ]
+
+            # Sort by original resid
+            full_chain_residues = sorted(chain_residues, key=lambda r: r.resid)
+
+            # Apply terminal exclusion
+            if exclude_termini and len(full_chain_residues) > 2:
+                available_residues = full_chain_residues[1:-1]
+            else:
+                available_residues = full_chain_residues
+
+            # Create renumbering mapping
+            for new_resid, residue in enumerate(available_residues, 1):
+                renumber_mapping[(chain_id, new_resid)] = residue.resid
+
+        return renumber_mapping
+
+    @classmethod
+    def _validate_topology_containment(
+        cls,
+        topology: "Partial_Topology",
+        universe: mda.Universe,
+        exclude_termini: bool = True,
+        renumber_residues: bool = True,
+    ) -> None:
+        """Validate that topology residues are contained within chain bounds."""
+        chain_id = topology.chain
+
+        # Get chain selection
+        chain_selection_string, _ = cls._build_chain_selection_string(universe, chain_id)
+
+        if chain_selection_string:
+            try:
+                chain_residues = universe.select_atoms(chain_selection_string).residues
+            except:
+                chain_residues = [
+                    r
+                    for r in universe.residues
+                    if (getattr(r.atoms[0], "segid", None) or getattr(r.atoms[0], "chainid", "A"))
+                    == chain_id
+                ]
+        else:
+            chain_residues = [
+                r
+                for r in universe.residues
+                if (getattr(r.atoms[0], "segid", None) or getattr(r.atoms[0], "chainid", "A"))
+                == chain_id
+            ]
+
+        if not chain_residues:
+            raise ValueError(f"No residues found for chain {chain_id}")
+
+        # Sort and apply terminal exclusion
+        full_chain_residues = sorted(chain_residues, key=lambda r: r.resid)
+        if exclude_termini and len(full_chain_residues) > 2:
+            available_residues = full_chain_residues[1:-1]
+        else:
+            available_residues = full_chain_residues
+
+        if renumber_residues:
+            # Check that topology residues fall within the renumbered range
+            expected_range = list(range(1, len(available_residues) + 1))
+            available_resids = set(expected_range)
+        else:
+            # Check that topology residues exist in the available residues
+            available_resids = {r.resid for r in available_residues}
+
+        # Check topology residues (use active residues based on check_trim)
+        active_residues = topology._get_active_residues(check_trim=False)
+
+        missing_residues = set(active_residues) - available_resids
+        if missing_residues:
+            raise ValueError(
+                f"Topology {topology} contains residues {missing_residues} "
+                f"that are not available in chain {chain_id}. "
+                f"Available residues: {sorted(available_resids)}"
+            )
+
+    @staticmethod
+    def get_mda_group_sort_key(
+        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
+    ) -> tuple[int, tuple[int, ...], float, int]:
+        """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking.
+
+        This generates the same sort key that would be used by Partial_Topology.rank_order(),
+        allowing direct comparison and sorting of MDAnalysis groups using the same logic.
+
+        The sort key is based on:
+        1. Chain ID length (shorter chains first)
+        2. Chain ID alphabetically (A < B < ... < 1 < 2 < ...)
+        3. Average residue position (lower first)
+        4. Length of the fragment (longer fragments first, hence negative length)
+
+        Args:
+            group: MDAnalysis Residue, ResidueGroup, or AtomGroup (should represent single residue or
+                contiguous residues from same chain)
+
+        Returns:
+            Tuple that can be used as a sort key: (chain_len, chain_score, avg_residue, -length)
+
+        Raises:
+            ValueError: If group contains atoms from multiple chains
+            TypeError: If group is not a Residue, ResidueGroup, or AtomGroup
+
+        Example:
+            >>> residue_groups = [res_group1, res_group2, res_group3]
+            >>> sorted_groups = sorted(residue_groups, key=get_mda_group_sort_key)
+        """
+        if isinstance(group, Residue):
+            residues = [group]
+            chain_id = getattr(group.atoms[0], "segid", None) or getattr(
+                group.atoms[0], "chainid", "A"
+            )
+        elif isinstance(group, mda.ResidueGroup):
+            residues = [res for res in group.residues]  # Iterate explicitly
+            if len(residues) == 0:
+                raise ValueError("ResidueGroup contains no residues")
+
+            # Check that all residues are from the same chain
+            chain_ids = set()
+            for residue in residues:
+                residue_chain_id = getattr(residue.atoms[0], "segid", None) or getattr(
+                    residue.atoms[0], "chainid", "A"
+                )
+                chain_ids.add(residue_chain_id)
+
+            if len(chain_ids) > 1:
+                raise ValueError(
+                    f"ResidueGroup contains residues from multiple chains: {chain_ids}"
+                )
+
+            chain_id = list(chain_ids)[0]
+        elif isinstance(group, mda.AtomGroup):
+            residues = list(group.residues)
+            if len(residues) == 0:
+                raise ValueError("AtomGroup contains no residues")
+
+            # Check that all atoms are from the same chain
+            chain_ids = set()
+            for atom in group:
+                atom_chain_id = getattr(atom, "segid", None) or getattr(atom, "chainid", "A")
+                chain_ids.add(atom_chain_id)
+
+            if len(chain_ids) > 1:
+                raise ValueError(f"AtomGroup contains atoms from multiple chains: {chain_ids}")
+
+            chain_id = list(chain_ids)[0]
+        else:
+            raise TypeError("group must be a Residue, ResidueGroup, or AtomGroup")
+
+        # Ensure chain is string and uppercase
+        if isinstance(chain_id, str):
+            chain_id = chain_id.upper()
+        else:
+            chain_id = str(chain_id)
+
+        # Get residue numbers
+        resids = [r.resid for r in residues]
+
+        # Calculate average residue position
+        avg_residue = sum(resids) / len(resids)
+
+        # Calculate length
+        length = len(resids)
+
+        # Generate chain score (same logic as Partial_Topology._get_chain_score)
+        # This allows proper alphanumeric sorting: A < B < ... < 1 < 2 < ...
+        chain_score = tuple(ord(c) for c in chain_id)
+
+        # Return sort key: (chain_len, chain_score, avg_residue, -length)
+        # Negative length to sort longer fragments first (descending)
+        return (len(chain_id), chain_score, avg_residue, -length)
+        # Negative length to sort longer fragments first (descending)
+        return (len(chain_id), chain_score, avg_residue, -length)
