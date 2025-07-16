@@ -22,6 +22,11 @@ dependencies = [
     "scipy>=1.15.1",
     "seaborn>=0.13.2",
 ]
+[project.scripts]
+jaxent-featurise = "jaxent.cli.featurise:main"
+jaxent-predict = "jaxent.cli.predict:main"
+jaxent-forward = "jaxent.cli.forward:main"
+
 [tool.setuptools.packages.find]
 where = ["jaxent/src"]
 
