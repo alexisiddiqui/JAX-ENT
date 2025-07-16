@@ -980,7 +980,7 @@ class Partial_Topology:
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         fragment_name_template: str = "auto",
-        renumber_residues: bool = True,
+        renumber_residues: bool = False,
     ) -> list["Partial_Topology"]:
         """Extract Partial_Topology objects from an MDAnalysis Universe
 
@@ -1209,7 +1209,7 @@ class Partial_Topology:
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
-        renumber_residues: bool = True,
+        renumber_residues: bool = False,
         mda_atom_filtering: Optional[str] = None,
     ) -> Union["mda.ResidueGroup", "mda.AtomGroup"]:
         """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects."""

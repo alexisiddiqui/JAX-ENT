@@ -124,6 +124,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             ensemble,
             include_selection=self.final_include_selection,
             exclude_selection=self.final_exclude_selection,
+            renumber_residues=True,
         )[0]
 
         # Calculate total number of frames in the ensemble
