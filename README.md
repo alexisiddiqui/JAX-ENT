@@ -40,7 +40,7 @@ pip install uv
 Once `uv` is installed, navigate to the project root directory and install the dependencies and the package in editable mode:
 
 ```bash
-uv venc
+uv venv
 source .venv/bin/activate
 uv pip install -e .[flag]
 ```
@@ -50,9 +50,10 @@ Please ensure that JAX is correctly installed with CUDA/ROCm if desired, followi
 
 Tests can be found in jaxent/tests. Some of these tests require the test files found in jaxent/tests/inst.zip - this needs to be extracted to jaxent/tests/inst/ - a search and replace is then performed to correct the suffix before 'JAX-ENT'.
 Tests also require the dev branch (for pytest).
+A setup_test.sh script is provided.
 
 ```bash
-uv venc
+uv venv
 source .venv/bin/activate
 uv pip install -e .[dev]
 ```
