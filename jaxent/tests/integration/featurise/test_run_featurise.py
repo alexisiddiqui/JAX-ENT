@@ -1,21 +1,25 @@
+from pathlib import Path
+
 from MDAnalysis import Universe
 
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
+from jaxent.tests.test_utils import get_inst_path
 
 
 def test_run_featurise():
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+
     bv_config = BV_model_Config()
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
 
     universes = [test_universe]
 
@@ -31,15 +35,16 @@ def test_run_featurise():
 
 
 def test_run_featurise_ensemble():
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+
     bv_config = BV_model_Config()
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
 
     universes = [test_universe]
 
