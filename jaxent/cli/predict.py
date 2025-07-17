@@ -10,11 +10,11 @@ from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
+from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict import run_predict
 
@@ -54,6 +54,18 @@ def main():
         action="store_true",
         help="Raise an exception if JIT compilation fails.",
     )
+    parser.add_argument(
+        "--timepoints",
+        type=list,
+        default=[0.167, 1.0, 10.0],
+        help="List of timepoints for BV model. Default is [0.167, 1.0, 10.0].",
+    )
+    parser.add_argument(
+        "--forward_model_key",
+        type=str,
+        default=None,
+        help="Key for the specific forward model to use (e.g., 'HDX_peptide', 'HDX_resPF').",
+    )
 
     subparsers = parser.add_subparsers(
         dest="model_type", required=True, help="Type of forward model to use for prediction."
@@ -82,11 +94,10 @@ def main():
         help="Temperature for BV model (K).",
     )
     bv_parser.add_argument(
-        "--timepoints",
-        type=float,
-        nargs="+",
-        default=[0.167, 1.0, 10.0],
-        help="Timepoints for BV model (minutes).",
+        "--num_timepoints",
+        type=int,
+        default=1,
+        help="Number of timepoints for BV model. Affects key type.",
     )
 
     # Linear BV Model Subparser
@@ -178,7 +189,7 @@ def main():
     # Load Input_Features
     print(f"Loading features from {args.features_path}")
     features_data = np.load(args.features_path)
-    
+
     # Determine the correct Input_Features class based on model_type
     input_features: Input_Features
     if args.model_type == "bv" or args.model_type == "linear_bv":
@@ -191,7 +202,9 @@ def main():
         input_features = NetHDX_input_features(
             contact_matrices=jnp.asarray(features_data["contact_matrices"]),
             residue_ids=jnp.asarray(features_data["residue_ids"]),
-            network_metrics=features_data["network_metrics"] if "network_metrics" in features_data else None,
+            network_metrics=features_data["network_metrics"]
+            if "network_metrics" in features_data
+            else None,
         )
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
@@ -206,7 +219,8 @@ def main():
     model_parameters: Model_Parameters
 
     if args.model_type == "bv":
-        config = BV_model_Config() # Default config, parameters will be overridden by CLI args
+        config = BV_model_Config(num_timepoints=args.num_timepoints)
+        config.timepoints = jnp.array(args.timepoints)
         forward_model = BV_model(config=config)
         model_parameters = BV_Model_Parameters(
             bv_bc=jnp.array(args.bv_bc),
@@ -233,10 +247,18 @@ def main():
         raise ValueError(f"Unknown model type: {args.model_type}")
 
     # Create Simulation_Parameters
-    n_frames = input_features.features_shape[-1] # Assuming last dim is frames
+    n_frames = input_features.features_shape[-1]  # Assuming last dim is frames
 
-    frame_weights = jnp.asarray(args.frame_weights) if args.frame_weights is not None else jnp.ones(n_frames) / n_frames
-    frame_mask = jnp.asarray(args.frame_mask, dtype=jnp.bool_) if args.frame_mask is not None else jnp.ones(n_frames, dtype=jnp.bool_)
+    frame_weights = (
+        jnp.asarray(args.frame_weights)
+        if args.frame_weights is not None
+        else jnp.ones(n_frames) / n_frames
+    )
+    frame_mask = (
+        jnp.asarray(args.frame_mask, dtype=jnp.bool_)
+        if args.frame_mask is not None
+        else jnp.ones(n_frames, dtype=jnp.bool_)
+    )
     forward_model_weights = jnp.asarray(args.forward_model_weights)
     normalise_loss_functions = jnp.asarray(args.normalise_loss_functions, dtype=jnp.int32)
     forward_model_scaling = jnp.asarray(args.forward_model_scaling)
@@ -244,7 +266,9 @@ def main():
     simulation_parameters = Simulation_Parameters(
         frame_weights=frame_weights,
         frame_mask=frame_mask,
-        model_parameters=[model_parameters], # Wrap in list as Simulation_Parameters expects Sequence
+        model_parameters=[
+            model_parameters
+        ],  # Wrap in list as Simulation_Parameters expects Sequence
         forward_model_weights=forward_model_weights,
         normalise_loss_functions=normalise_loss_functions,
         forward_model_scaling=forward_model_scaling,
@@ -253,8 +277,8 @@ def main():
     # Run prediction
     print("Running prediction...")
     output_features = run_predict(
-        input_features=[input_features], # run_predict expects Sequence
-        forward_models=[forward_model], # run_predict expects Sequence
+        input_features=[input_features],  # run_predict expects Sequence
+        forward_models=[forward_model],  # run_predict expects Sequence
         model_parameters=simulation_parameters,
         raise_jit_failure=args.raise_jit_failure,
     )
