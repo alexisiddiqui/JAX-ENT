@@ -17,6 +17,16 @@ fi
 
 echo "--- Running in $(pwd) ---"
 
+# --- User confirmation ---
+echo ""
+echo "WARNING: This setup process is intended to be handled by the test scripts."
+echo "Running this script directly may not work as expected."
+read -p "Do you want to continue? [y/N]: " CONTINUE
+if [[ ! "$CONTINUE" =~ ^[Yy]$ ]]; then
+    echo "Aborting setup."
+    exit 0
+fi
+
 # --- 2. Set up virtual environment and install dependencies ---
 if [ ! -d "$VENV_DIR" ]; then
     echo "--- Creating virtual environment in '$VENV_DIR' using uv... ---"
