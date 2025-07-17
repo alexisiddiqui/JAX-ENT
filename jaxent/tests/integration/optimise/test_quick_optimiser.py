@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
@@ -29,12 +30,13 @@ from jaxent.tests.plots.optimisation import (
     plot_loss_components,
     plot_total_losses,
 )
+from jaxent.tests.test_utils import get_inst_path
 
 
 # Ensure output directory exists
 def ensure_output_dir():
     """Create the output directory if it doesn't exist."""
-    output_dir = "tests/_plots/module_optimise"
+    output_dir = Path(__file__).parents[3] / "_plots" / "module_optimise"
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -56,7 +58,7 @@ def visualize_optimization_results(train_data, val_data, exp_data, opt_simulatio
     figs = [split_fig, total_loss_fig, loss_fig, weights_fig]
     output_dir = ensure_output_dir()
     for fig in figs:
-        output_path = os.path.join(output_dir, f"{fig.get_label()}.png")
+        output_path = output_dir / f"{fig.get_label()}.png"
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved plot to {output_path}")
         plt.close(fig)
@@ -67,14 +69,12 @@ def test_quick_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
 
     universes = [test_universe]
 
@@ -171,7 +171,7 @@ def test_quick_optimiser():
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        residue_feature_ouput_mapping=val_sparse_map,
     )
 
     opt_simulation = run_optimise(
@@ -191,14 +191,12 @@ def test_quick_sparse_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
 
     universes = [test_universe]
 

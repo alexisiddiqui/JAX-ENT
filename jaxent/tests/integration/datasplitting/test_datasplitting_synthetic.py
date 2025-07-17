@@ -1,10 +1,11 @@
 import os
+from pathlib import Path
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
+base_dir = Path(os.path.abspath(os.path.join(current_dir, "../../../")))
 import sys
 
-sys.path.insert(0, base_dir)
+sys.path.insert(0, str(base_dir))
 import copy
 
 import jax.numpy as jnp
@@ -22,12 +23,13 @@ from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.tests.plots.datasplitting import plot_split_visualization
+from jaxent.tests.test_utils import get_inst_path
 
 
 # Ensure output directory exists
 def ensure_output_dir():
     """Create the output directory if it doesn't exist."""
-    output_dir = "tests/_plots/datasplitting"
+    output_dir = base_dir / "tests" / "_plots" / "datasplitting"
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -37,9 +39,10 @@ def test_create_sparse_map():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
 
-    test_universe = Universe(topology_path)
+    test_universe = Universe(str(topology_path))
 
     universes = [test_universe]
 
@@ -115,11 +118,10 @@ def test_create_sparse_map_ensemble():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
 
     universes = [test_universe]
 
@@ -194,8 +196,9 @@ def test_random_split():
     # Setup similar to other tests
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    test_universe = Universe(topology_path)
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    test_universe = Universe(str(topology_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
@@ -235,7 +238,7 @@ def test_random_split():
     # Plot split visualization and save
     fig = plot_split_visualization(train_data, val_data, dataset.data)
     output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "random_split.png")
+    output_path = output_dir / "random_split.png"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     print(f"Saved plot to {output_path}")
     plt.close(fig)
