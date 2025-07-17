@@ -283,12 +283,12 @@ def main():
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Load MDAnalysis Universe
-    print(f"Loading PDB: {args.pdb_path}")
+    print(f"Loading PDB: {args.top_path}")
     if args.trajectory_path:
         print(f"Loading trajectory: {args.trajectory_path}")
-        universe = mda.Universe(args.pdb_path, args.trajectory_path)
+        universe = mda.Universe(args.top_path, args.trajectory_path)
     else:
-        universe = mda.Universe(args.pdb_path)
+        universe = mda.Universe(args.top_path)
 
     universes = [universe]
 
@@ -298,36 +298,32 @@ def main():
     # Create ForwardModel based on selected type
     forward_model: ForwardModel
     if args.model_type == "bv":
-        config = BV_model_Config(
-            temperature=args.temperature,
-            bv_bc=jnp.array(args.bv_bc),
-            bv_bh=jnp.array(args.bv_bh),
-            ph=args.ph,
-            heavy_radius=args.heavy_radius,
-            o_radius=args.o_radius,
-            num_timepoints=args.num_timepoints,
-            timepoints=jnp.array(args.timepoints),
-            residue_ignore=tuple(args.residue_ignore),
-            peptide_trim=args.peptide_trim,
-            peptide=args.peptide,
-            mda_selection_exclusion=args.mda_selection_exclusion,
-        )
+        config = BV_model_Config(num_timepoints=args.num_timepoints)
+        config.temperature = args.temperature
+        config.bv_bc = jnp.array(args.bv_bc)
+        config.bv_bh = jnp.array(args.bv_bh)
+        config.ph = args.ph
+        config.heavy_radius = args.heavy_radius
+        config.o_radius = args.o_radius
+        config.timepoints = jnp.array(args.timepoints)
+        config.residue_ignore = tuple(args.residue_ignore)
+        config.peptide_trim = args.peptide_trim
+        config.peptide = args.peptide
+        config.mda_selection_exclusion = args.mda_selection_exclusion
         forward_model = BV_model(config=config)
     elif args.model_type == "linear_bv":
-        config = linear_BV_model_Config(
-            temperature=args.temperature,
-            bv_bc=jnp.array(args.bv_bc),
-            bv_bh=jnp.array(args.bv_bh),
-            ph=args.ph,
-            heavy_radius=args.heavy_radius,
-            o_radius=args.o_radius,
-            num_timepoints=args.num_timepoints,
-            timepoints=jnp.array(args.timepoints),
-            residue_ignore=tuple(args.residue_ignore),
-            peptide_trim=args.peptide_trim,
-            peptide=args.peptide,
-            mda_selection_exclusion=args.mda_selection_exclusion,
-        )
+        config = linear_BV_model_Config(num_timepoints=args.num_timepoints)
+        config.temperature = args.temperature
+        config.bv_bc = jnp.array(args.bv_bc)
+        config.bv_bh = jnp.array(args.bv_bh)
+        config.ph = args.ph
+        config.heavy_radius = args.heavy_radius
+        config.o_radius = args.o_radius
+        config.timepoints = jnp.array(args.timepoints)
+        config.residue_ignore = tuple(args.residue_ignore)
+        config.peptide_trim = args.peptide_trim
+        config.peptide = args.peptide
+        config.mda_selection_exclusion = args.mda_selection_exclusion
         forward_model = linear_BV_model(config=config)
     elif args.model_type == "nethdx":
         config = NetHDXConfig(
