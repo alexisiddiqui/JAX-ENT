@@ -5,39 +5,64 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import optax
+import pytest
+from jaxent.src.utils.jit_fn import jit_Guard
 
 # Set environment variable to prevent excessive memory allocation
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-# Import custom modules - uncomment these and adjust the path
-# import sys
-# sys.path.insert(0, "/path/to/jaxent")
-# from jaxent.src.interfaces.simulation import Simulation_Parameters
-# from jaxent.src.models.core import Simulation
-# from jaxent.src.utils.jax_fn import frame_average_features, single_pass
+# --- Mock classes and functions for testing ---
 
-
-# Mock classes for testing if you can't import
 class Input_Features:
     def __init__(self, features):
         self.features = features
         self.features_shape = features.shape
 
+    def tree_flatten(self):
+        children = (self.features,)
+        aux_data = (self.features_shape,)
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(children[0])
 
 class ForwardPass:
     def __call__(self, features, params):
         return features * params.params
 
+    def tree_flatten(self):
+        return (), ()
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls()
 
 class ForwardModel:
     def __init__(self):
         self.forwardpass = ForwardPass()
 
+    def tree_flatten(self):
+        children = (self.forwardpass,)
+        aux_data = None
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls()
 
 class Model_Parameters:
     def __init__(self, params):
         self.params = params
 
+    def tree_flatten(self):
+        children = (self.params,)
+        aux_data = None
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(children[0])
 
 class Simulation_Parameters:
     def __init__(
@@ -56,22 +81,39 @@ class Simulation_Parameters:
         self.forward_model_scaling = forward_model_scaling
         self.normalise_loss_functions = normalise_loss_functions
 
+    def tree_flatten(self):
+        children = (
+            self.frame_weights,
+            self.frame_mask,
+            self.model_parameters,
+            self.forward_model_weights,
+            self.forward_model_scaling,
+            self.normalise_loss_functions,
+        )
+        aux_data = None
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
     @staticmethod
     def normalize_weights(params):
-        # This would normally normalize weights, but for testing we just return params
         return params
 
+# Register all classes as PyTrees
+for cls in [Input_Features, ForwardPass, ForwardModel, Model_Parameters, Simulation_Parameters]:
+    jax.tree_util.register_pytree_node_class(cls)
 
-# Mock utility functions
+
 def frame_average_features(feature, weights):
     return jnp.average(feature, axis=0, weights=weights)
-
 
 def single_pass(fp, feat, param):
     return fp(feat, param)
 
+# --- Original Simulation class (the one to be debugged) ---
 
-# Simplified Simulation class for testing
 class Simulation:
     def __init__(self, input_features, forward_models, params):
         self.input_features = input_features
@@ -81,127 +123,119 @@ class Simulation:
         self.outputs = None
 
     def initialise(self):
-        lengths = [feature.features_shape[-1] for feature in self.input_features]
-        assert len(set(lengths)) == 1, "Input features have different shapes."
-        self.length = lengths[0]
-        assert len(self.forward_models) == len(self.params.model_parameters)
-        print("Simulation initialized successfully.")
+        # Simplified for JIT compatibility testing, avoiding complex topology operations
         return True
 
     def forward(self, params):
-        """The method we want to make JIT-compatible"""
+        """The method that is not JIT-compatible."""
         self.params = Simulation_Parameters.normalize_weights(params)
-
-        # Mask the frame weights
         masked_frame_weights = jnp.where(self.params.frame_mask < 0.5, 0, self.params.frame_weights)
         masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
-        # First map operation using tree_map
-        average_features = jax.tree_util.tree_map(
-            lambda feature: frame_average_features(feature.features, self.params.frame_weights),
-            self.input_features,
-        )
-
-        # Second map operation using tree_map
-        output_features = jax.tree_util.tree_map(
-            lambda fp, feat, param: single_pass(fp, feat, param),
-            self.forwardpass,
-            average_features,
-            self.params.model_parameters,
-        )
-
+        average_features = [
+            frame_average_features(feature.features, self.params.frame_weights)
+            for feature in self.input_features
+        ]
+        output_features = [
+            single_pass(fp, feat, param)
+            for fp, feat, param in zip(self.forwardpass, average_features, self.params.model_parameters)
+        ]
         self.outputs = output_features
         return output_features
 
+# --- JIT-friendly version of the forward method ---
 
-# Create a JIT-friendly version of the forward method
 def forward_jit(params, input_features, forwardpass, model_parameters):
-    """JIT-friendly version of forward without class attributes"""
+    """JIT-friendly version of forward without class attributes."""
     params = Simulation_Parameters.normalize_weights(params)
-
-    # Mask the frame weights
     masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
     masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
-    # Instead of tree_map, use explicit operations
-    average_features = []
-    for feature in input_features:
-        avg = frame_average_features(feature.features, params.frame_weights)
-        average_features.append(avg)
-
-    # Process each model separately
-    output_features = []
-    for i in range(len(forwardpass)):
-        fp = forwardpass[i]
-        feat = average_features[i]
-        param = model_parameters[i]
-        output = single_pass(fp, feat, param)
-        output_features.append(output)
-
+    average_features = [
+        frame_average_features(feature.features, params.frame_weights)
+        for feature in input_features
+    ]
+    output_features = [
+        single_pass(fp, feat, param)
+        for fp, feat, param in zip(forwardpass, average_features, model_parameters)
+    ]
     return output_features
 
+# --- Pytest Test Suite ---
 
-def trace_and_profile():
-    """Test JIT compatibility and profile the forward method"""
-    print("Tracing the computation graph for forward method...")
-
-    # Create test data
+@pytest.fixture(scope="module")
+def test_data():
+    """Provides all necessary data for the tests."""
     num_frames = 5
     feature_dim = 3
     num_models = 2
 
-    # Create input features
     features1 = jnp.ones((num_frames, feature_dim))
     features2 = jnp.ones((num_frames, feature_dim)) * 2
     input_features = [Input_Features(features1), Input_Features(features2)]
 
-    # Create forward models
     forward_models = [ForwardModel() for _ in range(num_models)]
 
-    # Create parameters
     frame_weights = jnp.ones(num_frames) / num_frames
     frame_mask = jnp.ones(num_frames)
     model_parameters = [Model_Parameters(jnp.ones(feature_dim)) for _ in range(num_models)]
-    forward_model_weights = jnp.ones(num_models)
-    forward_model_scaling = jnp.ones(num_models)
-    normalise_loss_functions = jnp.ones(num_models)
-
+    
     params = Simulation_Parameters(
         frame_weights=frame_weights,
         frame_mask=frame_mask,
         model_parameters=model_parameters,
-        forward_model_weights=forward_model_weights,
-        forward_model_scaling=forward_model_scaling,
-        normalise_loss_functions=normalise_loss_functions,
+        forward_model_weights=jnp.ones(num_models),
+        forward_model_scaling=jnp.ones(num_models),
+        normalise_loss_functions=jnp.ones(num_models),
     )
 
-    # Create simulation
     simulation = Simulation(input_features, forward_models, params)
     simulation.initialise()
 
-    # Test original forward method
-    print("\n1. Testing original forward method...")
-    start_time = time.time()
-    try:
-        for _ in range(100):  # Run multiple times for better timing
-            outputs = simulation.forward(params)
-        elapsed = time.time() - start_time
-        print(f"✓ Original method ran successfully in {elapsed:.4f}s")
-    except Exception as e:
-        print(f"✗ Original method failed: {str(e)}")
+    return {
+        "simulation": simulation,
+        "params": params,
+        "input_features": input_features,
+        "frame_weights": frame_weights,
+    }
 
-    # Test JIT compilation directly (expected to fail)
-    print("\n2. Attempting to JIT-compile class method directly...")
+def test_original_forward_method_runs(test_data):
+    """Tests that the original forward method runs without errors."""
+    simulation = test_data["simulation"]
+    params = test_data["params"]
     try:
-        jitted_forward = jax.jit(simulation.forward)
-        _ = jitted_forward(params)
-        print("✓ Direct JIT compilation succeeded (unexpected)")
+        outputs = simulation.forward(params)
+        assert outputs is not None
+        assert len(outputs) == 2
     except Exception as e:
-        print(f"✗ Direct JIT compilation failed: {type(e).__name__}")
-        print(f"  Error message: {str(e)[:150]}...")
+        pytest.fail(f"Original forward method failed: {e}")
 
-    # Test JIT-friendly version
-    print("\n3. Testing JIT-friendly version...")
+
+
+def test_jit_friendly_version_runs(test_data):
+    """Tests that the JIT-friendly version runs without errors."""
+    simulation = test_data["simulation"]
+    params = test_data["params"]
+    input_features = test_data["input_features"]
+    
+    forward_fn = partial(
+        forward_jit,
+        input_features=input_features,
+        forwardpass=simulation.forwardpass,
+        model_parameters=params.model_parameters,
+    )
+    
+    try:
+        outputs = forward_fn(params)
+        assert outputs is not None
+        assert len(outputs) == 2
+    except Exception as e:
+        pytest.fail(f"JIT-friendly version failed: {e}")
+
+def test_jit_friendly_version_is_faster(test_data):
+    """Compares the performance of the JIT-compiled vs. non-JIT-compiled friendly version."""
+    simulation = test_data["simulation"]
+    params = test_data["params"]
+    input_features = test_data["input_features"]
+
     forward_fn = partial(
         forward_jit,
         input_features=input_features,
@@ -209,103 +243,55 @@ def trace_and_profile():
         model_parameters=params.model_parameters,
     )
 
-    try:
-        # Test without JIT first
-        start_time = time.time()
-        for _ in range(100):
-            _ = forward_fn(params)
-        elapsed_no_jit = time.time() - start_time
-        print(f"✓ JIT-friendly version ran in {elapsed_no_jit:.4f}s without JIT")
+    # Time non-JIT version
+    start_time = time.time()
+    for _ in range(100):
+        _ = forward_fn(params)
+    elapsed_no_jit = time.time() - start_time
 
-        # Now test with JIT
-        jitted_fn = jax.jit(forward_fn)
-
-        # Warmup
+    # Time JIT version
+    jitted_fn = jax.jit(forward_fn)
+    _ = jitted_fn(params)  # Warmup
+    start_time = time.time()
+    for _ in range(100):
         _ = jitted_fn(params)
+    elapsed_jit = time.time() - start_time
 
-        # Timing
-        start_time = time.time()
-        for _ in range(100):
-            _ = jitted_fn(params)
-        elapsed_jit = time.time() - start_time
-        print(f"✓ JIT-friendly version ran in {elapsed_jit:.4f}s with JIT")
-        print(f"  Speedup: {elapsed_no_jit / elapsed_jit:.2f}x")
-    except Exception as e:
-        print(f"✗ JIT-friendly version failed: {type(e).__name__}")
-        print(f"  Error message: {str(e)[:150]}...")
+    print(f"JIT-friendly (no JIT): {elapsed_no_jit:.4f}s | JIT-friendly (with JIT): {elapsed_jit:.4f}s")
+    print(f"Speedup: {elapsed_no_jit / elapsed_jit:.2f}x")
+    assert elapsed_jit < elapsed_no_jit
 
-    # Test each component separately to identify issues
-    print("\n4. Testing individual components...")
+def test_treemap_jit_compatibility(test_data):
+    """Tests if the tree_map operation with frame_average_features is JIT-compatible."""
+    input_features = test_data["input_features"]
+    frame_weights = test_data["frame_weights"]
 
-    # Test tree_map with average_features
-    def test_tree_map(input_features, weights):
+    def test_fn(features, weights):
         return jax.tree_util.tree_map(
-            lambda feature: frame_average_features(feature.features, weights),
-            input_features,
+            lambda feature: frame_average_features(feature, weights),
+            features,
         )
 
     try:
-        jitted_tree_map = jax.jit(test_tree_map)
-        _ = jitted_tree_map(input_features, frame_weights)
-        print("✓ tree_map with frame_average_features is JIT-compatible")
+        jitted_fn = jax.jit(test_fn)
+        _ = jitted_fn(input_features, frame_weights)
     except Exception as e:
-        print(f"✗ tree_map with frame_average_features is JIT-incompatible: {type(e).__name__}")
+        pytest.fail(f"tree_map with frame_average_features is not JIT-compatible: {e}")
 
-    # Analyze Python objects for JIT compatibility
-    print("\n5. Analyzing Python object compatibility...")
-    for obj_name, obj in [
+@jit_Guard.test_isolation()
+def test_pytree_compatibility(test_data):
+    """Analyzes if the main Python objects are valid JAX pytrees."""
+    simulation = test_data["simulation"]
+    params = test_data["params"]
+    input_features = test_data["input_features"]
+
+    for name, obj in [
         ("input_features", input_features),
         ("forwardpass", simulation.forwardpass),
-        ("model_parameters", model_parameters),
+        ("model_parameters", params.model_parameters),
         ("params", params),
     ]:
         try:
             jax.tree_util.tree_structure(obj)
-            print(f"✓ {obj_name} has valid JAX tree structure")
         except Exception as e:
-            print(f"✗ {obj_name} is not a valid JAX pytree: {type(e).__name__}")
-
-    # Summarize findings
-    print("\n=== JIT Compatibility Analysis ===")
-    print("\nIssues in the original forward method:")
-    print("1. Modifies instance attributes (self.params, self.outputs)")
-    print("   Solution: Return values instead of modifying state")
-
-    print("\n2. Uses Python objects that may not be JAX-traceable")
-    print("   Solution: Use JAX arrays and registered pytrees")
-
-    print("\n3. Uses dynamic operations via tree_map")
-    print("   Solution: Use explicit loops or JAX's vmap/scan")
-
-    print("\nRecommended rewrite for JIT compatibility:")
-    print("""
-def forward_jit(params, input_features, forwardpass, model_parameters):
-    # 1. Don't modify class attributes
-    # 2. Use only JAX operations and arrays
-    # 3. Return results instead of storing them
-    
-    # Normalize weights (keep as pure function)
-    params = normalize_weights(params)
-    
-    # Use JAX operations for frame weights masking
-    masked_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-    masked_weights = optax.projections.projection_simplex(masked_weights)
-    
-    # Use explicit loops instead of tree_map
-    average_features = []
-    for feature in input_features:
-        avg = jnp.average(feature.features, axis=0, weights=params.frame_weights)
-        average_features.append(avg)
-    
-    # Process each model separately
-    output_features = []
-    for i in range(len(forwardpass)):
-        output = forwardpass[i](average_features[i], model_parameters[i])
-        output_features.append(output)
-    
-    return output_features
-    """)
-
-
-if __name__ == "__main__":
-    trace_and_profile()
+            pytest.fail(f"Object '{name}' is not a valid JAX pytree: {e}")

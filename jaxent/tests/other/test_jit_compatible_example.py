@@ -6,10 +6,14 @@ separating state management from pure computation to enable JIT compilation.
 """
 
 from typing import Any, List, Optional, Sequence
+from unittest.mock import MagicMock
 
 import jax
 import jax.numpy as jnp
 import optax
+import pytest
+
+from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
@@ -49,7 +53,7 @@ def forward_pure(
         # Extract features and apply frame averaging
         # We need to access the .features attribute directly
         feature_data = feature.features
-        avg_feature = frame_average_features(feature_data, params.frame_weights)
+        avg_feature = jnp.average(feature_data, weights=params.frame_weights, axis=0)
         average_features.append(avg_feature)
 
     # Process each model explicitly rather than using tree_map
@@ -123,8 +127,6 @@ class JITSimulation:
                 params, self.input_features, self.forwardpass, model_params
             )
         )
-
-        print("JIT Simulation initialised successfully.")
         return True
 
     def forward(self, params: Simulation_Parameters) -> List[Output_Features]:
@@ -152,14 +154,36 @@ class JITSimulation:
         return outputs
 
 
-# Testing function to validate the module
-def _test_module():
-    """Simple validation test to ensure the module is correctly implemented."""
-    # Create dummy data for testing
-    from jaxent.src.interfaces.simulation import Simulation_Parameters
+# --- Test Suite ---
 
-    # Create a dummy parameter object
-    params = Simulation_Parameters(
+# Dummy classes for testing purposes
+class DummyFeature:
+    def __init__(self, num_frames=10, num_features=5):
+        self.features = jnp.ones((num_frames, num_features))
+        self.features_shape = (num_frames, num_features)
+
+class DummyForwardPass(ForwardPass):
+    def __call__(self, features, params):
+        return features * 2
+
+class DummyModel(ForwardModel):
+    def __init__(self, config=None):
+        super().__init__(config)
+
+    @property
+    def forwardpass(self):
+        return DummyForwardPass()
+
+    def initialise(self, *args, **kwargs):
+        pass
+
+    def featurise(self, *args, **kwargs):
+        pass
+
+@pytest.fixture
+def simulation_params():
+    """Fixture for creating dummy simulation parameters."""
+    return Simulation_Parameters(
         frame_weights=jnp.ones(10) / 10,
         frame_mask=jnp.ones(10),
         model_parameters=[{}],  # Dummy object
@@ -168,36 +192,95 @@ def _test_module():
         normalise_loss_functions=jnp.ones(1),
     )
 
-    # Create a dummy input feature
-    class DummyFeature:
-        def __init__(self):
-            self.features = jnp.ones((10, 5))
-            self.features_shape = (10, 5)
-
-    # Create a dummy forward pass
-    class DummyForwardPass:
-        def __call__(self, features, params):
-            return features * 2
-
-    # Create a dummy forward model
-    class DummyModel:
-        def __init__(self):
-            self.forwardpass = DummyForwardPass()
-
-    # Test forward_pure function
+@pytest.fixture
+def test_data():
+    """Fixture for creating dummy input features and forward models."""
     input_features = [DummyFeature()]
-    forward_models = [DummyModel()]
+    mock_config = MagicMock()
+    mock_config.forward_parameters = {}
+    forward_models = [DummyModel(config=mock_config)]
     model_parameters = [{}]
+    return input_features, forward_models, model_parameters
 
-    try:
-        result = forward_pure(
-            params, input_features, [forward_models[0].forwardpass], model_parameters
-        )
-        print("forward_pure function test: PASSED")
-    except Exception as e:
-        print(f"forward_pure function test: FAILED - {str(e)}")
+def test_forward_pure_runs_successfully(simulation_params, test_data):
+    """Test that the pure forward function executes without errors."""
+    input_features, forward_models, model_parameters = test_data
+    forward_passes = [model.forwardpass for model in forward_models]
 
+    result = forward_pure(
+        simulation_params, input_features, forward_passes, model_parameters
+    )
+    assert result is not None
+    assert isinstance(result, list)
+    assert len(result) == 1
+    expected_output = jnp.ones(5) * 2
+    assert jnp.allclose(result[0], expected_output)
 
-if __name__ == "__main__":
-    # Run a simple test when this module is executed directly
-    _test_module()
+def test_jitsimulation_initialise_success(simulation_params, test_data):
+    """Test that JITSimulation initializes successfully with valid data."""
+    input_features, forward_models, _ = test_data
+    sim = JITSimulation(input_features, forward_models, params=simulation_params)
+    assert sim.initialise() is True
+    assert sim._forward_jit is not None
+
+def test_jitsimulation_initialise_raises_error_without_params(test_data):
+    """Test that JITSimulation raises a ValueError if params are not provided."""
+    input_features, forward_models, _ = test_data
+    sim = JITSimulation(input_features, forward_models, params=None)
+    with pytest.raises(ValueError, match="No simulation parameters were provided"):
+        sim.initialise()
+
+def test_jitsimulation_forward_raises_error_before_initialise(simulation_params, test_data):
+    """Test that calling forward() before initialise() raises a RuntimeError."""
+    input_features, forward_models, _ = test_data
+    sim = JITSimulation(input_features, forward_models, params=simulation_params)
+    with pytest.raises(RuntimeError, match="Simulation not initialized"):
+        sim.forward(simulation_params)
+
+def test_jitsimulation_forward_produces_output(simulation_params, test_data):
+    """Test that the forward method produces the expected output after initialization."""
+    input_features, forward_models, _ = test_data
+    sim = JITSimulation(input_features, forward_models, params=simulation_params)
+    sim.initialise()
+    outputs = sim.forward(simulation_params)
+
+    assert outputs is not None
+    assert isinstance(outputs, list)
+    assert len(outputs) == 1
+    expected_output = jnp.ones(5) * 2
+    assert jnp.allclose(outputs[0], expected_output)
+    assert sim.outputs is not None
+
+def test_jitsimulation_handles_mismatched_models_and_params(test_data):
+    """Test assertion error for mismatched forward models and model parameters."""
+    input_features, forward_models, _ = test_data
+    mismatched_params = Simulation_Parameters(
+        frame_weights=jnp.ones(10) / 10,
+        frame_mask=jnp.ones(10),
+        model_parameters=[{}, {}],
+        forward_model_weights=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
+        normalise_loss_functions=jnp.ones(1),
+    )
+    sim = JITSimulation(input_features, forward_models, params=mismatched_params)
+    with pytest.raises(AssertionError, match="Number of forward models must be equal"):
+        sim.initialise()
+
+@jit_Guard.test_isolation()
+def test_jitsimulation_handles_mismatched_feature_shapes():
+    """Test assertion error for input features with different shapes."""
+    input_features = [DummyFeature(num_features=5), DummyFeature(num_features=6)]
+    mock_config = MagicMock()
+    mock_config.forward_parameters = {}
+    forward_models = [DummyModel(config=mock_config), DummyModel(config=mock_config)]
+    params = Simulation_Parameters(
+        frame_weights=jnp.ones(10) / 10,
+        frame_mask=jnp.ones(10),
+        model_parameters=[{}, {}],
+        forward_model_weights=jnp.ones(2),
+        forward_model_scaling=jnp.ones(2),
+        normalise_loss_functions=jnp.ones(2),
+    )
+    sim = JITSimulation(input_features, forward_models, params=params)
+    with pytest.raises(AssertionError, match="Input features have different shapes"):
+        sim.initialise()

@@ -55,7 +55,7 @@ A setup_test.sh script is provided.
 ```bash
 uv venv
 source .venv/bin/activate
-uv pip install -e .[dev]
+uv pip install -e .[test]
 ```
 
 
