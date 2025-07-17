@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import jax.numpy as jnp
 from MDAnalysis import Universe
@@ -9,6 +10,7 @@ from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
+from jaxent.tests.test_utils import get_inst_path
 
 
 def test_featurise_save_load():
@@ -23,23 +25,23 @@ def test_featurise_save_load():
     """
 
     # Define paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    output_dir = os.path.join(base_dir, "test_featurise_output")
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
 
-    # Define trajectory and topology paths
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
+    output_dir = Path(__file__).parents[1] / "test_featurise_output"
 
     print("Setting up test environment...")
     os.makedirs(output_dir, exist_ok=True)
+
+    # Define trajectory and topology paths
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
 
     # Initialize model and universe
     bv_config = BV_model_Config(num_timepoints=4)
     bv_config.timepoints = jnp.array([0.1, 1.0, 10.0, 100.0])
 
-    test_universe = Universe(topology_path, trajectory_path)
+    test_universe = Universe(str(topology_path), str(trajectory_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
@@ -59,7 +61,7 @@ def test_featurise_save_load():
     print(f"Topology count: {len(topology_set)}")
 
     # STEP 1: Save features using jnp.savez
-    features_path = os.path.join(output_dir, "features.jpz")
+    features_path = output_dir / "features"
     print(f"Saving features to {features_path}")
     jnp.savez(
         features_path,
@@ -72,14 +74,14 @@ def test_featurise_save_load():
     topology_dicts = [top.to_dict() for top in topology_set]
 
     # Save topologies as JSON
-    topology_path = os.path.join(output_dir, "topology.json")
+    topology_path = output_dir / "topology.json"
     print(f"Saving topology to {topology_path}")
     with open(topology_path, "w") as f:
         json.dump(topology_dicts, f, indent=2)
 
     # STEP 3: Load features back
     print("Loading features and topology...")
-    features_path_npz = features_path + ".npz"  # jnp.savez adds .npz extension
+    features_path_npz = features_path.with_suffix(".npz")  # jnp.savez adds .npz extension
     loaded_features_dict = jnp.load(features_path_npz)
 
     # Reconstruct BV_input_features
