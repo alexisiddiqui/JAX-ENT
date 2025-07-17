@@ -1,4 +1,5 @@
 from typing import List, Tuple
+from pathlib import Path
 
 ################################################################################
 # TODO: NOTWORKING 06/02/25
@@ -8,19 +9,20 @@ import pandas as pd
 
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_intrinsic_rates
+from jaxent.tests.test_utils import get_inst_path
 
 
 # TODO currently the relative tolerance is set to 0.25, which is high. This requires checking of the actual implementation.
 def test_calculate_intrinsic_rates():
     """Test the calculation of intrinsic rates against reference data with detailed comparison."""
-    # topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    # rates_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/out__train_HOIP_max_plddt_1Intrinsic_rates.dat"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    rates_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_Intrinsic_rates.dat"
-    )
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    rates_path = inst_path / "clean" / "BPTI" / "BPTI_Intrinsic_rates.dat"
+
     # Load universe
-    universe = mda.Universe(topology_path)
+    universe = mda.Universe(str(topology_path))
 
     # Calculate rates using our function
     pred_rates = calculate_intrinsic_rates(universe)
@@ -106,7 +108,7 @@ def test_calculate_intrinsic_rates():
 
         print(
             f"{exp_idx:^10d} {calc_rate:^15.6f} {exp_rate:^15.6f} "
-            f"{abs_diff:^15.6f} {'✓' if matches_within_tol else '✗':^10} "
+            f"{abs_diff:^15.6f} {'\u2713' if matches_within_tol else '\u2717':^10} "
             f"{rel_diff:^15.2f}%"
         )
 
@@ -139,7 +141,7 @@ def test_calculate_intrinsic_rates():
     )
 
 
-def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
+def load_contact_data(data_dir: Path, file_prefix: str = "Contacts") -> dict:
     """Load contact data from .tmp files.
 
     Args:
@@ -150,16 +152,15 @@ def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
         Dictionary mapping residue IDs to their contact values
     """
     import glob
-    import os
 
     # Get all .tmp files matching the prefix
-    pattern = os.path.join(data_dir, f"{file_prefix}_chain_0_res_*.tmp")
+    pattern = str(data_dir / f"{file_prefix}_chain_0_res_*.tmp")
     tmp_files = glob.glob(pattern)
 
     contact_data = {}
     for file_path in tmp_files:
         # Extract residue number from filename
-        filename = os.path.basename(file_path)
+        filename = Path(file_path).name
         resid = int(filename.split("res_")[1].split(".tmp")[0])
 
         # Read first value from file
@@ -178,10 +179,13 @@ def load_contact_data(data_dir: str, file_prefix: str = "Contacts") -> dict:
 
 def test_calc_contacts_universe():
     """Test the calculation of contacts against reference data with detailed comparison."""
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1/HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
-    data_dir = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_high_rank_1"
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
 
-    universe = mda.Universe(topology_path)
+    topology_path = inst_path / "clean" / "HOIP" / "train_HOIP_high_rank_1" / "HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    data_dir = inst_path / "clean" / "HOIP" / "train_HOIP_high_rank_1"
+
+    universe = mda.Universe(str(topology_path))
 
     # Get N atoms for each residue (excluding prolines)
     NH_residue_atom_index: List[Tuple[int, int]] = []
@@ -252,8 +256,8 @@ def test_calc_contacts_universe():
     print("\nDetailed Contacts Comparison:")
     print("-" * 120)
     print(
-        f"{'Residue ID':^10} {'Calc Heavy':^12} {'Ref Heavy':^12} {'Heavy Δ':^12} {'Heavy %Δ':^12} "
-        f"{'Calc O':^12} {'Ref O':^12} {'O Δ':^12} {'O %Δ':^12} {'Match?':^8}"
+        f"{'Residue ID':^10} {'Calc Heavy':^12} {'Ref Heavy':^12} {'Heavy \u0394':^12} {'Heavy %\u0394':^12} "
+        f"{'Calc O':^12} {'Ref O':^12} {'O \u0394':^12} {'O %\u0394':^12} {'Match?':^8}"
     )
     print("-" * 120)
 
@@ -300,13 +304,13 @@ def test_calc_contacts_universe():
             # Add +/- signs to differences
             heavy_diff_str = f"{'+' if heavy_diff > 0 else ''}{heavy_diff:.2f}"
             oxygen_diff_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_diff:.2f}"
-            heavy_pct_str = f"{'+' if heavy_diff > 0 else ''}{heavy_pct:.1f}%"
-            oxygen_pct_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_pct:.1f}%"
+            heavy_pct_str = f"{'+' if heavy_diff > 0 else ''}{heavy_pct:.1f}%";
+            oxygen_pct_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_pct:.1f}%";
 
             print(
                 f"{resid:^10d} {calc_heavy:^12.2f} {ref_heavy:^12.2f} {heavy_diff_str:^12} {heavy_pct_str:^12} "
                 f"{calc_oxygen:^12.2f} {ref_oxygen:^12.2f} {oxygen_diff_str:^12} {oxygen_pct_str:^12} "
-                f"{'✓' if matches_within_tol else '✗':^8}"
+                f"{'\u2713' if matches_within_tol else '\u2717':^8}"
             )
 
     # Print summary with direction analysis
@@ -345,20 +349,20 @@ def test_calc_contacts_universe():
         for m in sorted_by_heavy:
             print(
                 f"  Residue {m['resid']}: {m['calc_heavy']:.2f} vs {m['ref_heavy']:.2f} "
-                f"(Δ: {m['heavy_diff']:+.2f}, {m['heavy_pct']:+.1f}%)"
+                f"(\u0394: {m['heavy_diff']:+.2f}, {m['heavy_pct']:+.1f}%)"
             )
 
         print("\nTop 5 Oxygen Contact Mismatches:")
         for m in sorted_by_oxygen:
             print(
                 f"  Residue {m['resid']}: {m['calc_oxygen']:.2f} vs {m['ref_oxygen']:.2f} "
-                f"(Δ: {m['oxygen_diff']:+.2f}, {m['oxygen_pct']:+.1f}%)"
+                f"(\u0394: {m['oxygen_diff']:+.2f}, {m['oxygen_pct']:+.1f}%)"
             )
 
     # Assert that most contacts match within tolerance
     match_ratio = len(matches) / (len(matches) + len(mismatches))
     assert match_ratio > 0.9, (
-        f"Only {match_ratio:.1%} of contacts match reference values (threshold: 90%)"
+        f"Only {match_ratio:.1%}" + " of contacts match reference values (threshold: 90%)"
     )
 
     print("\nTest completed successfully!")

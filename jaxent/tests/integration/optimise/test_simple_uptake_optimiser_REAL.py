@@ -1,16 +1,17 @@
 import os
+from pathlib import Path
 
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import jax
 
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
+base_dir = Path(os.path.abspath(os.path.join(current_dir, "../../../")))
 import sys
 
-sys.path.insert(0, base_dir)
+sys.path.insert(0, str(base_dir))
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
@@ -47,12 +48,13 @@ from jaxent.tests.plots.optimisation import (
     plot_loss_components,
     plot_total_losses,
 )
+from jaxent.tests.test_utils import get_inst_path
 
 
 # Ensure output directory exists
 def ensure_output_dir():
     """Create the output directory if it doesn't exist."""
-    output_dir = "tests/_plots/module_optimise"
+    output_dir = base_dir / "tests" / "_plots" / "module_optimise"
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -75,7 +77,7 @@ def visualize_optimization_results(train_data, val_data, exp_data, opt_simulatio
     fig_names = ["split", "total_loss", "loss", "weights"]
     output_dir = ensure_output_dir()
     for fig, names in zip(figs, fig_names):
-        output_path = os.path.join(output_dir, f"{names}.png")
+        output_path = output_dir / f"{names}.png"
         fig.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Saved plot to {output_path}")
         plt.close(fig)
@@ -86,18 +88,14 @@ def test_uptake_optimiser():
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
-    segs_data = (
-        "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_residue_segs_trimmed.txt"
-    )
-    dfrac_data = "/home/alexi/Documents/JAX-ENT/notebooks/CrossValidation/BPTI/BPTI_expt_dfracs_clean_trimmed.dat"
+    inst_path = get_inst_path(base_dir)
+
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+
+    test_universe = Universe(str(topology_path), str(trajectory_path))
+    segs_data = inst_path / "clean" / "BPTI" / "BPTI_residue_segs_trimmed.txt"
+    dfrac_data = inst_path / "clean" / "BPTI" / "BPTI_expt_dfracs_clean_trimmed.dat"
 
     with open(segs_data, "r") as f:
         segs_text = [line.strip() for line in f.readlines()]

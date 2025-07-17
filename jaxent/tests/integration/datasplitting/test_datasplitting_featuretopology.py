@@ -1,5 +1,6 @@
 import copy
 import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
@@ -14,11 +15,12 @@ from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.tests.plots.datasplitting import plot_split_visualization
+from jaxent.tests.test_utils import get_inst_path
 
 
 def ensure_output_dir():
     """Create the output directory if it doesn't exist."""
-    output_dir = "tests/_plots/datasplitting"
+    output_dir = Path(__file__).parents[3] / "_plots" / "datasplitting"
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -37,8 +39,10 @@ def test_split_with_feature_topology():
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
     # Load topology and trajectory
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    test_universe = Universe(topology_path)
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    test_universe = Universe(str(topology_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
@@ -124,7 +128,7 @@ def test_split_with_feature_topology():
     print("\nGenerating split visualization...")
     fig = plot_split_visualization(train_data, val_data, dataset.data)
     output_dir = ensure_output_dir()
-    output_path = os.path.join(output_dir, "feature_topology_split.png")
+    output_path = output_dir / "feature_topology_split.png"
     fig.savefig(output_path, dpi=300, bbox_inches="tight")
     print(f"Saved plot to {output_path}")
     plt.close(fig)
@@ -144,8 +148,10 @@ def test_compare_splitting_approaches():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    test_universe = Universe(topology_path)
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    test_universe = Universe(str(topology_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
@@ -232,8 +238,10 @@ def test_feature_topology_with_peptides():
     # Setup
     bv_config = BV_model_Config()
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    test_universe = Universe(topology_path)
+    base_dir = Path(__file__).parents[4]
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    test_universe = Universe(str(topology_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
