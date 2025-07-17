@@ -28,8 +28,8 @@ fi
 echo "--- Activating virtual environment ---"
 source "$VENV_DIR/bin/activate"
 
-echo "--- Installing project in editable mode with dev dependencies... ---"
-uv pip install -e .[dev]
+echo "--- Installing project in editable mode with 'test' dependencies... ---"
+uv pip install -e .[test]
 
 echo "--- Dependencies installed successfully. ---"
 
