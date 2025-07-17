@@ -7,6 +7,7 @@ JAXent imports and setup from your codebase.
 """
 
 import os
+from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -18,10 +19,12 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 # Add your existing imports here
 current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
+base_dir = Path(
+    os.path.abspath(os.path.join(current_dir, "../../../../"))
+)  # <-- changed from "../../../"
 import sys
 
-sys.path.insert(0, base_dir)
+sys.path.insert(0, str(base_dir))
 
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.featurise import run_featurise
@@ -30,6 +33,7 @@ from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
+from jaxent.tests.test_utils import get_inst_path
 
 
 # Mock a simple universe for testing (replace with your actual test data)
@@ -42,19 +46,18 @@ def create_test_simulation():
 
     # You'll need to provide actual topology/trajectory paths for your test
     # For now, using the paths from your original code
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
 
     # Check if files exist, if not skip this test
-    if not (os.path.exists(topology_path) and os.path.exists(trajectory_path)):
+    if not (topology_path.exists() and trajectory_path.exists()):
         print("Test files not found, creating minimal mock simulation...")
         return create_minimal_test_simulation(bv_config)
 
     from MDAnalysis import Universe
 
-    test_universe = Universe(topology_path, trajectory_path)
+    test_universe = Universe(str(topology_path), str(trajectory_path))
     universes = [test_universe]
     models = [BV_model(bv_config)]
 
