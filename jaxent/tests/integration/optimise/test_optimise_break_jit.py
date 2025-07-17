@@ -3,6 +3,7 @@ import time
 import traceback
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +34,7 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.opt.losses import hdx_pf_l2_loss
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import _optimise, run_optimise
+from jaxent.tests.test_utils import get_inst_path
 
 
 @contextmanager
@@ -61,7 +63,7 @@ def timeout_context(seconds=60):
 class OptimizationTestEnvironment:
     """Class to manage the complete test environment for optimization testing."""
 
-    def __init__(self, topology_path: str, trajectory_path: str):
+    def __init__(self, topology_path: Path, trajectory_path: Path):
         self.topology_path = topology_path
         self.trajectory_path = trajectory_path
         self.universes = None
@@ -77,7 +79,7 @@ class OptimizationTestEnvironment:
         """Set up the complete environment for testing."""
         try:
             # Load MD data
-            test_universe = Universe(self.topology_path, self.trajectory_path)
+            test_universe = Universe(str(self.topology_path), str(self.trajectory_path))
             self.universes = [test_universe]
 
             # Set up models
