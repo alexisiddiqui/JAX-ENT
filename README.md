@@ -71,7 +71,7 @@ unzip inst.zip -d inst/
 
 ```bash
 jaxent-featurise \
-    --top_path jaxent/tests/inst/inst/clean/BPTI/BPTI_Intrinsic_rates.dat \
+    --top_path jaxent/tests/inst/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb \
     --trajectory_path jaxent/tests/inst/inst/clean/BPTI/BPTI_sampled_500.xtc \
     --output_dir quick_start_output \
     --name test_bv \
