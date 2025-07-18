@@ -1,5 +1,5 @@
 # jaxENT
-### Version: Pre-Alpha 0.1.0 
+### Version: Alpha 0.1.1 
 Disclaimer: This project is currently under construction, the code is mostly functional but is far from complete as a package. \
 Initial release expected in the next few months. Want to stay up to date? Questions/Comments/Suggestions? Use our google form below to help drive the development of this tool.
 
@@ -54,6 +54,44 @@ uv pip install -e .[test]
 ---
 
 ## Usage Examples
+
+
+## Quick Start
+
+
+We provide test files for BPTI and HOIP, these can be found in jaxent/test/inst.zip.
+```bash
+cd jaxent/tests
+
+unzip inst.zip -d inst/
+```
+
+
+**Command:**
+
+```bash
+jaxent-featurise \
+    --top_path jaxent/tests/inst/inst/clean/BPTI/BPTI_Intrinsic_rates.dat \
+    --trajectory_path jaxent/tests/inst/inst/clean/BPTI/BPTI_sampled_500.xtc \
+    --output_dir quick_start_output \
+    --name test_bv \
+    bv \
+```
+
+****Output Files:**
+
+The script will generate two files in the specified output directory:
+
+1.  `features.npz`: A NumPy archive containing the featurised data. For the BV model, this includes `k_ints`, `heavy_contacts`, and `acceptor_contacts`.
+2.  `topology.json`: A JSON file describing the topology of the system, including information about the valid residues processed.
+
+BPTI has 58 residues and 5 Prolines, by defualt we exclude the first residue resulting in features of dimension (52, 500) for both heavy and acceptor contacts.
+k_ints are ensemble-averaged so that there is one per residue resulting in an array of shape (52,).
+
+---
+
+
+
 
 ### Python API Usage
 
