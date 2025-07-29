@@ -4,8 +4,8 @@ from typing import Generic, Protocol
 import MDAnalysis as mda
 
 from jaxent.src.custom_types import T_Config, T_Feat_In, T_In, T_Out, T_Params
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 
 
