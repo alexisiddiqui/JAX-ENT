@@ -142,6 +142,29 @@ def maxent_L2_loss(
     return loss, loss
 
 
+def maxent_L1_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    """
+    Calculates the L2 penalty of the simulation weights compared to the prior weights. Scaled by the number of frames, squared.
+    """
+    epsilon = 1e-10
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+
+    prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+
+    n_frames = simulation_weights.shape[0]
+
+    loss = jnp.mean((jnp.abs(simulation_weights - prior_frame_weights)) ** 1)
+
+    return loss, loss
+
+
 def sparse_max_entropy_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
