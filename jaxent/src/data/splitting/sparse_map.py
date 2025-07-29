@@ -4,8 +4,8 @@ import jax.numpy as jnp
 from jax import Array
 from jax.experimental import sparse
 
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.features import Input_Features
-from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology
 
 
@@ -13,7 +13,7 @@ def create_sparse_map(
     input_features: Input_Features,
     feature_topology: Sequence[Partial_Topology],
     output_features: Sequence[ExpD_Datapoint],
-    check_trim: bool = False,
+    check_trim: bool = True,
 ) -> sparse.BCOO:
     """
     Creates a sparse mapping matrix in BCOO format to map residue-wise features

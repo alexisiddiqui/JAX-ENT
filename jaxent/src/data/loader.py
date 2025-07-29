@@ -1,31 +1,19 @@
-from abc import abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import ClassVar, Generic, Sequence
+from typing import Generic, Sequence
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax.experimental import sparse
 
 from jaxent.src.custom_types import T_ExpD
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
+from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.interfaces.topology import Partial_Topology
-
-
-@dataclass()
-class ExpD_Datapoint:
-    """
-    Base class for experimental data - grouped into subdomain fragments
-    Limtation is that it only covers a single chain - which should be fine in most cases.
-    """
-
-    top: Partial_Topology
-    key: ClassVar[m_key]
-
-    @abstractmethod
-    def extract_features(self) -> np.ndarray:
-        raise NotImplementedError("This method must be implemented in the child class.")
 
 
 @partial(
@@ -106,6 +94,56 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         Map across every eleemtn in data and stack the features into a single array
         """
         return np.hstack([_exp_data.extract_features() for _exp_data in self.data])
+
+    def create_datasets(
+        self,
+        features: Input_Features,
+        feature_topology: Sequence[Partial_Topology],
+        train_data: Sequence[T_ExpD] | None = None,
+        val_data: Sequence[T_ExpD] | None = None,
+        test_data: Sequence[T_ExpD] | None = None,
+    ) -> None:
+        """
+        Create train, val, and test Dataset objects with sparse mappings.
+
+        Args:
+            features: Input features to map from
+            feature_topology: Topology fragments matching input features
+            train_data: Training datapoints. If None, uses all data from dataloader
+            val_data: Validation datapoints. If None, uses all data from dataloader
+            test_data: Test datapoints. If None, uses all data from dataloader
+        """
+        # Use all data if specific splits not provided
+        if train_data is None:
+            train_data = self.data
+        if val_data is None:
+            val_data = self.data
+        if test_data is None:
+            test_data = self.data
+
+        # Create sparse mappings
+        train_sparse_map = create_sparse_map(features, feature_topology, train_data)
+        val_sparse_map = create_sparse_map(features, feature_topology, val_data)
+        test_sparse_map = create_sparse_map(features, feature_topology, test_data)
+
+        # Create Dataset objects
+        self.train = Dataset(
+            data=train_data,
+            y_true=jnp.array([data.extract_features() for data in train_data]),
+            residue_feature_ouput_mapping=train_sparse_map,
+        )
+
+        self.val = Dataset(
+            data=val_data,
+            y_true=jnp.array([data.extract_features() for data in val_data]),
+            residue_feature_ouput_mapping=val_sparse_map,
+        )
+
+        self.test = Dataset(
+            data=test_data,
+            y_true=jnp.array([data.extract_features() for data in test_data]),
+            residue_feature_ouput_mapping=test_sparse_map,
+        )
 
     def tree_flatten(self):
         """

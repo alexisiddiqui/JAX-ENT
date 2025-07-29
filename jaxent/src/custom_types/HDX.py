@@ -2,8 +2,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.data.loader import ExpD_Datapoint
 
 
 @dataclass()
