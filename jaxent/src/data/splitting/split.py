@@ -259,6 +259,73 @@ class DataSplitter:
 
         return merged_topologies
 
+    def _remove_overlaps(
+        self,
+        merged_train_topologies: dict[str, Partial_Topology],
+        merged_val_topologies: dict[str, Partial_Topology],
+    ) -> dict[str, Partial_Topology]:
+        """
+        Removes overlapping residues between merged train and validation topologies.
+
+        Args:
+            merged_train_topologies: Dictionary of chain -> merged Partial_Topology for training data.
+            merged_val_topologies: Dictionary of chain -> merged Partial_Topology for validation data.
+
+        Returns:
+            Updated dictionary of chain -> merged Partial_Topology for validation data, with overlaps removed.
+
+        Raises:
+            ValueError: If no validation topologies remain after overlap removal.
+        """
+        print("Removing overlaps between merged train/val topologies...")
+
+        updated_val_topologies = {}
+
+        for chain in merged_val_topologies.keys():
+            val_topo = merged_val_topologies[chain]
+
+            if chain in merged_train_topologies:
+                train_topo = merged_train_topologies[chain]
+
+                # Check if there's overlap between train and val topologies for this chain
+                if val_topo.intersects(train_topo, check_trim=self.check_trim):
+                    overlap_residues = val_topo.get_overlap(train_topo, check_trim=self.check_trim)
+                    print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
+
+                    # Create a temporary topology with overlapping residues to remove
+                    overlap_topo = Partial_Topology.from_residues(
+                        chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
+                    )
+
+                    try:
+                        # Remove overlapping residues from validation topology
+                        updated_val_topo = val_topo.remove_residues([overlap_topo])
+                        updated_val_topologies[chain] = updated_val_topo
+                        print(
+                            f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
+                        )
+                    except ValueError as e:
+                        # If no residues remain after removal, skip this chain for validation
+                        print(
+                            f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
+                        )
+                        continue
+                else:
+                    # No overlap, keep original topology
+                    updated_val_topologies[chain] = val_topo
+            else:
+                # No corresponding train topology for this chain, keep original
+                updated_val_topologies[chain] = val_topo
+
+        # Update merged topologies
+        merged_val_topologies = updated_val_topologies
+
+        # Check if we still have validation topologies after overlap removal
+        if not merged_val_topologies:
+            raise ValueError("No validation topologies remain after overlap removal")
+
+        return merged_val_topologies
+
     def sample_by_centrality(self, threshold: float = 0.9) -> list[ExpD_Datapoint]:
         """
         Sample fragments by centrality to select the most central fragments from the dataset.
@@ -379,54 +446,9 @@ class DataSplitter:
 
         # Step 3: Remove overlaps between merged topologies if requested
         if remove_overlap:
-            print("Removing overlaps between merged train/val topologies...")
-
-            updated_val_topologies = {}
-
-            for chain in merged_val_topologies.keys():
-                val_topo = merged_val_topologies[chain]
-
-                if chain in merged_train_topologies:
-                    train_topo = merged_train_topologies[chain]
-
-                    # Check if there's overlap between train and val topologies for this chain
-                    if val_topo.intersects(train_topo, check_trim=self.check_trim):
-                        overlap_residues = val_topo.get_overlap(
-                            train_topo, check_trim=self.check_trim
-                        )
-                        print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
-
-                        # Create a temporary topology with overlapping residues to remove
-                        overlap_topo = Partial_Topology.from_residues(
-                            chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
-                        )
-
-                        try:
-                            # Remove overlapping residues from validation topology
-                            updated_val_topo = val_topo.remove_residues([overlap_topo])
-                            updated_val_topologies[chain] = updated_val_topo
-                            print(
-                                f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
-                            )
-                        except ValueError as e:
-                            # If no residues remain after removal, skip this chain for validation
-                            print(
-                                f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
-                            )
-                            continue
-                    else:
-                        # No overlap, keep original topology
-                        updated_val_topologies[chain] = val_topo
-                else:
-                    # No corresponding train topology for this chain, keep original
-                    updated_val_topologies[chain] = val_topo
-
-            # Update merged topologies
-            merged_val_topologies = updated_val_topologies
-
-            # Check if we still have validation topologies after overlap removal
-            if not merged_val_topologies:
-                raise ValueError("No validation topologies remain after overlap removal")
+            merged_val_topologies = self._remove_overlaps(
+                merged_train_topologies, merged_val_topologies
+            )
 
         # Step 4: Use filter_common_residues to create train/val sets
         # Convert merged topologies back to sets for filtering
@@ -539,7 +561,7 @@ class DataSplitter:
         n_clusters = min(n_clusters, len(source_dataset))
 
         # Perform k-means clustering
-        kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_seed, n_init=10)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_seed)
         cluster_labels = kmeans.fit_predict(features)
 
         print(f"Clustered {len(source_dataset)} fragments into {n_clusters} clusters")
@@ -584,54 +606,9 @@ class DataSplitter:
 
         # Step 6: Remove overlaps between merged topologies if requested
         if remove_overlap:
-            print("Removing overlaps between merged train/val topologies...")
-
-            updated_val_topologies = {}
-
-            for chain in merged_val_topologies.keys():
-                val_topo = merged_val_topologies[chain]
-
-                if chain in merged_train_topologies:
-                    train_topo = merged_train_topologies[chain]
-
-                    # Check if there's overlap between train and val topologies for this chain
-                    if val_topo.intersects(train_topo, check_trim=self.check_trim):
-                        overlap_residues = val_topo.get_overlap(
-                            train_topo, check_trim=self.check_trim
-                        )
-                        print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
-
-                        # Create a temporary topology with overlapping residues to remove
-                        overlap_topo = Partial_Topology.from_residues(
-                            chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
-                        )
-
-                        try:
-                            # Remove overlapping residues from validation topology
-                            updated_val_topo = val_topo.remove_residues([overlap_topo])
-                            updated_val_topologies[chain] = updated_val_topo
-                            print(
-                                f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
-                            )
-                        except ValueError as e:
-                            # If no residues remain after removal, skip this chain for validation
-                            print(
-                                f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
-                            )
-                            continue
-                    else:
-                        # No overlap, keep original topology
-                        updated_val_topologies[chain] = val_topo
-                else:
-                    # No corresponding train topology for this chain, keep original
-                    updated_val_topologies[chain] = val_topo
-
-            # Update merged topologies
-            merged_val_topologies = updated_val_topologies
-
-            # Check if we still have validation topologies after overlap removal
-            if not merged_val_topologies:
-                raise ValueError("No validation topologies remain after overlap removal")
+            merged_val_topologies = self._remove_overlaps(
+                merged_train_topologies, merged_val_topologies
+            )
 
         # Step 7: Use filter_common_residues to create final train/val sets
         # Convert merged topologies back to sets for filtering

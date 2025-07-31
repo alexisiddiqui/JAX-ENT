@@ -25,7 +25,7 @@ class BV_model_Config(BaseConfig):
     ph: float = 7
     heavy_radius: float = 6.5
     o_radius: float = 2.4
-    num_timepoints: int = 1
+    num_timepoints: int = 0
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
@@ -34,12 +34,12 @@ class BV_model_Config(BaseConfig):
 
     def __init__(self, num_timepoints: int | None = None) -> None:
         super().__init__()
-        if num_timepoints is None:
+        if num_timepoints is None or num_timepoints == 0:
             self.key = m_key("HDX_resPF")
         else:
-            if num_timepoints > 1:
+            if num_timepoints > 0:
                 self.key = m_key("HDX_peptide")
-            elif num_timepoints == 1:
+            elif len(self.timepoints) != num_timepoints:
                 self.key = m_key("HDX_resPF")
             else:
                 raise ValueError("Please make sure your timepoint/prior parameters make sense")
