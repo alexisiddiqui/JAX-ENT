@@ -1,6 +1,6 @@
 import copy
 import random
-from typing import Sequence
+from typing import Optional, Sequence
 
 import MDAnalysis as mda
 
@@ -86,6 +86,7 @@ class DataSplitter:
         include_selection: str | list[str] = "protein",
         exclude_selection: str | list[str] = "resname PRO or resid 1",
         max_retry_depth: int = 10,
+        min_split_size: int = 5,
     ):
         self.dataset = copy.deepcopy(dataset)
         self.random_seed = random_seed
@@ -97,6 +98,7 @@ class DataSplitter:
         self.check_trim_trim = peptide_trim
         self.max_retry_depth = max_retry_depth
         self.current_retry_count = 0
+        self.min_split_size = min_split_size
 
         # Process selection strings - convert to lists and ensure same length
         include_selection = self._process_selection_strings(include_selection)
@@ -298,7 +300,7 @@ class DataSplitter:
             "No data found in training or validation set"
         )
 
-        if len(train_data) < 5 or len(val_data) < 5:
+        if len(train_data) < self.min_split_size or len(val_data) < self.min_split_size:
             raise ValueError(
                 f"Training ({len(train_data)}) or validation ({len(val_data)}) set is too small"
             )
@@ -328,7 +330,8 @@ class DataSplitter:
         Perform random split using simplified approach with pre-computed splittable residues.
 
         Process:
-        1. Randomly select training datapoints (optionally using centrality sampling)
+        0. Optional: Remove highly redundant fragments by centrality sampling
+        1. Randomly select training datapoints
         2. Create merged topologies for train/val sets using class method
         3. Remove overlaps between merged topologies if requested (using Partial_Topology methods)
         4. Use filter_common_residues to assign datapoints to train/val sets
@@ -463,3 +466,208 @@ class DataSplitter:
             print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
             return self.random_split(remove_overlap=remove_overlap)
+
+    def sequence_cluster_split(
+        self, n_clusters: Optional[int] = None, remove_overlap: bool = False
+    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
+        """
+        Perform sequence (k_means) clustering split using k-means clustering on peptide start/end positions.
+
+        Process:
+        0. Optional: Remove highly redundant fragments by centrality sampling
+        1. Extract start and end positions of each peptide as features
+        2. Perform k-means clustering using 1/10th of dataset size as clusters (or specified n_clusters)
+        3. Randomly assign clusters to train/val according to train_size
+        4. Create merged topologies for train/val sets
+        5. Remove overlaps between merged topologies if requested
+        6. Filter dataset and validate split
+
+        Args:
+            n_clusters: Number of clusters (default uses 1/10th of dataset size)
+            remove_overlap: If True, remove overlaps between train and val merged topologies
+
+        Returns:
+            Tuple of (training_datapoints, validation_datapoints)
+        """
+        try:
+            import numpy as np
+            from sklearn.cluster import KMeans
+        except ImportError as e:
+            if "numpy" in str(e):
+                raise ImportError(
+                    "NumPy is required for clustering. Install with: pip install numpy"
+                )
+            else:
+                raise ImportError(
+                    "scikit-learn is required for clustering. Install with: pip install scikit-learn"
+                )
+
+        print(
+            f"Starting sequence cluster split with n_clusters={n_clusters}, remove_overlap={remove_overlap}"
+        )
+
+        # Step 0: Apply centrality sampling if requested
+        if self.centrality:
+            source_dataset = self.sample_by_centrality()
+        else:
+            source_dataset = self.dataset.data
+
+        if len(source_dataset) < 2:
+            raise ValueError(
+                f"Source dataset is too small to split ({len(source_dataset)} datapoints)."
+            )
+
+        # Step 1: Extract start and end positions as features
+        features = []
+        for datapoint in source_dataset:
+            active_residues = datapoint.top._get_active_residues(self.check_trim)
+            if not active_residues:
+                raise ValueError(f"No active residues found for datapoint {datapoint.top}")
+
+            start_pos = min(active_residues)
+            end_pos = max(active_residues)
+            features.append([start_pos, end_pos])
+
+        features = np.array(features)
+        print(f"Extracted start/end position features for {len(features)} fragments")
+
+        # Step 2: Determine number of clusters (use 1/10th of dataset if default)
+        if n_clusters is None or n_clusters > len(source_dataset):
+            n_clusters = max(2, len(source_dataset) // 10)
+
+        # Ensure we don't have more clusters than datapoints
+        n_clusters = min(n_clusters, len(source_dataset))
+
+        # Perform k-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_seed, n_init=10)
+        cluster_labels = kmeans.fit_predict(features)
+
+        print(f"Clustered {len(source_dataset)} fragments into {n_clusters} clusters")
+
+        # Step 3: Randomly assign clusters to train/val according to train_size
+        unique_clusters = np.unique(cluster_labels)
+        n_train_clusters = int(self.train_size * len(unique_clusters))
+
+        random.seed(self.random_seed)
+        train_clusters = set(random.sample(list(unique_clusters), n_train_clusters))
+        val_clusters = set(unique_clusters) - train_clusters
+
+        print(
+            f"Assigned {len(train_clusters)} clusters to training, {len(val_clusters)} to validation"
+        )
+
+        # Step 4: Create train/val datasets based on cluster assignments
+        selected_train_data = []
+        selected_val_data = []
+
+        for i, datapoint in enumerate(source_dataset):
+            cluster = cluster_labels[i]
+            if cluster in train_clusters:
+                selected_train_data.append(datapoint)
+            else:
+                selected_val_data.append(datapoint)
+
+        print(
+            f"Cluster assignment: {len(selected_train_data)} training, {len(selected_val_data)} validation datapoints"
+        )
+
+        # Step 5: Create merged topologies using the class method
+        train_topologies = [d.top for d in selected_train_data]
+        val_topologies = [d.top for d in selected_val_data]
+
+        merged_train_topologies = self._merge_topologies_by_chain(
+            train_topologies, self.check_trim, "train_cluster"
+        )
+        merged_val_topologies = self._merge_topologies_by_chain(
+            val_topologies, self.check_trim, "val_cluster"
+        )
+
+        # Step 6: Remove overlaps between merged topologies if requested
+        if remove_overlap:
+            print("Removing overlaps between merged train/val topologies...")
+
+            updated_val_topologies = {}
+
+            for chain in merged_val_topologies.keys():
+                val_topo = merged_val_topologies[chain]
+
+                if chain in merged_train_topologies:
+                    train_topo = merged_train_topologies[chain]
+
+                    # Check if there's overlap between train and val topologies for this chain
+                    if val_topo.intersects(train_topo, check_trim=self.check_trim):
+                        overlap_residues = val_topo.get_overlap(
+                            train_topo, check_trim=self.check_trim
+                        )
+                        print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
+
+                        # Create a temporary topology with overlapping residues to remove
+                        overlap_topo = Partial_Topology.from_residues(
+                            chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
+                        )
+
+                        try:
+                            # Remove overlapping residues from validation topology
+                            updated_val_topo = val_topo.remove_residues([overlap_topo])
+                            updated_val_topologies[chain] = updated_val_topo
+                            print(
+                                f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
+                            )
+                        except ValueError as e:
+                            # If no residues remain after removal, skip this chain for validation
+                            print(
+                                f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
+                            )
+                            continue
+                    else:
+                        # No overlap, keep original topology
+                        updated_val_topologies[chain] = val_topo
+                else:
+                    # No corresponding train topology for this chain, keep original
+                    updated_val_topologies[chain] = val_topo
+
+            # Update merged topologies
+            merged_val_topologies = updated_val_topologies
+
+            # Check if we still have validation topologies after overlap removal
+            if not merged_val_topologies:
+                raise ValueError("No validation topologies remain after overlap removal")
+
+        # Step 7: Use filter_common_residues to create final train/val sets
+        # Convert merged topologies back to sets for filtering
+        train_topology_set = set(merged_train_topologies.values())
+        val_topology_set = set(merged_val_topologies.values())
+
+        # Filter entire dataset using the merged topologies
+        final_train_data = filter_common_residues(
+            self.dataset.data, train_topology_set, check_trim=self.check_trim
+        )
+        final_val_data = filter_common_residues(
+            self.dataset.data, val_topology_set, check_trim=self.check_trim
+        )
+
+        # Store merged topologies for reference
+        self.last_split_train_topologies_by_chain = merged_train_topologies
+        self.last_split_val_topologies_by_chain = merged_val_topologies
+
+        print(f"Final split: {len(final_train_data)} training, {len(final_val_data)} validation")
+
+        try:
+            self.validate_split(final_train_data, final_val_data)
+            return final_train_data, final_val_data
+        except Exception as e:
+            if self.current_retry_count >= self.max_retry_depth:
+                raise ValueError(
+                    f"Failed to create valid split after {self.max_retry_depth} attempts. "
+                    f"Last error: {e}. Consider adjusting train_size or other parameters."
+                )
+
+            print(
+                f"Split is not valid - trying again (attempt {self.current_retry_count + 1}/{self.max_retry_depth}, seed {self.random_seed}): {e}"
+            )
+            # Increment retry count and random seed
+            self.current_retry_count += 1
+            self.random_seed += 1
+            print(f"Incrementing random seed to {self.random_seed}")
+            random.seed(self.random_seed)
+            return self.sequence_cluster_split(n_clusters=n_clusters, remove_overlap=remove_overlap)
