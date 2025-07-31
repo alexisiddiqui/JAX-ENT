@@ -37,7 +37,7 @@ def test_cli_predict_bv_model():
             "--ph",
             "7.0",
             "--num_timepoints",
-            "1",
+            "0",
             "--residue_ignore",
             "-2",
             "2",
@@ -94,9 +94,7 @@ def test_cli_predict_bv_model():
             "--temperature",
             "300.0",
             "--num_timepoints",
-            "1",
-            "--timepoints",
-            "0.167",
+            "0",
         ]
 
         print(f"Running predict command: {' '.join(predict_command)}")

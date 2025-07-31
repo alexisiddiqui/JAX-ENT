@@ -9,7 +9,7 @@ Args:
     - 'name': The prefix given to the files.
     - 'bv_bc': bv model bc constant.
     - 'bv_bh: bv model bh constant.
-    - 'timepoints': The timepoints at which the uptake is calculated - if none provided
+    - 'timepoints': The timepoints at which the uptake is calculated - if none provided then predicts protection factors
 
 
 """
