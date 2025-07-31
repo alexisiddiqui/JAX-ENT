@@ -1,4 +1,5 @@
 import copy
+import re
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -301,7 +302,7 @@ class TestSequenceClusterSplitBasicFunctionality:
 
             # Check that KMeans was initialized with approximately len(dataset)/10 clusters
             args, kwargs = mock_kmeans.call_args
-            n_clusters_used = kwargs['n_clusters']
+            n_clusters_used = kwargs["n_clusters"]
 
             expected_clusters = max(2, len(datapoints) // 10)
             assert n_clusters_used == expected_clusters
@@ -323,7 +324,7 @@ class TestSequenceClusterSplitBasicFunctionality:
 
             # Check that KMeans was initialized with specified clusters
             args, kwargs = mock_kmeans.call_args
-            n_clusters_used = kwargs['n_clusters']
+            n_clusters_used = kwargs["n_clusters"]
 
             assert n_clusters_used == 5
 
@@ -656,7 +657,7 @@ class TestSequenceClusterSplitEdgeCases:
 
             # Should cap clusters at number of datapoints
             args, kwargs = mock_kmeans.call_args
-            n_clusters_used = kwargs['n_clusters']
+            n_clusters_used = kwargs["n_clusters"]
             assert n_clusters_used == max(2, len(datapoints) // 10)
 
     def test_empty_active_residues_error(self, create_datapoints_from_topologies, setup_splitter):
@@ -671,7 +672,9 @@ class TestSequenceClusterSplitEdgeCases:
 
         splitter = setup_splitter(datapoints, common_residues)
 
-        with pytest.raises(ValueError, match="Source dataset is too small to split (1 datapoints)."):
+        with pytest.raises(
+            ValueError, match=re.escape("Source dataset is too small to split (1 datapoints).")
+        ):
             splitter.sequence_cluster_split()
 
 
