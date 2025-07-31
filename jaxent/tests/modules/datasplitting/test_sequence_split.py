@@ -218,7 +218,8 @@ def setup_splitter(request):
             "random_seed": 42,
             "train_size": 0.6,
             "centrality": False,
-            "check_trim": False,
+            "check_trim": True,
+            "min_split_size": 2,
         }
         default_kwargs.update(kwargs)
 
@@ -619,7 +620,10 @@ class TestSequenceSplitEdgeCases:
         mock_topology._get_active_residues.return_value = []
 
         mock_datapoint = MockExpD_Datapoint(mock_topology, 0)
-        datapoints = [mock_datapoint]
+        # Add another valid datapoint to ensure the dataset size check passes
+        valid_topology = Partial_Topology.from_range("A", 1, 10, fragment_name="valid_frag")
+        valid_datapoint = MockExpD_Datapoint(valid_topology, 1)
+        datapoints = [mock_datapoint, valid_datapoint]
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
@@ -691,7 +695,7 @@ class TestSequenceSplitRetryLogic:
                 splitter.sequence_split()
 
             # Should have tried max_retry_depth times
-            assert mock_validate.call_count == 2
+            assert mock_validate.call_count == splitter.max_retry_depth + 1
 
     def test_retry_counter_reset_on_success(
         self, create_datapoints_from_topologies, setup_splitter
