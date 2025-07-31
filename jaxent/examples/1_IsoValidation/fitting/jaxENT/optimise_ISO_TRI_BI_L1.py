@@ -38,7 +38,7 @@ from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.losses import (
     hdx_uptake_mean_centred_MSE_loss,
     hdx_uptake_MSE_loss,
-    maxent_convexKL_loss,
+    maxent_L1_loss,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
 from jaxent.src.utils.hdf import (
@@ -298,7 +298,7 @@ def run_optimise_ISO_TRI_BI(
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array([1.0, 0.0]),
-        normalise_loss_functions=jnp.zeros(2),
+        normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2),
     )
 
@@ -321,7 +321,7 @@ def run_optimise_ISO_TRI_BI(
         tolerance=1e-10,
         convergence=convergence,
         indexes=[0, 0],
-        loss_functions=[loss_function, maxent_convexKL_loss],
+        loss_functions=[loss_function, maxent_L1_loss],
         opt_state=opt_state,
         optimizer=optimizer,
     )
@@ -379,7 +379,7 @@ def main():
     # breakpoint()
 
     # Create output directory
-    output_dir = "_optimise2"
+    output_dir = "_optimise_l1"
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

@@ -38,7 +38,7 @@ from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_Model_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.losses import (
-    cosine_frame_weight_consistency_loss,
+    frame_weight_consistency_loss,
     hdx_uptake_mean_centred_MSE_loss,
     hdx_uptake_MSE_loss,
 )
@@ -300,7 +300,7 @@ def run_optimise_ISO_TRI_BI(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, 1000.0]),  # Added weight for consistency loss
+        forward_model_weights=jnp.array([1.0, 0.0]),  # Added weight for consistency loss
         normalise_loss_functions=jnp.ones(2),  # Adjusted for 3 loss functions
         forward_model_scaling=jnp.ones(2),  # Adjusted for 3 loss functions
     )
@@ -326,7 +326,7 @@ def run_optimise_ISO_TRI_BI(
         indexes=[0, 0],  # Adjusted for 3 loss functions
         loss_functions=[
             loss_function,
-            cosine_frame_weight_consistency_loss,
+            frame_weight_consistency_loss,
         ],  # Added consistency loss
         opt_state=opt_state,
         optimizer=optimizer,
