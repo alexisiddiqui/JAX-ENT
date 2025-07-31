@@ -139,8 +139,8 @@ def main() -> None:
     HDX_topology: list[Partial_Topology] = [
         Partial_Topology.from_range(
             chain=chain,
-            start=seg[0],
-            end=seg[1],
+            start=seg[0] - 1,
+            end=seg[1] - 1,
             fragment_index=idx,
             peptide=True,
             peptide_trim=1,
