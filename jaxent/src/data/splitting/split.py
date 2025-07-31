@@ -648,3 +648,139 @@ class DataSplitter:
             print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
             return self.sequence_cluster_split(n_clusters=n_clusters, remove_overlap=remove_overlap)
+
+    def sequence_split(
+        self, remove_overlap: bool = False
+    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
+        """
+        Splits the dataset along the sequence of the data points.
+
+        Process:
+        0. Optional: Remove highly redundant fragments by centrality sampling
+        1. Sort datapoints by sequence position (chain, then start position)
+        2. Take first train_size fraction for training, remainder for validation
+        3. Create merged topologies for train/val sets using class method
+        4. Remove overlaps between merged topologies if requested
+        5. Filter dataset and validate split
+
+        Args:
+            remove_overlap: If True, remove overlaps between train and val merged topologies
+
+        Returns:
+            Tuple of (training_datapoints, validation_datapoints)
+        """
+        print(
+            f"Starting sequence split with train_size={self.train_size}, remove_overlap={remove_overlap}"
+        )
+
+        # Step 0: Apply centrality sampling if requested
+        if self.centrality:
+            source_dataset = self.sample_by_centrality()
+        else:
+            source_dataset = self.dataset.data
+
+        if len(source_dataset) < 2:
+            raise ValueError(
+                f"Source dataset is too small to split ({len(source_dataset)} datapoints)."
+            )
+
+        # Step 1: Sort datapoints by sequence position
+        def get_sequence_sort_key(datapoint):
+            """Generate sort key for sequence ordering"""
+            active_residues = datapoint.top._get_active_residues(self.check_trim)
+            if not active_residues:
+                raise ValueError(f"No active residues found for datapoint {datapoint.top}")
+
+            # Sort by chain first, then by start position
+            chain_score = datapoint.top._get_chain_score()
+            start_pos = min(active_residues)
+
+            return (chain_score, start_pos)
+
+        # Sort source dataset by sequence position
+        sorted_dataset = sorted(source_dataset, key=get_sequence_sort_key)
+
+        print(f"Sorted {len(sorted_dataset)} datapoints by sequence position")
+
+        # Step 2: Split by sequence order
+        train_size = int(self.train_size * len(sorted_dataset))
+        selected_train_data = sorted_dataset[:train_size]
+        selected_val_data = sorted_dataset[train_size:]
+
+        print(
+            f"Sequence split: {len(selected_train_data)} training, {len(selected_val_data)} validation datapoints"
+        )
+
+        # Step 3: Create merged topologies using the class method
+        train_topologies = [d.top for d in selected_train_data]
+        val_topologies = [d.top for d in selected_val_data]
+
+        merged_train_topologies = self._merge_topologies_by_chain(
+            train_topologies, self.check_trim, "train_sequence"
+        )
+        merged_val_topologies = self._merge_topologies_by_chain(
+            val_topologies, self.check_trim, "val_sequence"
+        )
+
+        # Step 4: Remove overlaps between merged topologies if requested
+        if remove_overlap:
+            merged_val_topologies = self._remove_overlaps(
+                merged_train_topologies, merged_val_topologies
+            )
+
+        # Step 5: Use filter_common_residues to create final train/val sets
+        # Convert merged topologies back to sets for filtering
+        train_topology_set = set(merged_train_topologies.values())
+        val_topology_set = set(merged_val_topologies.values())
+
+        # Filter entire dataset using the merged topologies
+        final_train_data = filter_common_residues(
+            self.dataset.data, train_topology_set, check_trim=self.check_trim
+        )
+        final_val_data = filter_common_residues(
+            self.dataset.data, val_topology_set, check_trim=self.check_trim
+        )
+
+        # Store merged topologies for reference
+        self.last_split_train_topologies_by_chain = merged_train_topologies
+        self.last_split_val_topologies_by_chain = merged_val_topologies
+
+        print(f"Final split: {len(final_train_data)} training, {len(final_val_data)} validation")
+
+        try:
+            self.validate_split(final_train_data, final_val_data)
+            self._reset_retry_counter()  # Reset counter on successful split
+            return final_train_data, final_val_data
+        except Exception as e:
+            if self.current_retry_count >= self.max_retry_depth:
+                raise ValueError(
+                    f"Failed to create valid split after {self.max_retry_depth} attempts. "
+                    f"Last error: {e}. Consider adjusting train_size or other parameters."
+                )
+
+            print(
+                f"Split is not valid - trying again (attempt {self.current_retry_count + 1}/{self.max_retry_depth}, seed {self.random_seed}): {e}"
+            )
+            # Increment retry count and random seed
+            self.current_retry_count += 1
+            self.random_seed += 1
+            print(f"Incrementing random seed to {self.random_seed}")
+            random.seed(self.random_seed)
+            return self.sequence_split(remove_overlap=remove_overlap)
+
+    def stratified_split(
+        self, remove_overlap: bool = False, n_strata: Optional[int] = 10
+    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
+        """
+        Perform stratified split based on residue types or other criteria.
+
+        Process:
+        0. Optional: Remove highly redundant fragments by centrality sampling
+        1. Group datapoints by the average of their respective y_true values
+        2. Create strata based on the number of unique y_true values - ensure at least 2 values per stratum
+        3. Randomly assign strata to train/val according to train_size
+        4. Create merged topologies for train/val sets using class method
+        5. Remove overlaps between merged topologies if requested
+        6. Filter dataset and validate split
+
+        """
