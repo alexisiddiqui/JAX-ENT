@@ -69,7 +69,7 @@ def run_forward(
         simulation = Simulation(
             input_features=input_features_list,
             forward_models=forward_models_list,
-            params=None,
+            params=simulation_parameters[0],
             raise_jit_failure=raise_jit_failure,
         )
         ic("Simulation object created successfully")
@@ -88,8 +88,8 @@ def run_forward(
             ic("Running forward prediction loop")
             all_outputs = []
             for params in tqdm(simulation_parameters, desc="Forward prediction"):
-                output_features = sim.forward(params)
-                all_outputs.append(output_features)
+                sim.forward(params)
+                all_outputs.append(sim.outputs)
             
             ic(f"Forward prediction loop finished, got {len(all_outputs)} sets of output features")
             return all_outputs
