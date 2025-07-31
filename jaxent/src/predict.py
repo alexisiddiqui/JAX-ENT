@@ -93,7 +93,6 @@ def run_predict(
             params=model_parameters
             if isinstance(model_parameters, Simulation_Parameters)
             else None,
-            forward_model_key=forward_model_key,
             raise_jit_failure=raise_jit_failure,
         )
         ic("Simulation object created successfully")

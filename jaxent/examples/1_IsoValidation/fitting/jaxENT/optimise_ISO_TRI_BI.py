@@ -38,7 +38,6 @@ from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.losses import (
     hdx_uptake_mean_centred_MSE_loss,
     hdx_uptake_MSE_loss,
-    maxent_L1_loss,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
 from jaxent.src.utils.hdf import (
@@ -297,9 +296,9 @@ def run_optimise_ISO_TRI_BI(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, 1000.0]),
-        normalise_loss_functions=jnp.ones(2),
-        forward_model_scaling=jnp.ones(2),
+        forward_model_weights=jnp.array([1.0]),
+        normalise_loss_functions=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
     )
 
     # create initialised simulation
@@ -308,7 +307,7 @@ def run_optimise_ISO_TRI_BI(
 
     optimizer = OptaxOptimizer(
         learning_rate=1e-3,
-        optimizer="adam",
+        optimizer="adamw",
     )
     opt_state = optimizer.initialise(
         model=sim,
@@ -320,8 +319,8 @@ def run_optimise_ISO_TRI_BI(
         n_steps=n_steps,
         tolerance=1e-10,
         convergence=convergence,
-        indexes=[0, 0],
-        loss_functions=[loss_function, maxent_L1_loss],
+        indexes=[0],
+        loss_functions=[loss_function],
         opt_state=opt_state,
         optimizer=optimizer,
     )

@@ -1,6 +1,5 @@
 import argparse
 from pathlib import Path
-from typing import Sequence
 
 import jax.numpy as jnp
 import numpy as np
@@ -11,11 +10,11 @@ from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
+from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict_forward import run_forward
 
@@ -189,7 +188,7 @@ def main():
     # Helper to broadcast single values or validate list lengths
     def _process_arg_list(arg_value, expected_len, arg_name, dtype=float):
         if arg_value is None:
-            return None # Handled later for frame_weights/mask
+            return None  # Handled later for frame_weights/mask
         if len(arg_value) == 1:
             return [dtype(arg_value[0])] * expected_len
         elif len(arg_value) == expected_len:
@@ -202,7 +201,7 @@ def main():
     # Load Input_Features (assuming a single set of features for all simulations)
     print(f"Loading features from {args.features_path}")
     features_data = np.load(args.features_path)
-    
+
     input_features: Input_Features
     if args.model_type == "bv" or args.model_type == "linear_bv":
         input_features = BV_input_features(
@@ -214,7 +213,9 @@ def main():
         input_features = NetHDX_input_features(
             contact_matrices=jnp.asarray(features_data["contact_matrices"]),
             residue_ids=jnp.asarray(features_data["residue_ids"]),
-            network_metrics=features_data["network_metrics"] if "network_metrics" in features_data else None,
+            network_metrics=features_data["network_metrics"]
+            if "network_metrics" in features_data
+            else None,
         )
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
@@ -235,47 +236,94 @@ def main():
             current_model_parameters = BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
-                temperature=_process_arg_list(args.temperature, args.num_simulations, "temperature")[i],
-                timepoints=jnp.array(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")[i]),
+                temperature=_process_arg_list(
+                    args.temperature, args.num_simulations, "temperature"
+                )[i],
+                timepoints=jnp.array(
+                    _process_arg_list(args.timepoints, args.num_simulations, "timepoints")[i]
+                ),
             )
-            config = BV_model_Config() # Default config, parameters will be overridden by CLI args
+            config = BV_model_Config(
+                len(args.timepoints)
+            )  # Default config, parameters will be overridden by CLI args
+            config.timepoints = jnp.array(args.timepoints)
             forward_models_list.append(BV_model(config=config))
         elif args.model_type == "linear_bv":
             current_model_parameters = linear_BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
-                temperature=_process_arg_list(args.temperature, args.num_simulations, "temperature")[i],
-                num_timepoints=_process_arg_list(args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int)[i],
+                temperature=_process_arg_list(
+                    args.temperature, args.num_simulations, "temperature"
+                )[i],
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
             )
-            config = linear_BV_model_Config()
+            config = linear_BV_model_Config(len(args.timepoints))
+            config.timepoints = jnp.array(args.timepoints)
             forward_models_list.append(linear_BV_model(config=config))
         elif args.model_type == "nethdx":
             current_model_parameters = NetHDX_Model_Parameters(
-                shell_energy_scaling=jnp.array(_process_arg_list(args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling")[i]),
+                shell_energy_scaling=jnp.array(
+                    _process_arg_list(
+                        args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling"
+                    )[i]
+                ),
             )
-            config = NetHDXConfig()
+            config = NetHDXConfig(num_timepoints=len(args.timepoints))
+            config.timepoints = jnp.array(args.timepoints)
             forward_models_list.append(netHDX_model(config=config))
         else:
             raise ValueError(f"Unknown model type: {args.model_type}")
 
         # Create Simulation_Parameters for current simulation
-        n_frames = input_features.features_shape[-1] # Assuming last dim is frames
+        n_frames = input_features.features_shape[-1]  # Assuming last dim is frames
 
-        current_frame_weights_raw = _process_arg_list(args.frame_weights, args.num_simulations, "frame_weights")
-        current_frame_weights = jnp.asarray(current_frame_weights_raw[i]) if current_frame_weights_raw is not None else jnp.ones(n_frames) / n_frames
-        
-        current_frame_mask_raw = _process_arg_list(args.frame_mask, args.num_simulations, "frame_mask", dtype=int)
-        current_frame_mask = jnp.asarray(current_frame_mask_raw[i], dtype=jnp.bool_) if current_frame_mask_raw is not None else jnp.ones(n_frames, dtype=jnp.bool_)
+        current_frame_weights_raw = _process_arg_list(
+            args.frame_weights, args.num_simulations, "frame_weights"
+        )
+        current_frame_weights = (
+            jnp.asarray(current_frame_weights_raw[i])
+            if current_frame_weights_raw is not None
+            else jnp.ones(n_frames) / n_frames
+        )
 
-        current_forward_model_weights = jnp.asarray(_process_arg_list(args.forward_model_weights, args.num_simulations, "forward_model_weights")[i])
-        current_normalise_loss_functions = jnp.asarray(_process_arg_list(args.normalise_loss_functions, args.num_simulations, "normalise_loss_functions", dtype=int)[i], dtype=jnp.int32)
-        current_forward_model_scaling = jnp.asarray(_process_arg_list(args.forward_model_scaling, args.num_simulations, "forward_model_scaling")[i])
+        current_frame_mask_raw = _process_arg_list(
+            args.frame_mask, args.num_simulations, "frame_mask", dtype=int
+        )
+        current_frame_mask = (
+            jnp.asarray(current_frame_mask_raw[i], dtype=jnp.bool_)
+            if current_frame_mask_raw is not None
+            else jnp.ones(n_frames, dtype=jnp.bool_)
+        )
+
+        current_forward_model_weights = jnp.asarray(
+            _process_arg_list(
+                args.forward_model_weights, args.num_simulations, "forward_model_weights"
+            )[i]
+        )
+        current_normalise_loss_functions = jnp.asarray(
+            _process_arg_list(
+                args.normalise_loss_functions,
+                args.num_simulations,
+                "normalise_loss_functions",
+                dtype=int,
+            )[i],
+            dtype=jnp.int32,
+        )
+        current_forward_model_scaling = jnp.asarray(
+            _process_arg_list(
+                args.forward_model_scaling, args.num_simulations, "forward_model_scaling"
+            )[i]
+        )
 
         simulation_parameters_list.append(
             Simulation_Parameters(
                 frame_weights=current_frame_weights,
                 frame_mask=current_frame_mask,
-                model_parameters=[current_model_parameters], # Wrap in list as Simulation_Parameters expects Sequence
+                model_parameters=[
+                    current_model_parameters
+                ],  # Wrap in list as Simulation_Parameters expects Sequence
                 forward_model_weights=current_forward_model_weights,
                 normalise_loss_functions=current_normalise_loss_functions,
                 forward_model_scaling=current_forward_model_scaling,
@@ -285,8 +333,9 @@ def main():
     # Run forward prediction
     print("Running forward prediction...")
     all_output_features = run_forward(
-        input_features=[input_features] * args.num_simulations, # Repeat input features for each simulation
-        forward_models=forward_models_list, 
+        input_features=[input_features]
+        * args.num_simulations,  # Repeat input features for each simulation
+        forward_models=forward_models_list,
         simulation_parameters=simulation_parameters_list,
         raise_jit_failure=args.raise_jit_failure,
     )
