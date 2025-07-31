@@ -26,6 +26,7 @@ dependencies = [
 jaxent-featurise = "jaxent.cli.featurise:main"
 jaxent-predict = "jaxent.cli.predict:main"
 jaxent-forward = "jaxent.cli.forward:main"
+jaxent-kCluster = "jaxent.cli.efficient_k_cluster:main"
 
 [tool.setuptools.packages.find]
 where = ["jaxent/src"]

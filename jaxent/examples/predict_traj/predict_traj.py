@@ -1,6 +1,8 @@
 """
 This script is used to calculate the uptake for a given trajectory using the bv model.
-It first featurises the trajectory., and then calculates the residue-level uptake using the bv model using the predict method.
+It first featurises the trajectory, and then calculates the residue-level uptake using the bv model using the predict method.
+
+The outputs are saved
 
 Args:
     - 'topology': The topology path of the trajectory.
