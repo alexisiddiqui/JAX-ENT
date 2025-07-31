@@ -59,6 +59,7 @@ def main():
         default=1,
         help="Number of simulation parameter sets to run. Parameters provided as single values will be broadcast.",
     )
+    
 
     subparsers = parser.add_subparsers(
         dest="model_type", required=True, help="Type of forward model to use for prediction."
@@ -88,11 +89,18 @@ def main():
         help="Temperature for BV model (K). Can be single float or list (length must match num_simulations or be 1).",
     )
     bv_parser.add_argument(
+        "--num_timepoints",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+    )
+    bv_parser.add_argument(
         "--timepoints",
         type=float,
         nargs="+",
-        default=[0.167, 1.0, 10.0],
-        help="Timepoints for BV model (minutes). Can be single float or list (length must match num_simulations or be 1).",
+        default=None,
+        help="List of timepoints for uptake calculation. Required if num_timepoints > 0.",
     )
 
     # Linear BV Model Subparser
@@ -124,8 +132,15 @@ def main():
         "--num_timepoints",
         type=int,
         nargs="+",
-        default=[1],
-        help="Number of timepoints for linear BV model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+    )
+    linear_bv_parser.add_argument(
+        "--timepoints",
+        type=float,
+        nargs="+",
+        default=None,
+        help="List of timepoints for uptake calculation. Required if num_timepoints > 0.",
     )
 
     # NetHDX Model Subparser
@@ -138,6 +153,13 @@ def main():
         nargs="+",
         default=[0.84],
         help="Shell energy scaling factor for netHDX model parameters. Can be single float or list (length must match num_simulations or be 1).",
+    )
+    nethdx_parser.add_argument(
+        "--num_timepoints",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
     )
 
     # Arguments for Simulation_Parameters (common to all models)
@@ -188,6 +210,11 @@ def main():
     def _process_arg_list(arg_value, expected_len, arg_name, dtype=float):
         if arg_value is None:
             return None  # Handled later for frame_weights/mask
+        
+        # Special handling for 'timepoints' to allow multiple values per simulation
+        if arg_name == "timepoints":
+            return arg_value
+
         if len(arg_value) == 1:
             return [dtype(arg_value[0])] * expected_len
         elif len(arg_value) == expected_len:
@@ -261,12 +288,13 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=jnp.array(args.timepoints),
+                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
             )
             config = BV_model_Config(
-                len(args.timepoints)
-            )  # Default config, parameters will be overridden by CLI args
-            config.timepoints = jnp.array(args.timepoints)
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
+            )
             forward_models_list.append(BV_model(config=config))
         elif args.model_type == "linear_bv":
             current_model_parameters = linear_BV_Model_Parameters(
@@ -275,12 +303,13 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
+                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
+            )
+            config = linear_BV_model_Config(
                 num_timepoints=_process_arg_list(
                     args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
                 )[i],
             )
-            config = linear_BV_model_Config(len(args.timepoints))
-            config.timepoints = jnp.array(args.timepoints)
             forward_models_list.append(linear_BV_model(config=config))
         elif args.model_type == "nethdx":
             current_model_parameters = NetHDX__Model_Parameters(
@@ -289,9 +318,15 @@ def main():
                         args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling"
                     )[i]
                 ),
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
             )
-            config = NetHDXConfig(num_timepoints=len(args.timepoints))
-            config.timepoints = jnp.array(args.timepoints)
+            config = NetHDXConfig(
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
+            )
             forward_models_list.append(netHDX_model(config=config))
         else:
             raise ValueError(f"Unknown model type: {args.model_type}")

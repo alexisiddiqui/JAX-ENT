@@ -90,7 +90,7 @@ def main():
     bv_parser.add_argument(
         "--num_timepoints",
         type=int,
-        default=1,
+        default=0,
         help="Number of timepoints for BV model. Affects key type.",
     )
 
@@ -121,7 +121,7 @@ def main():
     linear_bv_parser.add_argument(
         "--num_timepoints",
         type=int,
-        default=1,
+        default=0,
         help="Number of timepoints for linear BV model. Affects key type.",
     )
 
