@@ -1,5 +1,6 @@
 from typing import Any, Callable, Optional, Sequence, Union, cast
 
+import jax.numpy as jnp
 from jax import (
     jit,
 )
@@ -142,36 +143,75 @@ class Simulation:
         """
         Apply forward pass to non-averaged features, returning frame-wise predictions.
 
-        Args:
-            params: Either Simulation_Parameters or sequence of Model_Parameters
-
-        Returns:
-            Sequence of output features with frame-wise predictions for each forward model
+        Returns sequence of output features with final dimension as n_frames for each forward model.
         """
-        # Check if simulation is initialized
         if not hasattr(self, "_input_features"):
             raise RuntimeError("Simulation must be initialized before calling predict")
 
         # Extract model parameters
         if isinstance(params, Simulation_Parameters):
-            # Normalize weights if using Simulation_Parameters
-            normalized_params = Simulation_Parameters.normalize_weights(params)
-            model_parameters = normalized_params.model_parameters
+            model_parameters = params.model_parameters
         else:
             model_parameters = params
 
-        # Validate number of parameters matches number of forward models
         if len(model_parameters) != len(self.forwardpass):
             raise ValueError(
                 f"Number of model parameters ({len(model_parameters)}) must match "
                 f"number of forward models ({len(self.forwardpass)})"
             )
 
-        # Apply forward pass to non-averaged input features (preserving frame dimension)
-        output_features = [
-            single_pass(fp, feat, param)
-            for fp, feat, param in zip(self.forwardpass, self._input_features, model_parameters)
-        ]
+        n_frames = self._input_features[0].features_shape[-1]
+        output_features = []
+
+        for fp, feature, param in zip(self.forwardpass, self._input_features, model_parameters):
+            # Collect frame outputs for this forward model
+            frame_outputs = []
+
+            for frame_idx in range(n_frames):
+                # Extract frame data for all features generically
+                frame_data = {}
+
+                # Slice feature arrays along frame dimension
+                for feat_name in feature.__features__:
+                    feat_array = getattr(feature, feat_name)
+                    frame_data[feat_name] = feat_array[..., frame_idx : frame_idx + 1]
+
+                # Preserve all non-feature attributes unchanged
+                for slot in feature._get_ordered_slots():
+                    if slot not in feature.__features__:
+                        frame_data[slot] = getattr(feature, slot)
+
+                # Create new frame feature object
+                frame_feature = feature.__class__(**frame_data)
+
+                # Apply forward pass to single frame
+                frame_output = single_pass(fp, frame_feature, param)
+                frame_outputs.append(frame_output)
+
+            # Stack frame outputs along final dimension generically
+            first_output = frame_outputs[0]
+            stacked_data = {}
+
+            # Stack all feature arrays (skip None values)
+            for feat_name in first_output.__features__:
+                feat_arrays = [getattr(out, feat_name) for out in frame_outputs]
+                if feat_arrays[0] is not None:
+                    stacked = jnp.stack(feat_arrays, axis=-1)
+                    # Squeeze singleton dimensions except the last (frames) dimension
+                    stacked_data[feat_name] = jnp.squeeze(
+                        stacked,
+                        axis=tuple(i for i in range(stacked.ndim - 1) if stacked.shape[i] == 1),
+                    )
+                else:
+                    stacked_data[feat_name] = None
+
+            # Preserve non-feature attributes from first output
+            for slot in first_output._get_ordered_slots():
+                if slot not in first_output.__features__:
+                    stacked_data[slot] = getattr(first_output, slot)
+
+            stacked_output = first_output.__class__(**stacked_data)
+            output_features.append(stacked_output)
 
         return output_features
 
