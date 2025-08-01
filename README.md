@@ -521,6 +521,7 @@ CryoEM???
 
 ## Known issues:
 
+- Partial_Topology objects renumbers termini residues
 - jax jit compile sometimes hangs
 - additional computations during optimisation loop
 
