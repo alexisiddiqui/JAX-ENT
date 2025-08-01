@@ -5,6 +5,7 @@ import numpy as np
 from icecream import ic  # Import icecream for debugging
 from MDAnalysis.core.groups import AtomGroup  # type: ignore
 from MDAnalysis.lib.distances import distance_array  # type: ignore
+from tqdm import tqdm  # Add tqdm import
 
 
 def calc_BV_contacts_universe(
@@ -70,7 +71,7 @@ def calc_BV_contacts_universe(
         return (1 - x) / (1 - x * x)
 
     # Process each frame
-    for ts in universe.trajectory:
+    for ts in tqdm(universe.trajectory, desc="Frames"):  # Wrap trajectory with tqdm
         ic(f"Processing frame {ts.frame} of {n_frames}")
 
         # For each target atom

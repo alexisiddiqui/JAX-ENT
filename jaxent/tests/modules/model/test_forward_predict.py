@@ -12,6 +12,7 @@ import os
 import sys
 import tempfile
 from dataclasses import dataclass
+import dataclasses
 from typing import ClassVar, Optional
 
 from utils.jit_fn import jit_Guard
@@ -115,6 +116,10 @@ class FixedBVFeatures:
         if self.k_ints is None:
             n_features = self.features_shape[0]
             self.k_ints = jnp.ones(n_features) * 0.1
+
+    def _get_ordered_slots(self):
+        """Return dataclass fields in order."""
+        return [f.name for f in dataclasses.fields(self)]
 
     def cast_to_jax(self):
         return self
