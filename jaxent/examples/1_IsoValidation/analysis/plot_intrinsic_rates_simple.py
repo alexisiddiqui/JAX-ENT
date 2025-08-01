@@ -131,7 +131,8 @@ def plot_intrinsic_rates():
             # Assuming each topology corresponds to a single residue for k_ints
             if len(topo.residues) == 1:
                 # jaxent_rates[topo.residues[0]] = jaxent_k_ints[i - 1]
-                jaxent_rates[topo.residues[0] + 1] = jaxent_k_ints[i]
+                # jaxent_rates[topo.residues[0] + 1] = jaxent_k_ints[i]
+                jaxent_rates[topo.residues[0]] = jaxent_k_ints[i]
 
             else:
                 # If a topology represents multiple residues, we need a strategy.

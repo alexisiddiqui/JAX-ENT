@@ -232,6 +232,9 @@ def analyze_conformational_recovery(trajectory_paths, topology_path, reference_p
                                         len(frame_weights) == len(cluster_assignments)
                                         and np.sum(frame_weights) > 0
                                     ):
+                                        print(
+                                            f"  Processing optimized frame weights for {ensemble_name}/{loss_name}/{split_idx} at step {step_idx}"
+                                        )
                                         # Calculate weighted ratios
                                         weighted_ratios = calculate_cluster_ratios(
                                             cluster_assignments, frame_weights
@@ -247,15 +250,11 @@ def analyze_conformational_recovery(trajectory_paths, topology_path, reference_p
                                                 "split_type": split_type,
                                                 "split": split_idx,
                                                 "convergence_step": step_idx,
-                                                "open_ratio": weighted_ratios.get(
-                                                    "cluster_0", 0.0
-                                                ),
+                                                "open_ratio": weighted_ratios.get("cluster_0", 0.0),
                                                 "closed_ratio": weighted_ratios.get(
                                                     "cluster_1", 0.0
                                                 ),
-                                                "open_recovery": weighted_recovery[
-                                                    "open_recovery"
-                                                ],
+                                                "open_recovery": weighted_recovery["open_recovery"],
                                                 "closed_recovery": weighted_recovery[
                                                     "closed_recovery"
                                                 ],
@@ -291,8 +290,7 @@ def plot_conformational_recovery(recovery_df, convergence_rates, output_dir):
     for split_type in split_types:
         print(f"  Plotting recovery for split type: {split_type}")
         split_df = recovery_df[
-            (recovery_df["split_type"] == split_type)
-            | (recovery_df["loss_function"] == "Original")
+            (recovery_df["split_type"] == split_type) | (recovery_df["loss_function"] == "Original")
         ]
         split_output_dir = os.path.join(output_dir, split_type)
         os.makedirs(split_output_dir, exist_ok=True)
@@ -318,7 +316,9 @@ def plot_conformational_recovery(recovery_df, convergence_rates, output_dir):
         combined_data = pd.concat([final_data, original_data], ignore_index=True)
 
         # Plot open state recovery
-        sns.barplot(data=combined_data, x="ensemble", y="open_recovery", hue="loss_function", ax=ax1)
+        sns.barplot(
+            data=combined_data, x="ensemble", y="open_recovery", hue="loss_function", ax=ax1
+        )
         ax1.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
         ax1.set_title("Open State Recovery (%)")
         ax1.set_ylabel("Recovery Percentage")
@@ -346,25 +346,46 @@ def plot_conformational_recovery(recovery_df, convergence_rates, output_dir):
             )
         ratio_df = pd.DataFrame(ratio_data)
 
-        sns.barplot(data=ratio_df, x="ensemble", y="ratio", hue="loss_function", ci=None, ax=ax2)
-        # Stack bars for open/closed
-        sns.barplot(
-            data=ratio_df[ratio_df["state"] == "Open"],
-            x="ensemble",
-            y="ratio",
-            hue="loss_function",
-            ci=None,
-            ax=ax2,
+        # Manually create stacked and dodged bar plot for conformational ratios
+        agg_df = (
+            ratio_df.groupby(["ensemble", "loss_function", "state"])["ratio"]
+            .mean()
+            .unstack()
+            .reset_index()
         )
-        sns.barplot(
-            data=ratio_df[ratio_df["state"] == "Closed"],
-            x="ensemble",
-            y="ratio",
-            hue="loss_function",
-            ci=None,
-            ax=ax2,
-            bottom=ratio_df[ratio_df["state"] == "Open"]["ratio"],
-        )
+
+        ensembles = agg_df["ensemble"].unique()
+        loss_functions = sorted(agg_df["loss_function"].unique())
+        n_ensembles = len(ensembles)
+        n_loss = len(loss_functions)
+
+        x = np.arange(n_ensembles)  # the label locations
+        total_width = 0.8
+        bar_width = total_width / n_loss  # the width of the bars
+
+        colors = sns.color_palette("deep", n_loss)
+
+        for i, loss_func in enumerate(loss_functions):
+            loss_df = agg_df[agg_df["loss_function"] == loss_func]
+            if loss_df.empty:
+                continue
+
+            # Calculate bar positions for dodging
+            bar_pos = x - (total_width / 2) + (i * bar_width) + (bar_width / 2)
+
+            # Plot the 'Open' and 'Closed' bars
+            ax2.bar(bar_pos, loss_df["Open"], bar_width, label=loss_func, color=colors[i])
+            ax2.bar(
+                bar_pos,
+                loss_df["Closed"],
+                bar_width,
+                bottom=loss_df["Open"],
+                color=colors[i],
+                alpha=0.7,
+            )
+
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(ensembles)
 
         ax2.axhline(y=0.6, color="red", linestyle="--", alpha=0.7, label="Ground Truth Open (60%)")
         ax2.set_title("Conformational Ratios")
@@ -489,7 +510,9 @@ def load_all_optimization_results(
         print(f"Results directory not found: {results_dir}")
         return results
 
-    split_types = [d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))]
+    split_types = [
+        d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
+    ]
 
     for split_type in split_types:
         results[split_type] = {}
@@ -502,7 +525,9 @@ def load_all_optimization_results(
                 results[split_type][ensemble][loss_name] = {}
 
                 for split_idx in range(num_splits):
-                    filename = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_results.hdf5"
+                    filename = (
+                        f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_results.hdf5"
+                    )
                     filepath = os.path.join(split_type_dir, filename)
 
                     if os.path.exists(filepath):
@@ -697,6 +722,289 @@ def plot_kl_divergence_distribution(df: pd.DataFrame, output_dir: str):
         plt.close(fig)
 
 
+def plot_recovery_vs_kl(df: pd.DataFrame, output_dir: str):
+    """
+    Plot open state recovery vs KL divergence.
+
+    Args:
+        df (pd.DataFrame): Merged dataframe with recovery and KL divergence data.
+        output_dir (str): Output directory for plots.
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    loss_markers = {"mcMSE": "o", "MSE": "s"}
+
+    split_types = df["split_type"].unique()
+
+    for split_type in split_types:
+        print(f"  Plotting recovery vs KL for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        fig.suptitle(
+            f"Open State Recovery vs. KL Divergence ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        ensembles = sorted(split_df["ensemble"].unique())
+        loss_functions = sorted(split_df["loss_function"].unique())
+
+        ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_df[
+                    (split_df["ensemble"] == ensemble) & (split_df["loss_function"] == loss_func)
+                ]
+                if not subset.empty:
+                    color = ensemble_colors.get(ensemble, "#333333")
+                    marker = loss_markers.get(loss_func, "x")
+                    label = f"{ensemble} - {loss_func}"
+
+                    ax.scatter(
+                        subset["kl_divergence"],
+                        subset["open_recovery"],
+                        label=label,
+                        marker=marker,
+                        color=color,
+                        alpha=0.7,
+                    )
+
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.05, 1), loc="upper left")
+
+        ax.set_xscale("log")
+        ax.set_xlabel("KL Divergence from Uniform Prior (log scale)")
+        ax.set_ylabel("Open State Recovery (%)")
+        ax.set_title("Recovery vs. KL Divergence")
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "recovery_vs_kl_divergence.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+
+def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_rates, output_dir):
+    """
+    Create a combined plot with all analysis faceted across split_types.
+    Uses only the first panel (open state recovery) from conformational analysis.
+
+    Args:
+        recovery_df (pd.DataFrame): Recovery analysis results
+        kl_df (pd.DataFrame): KL divergence analysis results
+        merged_df (pd.DataFrame): Merged recovery and KL data
+        convergence_rates (List[float]): List of convergence rates
+        output_dir (str): Output directory for plots
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    loss_markers = {"mcMSE": "o", "MSE": "s"}
+
+    # Get all split types (excluding 'N/A' for original data)
+    split_types = recovery_df[recovery_df["split_type"] != "N/A"]["split_type"].unique()
+    n_splits = len(split_types)
+
+    if n_splits == 0:
+        print("No split types found for combined plot")
+        return
+
+    # Create figure with subplots: 4 plots x n_split_types
+    fig, axes = plt.subplots(4, n_splits, figsize=(6 * n_splits, 20))
+
+    # Ensure axes is 2D even for single split type
+    if n_splits == 1:
+        axes = axes.reshape(-1, 1)
+
+    fig.suptitle(
+        "Combined IsoValidation Analysis Across Split Types", fontsize=20, fontweight="bold", y=0.98
+    )
+
+    for col_idx, split_type in enumerate(split_types):
+        print(f"  Creating combined plots for split type: {split_type}")
+
+        # Row 1: Open State Recovery Bar Chart (first panel from conformational analysis)
+        ax1 = axes[0, col_idx]
+
+        # Get data for this split type
+        split_recovery_df = recovery_df[
+            (recovery_df["split_type"] == split_type) | (recovery_df["loss_function"] == "Original")
+        ]
+
+        # Get final convergence data
+        final_data = (
+            split_recovery_df[split_recovery_df["loss_function"] != "Original"]
+            .groupby(["ensemble", "loss_function", "split"])
+            .last()
+            .reset_index()
+        )
+
+        # Add original data
+        original_data = recovery_df[recovery_df["loss_function"] == "Original"].copy()
+        combined_data = pd.concat([final_data, original_data], ignore_index=True)
+
+        # Plot open state recovery
+        sns.barplot(
+            data=combined_data, x="ensemble", y="open_recovery", hue="loss_function", ax=ax1
+        )
+        ax1.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+        ax1.set_title(f"Open State Recovery - {split_type}")
+        ax1.set_ylabel("Recovery Percentage")
+        ax1.set_ylim(0, 110)
+        if col_idx == 0:  # Only show legend on first column
+            ax1.legend()
+        else:
+            ax1.get_legend().remove()
+
+        # Row 2: KL Divergence vs Convergence
+        ax2 = axes[1, col_idx]
+
+        split_kl_df = kl_df[kl_df["split_type"] == split_type]
+
+        ensembles = sorted(split_kl_df["ensemble"].unique())
+        loss_functions = sorted(split_kl_df["loss_function"].unique())
+
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_kl_df[
+                    (split_kl_df["ensemble"] == ensemble)
+                    & (split_kl_df["loss_function"] == loss_func)
+                    & (split_kl_df["convergence_threshold_step"] > 0)
+                ]
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"kl_divergence": ["mean", "std"]})
+                        .reset_index()
+                    )
+                    stats.columns = ["step", "kl_mean", "kl_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
+
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+                        ax2.errorbar(
+                            stats["convergence_rate"],
+                            stats["kl_mean"],
+                            yerr=stats["kl_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
+
+        ax2.set_xscale("log")
+        ax2.set_yscale("log")
+        ax2.set_xlabel("Convergence Threshold")
+        ax2.set_ylabel("KL Divergence from Uniform Prior")
+        ax2.set_title(f"KL Divergence vs Convergence - {split_type}")
+        if col_idx == 0:  # Only show legend on first column
+            ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        # Row 3: KL Divergence Distribution
+        ax3 = axes[2, col_idx]
+
+        final_kl_data = (
+            split_kl_df.groupby(["ensemble", "loss_function", "split"]).last().reset_index()
+        )
+
+        if not final_kl_data.empty:
+            sns.boxplot(
+                data=final_kl_data, x="ensemble", y="kl_divergence", hue="loss_function", ax=ax3
+            )
+            ax3.set_yscale("log")
+            ax3.set_title(f"Final KL Divergence Distribution - {split_type}")
+            ax3.set_ylabel("KL Divergence (log scale)")
+            if col_idx == 0:  # Only show legend on first column
+                pass  # Keep legend for boxplot
+            else:
+                ax3.get_legend().remove()
+        else:
+            ax3.text(
+                0.5, 0.5, "No data available", ha="center", va="center", transform=ax3.transAxes
+            )
+            ax3.set_title(f"Final KL Divergence Distribution - {split_type}")
+
+        # Row 4: Recovery vs KL Divergence
+        ax4 = axes[3, col_idx]
+
+        split_merged_df = (
+            merged_df[merged_df["split_type"] == split_type]
+            if not merged_df.empty
+            else pd.DataFrame()
+        )
+
+        if not split_merged_df.empty:
+            ax4.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+
+            ensembles = sorted(split_merged_df["ensemble"].unique())
+            loss_functions = sorted(split_merged_df["loss_function"].unique())
+
+            for ensemble in ensembles:
+                for loss_func in loss_functions:
+                    subset = split_merged_df[
+                        (split_merged_df["ensemble"] == ensemble)
+                        & (split_merged_df["loss_function"] == loss_func)
+                    ]
+                    if not subset.empty:
+                        color = ensemble_colors.get(ensemble, "#333333")
+                        marker = loss_markers.get(loss_func, "x")
+                        label = f"{ensemble} - {loss_func}"
+
+                        ax4.scatter(
+                            subset["kl_divergence"],
+                            subset["open_recovery"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            alpha=0.7,
+                        )
+
+            ax4.set_xscale("log")
+            ax4.set_xlabel("KL Divergence from Uniform Prior (log scale)")
+            ax4.set_ylabel("Open State Recovery (%)")
+            ax4.set_title(f"Recovery vs KL Divergence - {split_type}")
+            if col_idx == 0:  # Only show legend on first column
+                ax4.legend()
+            ax4.grid(True, alpha=0.3)
+        else:
+            ax4.text(
+                0.5,
+                0.5,
+                "No merged data available",
+                ha="center",
+                va="center",
+                transform=ax4.transAxes,
+            )
+            ax4.set_title(f"Recovery vs KL Divergence - {split_type}")
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.95)  # Make room for suptitle
+
+    # Save combined plot
+    combined_plot_path = os.path.join(output_dir, "combined_analysis_faceted.png")
+    plt.savefig(combined_plot_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Combined faceted plot saved to: {combined_plot_path}")
+
+
 def main():
     """
     Main function to run the complete analysis including both KL divergence and conformational recovery.
@@ -709,10 +1017,10 @@ def main():
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
-    results_dir = "../fitting/jaxENT/_optimise"
+    results_dir = "../fitting/jaxENT/_optimise_cKL"
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_complete"
+    output_dir = "_analysis_complete_cKL"
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
 
     # Define trajectory and reference paths
@@ -721,7 +1029,8 @@ def main():
 
     trajectory_paths = {
         "ISO_TRI": os.path.join(traj_dir, "sliced_trajectories/TeaA_filtered_sliced.xtc"),
-        "ISO_BI": os.path.join(traj_dir, "sliced_trajectories/TeaA_initial_sliced.xtc"),
+        # "ISO_BI": os.path.join(traj_dir, "sliced_trajectories/TeaA_initial_sliced.xtc"),
+        "ISO_BI": "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc",
     }
 
     topology_path = os.path.join(traj_dir, "TeaA_ref_closed_state.pdb")
@@ -798,12 +1107,14 @@ def main():
     for name, path in trajectory_paths.items():
         if not os.path.exists(path):
             missing_files.append(f"{name}: {path}")
+            raise FileNotFoundError(f"Trajectory file not found: {path}")
 
     if missing_files:
         print("Warning: The following trajectory files are missing:")
         for missing in missing_files:
             print(f"  - {missing}")
         print("Skipping conformational recovery analysis.")
+        recovery_df = pd.DataFrame()
     else:
         print("Analyzing conformational recovery...")
         recovery_df = analyze_conformational_recovery(
@@ -840,6 +1151,64 @@ def main():
                 )
         else:
             print("No conformational recovery data generated!")
+
+    # Part 3: KL Divergence vs Recovery Analysis
+    print("\n" + "=" * 60)
+    print("PART 3: KL DIVERGENCE VS RECOVERY ANALYSIS")
+    print("=" * 60)
+
+    if kl_df.empty or recovery_df.empty:
+        print("KL divergence or recovery data is missing. Skipping combined analysis.")
+        merged_df = pd.DataFrame()
+    else:
+        print("Merging KL divergence and recovery data for combined analysis...")
+        # Rename column for merging
+        kl_df_renamed = kl_df.rename(columns={"convergence_threshold_step": "convergence_step"})
+
+        # Ensure correct types for merging
+        recovery_df["convergence_step"] = pd.to_numeric(
+            recovery_df["convergence_step"], errors="coerce"
+        )
+        recovery_df["split"] = pd.to_numeric(recovery_df["split"], errors="coerce")
+        kl_df_renamed["convergence_step"] = pd.to_numeric(
+            kl_df_renamed["convergence_step"], errors="coerce"
+        )
+        kl_df_renamed["split"] = pd.to_numeric(kl_df_renamed["split"], errors="coerce")
+
+        # Define merge keys
+        merge_cols = ["split_type", "ensemble", "loss_function", "split", "convergence_step"]
+
+        # Drop rows with NaN in merge keys to ensure a clean merge
+        recovery_df.dropna(subset=merge_cols, inplace=True)
+        kl_df_renamed.dropna(subset=merge_cols, inplace=True)
+
+        # Perform the merge
+        merged_df = pd.merge(recovery_df, kl_df_renamed, on=merge_cols, how="inner")
+
+        if not merged_df.empty:
+            print(f"Successfully merged data, resulting in {len(merged_df)} data points.")
+            print("Generating KL divergence vs recovery plots...")
+            plot_recovery_vs_kl(merged_df, output_dir)
+
+            # Save merged data
+            merged_df_path = os.path.join(output_dir, "kl_vs_recovery_analysis_data.csv")
+            merged_df.to_csv(merged_df_path, index=False)
+            print(f"KL vs recovery dataset saved to: {merged_df_path}")
+        else:
+            print(
+                "Merged dataframe is empty. No common data points found between KL and recovery analysis. Skipping plot."
+            )
+
+    # Part 4: Combined Faceted Analysis
+    print("\n" + "=" * 60)
+    print("PART 4: COMBINED FACETED ANALYSIS")
+    print("=" * 60)
+
+    if not recovery_df.empty and not kl_df.empty:
+        print("Generating combined faceted plot across all split types...")
+        plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_rates, output_dir)
+    else:
+        print("Missing required data for combined plot. Skipping combined analysis.")
 
     print("\n" + "=" * 60)
     print("ANALYSIS COMPLETED SUCCESSFULLY!")

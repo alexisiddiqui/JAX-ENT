@@ -16,13 +16,15 @@ The data are saved using hdf5 format.
 
 import copy
 import os
-import time  # <-- Add this import
+import time
 from typing import List, Optional, Sequence, Tuple, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+from MDAnalysis import Universe
+from scipy.spatial.distance import pdist, squareform
 
 from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.custom_types.HDX import HDX_peptide
@@ -278,6 +280,7 @@ def run_optimise_ISO_TRI_BI(
     feature_top: List[Partial_Topology],
     convergence: List[float],
     loss_function: JaxEnt_Loss,
+    pairwise_similarity: jax.Array,
     n_steps: int = 10,
     name: str = "ISO_TRI_BI",
     output_dir: str = "_optimise",
@@ -297,9 +300,9 @@ def run_optimise_ISO_TRI_BI(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, 0.0]),
-        normalise_loss_functions=jnp.zeros(2),
-        forward_model_scaling=jnp.ones(2),
+        forward_model_weights=jnp.array([1.0, 1.0]),  # Added weight for consistency loss
+        normalise_loss_functions=jnp.ones(2),  # Adjusted for 3 loss functions
+        forward_model_scaling=jnp.ones(2),  # Adjusted for 3 loss functions
     )
 
     # create initialised simulation
@@ -316,12 +319,15 @@ def run_optimise_ISO_TRI_BI(
     )
     _, optimizer = optimise_sweep(
         _simulation=sim,
-        data_to_fit=(data_to_fit,),
+        data_to_fit=(data_to_fit, parameters),  # Added pairwise_similarity
         n_steps=n_steps,
         tolerance=1e-10,
         convergence=convergence,
-        indexes=[0, 0],
-        loss_functions=[loss_function, maxent_convexKL_loss],
+        indexes=[0, 0],  # Adjusted for 3 loss functions
+        loss_functions=[
+            loss_function,
+            maxent_convexKL_loss,
+        ],  # Added consistency loss
         opt_state=opt_state,
         optimizer=optimizer,
     )
@@ -360,15 +366,6 @@ def main():
     }
 
     features = {key: load_BV_features(path) for key, path in feature_paths.items()}
-    HDX_data = load_hdx_peptides(datasplit_dir, dataset_name="full_dataset")
-
-    # Load all data splits
-    splits = []
-    for split_idx in range(num_splits):
-        split_path = os.path.join(datasplit_dir, f"split_00{split_idx}")
-        train_data = load_hdx_peptides(split_path, dataset_name="train")
-        val_data = load_hdx_peptides(split_path, dataset_name="val")
-        splits.append((train_data, val_data))
 
     # Setup BV model configuration
     bv_config = BV_model_Config(num_timepoints=5)
@@ -376,77 +373,147 @@ def main():
     bv_model = BV_model(config=bv_config)
     model_parameters = bv_model.params
     print(bv_model.config.key)  # Print the model key for debugging
-    # breakpoint()
 
-    # Create output directory
-    output_dir = "_optimise2"
-    output_dir = os.path.join(os.path.dirname(__file__), output_dir)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Create base output directory
+    output_base_dir = "_optimise_cKL"
+    output_base_dir = os.path.join(os.path.dirname(__file__), output_base_dir)
+    os.makedirs(output_base_dir, exist_ok=True)
+
+    # Discover split types
+    # Assuming split types are subdirectories within datasplit_dir
+    split_types = [
+        d for d in os.listdir(datasplit_dir) if os.path.isdir(os.path.join(datasplit_dir, d))
+    ]
+    if "full_dataset" in split_types:
+        split_types.remove("full_dataset")  # Exclude the full_dataset directory from split types
+    split_types.sort()  # Ensure consistent order
+    # split_types = ["sequence_cluster"] # Uncomment this line if you only want to run for a specific split type
 
     # Run optimization for all combinations
-    total_runs = len(ensembles) * len(losses) * num_splits
+    total_runs = len(ensembles) * len(losses) * num_splits * len(split_types)
     current_run = 0
 
     print(f"Starting optimization with {total_runs} total runs...")
+    print(f"Split Types: {split_types}")
     print(f"Ensembles: {ensembles}")
     print(f"Loss functions: {list(losses.keys())}")
-    print(f"Number of splits: {num_splits}")
+    print(f"Number of splits per type: {num_splits}")
     print(f"Convergence rates: {convergence_rates}")
     print(f"Max steps per run: {n_steps}")
     print("-" * 60)
 
     total_start_time = time.time()  # Start total timer
 
-    for ensemble in ensembles:
-        print(f"\nProcessing ensemble: {ensemble}")
-        ensemble_features, ensemble_feature_top = features[ensemble]
+    # Define trajectory and topology paths based on the featurise_ISO_TRI_BI.py script
+    # These paths are relative to the JAX-ENT project root or can be made absolute.
+    # For consistency, let's construct absolute paths based on the project structure.
+    base_traj_dir = os.path.join(
+        os.path.dirname(__file__), "../../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
+    )
 
-        for loss_name, loss_function in losses.items():
-            print(f"  Using loss function: {loss_name}")
+    topology_file = os.path.join(base_traj_dir, "TeaA_ref_closed_state.pdb")
+    tri_modal_traj_file = os.path.join(
+        base_traj_dir, "sliced_trajectories/TeaA_filtered_sliced.xtc"
+    )
+    bi_modal_traj_file = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    # Check if the trajectory and topology files exist
+    if not os.path.exists(topology_file):
+        raise FileNotFoundError(f"Topology file not found: {topology_file}")
+    if not os.path.exists(tri_modal_traj_file):
+        raise FileNotFoundError(f"Tri-modal trajectory file not found: {tri_modal_traj_file}")
+    if not os.path.exists(bi_modal_traj_file):
+        raise FileNotFoundError(f"Bi-modal trajectory file not found: {bi_modal_traj_file}")
 
-            for split_idx, (train_data, val_data) in enumerate(splits):
-                current_run += 1
+    for split_type in split_types:
+        print(f"\n-- Processing split type: {split_type} --")
+        split_type_dir = os.path.join(datasplit_dir, split_type)
+        output_dir = os.path.join(output_base_dir, split_type)
+        os.makedirs(output_dir, exist_ok=True)
 
-                # Create descriptive name for this run
-                run_name = f"{ensemble}_{loss_name}_split{split_idx:03d}"
+        # Load all data splits for this type
+        splits = []
+        try:
+            for split_idx in range(num_splits):
+                split_path = os.path.join(split_type_dir, f"split_{split_idx:03d}")
+                train_data = load_hdx_peptides(split_path, dataset_name="train")
+                val_data = load_hdx_peptides(split_path, dataset_name="val")
+                splits.append((train_data, val_data))
+        except FileNotFoundError as e:
+            print(f"Could not load splits for {split_type}. Skipping. Error: {e}")
+            continue
 
-                print(f"    Running split {split_idx} [{current_run}/{total_runs}]: {run_name}")
-                print(f"      Train samples: {len(train_data)}, Val samples: {len(val_data)}")
+        for ensemble in ensembles:
+            print(f"\nProcessing ensemble: {ensemble}")
+            ensemble_features, ensemble_feature_top = features[ensemble]
 
-                run_start_time = time.time()  # Start timer for this run
+            # Determine the correct trajectory path for the current ensemble
+            current_trajectory_path = ""
+            if ensemble == "ISO_TRI":
+                current_trajectory_path = tri_modal_traj_file
+            elif ensemble == "ISO_BI":
+                current_trajectory_path = bi_modal_traj_file
+            else:
+                raise ValueError(f"Unknown ensemble type: {ensemble}")
 
-                try:
-                    run_optimise_ISO_TRI_BI(
-                        train_data=train_data,
-                        val_data=val_data,
-                        features=ensemble_features,
-                        forward_model=bv_model,
-                        model_parameters=model_parameters,
-                        feature_top=ensemble_feature_top,
-                        convergence=convergence_rates,
-                        loss_function=loss_function,
-                        n_steps=n_steps,
-                        name=run_name,
-                        output_dir=output_dir,
-                    )
-                    run_elapsed = time.time() - run_start_time
-                    print(f"      ✓ Completed: {run_name} (Elapsed: {run_elapsed:.2f} s)")
+            # Calculate pairwise similarity matrix for the current ensemble
+            print(f"Calculating pairwise similarity for {ensemble} using {current_trajectory_path}")
+            universe = Universe(topology_file, current_trajectory_path)
+            ca_atoms = universe.select_atoms("name CA")
 
-                except Exception as e:
-                    run_elapsed = time.time() - run_start_time
-                    raise RuntimeError(f"Failed to run {run_name}: {str(e)}") from e
-                    print(
-                        f"      ✗ Failed: {run_name} - Error: {str(e)} (Elapsed: {run_elapsed:.2f} s)"
-                    )
-                    # Continue with other runs even if one fails
-                    continue
+            ca_coords_by_frame = []
+            for ts in universe.trajectory:
+                ca_coords_by_frame.append(pdist(ca_atoms.positions).flatten())
+
+            ca_coords_matrix = np.vstack(ca_coords_by_frame)
+            cosine_distances = squareform(pdist(ca_coords_matrix, metric="cosine"))
+            pairwise_similarity = jnp.array(cosine_distances)
+            print(f"Pairwise similarity matrix shape for {ensemble}: {pairwise_similarity.shape}")
+
+            for loss_name, loss_function in losses.items():
+                print(f"  Using loss function: {loss_name}")
+
+                for split_idx, (train_data, val_data) in enumerate(splits):
+                    current_run += 1
+
+                    # Create descriptive name for this run
+                    run_name = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}"
+
+                    print(f"    Running split {split_idx} [{current_run}/{total_runs}]: {run_name}")
+                    print(f"      Train samples: {len(train_data)}, Val samples: {len(val_data)}")
+
+                    run_start_time = time.time()  # Start timer for this run
+
+                    try:
+                        run_optimise_ISO_TRI_BI(
+                            train_data=train_data,
+                            val_data=val_data,
+                            features=ensemble_features,
+                            forward_model=bv_model,
+                            model_parameters=model_parameters,
+                            feature_top=ensemble_feature_top,
+                            convergence=convergence_rates,
+                            loss_function=loss_function,
+                            pairwise_similarity=pairwise_similarity,
+                            n_steps=n_steps,
+                            name=run_name,
+                            output_dir=output_dir,
+                        )
+                        run_elapsed = time.time() - run_start_time
+                        print(f"      ✓ Completed: {run_name} (Elapsed: {run_elapsed:.2f} s)")
+
+                    except Exception as e:
+                        run_elapsed = time.time() - run_start_time
+                        print(
+                            f"      ✗ Failed: {run_name} - Error: {str(e)} (Elapsed: {run_elapsed:.2f} s)"
+                        )
+                        # Continue with other runs even if one fails
+                        continue
 
     total_elapsed = time.time() - total_start_time  # End total timer
 
     print(f"\n{'=' * 60}")
     print("Optimization completed!")
-    print(f"Results saved in: {output_dir}")
+    print(f"Results saved in: {output_base_dir}")
     print(f"Total runs attempted: {total_runs}")
     print(f"Total elapsed time: {total_elapsed:.2f} s")
     print("Check individual HDF5 files for detailed results.")
