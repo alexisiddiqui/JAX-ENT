@@ -658,7 +658,7 @@ class DataSplitter:
         Process:
         0. Optional: Remove highly redundant fragments by centrality sampling
         1. Sort datapoints by sequence position (chain, then start position)
-        2. Take first train_size fraction for training, remainder for validation
+        2. Randomly decide whether first or second half is training, remainder for validation
         3. Create merged topologies for train/val sets using class method
         4. Remove overlaps between merged topologies if requested
         5. Filter dataset and validate split
@@ -702,10 +702,21 @@ class DataSplitter:
 
         print(f"Sorted {len(sorted_dataset)} datapoints by sequence position")
 
-        # Step 2: Split by sequence order
+        # Step 2: Randomly decide which half gets which split
         train_size = int(self.train_size * len(sorted_dataset))
-        selected_train_data = sorted_dataset[:train_size]
-        selected_val_data = sorted_dataset[train_size:]
+
+        # Randomly decide whether to take first half or second half for training
+        random.seed(self.random_seed)
+        take_first_half_for_training = random.choice([True, False])
+
+        if take_first_half_for_training:
+            selected_train_data = sorted_dataset[:train_size]
+            selected_val_data = sorted_dataset[train_size:]
+            print(f"Taking first {train_size} datapoints for training (sequence start)")
+        else:
+            selected_train_data = sorted_dataset[-train_size:]
+            selected_val_data = sorted_dataset[:-train_size]
+            print(f"Taking last {train_size} datapoints for training (sequence end)")
 
         print(
             f"Sequence split: {len(selected_train_data)} training, {len(selected_val_data)} validation datapoints"
