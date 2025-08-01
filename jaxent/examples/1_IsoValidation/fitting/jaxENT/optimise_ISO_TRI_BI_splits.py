@@ -373,9 +373,15 @@ def main():
     os.makedirs(output_base_dir, exist_ok=True)
 
     # Discover split types
-    split_types = [d for d in os.listdir(datasplit_dir) if os.path.isdir(os.path.join(datasplit_dir, d))]
-
-    # Run optimization for all combinations
+    # Assuming split types are subdirectories within datasplit_dir
+    split_types = [
+        d for d in os.listdir(datasplit_dir) if os.path.isdir(os.path.join(datasplit_dir, d))
+    ]
+    if "full_dataset" in split_types:
+        split_types.remove("full_dataset")  # Exclude the full_dataset directory from split types
+    split_types.sort()  # Ensure consistent order
+    split_types = ["sequence_cluster"]
+    # Run optimization for all combinationsj
     total_runs = len(ensembles) * len(losses) * num_splits * len(split_types)
     current_run = 0
 
