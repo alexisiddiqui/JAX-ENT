@@ -201,6 +201,7 @@ def analyze_conformational_recovery(trajectory_paths, topology_path, reference_p
             {
                 "ensemble": ensemble_name,
                 "loss_function": "Original",
+                "split_type": "N/A",
                 "split": "N/A",
                 "convergence_step": "N/A",
                 "open_ratio": original_ratios.get("cluster_0", 0.0),
@@ -213,238 +214,232 @@ def analyze_conformational_recovery(trajectory_paths, topology_path, reference_p
         )
 
         # Analyze with optimized frame weights
-        if ensemble_name in results_dict:
-            for loss_name in results_dict[ensemble_name]:
-                for split_idx in results_dict[ensemble_name][loss_name]:
-                    history = results_dict[ensemble_name][loss_name][split_idx]
-
-                    if history is not None and history.states:
-                        for step_idx, state in enumerate(history.states):
-                            if (
-                                hasattr(state.params, "frame_weights")
-                                and state.params.frame_weights is not None
-                            ):
-                                frame_weights = np.array(state.params.frame_weights)
-
+        for split_type in results_dict:
+            if ensemble_name in results_dict[split_type]:
+                for loss_name in results_dict[split_type][ensemble_name]:
+                    for split_idx, history in results_dict[split_type][ensemble_name][
+                        loss_name
+                    ].items():
+                        if history is not None and history.states:
+                            for step_idx, state in enumerate(history.states):
                                 if (
-                                    len(frame_weights) == len(cluster_assignments)
-                                    and np.sum(frame_weights) > 0
+                                    hasattr(state.params, "frame_weights")
+                                    and state.params.frame_weights is not None
                                 ):
-                                    # Calculate weighted ratios
-                                    weighted_ratios = calculate_cluster_ratios(
-                                        cluster_assignments, frame_weights
-                                    )
-                                    weighted_recovery = calculate_recovery_percentage(
-                                        weighted_ratios, ground_truth_ratios
-                                    )
+                                    frame_weights = np.array(state.params.frame_weights)
 
-                                    recovery_data.append(
-                                        {
-                                            "ensemble": ensemble_name,
-                                            "loss_function": loss_name,
-                                            "split": split_idx,
-                                            "convergence_step": step_idx,
-                                            "open_ratio": weighted_ratios.get("cluster_0", 0.0),
-                                            "closed_ratio": weighted_ratios.get("cluster_1", 0.0),
-                                            "open_recovery": weighted_recovery["open_recovery"],
-                                            "closed_recovery": weighted_recovery["closed_recovery"],
-                                            "total_frames": len(cluster_assignments),
-                                            "clustered_frames": np.sum(cluster_assignments >= 0),
-                                        }
-                                    )
+                                    if (
+                                        len(frame_weights) == len(cluster_assignments)
+                                        and np.sum(frame_weights) > 0
+                                    ):
+                                        # Calculate weighted ratios
+                                        weighted_ratios = calculate_cluster_ratios(
+                                            cluster_assignments, frame_weights
+                                        )
+                                        weighted_recovery = calculate_recovery_percentage(
+                                            weighted_ratios, ground_truth_ratios
+                                        )
+
+                                        recovery_data.append(
+                                            {
+                                                "ensemble": ensemble_name,
+                                                "loss_function": loss_name,
+                                                "split_type": split_type,
+                                                "split": split_idx,
+                                                "convergence_step": step_idx,
+                                                "open_ratio": weighted_ratios.get(
+                                                    "cluster_0", 0.0
+                                                ),
+                                                "closed_ratio": weighted_ratios.get(
+                                                    "cluster_1", 0.0
+                                                ),
+                                                "open_recovery": weighted_recovery[
+                                                    "open_recovery"
+                                                ],
+                                                "closed_recovery": weighted_recovery[
+                                                    "closed_recovery"
+                                                ],
+                                                "total_frames": len(cluster_assignments),
+                                                "clustered_frames": np.sum(
+                                                    cluster_assignments >= 0
+                                                ),
+                                            }
+                                        )
 
     return pd.DataFrame(recovery_data)
 
 
 def plot_conformational_recovery(recovery_df, convergence_rates, output_dir):
     """
-    Plot conformational ratio recovery analysis.
+    Plot conformational ratio recovery analysis for each split type.
 
     Args:
         recovery_df (pd.DataFrame): Recovery analysis results
         output_dir (str): Output directory for plots
     """
+    # Set up plotting style
+    plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+
     # Convert convergence_step to numeric, coercing errors to NaN
     recovery_df["convergence_step"] = pd.to_numeric(
         recovery_df["convergence_step"], errors="coerce"
     )
 
-    # Set up plotting style
-    plt.style.use("seaborn-v0_8-whitegrid")
+    split_types = recovery_df[recovery_df["split_type"] != "N/A"]["split_type"].unique()
 
-    # Define colors
-    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    for split_type in split_types:
+        print(f"  Plotting recovery for split type: {split_type}")
+        split_df = recovery_df[
+            (recovery_df["split_type"] == split_type)
+            | (recovery_df["loss_function"] == "Original")
+        ]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
 
-    # Plot 1: Open state recovery comparison
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
-    fig.suptitle("Conformational Ratio Recovery Analysis", fontsize=16, fontweight="bold")
-
-    # Get final convergence data (last step for each combination)
-    final_data = (
-        recovery_df[recovery_df["loss_function"] != "Original"]
-        .groupby(["ensemble", "loss_function", "split"])
-        .last()
-        .reset_index()
-    )
-
-    # Add original data
-    original_data = recovery_df[recovery_df["loss_function"] == "Original"].copy()
-    combined_data = pd.concat([final_data, original_data], ignore_index=True)
-
-    # Plot open state recovery
-    sns.barplot(data=combined_data, x="ensemble", y="open_recovery", hue="loss_function", ax=ax1)
-    ax1.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
-    ax1.set_title("Open State Recovery (%)")
-    ax1.set_ylabel("Recovery Percentage")
-    ax1.set_ylim(0, 110)
-    ax1.legend()
-
-    # Plot ratio comparison
-    ratio_data = []
-    for _, row in combined_data.iterrows():
-        ratio_data.append(
-            {
-                "ensemble": row["ensemble"],
-                "loss_function": row["loss_function"],
-                "split": row["split"],
-                "state": "Open",
-                "ratio": row["open_ratio"],
-                "ground_truth": 0.6,
-            }
-        )
-        ratio_data.append(
-            {
-                "ensemble": row["ensemble"],
-                "loss_function": row["loss_function"],
-                "split": row["split"],
-                "state": "Closed",
-                "ratio": row["closed_ratio"],
-                "ground_truth": 0.4,
-            }
+        # Plot 1: Open state recovery comparison
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+        fig.suptitle(
+            f"Conformational Ratio Recovery Analysis ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
         )
 
-    ratio_df = pd.DataFrame(ratio_data)
+        # Get final convergence data for this split type
+        final_data = (
+            split_df[split_df["loss_function"] != "Original"]
+            .groupby(["ensemble", "loss_function", "split"])
+            .last()
+            .reset_index()
+        )
 
-    # Plot ratios
-    x_positions = np.arange(len(combined_data["ensemble"].unique()))
-    width = 0.15
+        # Add original data
+        original_data = recovery_df[recovery_df["loss_function"] == "Original"].copy()
+        combined_data = pd.concat([final_data, original_data], ignore_index=True)
 
-    ensembles = sorted(combined_data["ensemble"].unique())
-    loss_functions = sorted(combined_data["loss_function"].unique())
+        # Plot open state recovery
+        sns.barplot(data=combined_data, x="ensemble", y="open_recovery", hue="loss_function", ax=ax1)
+        ax1.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+        ax1.set_title("Open State Recovery (%)")
+        ax1.set_ylabel("Recovery Percentage")
+        ax1.set_ylim(0, 110)
+        ax1.legend()
 
-    for i, ensemble in enumerate(ensembles):
-        for j, loss_func in enumerate(loss_functions):
-            subset = combined_data[
-                (combined_data["ensemble"] == ensemble)
-                & (combined_data["loss_function"] == loss_func)
-            ]
-            if len(subset) > 0:
-                mean_open = subset["open_ratio"].mean()
-                mean_closed = subset["closed_ratio"].mean()
+        # Plot ratio comparison
+        ratio_data = []
+        for _, row in combined_data.iterrows():
+            ratio_data.append(
+                {
+                    "ensemble": row["ensemble"],
+                    "loss_function": row["loss_function"],
+                    "state": "Open",
+                    "ratio": row["open_ratio"],
+                }
+            )
+            ratio_data.append(
+                {
+                    "ensemble": row["ensemble"],
+                    "loss_function": row["loss_function"],
+                    "state": "Closed",
+                    "ratio": row["closed_ratio"],
+                }
+            )
+        ratio_df = pd.DataFrame(ratio_data)
 
-                x_pos = x_positions[i] + (j - len(loss_functions) / 2 + 0.5) * width
+        sns.barplot(data=ratio_df, x="ensemble", y="ratio", hue="loss_function", ci=None, ax=ax2)
+        # Stack bars for open/closed
+        sns.barplot(
+            data=ratio_df[ratio_df["state"] == "Open"],
+            x="ensemble",
+            y="ratio",
+            hue="loss_function",
+            ci=None,
+            ax=ax2,
+        )
+        sns.barplot(
+            data=ratio_df[ratio_df["state"] == "Closed"],
+            x="ensemble",
+            y="ratio",
+            hue="loss_function",
+            ci=None,
+            ax=ax2,
+            bottom=ratio_df[ratio_df["state"] == "Open"]["ratio"],
+        )
 
-                ax2.bar(
-                    x_pos,
-                    mean_open,
-                    width,
-                    label=f"{loss_func} (Open)" if i == 0 else "",
-                    color=ensemble_colors[ensemble],
-                    alpha=0.7,
-                )
-                ax2.bar(
-                    x_pos,
-                    mean_closed,
-                    width,
-                    bottom=mean_open,
-                    label=f"{loss_func} (Closed)" if i == 0 else "",
-                    color=ensemble_colors[ensemble],
-                    alpha=0.4,
-                )
-
-    # Add ground truth lines
-    ax2.axhline(y=0.6, color="red", linestyle="--", alpha=0.7, label="Ground Truth Open (60%)")
-    ax2.axhline(y=1.0, color="red", linestyle=":", alpha=0.7, label="Ground Truth Total")
-
-    ax2.set_title("Conformational Ratios")
-    ax2.set_ylabel("Ratio")
-    ax2.set_xlabel("Ensemble")
-    ax2.set_xticks(x_positions)
-    ax2.set_xticklabels(ensembles)
-    ax2.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(output_dir, "conformational_recovery_analysis.png"),
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.show()
-
-    # Plot 2: Recovery vs convergence threshold
-    convergence_data = recovery_df[
-        (recovery_df["loss_function"] != "Original")
-        & (recovery_df["convergence_step"] > 0)  # Skip pre-optimization step
-    ].copy()
-    if len(convergence_data) > 0:
-        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-
-        for ensemble in ensembles:
-            for loss_func in loss_functions:
-                subset = convergence_data[
-                    (convergence_data["ensemble"] == ensemble)
-                    & (convergence_data["loss_function"] == loss_func)
-                ]
-                if len(subset) > 0:
-                    # Group by convergence step and calculate mean
-                    step_means = (
-                        subset.groupby("convergence_step")
-                        .agg({"open_recovery": ["mean", "std"]})
-                        .reset_index()
-                    )
-
-                    step_means.columns = ["step", "recovery_mean", "recovery_std"]
-
-                    # Map steps to convergence rates (consistent with KL divergence plots)
-                    step_means["convergence_rate"] = step_means["step"].apply(
-                        lambda x: convergence_rates[int(x) - 1]
-                        if int(x) - 1 < len(convergence_rates)
-                        else None
-                    )
-
-                    # Remove rows where convergence rate mapping failed
-                    step_means = step_means.dropna(subset=["convergence_rate"])
-
-                    if len(step_means) > 0:
-                        color = ensemble_colors[ensemble]
-                        marker = "o" if loss_func == "mcMSE" else "s"
-                        label = f"{ensemble} - {loss_func}"
-
-                        ax.errorbar(
-                            step_means["convergence_rate"],
-                            step_means["recovery_mean"],
-                            yerr=step_means["recovery_std"],
-                            label=label,
-                            marker=marker,
-                            color=color,
-                            linewidth=2,
-                            capsize=3,
-                            markersize=6,
-                        )
-
-        ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
-        ax.set_xscale("log")  # Use log scale like KL divergence plots
-        ax.set_xlabel("Convergence Threshold")
-        ax.set_ylabel("Open State Recovery (%)")
-        ax.set_title("Open State Recovery vs Convergence Progress")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax2.axhline(y=0.6, color="red", linestyle="--", alpha=0.7, label="Ground Truth Open (60%)")
+        ax2.set_title("Conformational Ratios")
+        ax2.set_ylabel("Ratio")
+        ax2.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 
         plt.tight_layout()
         plt.savefig(
-            os.path.join(output_dir, "recovery_vs_convergence.png"), dpi=300, bbox_inches="tight"
+            os.path.join(split_output_dir, "conformational_recovery_analysis.png"),
+            dpi=300,
+            bbox_inches="tight",
         )
-        plt.show()
+        plt.close(fig)
+
+        # Plot 2: Recovery vs convergence threshold
+        convergence_data = split_df[
+            (split_df["loss_function"] != "Original")
+            & (split_df["convergence_step"] > 0)  # Skip pre-optimization step
+        ].copy()
+        if len(convergence_data) > 0:
+            fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+            ensembles = sorted(convergence_data["ensemble"].unique())
+            loss_functions = sorted(convergence_data["loss_function"].unique())
+
+            for ensemble in ensembles:
+                for loss_func in loss_functions:
+                    subset = convergence_data[
+                        (convergence_data["ensemble"] == ensemble)
+                        & (convergence_data["loss_function"] == loss_func)
+                    ]
+                    if len(subset) > 0:
+                        step_means = (
+                            subset.groupby("convergence_step")
+                            .agg({"open_recovery": ["mean", "std"]})
+                            .reset_index()
+                        )
+                        step_means.columns = ["step", "recovery_mean", "recovery_std"]
+                        step_means["convergence_rate"] = step_means["step"].apply(
+                            lambda x: convergence_rates[int(x) - 1]
+                            if int(x) - 1 < len(convergence_rates)
+                            else None
+                        )
+                        step_means = step_means.dropna(subset=["convergence_rate"])
+
+                        if len(step_means) > 0:
+                            color = ensemble_colors[ensemble]
+                            marker = "o" if loss_func == "mcMSE" else "s"
+                            label = f"{ensemble} - {loss_func}"
+                            ax.errorbar(
+                                step_means["convergence_rate"],
+                                step_means["recovery_mean"],
+                                yerr=step_means["recovery_std"],
+                                label=label,
+                                marker=marker,
+                                color=color,
+                                linewidth=2,
+                                capsize=3,
+                                markersize=6,
+                            )
+
+            ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+            ax.set_xscale("log")
+            ax.set_xlabel("Convergence Threshold")
+            ax.set_ylabel("Open State Recovery (%)")
+            ax.set_title(f"Open State Recovery vs Convergence ({split_type} splits)")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            plt.savefig(
+                os.path.join(split_output_dir, "recovery_vs_convergence.png"),
+                dpi=300,
+                bbox_inches="tight",
+            )
+            plt.close(fig)
 
 
 def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
@@ -478,41 +473,49 @@ def load_all_optimization_results(
     num_splits: int = 3,
 ) -> Dict:
     """
-    Load all optimization results from HDF5 files.
+    Load all optimization results from HDF5 files, accounting for split types.
 
     Args:
-        results_dir: Directory containing the HDF5 result files
-        ensembles: List of ensemble names
-        loss_functions: List of loss function names
-        num_splits: Number of data splits
+        results_dir: Directory containing subdirectories for each split type.
+        ensembles: List of ensemble names.
+        loss_functions: List of loss function names.
+        num_splits: Number of data splits per type.
 
     Returns:
-        Dictionary containing loaded optimization histories organized by ensemble, loss, and split
+        Dictionary with results organized by split_type, ensemble, loss, and split.
     """
     results = {}
+    if not os.path.exists(results_dir):
+        print(f"Results directory not found: {results_dir}")
+        return results
 
-    for ensemble in ensembles:
-        results[ensemble] = {}
+    split_types = [d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))]
 
-        for loss_name in loss_functions:
-            results[ensemble][loss_name] = {}
+    for split_type in split_types:
+        results[split_type] = {}
+        split_type_dir = os.path.join(results_dir, split_type)
 
-            for split_idx in range(num_splits):
-                filename = f"{ensemble}_{loss_name}_split{split_idx:03d}_results.hdf5"
-                filepath = os.path.join(results_dir, filename)
+        for ensemble in ensembles:
+            results[split_type][ensemble] = {}
 
-                if os.path.exists(filepath):
-                    try:
-                        history = load_optimization_history_from_file(filepath)
-                        results[ensemble][loss_name][split_idx] = history
-                        print(f"Loaded: {filename}")
-                    except Exception as e:
-                        print(f"Failed to load {filename}: {e}")
-                        results[ensemble][loss_name][split_idx] = None
-                else:
-                    print(f"File not found: {filename}")
-                    results[ensemble][loss_name][split_idx] = None
+            for loss_name in loss_functions:
+                results[split_type][ensemble][loss_name] = {}
 
+                for split_idx in range(num_splits):
+                    filename = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_results.hdf5"
+                    filepath = os.path.join(split_type_dir, filename)
+
+                    if os.path.exists(filepath):
+                        try:
+                            history = load_optimization_history_from_file(filepath)
+                            results[split_type][ensemble][loss_name][split_idx] = history
+                            print(f"Loaded: {filepath}")
+                        except Exception as e:
+                            print(f"Failed to load {filepath}: {e}")
+                            results[split_type][ensemble][loss_name][split_idx] = None
+                    else:
+                        print(f"File not found: {filepath}")
+                        results[split_type][ensemble][loss_name][split_idx] = None
     return results
 
 
@@ -521,58 +524,50 @@ def extract_frame_weights_kl_divergences(results: Dict) -> pd.DataFrame:
     Extract frame weights and calculate KL divergence against uniform prior.
 
     Args:
-        results: Dictionary containing optimization histories
+        results: Dictionary containing optimization histories.
 
     Returns:
-        DataFrame containing KL divergence values for analysis
+        DataFrame containing KL divergence values for analysis.
     """
     data_rows = []
 
-    for ensemble in results:
-        for loss_name in results[ensemble]:
-            for split_idx in results[ensemble][loss_name]:
-                history = results[ensemble][loss_name][split_idx]
+    for split_type in results:
+        for ensemble in results[split_type]:
+            for loss_name in results[split_type][ensemble]:
+                for split_idx, history in results[split_type][ensemble][loss_name].items():
+                    if history is not None and history.states:
+                        for step_idx, state in enumerate(history.states):
+                            if (
+                                hasattr(state.params, "frame_weights")
+                                and state.params.frame_weights is not None
+                            ):
+                                frame_weights = np.array(state.params.frame_weights)
+                                if len(frame_weights) == 0 or np.sum(frame_weights) == 0:
+                                    continue
 
-                if history is not None and history.states:
-                    for step_idx, state in enumerate(history.states):
-                        # Check if frame_weights exist in the state's parameters
-                        if (
-                            hasattr(state.params, "frame_weights")
-                            and state.params.frame_weights is not None
-                        ):
-                            frame_weights = np.array(state.params.frame_weights)
-
-                            # Skip if frame_weights is empty or all zeros
-                            if len(frame_weights) == 0 or np.sum(frame_weights) == 0:
-                                continue
-
-                            # Create uniform prior with same length
-                            uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
-
-                            # Calculate KL divergence
-                            try:
-                                kl_div = kl_divergence(frame_weights, uniform_prior)
-
-                                data_rows.append(
-                                    {
-                                        "ensemble": ensemble,
-                                        "loss_function": loss_name,
-                                        "split": split_idx,
-                                        "step": step_idx,
-                                        "convergence_threshold_step": step_idx,
-                                        "kl_divergence": float(kl_div),
-                                        "num_frames": len(frame_weights),
-                                        "step_number": state.step
-                                        if hasattr(state, "step")
-                                        else step_idx,
-                                    }
-                                )
-                            except Exception as e:
-                                print(
-                                    f"Failed to calculate KL divergence for {ensemble}_{loss_name}_split{split_idx}, step {step_idx}: {e}"
-                                )
-                                continue
-
+                                uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
+                                try:
+                                    kl_div = kl_divergence(frame_weights, uniform_prior)
+                                    data_rows.append(
+                                        {
+                                            "split_type": split_type,
+                                            "ensemble": ensemble,
+                                            "loss_function": loss_name,
+                                            "split": split_idx,
+                                            "step": step_idx,
+                                            "convergence_threshold_step": step_idx,
+                                            "kl_divergence": float(kl_div),
+                                            "num_frames": len(frame_weights),
+                                            "step_number": state.step
+                                            if hasattr(state, "step")
+                                            else step_idx,
+                                        }
+                                    )
+                                except Exception as e:
+                                    print(
+                                        f"Failed to calculate KL for {split_type}/{ensemble}_{loss_name}_split{split_idx}, step {step_idx}: {e}"
+                                    )
+                                    continue
     return pd.DataFrame(data_rows)
 
 
@@ -580,121 +575,126 @@ def plot_kl_divergence_convergence(
     df: pd.DataFrame, convergence_rates: List[float], output_dir: str
 ):
     """
-    Plot KL divergence vs convergence threshold.
-    Ensembles are shown as different colors, loss functions as different markers.
+    Plot KL divergence vs convergence threshold for each split type.
 
     Args:
-        df: DataFrame containing KL divergence data
-        convergence_rates: List of convergence rates used in optimization
-        output_dir: Directory to save plots
+        df: DataFrame containing KL divergence data.
+        convergence_rates: List of convergence rates used in optimization.
+        output_dir: Directory to save plots.
     """
-    # Set up the plotting style
     plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    loss_markers = {"mcMSE": "o", "MSE": "s"}
 
-    # Define colors and markers (same as main plots)
-    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}  # Blue and Orange
-    loss_markers = {"mcMSE": "o", "MSE": "s"}  # Circle and Square
+    split_types = df["split_type"].unique()
 
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    for split_type in split_types:
+        print(f"  Plotting KL convergence for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
 
-    # Create plot for KL divergence vs convergence
-    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
-    fig.suptitle(
-        "Frame Weights KL Divergence vs Convergence Threshold", fontsize=16, fontweight="bold"
-    )
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        fig.suptitle(
+            f"Frame Weights KL Divergence vs Convergence ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
 
-    ensembles = sorted(df["ensemble"].unique())
-    loss_functions = sorted(df["loss_function"].unique())
+        ensembles = sorted(split_df["ensemble"].unique())
+        loss_functions = sorted(split_df["loss_function"].unique())
 
-    for ensemble in ensembles:
-        for loss_func in loss_functions:
-            # Filter data for this combination and exclude step 0 (pre-optimization)
-            subset = df[
-                (df["ensemble"] == ensemble)
-                & (df["loss_function"] == loss_func)
-                & (df["convergence_threshold_step"] > 0)  # Skip pre-optimization step
-            ]
-
-            if len(subset) > 0:
-                # Calculate mean and std across splits for each convergence step
-                stats = (
-                    subset.groupby("convergence_threshold_step")
-                    .agg({"kl_divergence": ["mean", "std"]})
-                    .reset_index()
-                )
-
-                # Flatten column names
-                stats.columns = ["step", "kl_mean", "kl_std"]
-
-                # Map steps to convergence rates (step 1 -> convergence_rates[0], step 2 -> convergence_rates[1], etc.)
-                stats["convergence_rate"] = stats["step"].apply(
-                    lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                )
-
-                # Remove rows where convergence rate mapping failed
-                stats = stats.dropna(subset=["convergence_rate"])
-
-                if len(stats) > 0:
-                    # Plot KL divergence
-                    color = ensemble_colors[ensemble]
-                    marker = loss_markers[loss_func]
-                    label = f"{ensemble} - {loss_func}"
-
-                    ax.errorbar(
-                        stats["convergence_rate"],
-                        stats["kl_mean"],
-                        yerr=stats["kl_std"],
-                        label=label,
-                        marker=marker,
-                        color=color,
-                        linewidth=2,
-                        capsize=3,
-                        markersize=6,
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_df[
+                    (split_df["ensemble"] == ensemble)
+                    & (split_df["loss_function"] == loss_func)
+                    & (split_df["convergence_threshold_step"] > 0)
+                ]
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"kl_divergence": ["mean", "std"]})
+                        .reset_index()
                     )
+                    stats.columns = ["step", "kl_mean", "kl_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
 
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Convergence Threshold")
-    ax.set_ylabel("KL Divergence from Uniform Prior")
-    ax.set_title("Frame Weights KL Divergence")
-    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-    ax.grid(True, alpha=0.3)
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+                        ax.errorbar(
+                            stats["convergence_rate"],
+                            stats["kl_mean"],
+                            yerr=stats["kl_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
 
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(output_dir, "frame_weights_kl_divergence.png"), dpi=300, bbox_inches="tight"
-    )
-    plt.show()
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("Convergence Threshold")
+        ax.set_ylabel("KL Divergence from Uniform Prior")
+        ax.set_title("Frame Weights KL Divergence")
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "frame_weights_kl_divergence.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
 
 
 def plot_kl_divergence_distribution(df: pd.DataFrame, output_dir: str):
     """
-    Plot distribution of KL divergence values across ensembles and loss functions.
+    Plot distribution of final KL divergence values for each split type.
 
     Args:
-        df: DataFrame containing KL divergence data
-        output_dir: Directory to save plots
+        df: DataFrame containing KL divergence data.
+        output_dir: Directory to save plots.
     """
-    # Get final convergence step data (last step for each combination)
-    final_data = df.groupby(["ensemble", "loss_function", "split"]).last().reset_index()
+    split_types = df["split_type"].unique()
 
-    fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-    fig.suptitle("Final KL Divergence Distribution", fontsize=16, fontweight="bold")
+    for split_type in split_types:
+        print(f"  Plotting KL distribution for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
 
-    # KL divergence comparison
-    sns.boxplot(data=final_data, x="ensemble", y="kl_divergence", hue="loss_function", ax=ax)
-    ax.set_yscale("log")
-    ax.set_title("Final Frame Weights KL Divergence")
-    ax.set_ylabel("KL Divergence from Uniform Prior (log scale)")
+        final_data = split_df.groupby(["ensemble", "loss_function", "split"]).last().reset_index()
 
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(output_dir, "final_kl_divergence_distribution.png"),
-        dpi=300,
-        bbox_inches="tight",
-    )
-    plt.show()
+        fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+        fig.suptitle(
+            f"Final KL Divergence Distribution ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        sns.boxplot(data=final_data, x="ensemble", y="kl_divergence", hue="loss_function", ax=ax)
+        ax.set_yscale("log")
+        ax.set_title("Final Frame Weights KL Divergence")
+        ax.set_ylabel("KL Divergence from Uniform Prior (log scale)")
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "final_kl_divergence_distribution.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
 
 
 def main():
@@ -827,14 +827,14 @@ def main():
             print("-" * 40)
             final_recovery = (
                 recovery_df[recovery_df["loss_function"] != "Original"]
-                .groupby(["ensemble", "loss_function"])
+                .groupby(["split_type", "ensemble", "loss_function"])
                 .last()
                 .reset_index()
             )
 
             for _, row in final_recovery.iterrows():
                 print(
-                    f"{row['ensemble']} - {row['loss_function']}: "
+                    f"{row['split_type']}/{row['ensemble']} - {row['loss_function']}: "
                     f"Open Recovery = {row['open_recovery']:.1f}%, "
                     f"Open Ratio = {row['open_ratio']:.3f}"
                 )

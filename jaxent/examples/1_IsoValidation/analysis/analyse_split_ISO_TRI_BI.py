@@ -310,85 +310,98 @@ def plot_gap_analysis(all_splits_df: pd.DataFrame, output_dir: str):
 def main():
     """Main function to run the analysis."""
     base_dir = os.path.join(os.path.dirname(__file__), "..", "fitting", "jaxENT", "_datasplits")
-    output_dir = os.path.join(os.path.dirname(__file__), "_analysis_split_iso_tri_bi")
-    os.makedirs(output_dir, exist_ok=True)
+    output_base_dir = os.path.join(os.path.dirname(__file__), "_analysis_split_iso_tri_bi")
+    os.makedirs(output_base_dir, exist_ok=True)
 
     if not os.path.exists(base_dir):
         print(f"Data directory not found: {base_dir}")
         print("Please run the `splitdata_ISO.py` script first.")
         return
 
-    split_dirs = [
-        os.path.join(base_dir, d)
-        for d in os.listdir(base_dir)
-        if os.path.isdir(os.path.join(base_dir, d)) and d.startswith("split_")
-    ]
+    split_types = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d))]
 
-    all_peptides_data = []
+    for split_type in split_types:
+        split_type_dir = os.path.join(base_dir, split_type)
+        output_dir = os.path.join(output_base_dir, split_type)
+        os.makedirs(output_dir, exist_ok=True)
 
-    for split_dir in split_dirs:
-        train_top, train_dfrac, val_top, val_dfrac = load_split_data(split_dir)
+        print(f"\n--- Analysing split type: {split_type} ---")
 
-        split_name = os.path.basename(split_dir)
+        split_dirs = [
+            os.path.join(split_type_dir, d)
+            for d in os.listdir(split_type_dir)
+            if os.path.isdir(os.path.join(split_type_dir, d)) and d.startswith("split_")
+        ]
 
-        # Individual uptake heatmaps with color coding
-        plot_uptake_heatmap(
-            train_top,
-            train_dfrac,
-            f"Training Set Uptake - {split_name}",
-            os.path.join(output_dir, f"uptake_train_{split_name}.png"),
-            split_type="train",
-        )
-        plot_uptake_heatmap(
-            val_top,
-            val_dfrac,
-            f"Validation Set Uptake - {split_name}",
-            os.path.join(output_dir, f"uptake_val_{split_name}.png"),
-            split_type="validation",
-        )
+        if not split_dirs:
+            print(f"No splits found for type {split_type}, skipping.")
+            continue
 
-        # Combined uptake comparison
-        plot_combined_uptake_comparison(
-            train_top, train_dfrac, val_top, val_dfrac, split_name, output_dir
-        )
+        all_peptides_data = []
 
-        # Collect data for overall analysis
-        for p in train_top:
-            all_peptides_data.append(
-                {
-                    "peptide_index": p.fragment_index,
-                    "split_dir": split_name,
-                    "split_type": "train",
-                    "present": 1,
-                }
+        for split_dir in split_dirs:
+            train_top, train_dfrac, val_top, val_dfrac = load_split_data(split_dir)
+
+            split_name = os.path.basename(split_dir)
+
+            # Individual uptake heatmaps with color coding
+            plot_uptake_heatmap(
+                train_top,
+                train_dfrac,
+                f"Training Set Uptake - {split_name}",
+                os.path.join(output_dir, f"uptake_train_{split_name}.png"),
+                split_type="train",
             )
-        for p in val_top:
-            all_peptides_data.append(
-                {
-                    "peptide_index": p.fragment_index,
-                    "split_dir": split_name,
-                    "split_type": "validation",
-                    "present": 1,
-                }
+            plot_uptake_heatmap(
+                val_top,
+                val_dfrac,
+                f"Validation Set Uptake - {split_name}",
+                os.path.join(output_dir, f"uptake_val_{split_name}.png"),
+                split_type="validation",
             )
 
-    if not all_peptides_data:
-        print("No data found in split directories.")
-        return
+            # Combined uptake comparison
+            plot_combined_uptake_comparison(
+                train_top, train_dfrac, val_top, val_dfrac, split_name, output_dir
+            )
 
-    all_splits_df = pd.DataFrame(all_peptides_data)
+            # Collect data for overall analysis
+            for p in train_top:
+                all_peptides_data.append(
+                    {
+                        "peptide_index": p.fragment_index,
+                        "split_dir": split_name,
+                        "split_type": "train",
+                        "present": 1,
+                    }
+                )
+            for p in val_top:
+                all_peptides_data.append(
+                    {
+                        "peptide_index": p.fragment_index,
+                        "split_dir": split_name,
+                        "split_type": "validation",
+                        "present": 1,
+                    }
+                )
 
-    # Generate all plots
-    plot_split_distributions(all_splits_df, output_dir)
-    plot_split_heatmap(all_splits_df, output_dir)  # Original version
-    plot_enhanced_split_heatmap(all_splits_df, output_dir)  # Enhanced version
-    plot_gap_analysis(all_splits_df, output_dir)
+        if not all_peptides_data:
+            print(f"No data found in split directories for type {split_type}.")
+            continue
 
-    print(f"Analysis complete. Plots saved to {output_dir}")
-    print("Enhanced visualizations include:")
-    print("- Enhanced split heatmap with train/val color coding")
-    print("- Combined uptake comparisons")
-    print("- Gap analysis plots")
+        all_splits_df = pd.DataFrame(all_peptides_data)
+
+        # Generate all plots
+        plot_split_distributions(all_splits_df, output_dir)
+        plot_split_heatmap(all_splits_df, output_dir)  # Original version
+        plot_enhanced_split_heatmap(all_splits_df, output_dir)  # Enhanced version
+        plot_gap_analysis(all_splits_df, output_dir)
+
+        print(f"Analysis for {split_type} complete. Plots saved to {output_dir}")
+        print("Enhanced visualizations include:")
+        print("- Enhanced split heatmap with train/val color coding")
+        print("- Combined uptake comparisons")
+        print("- Gap analysis plots")
 
 
 if __name__ == "__main__":

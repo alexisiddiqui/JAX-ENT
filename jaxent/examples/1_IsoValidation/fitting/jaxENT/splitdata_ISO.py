@@ -51,6 +51,8 @@ def run_data_splits(
     output_dir: str,
     HDX_data: list[HDX_peptide],
     feature_topology: list[Partial_Topology],
+    split_type: str = "random",
+    remove_overlap: bool = True,
 ) -> None:
     """
     Run multiple data splits and save each to its own folder
@@ -60,11 +62,13 @@ def run_data_splits(
         output_dir: Base directory to save all splits
         HDX_data: list of HDX_peptide objects
         feature_topology: list of Partial_Topology objects for features
+        split_type: Type of split to perform
+        remove_overlap: Whether to remove overlapping residues between train and val sets
     """
     os.makedirs(output_dir, exist_ok=True)
 
     for split_idx in range(num_splits):
-        print(f"\n=== Running split {split_idx + 1}/{num_splits} ===")
+        print(f"\n=== Running split {split_idx + 1}/{num_splits} for type {split_type} ===")
 
         # Create split-specific folder
         split_dir: str = os.path.join(output_dir, f"split_{split_idx:03d}")
@@ -82,7 +86,17 @@ def run_data_splits(
             random_seed=42 * split_idx,  # Different seed for each split
         )
 
-        train_data, val_data = splitter.random_split(remove_overlap=True)
+        # Select the splitting method based on split_type
+        if split_type == "random":
+            train_data, val_data = splitter.random_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence":
+            train_data, val_data = splitter.sequence_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence_cluster":
+            train_data, val_data = splitter.sequence_cluster_split(remove_overlap=remove_overlap)
+        elif split_type == "stratified":
+            train_data, val_data = splitter.stratified_split(remove_overlap=remove_overlap)
+        else:
+            raise ValueError(f"Unknown split type: {split_type}")
 
         print(f"Train data size: {len(train_data)}")
         print(f"Validation data size: {len(val_data)}")
@@ -161,9 +175,21 @@ def main() -> None:
     os.makedirs(output_dir, exist_ok=True)
     save_split_data(HDX_data, output_dir, "full_dataset")
 
-    # Run multiple data splits
-    print(f"\nGenerating {num_splits} data splits...")
-    run_data_splits(num_splits, output_dir, HDX_data, feature_topology)
+    # Run multiple data splits for each split type
+    split_types = ["random", "sequence", "sequence_cluster", "stratified"]
+    remove_overlap = True  # Or configure as needed
+
+    for split_type in split_types:
+        split_output_dir = os.path.join(output_dir, split_type)
+        print(f"\n--- Generating {num_splits} splits for type: {split_type} ---")
+        run_data_splits(
+            num_splits=num_splits,
+            output_dir=split_output_dir,
+            HDX_data=HDX_data,
+            feature_topology=feature_topology,
+            split_type=split_type,
+            remove_overlap=remove_overlap,
+        )
 
     print(f"\nAll splits completed and saved to: {output_dir}")
 
