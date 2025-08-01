@@ -38,7 +38,7 @@ def load_HDXer_kints(kint_path: str) -> tuple[Array, list[Partial_Topology]]:
             resid, rate = int(parts[0]), float(parts[1])
             rates.append(rate)
             # Assuming chain 'A' as a default for intrinsic rates if not specified in the file
-            topology_list.append(Partial_Topology.from_single(chain="A", residue=resid - 1))
+            topology_list.append(Partial_Topology.from_single(chain="A", residue=resid))
     kints = jnp.array(rates)
     return kints, topology_list
 
@@ -92,6 +92,17 @@ def featurise_trajectory(
     print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
     print(f"Kints length: {len(features.k_ints)}")
     # Save features
+    # +1 to feature_topology numbering to match the 1-based indexing of MDAnalysis
+    feature_topology = [
+        Partial_Topology.from_single(
+            chain=top.chain,
+            residue=top.residue_start + 1,  # Convert to 1-based indexing
+            fragment_index=top.fragment_index,
+            peptide=top.peptide,
+            peptide_trim=top.peptide_trim,
+        )
+        for top in feature_topology
+    ]
 
     if kint_data is not None:
         kints, topology_list = kint_data
@@ -189,7 +200,7 @@ def main():
     top_path = os.path.join(traj_dir, topology)
     tri_path = os.path.join(traj_dir, tri_modal_trajectory)
     bi_path = os.path.join(traj_dir, bi_modal_trajectory)
-
+    bi_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
     # Featurise trajectories
     trajectories_to_process = [(tri_path, "iso_tri"), (bi_path, "iso_bi")]
 
