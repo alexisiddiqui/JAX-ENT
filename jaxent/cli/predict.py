@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 
 import jax.numpy as jnp
-import numpy as np
 
 from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.features import Input_Features
@@ -54,12 +53,7 @@ def main():
         action="store_true",
         help="Raise an exception if JIT compilation fails.",
     )
-    parser.add_argument(
-        "--timepoints",
-        type=list,
-        default=[0.167, 1.0, 10.0],
-        help="List of timepoints for BV model. Default is [0.167, 1.0, 10.0].",
-    )
+
     parser.add_argument(
         "--forward_model_key",
         type=str,
@@ -96,7 +90,7 @@ def main():
     bv_parser.add_argument(
         "--num_timepoints",
         type=int,
-        default=1,
+        default=0,
         help="Number of timepoints for BV model. Affects key type.",
     )
 
@@ -127,7 +121,7 @@ def main():
     linear_bv_parser.add_argument(
         "--num_timepoints",
         type=int,
-        default=1,
+        default=0,
         help="Number of timepoints for linear BV model. Affects key type.",
     )
 
@@ -179,6 +173,13 @@ def main():
             default=[1.0],
             help="List of forward model scaling factors for Simulation_Parameters.",
         )
+        sub_parser.add_argument(
+            "--timepoints",
+            type=float,
+            nargs="+",
+            default=[0.167, 1.0, 10.0],
+            help="List of timepoints for BV model. Default is [0.167, 1.0, 10.0].",
+        )
 
     args = parser.parse_args()
 
@@ -188,15 +189,15 @@ def main():
 
     # Load Input_Features
     print(f"Loading features from {args.features_path}")
-    features_data = np.load(args.features_path)
+    features_data = jnp.load(args.features_path)
 
     # Determine the correct Input_Features class based on model_type
-    input_features: Input_Features
+    input_features: Input_Features | BV_input_features | NetHDX_input_features
     if args.model_type == "bv" or args.model_type == "linear_bv":
         input_features = BV_input_features(
             heavy_contacts=jnp.asarray(features_data["heavy_contacts"]),
             acceptor_contacts=jnp.asarray(features_data["acceptor_contacts"]),
-            k_ints=jnp.asarray(features_data["k_ints"]) if "k_ints" in features_data else None,
+            k_ints=jnp.asarray(features_data["k_ints"]),
         )
     elif args.model_type == "nethdx":
         input_features = NetHDX_input_features(
@@ -219,7 +220,9 @@ def main():
     model_parameters: Model_Parameters
 
     if args.model_type == "bv":
-        config = BV_model_Config(num_timepoints=args.num_timepoints)
+        config = BV_model_Config(
+            num_timepoints=args.num_timepoints,
+        )
         config.timepoints = jnp.array(args.timepoints)
         forward_model = BV_model(config=config)
         model_parameters = BV_Model_Parameters(
@@ -229,7 +232,10 @@ def main():
             timepoints=jnp.array(args.timepoints),
         )
     elif args.model_type == "linear_bv":
-        config = linear_BV_model_Config()
+        config = linear_BV_model_Config(
+            num_timepoints=args.num_timepoints,
+        )
+        config.timepoints = jnp.array(args.timepoints)
         forward_model = linear_BV_model(config=config)
         model_parameters = linear_BV_Model_Parameters(
             bv_bc=jnp.array(args.bv_bc),
@@ -238,7 +244,10 @@ def main():
             num_timepoints=args.num_timepoints,
         )
     elif args.model_type == "nethdx":
-        config = NetHDXConfig()
+        config = NetHDXConfig(
+            num_timepoints=len(args.timepoints),
+        )
+        config.timepoints = jnp.array(args.timepoints)
         forward_model = netHDX_model(config=config)
         model_parameters = NetHDX_Model_Parameters(
             shell_energy_scaling=jnp.array(args.shell_energy_scaling),

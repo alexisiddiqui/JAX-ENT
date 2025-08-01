@@ -138,7 +138,7 @@ class TestDataSplitter:
                     splitter.common_residues = common_residues
                     splitter.filtered_data = create_test_datapoints
                     splitter.redundancy_scores = [0.0] * len(create_test_datapoints)
-
+                    splitter.min_split_size = 5  # Minimum size for train/val splits
                     # Mock any other attributes that might be needed
                     splitter.train_data = None
                     splitter.val_data = None
