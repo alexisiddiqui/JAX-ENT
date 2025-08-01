@@ -1,4 +1,7 @@
 """
+TODO: Plots should be moved to the analysis module and made more generic. This script should be made more flexible also.
+TODO: SHould be able to select which Partial_Topology regions to use for clustering
+
 This script takes in a topology and a list of trajectories and k-means clusters the ensemble down to the specified number of clusters.
 
 The script takes in the following args:
@@ -565,7 +568,7 @@ def main():
         topology_name = os.path.splitext(os.path.basename(args.topology_path))[0]
         timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         args.output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
+            os.path.dirname(os.path.abspath(os.getcwd())),
             f"{topology_name}_clusters{args.number_of_clusters}_{timestamp}",
         )
 

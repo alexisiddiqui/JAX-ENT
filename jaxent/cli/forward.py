@@ -1,6 +1,5 @@
 import argparse
 from pathlib import Path
-from typing import Sequence
 
 import jax.numpy as jnp
 import numpy as np
@@ -11,12 +10,11 @@ from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
-from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
+from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.predict_forward import run_forward
 
 
@@ -61,6 +59,7 @@ def main():
         default=1,
         help="Number of simulation parameter sets to run. Parameters provided as single values will be broadcast.",
     )
+    
 
     subparsers = parser.add_subparsers(
         dest="model_type", required=True, help="Type of forward model to use for prediction."
@@ -90,11 +89,18 @@ def main():
         help="Temperature for BV model (K). Can be single float or list (length must match num_simulations or be 1).",
     )
     bv_parser.add_argument(
+        "--num_timepoints",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+    )
+    bv_parser.add_argument(
         "--timepoints",
         type=float,
         nargs="+",
-        default=[0.167, 1.0, 10.0],
-        help="Timepoints for BV model (minutes). Can be single float or list (length must match num_simulations or be 1).",
+        default=None,
+        help="List of timepoints for uptake calculation. Required if num_timepoints > 0.",
     )
 
     # Linear BV Model Subparser
@@ -126,8 +132,15 @@ def main():
         "--num_timepoints",
         type=int,
         nargs="+",
-        default=[1],
-        help="Number of timepoints for linear BV model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+    )
+    linear_bv_parser.add_argument(
+        "--timepoints",
+        type=float,
+        nargs="+",
+        default=None,
+        help="List of timepoints for uptake calculation. Required if num_timepoints > 0.",
     )
 
     # NetHDX Model Subparser
@@ -141,6 +154,13 @@ def main():
         default=[0.84],
         help="Shell energy scaling factor for netHDX model parameters. Can be single float or list (length must match num_simulations or be 1).",
     )
+    nethdx_parser.add_argument(
+        "--num_timepoints",
+        type=int,
+        nargs="+",
+        default=[0],
+        help="Number of timepoints for the forward model. Affects key type. Can be single int or list (length must match num_simulations or be 1).",
+    )
 
     # Arguments for Simulation_Parameters (common to all models)
     for sub_parser in [bv_parser, linear_bv_parser, nethdx_parser]:
@@ -149,14 +169,14 @@ def main():
             type=float,
             nargs="+",
             default=None,  # Will be set based on input features if None
-            help="List of frame weights for Simulation_Parameters. Can be single float or list (length must match num_simulations or be 1).",
+            help="List of frame weights for Simulation_Parameters. Length must match number of frames. If not provided, uniform weights are assumed.",
         )
         sub_parser.add_argument(
             "--frame_mask",
             type=int,
             nargs="+",
             default=None,  # Will be set based on input features if None
-            help="List of frame mask (0 or 1) for Simulation_Parameters. Can be single int or list (length must match num_simulations or be 1).",
+            help="List of frame mask (0 or 1) for Simulation_Parameters. Length must match number of frames. If not provided, all frames are used.",
         )
         sub_parser.add_argument(
             "--forward_model_weights",
@@ -189,7 +209,12 @@ def main():
     # Helper to broadcast single values or validate list lengths
     def _process_arg_list(arg_value, expected_len, arg_name, dtype=float):
         if arg_value is None:
-            return None # Handled later for frame_weights/mask
+            return None  # Handled later for frame_weights/mask
+        
+        # Special handling for 'timepoints' to allow multiple values per simulation
+        if arg_name == "timepoints":
+            return arg_value
+
         if len(arg_value) == 1:
             return [dtype(arg_value[0])] * expected_len
         elif len(arg_value) == expected_len:
@@ -202,7 +227,7 @@ def main():
     # Load Input_Features (assuming a single set of features for all simulations)
     print(f"Loading features from {args.features_path}")
     features_data = np.load(args.features_path)
-    
+
     input_features: Input_Features
     if args.model_type == "bv" or args.model_type == "linear_bv":
         input_features = BV_input_features(
@@ -214,10 +239,35 @@ def main():
         input_features = NetHDX_input_features(
             contact_matrices=jnp.asarray(features_data["contact_matrices"]),
             residue_ids=jnp.asarray(features_data["residue_ids"]),
-            network_metrics=features_data["network_metrics"] if "network_metrics" in features_data else None,
+            network_metrics=features_data["network_metrics"]
+            if "network_metrics" in features_data
+            else None,
         )
     else:
         raise ValueError(f"Unknown model type: {args.model_type}")
+
+    # Get number of frames
+    n_frames = input_features.features_shape[-1]
+
+    # Process frame_weights
+    if args.frame_weights is None:
+        frame_weights = jnp.ones(n_frames) / n_frames
+    else:
+        if len(args.frame_weights) != n_frames:
+            raise ValueError(
+                f"Length of --frame_weights ({len(args.frame_weights)}) must match number of frames ({n_frames})."
+            )
+        frame_weights = jnp.asarray(args.frame_weights)
+
+    # Process frame_mask
+    if args.frame_mask is None:
+        frame_mask = jnp.ones(n_frames, dtype=jnp.bool_)
+    else:
+        if len(args.frame_mask) != n_frames:
+            raise ValueError(
+                f"Length of --frame_mask ({len(args.frame_mask)}) must match number of frames ({n_frames})."
+            )
+        frame_mask = jnp.asarray(args.frame_mask, dtype=jnp.bool_)
 
     # Load Partial_Topology (not directly used by run_forward, but good practice to load if featurised data is provided)
     print(f"Loading topology from {args.topology_path}")
@@ -235,47 +285,80 @@ def main():
             current_model_parameters = BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
-                temperature=_process_arg_list(args.temperature, args.num_simulations, "temperature")[i],
-                timepoints=jnp.array(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")[i]),
+                temperature=_process_arg_list(
+                    args.temperature, args.num_simulations, "temperature"
+                )[i],
+                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
             )
-            config = BV_model_Config() # Default config, parameters will be overridden by CLI args
+            config = BV_model_Config(
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
+            )
             forward_models_list.append(BV_model(config=config))
         elif args.model_type == "linear_bv":
             current_model_parameters = linear_BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
-                temperature=_process_arg_list(args.temperature, args.num_simulations, "temperature")[i],
-                num_timepoints=_process_arg_list(args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int)[i],
+                temperature=_process_arg_list(
+                    args.temperature, args.num_simulations, "temperature"
+                )[i],
+                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
             )
-            config = linear_BV_model_Config()
+            config = linear_BV_model_Config(
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
+            )
             forward_models_list.append(linear_BV_model(config=config))
         elif args.model_type == "nethdx":
-            current_model_parameters = NetHDX_Model_Parameters(
-                shell_energy_scaling=jnp.array(_process_arg_list(args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling")[i]),
+            current_model_parameters = NetHDX__Model_Parameters(
+                shell_energy_scaling=jnp.array(
+                    _process_arg_list(
+                        args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling"
+                    )[i]
+                ),
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
             )
-            config = NetHDXConfig()
+            config = NetHDXConfig(
+                num_timepoints=_process_arg_list(
+                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
+                )[i],
+            )
             forward_models_list.append(netHDX_model(config=config))
         else:
             raise ValueError(f"Unknown model type: {args.model_type}")
 
         # Create Simulation_Parameters for current simulation
-        n_frames = input_features.features_shape[-1] # Assuming last dim is frames
-
-        current_frame_weights_raw = _process_arg_list(args.frame_weights, args.num_simulations, "frame_weights")
-        current_frame_weights = jnp.asarray(current_frame_weights_raw[i]) if current_frame_weights_raw is not None else jnp.ones(n_frames) / n_frames
-        
-        current_frame_mask_raw = _process_arg_list(args.frame_mask, args.num_simulations, "frame_mask", dtype=int)
-        current_frame_mask = jnp.asarray(current_frame_mask_raw[i], dtype=jnp.bool_) if current_frame_mask_raw is not None else jnp.ones(n_frames, dtype=jnp.bool_)
-
-        current_forward_model_weights = jnp.asarray(_process_arg_list(args.forward_model_weights, args.num_simulations, "forward_model_weights")[i])
-        current_normalise_loss_functions = jnp.asarray(_process_arg_list(args.normalise_loss_functions, args.num_simulations, "normalise_loss_functions", dtype=int)[i], dtype=jnp.int32)
-        current_forward_model_scaling = jnp.asarray(_process_arg_list(args.forward_model_scaling, args.num_simulations, "forward_model_scaling")[i])
+        current_forward_model_weights = jnp.asarray(
+            _process_arg_list(
+                args.forward_model_weights, args.num_simulations, "forward_model_weights"
+            )[i]
+        )
+        current_normalise_loss_functions = jnp.asarray(
+            _process_arg_list(
+                args.normalise_loss_functions,
+                args.num_simulations,
+                "normalise_loss_functions",
+                dtype=int,
+            )[i],
+            dtype=jnp.int32,
+        )
+        current_forward_model_scaling = jnp.asarray(
+            _process_arg_list(
+                args.forward_model_scaling, args.num_simulations, "forward_model_scaling"
+            )[i]
+        )
 
         simulation_parameters_list.append(
             Simulation_Parameters(
-                frame_weights=current_frame_weights,
-                frame_mask=current_frame_mask,
-                model_parameters=[current_model_parameters], # Wrap in list as Simulation_Parameters expects Sequence
+                frame_weights=frame_weights,
+                frame_mask=frame_mask,
+                model_parameters=[
+                    current_model_parameters
+                ],  # Wrap in list as Simulation_Parameters expects Sequence
                 forward_model_weights=current_forward_model_weights,
                 normalise_loss_functions=current_normalise_loss_functions,
                 forward_model_scaling=current_forward_model_scaling,
@@ -285,8 +368,9 @@ def main():
     # Run forward prediction
     print("Running forward prediction...")
     all_output_features = run_forward(
-        input_features=[input_features] * args.num_simulations, # Repeat input features for each simulation
-        forward_models=forward_models_list, 
+        input_features=[input_features]
+        * args.num_simulations,  # Repeat input features for each simulation
+        forward_models=forward_models_list,
         simulation_parameters=simulation_parameters_list,
         raise_jit_failure=args.raise_jit_failure,
     )
@@ -297,8 +381,11 @@ def main():
         if output_features_for_sim:
             # Assuming each output_features_for_sim is a Sequence of Output_Features
             # and we want to save the y_pred of the first one.
-            # If there are multiple models per simulation, this needs adjustment.
-            first_output = output_features_for_sim[0]
+            first_output = output_features_for_sim[i]
+            print(first_output.y_pred())
+            print(first_output.y_pred().shape)
+
+            # breakpoint()
             jnp.savez(output_file_path, predictions=first_output.y_pred())
             print(f"Predictions for simulation {i} saved to {output_file_path}")
         else:
