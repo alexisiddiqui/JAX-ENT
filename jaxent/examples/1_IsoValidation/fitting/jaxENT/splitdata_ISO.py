@@ -8,6 +8,7 @@ each training/validation set is then saved as data and a topology file so it can
 
 import os
 
+import MDAnalysis as mda
 import numpy as np
 import pandas as pd
 
@@ -53,6 +54,7 @@ def run_data_splits(
     feature_topology: list[Partial_Topology],
     split_type: str = "random",
     remove_overlap: bool = True,
+    universe: mda.Universe | None = None,  # Added universe parameter
 ) -> None:
     """
     Run multiple data splits and save each to its own folder
@@ -82,7 +84,7 @@ def run_data_splits(
             common_residues=set(feature_topology),
             peptide_trim=1,
             centrality=False,
-            check_trim=True,
+            check_trim=False,
             random_seed=42 * split_idx,  # Different seed for each split
         )
 
@@ -92,9 +94,17 @@ def run_data_splits(
         elif split_type == "sequence":
             train_data, val_data = splitter.sequence_split(remove_overlap=remove_overlap)
         elif split_type == "sequence_cluster":
-            train_data, val_data = splitter.sequence_cluster_split(remove_overlap=remove_overlap)
+            train_data, val_data = splitter.sequence_cluster_split(
+                remove_overlap=remove_overlap, n_clusters=5
+            )
         elif split_type == "stratified":
             train_data, val_data = splitter.stratified_split(remove_overlap=remove_overlap)
+        elif split_type == "spatial":
+            if universe is None:
+                raise ValueError("MDAnalysis Universe must be provided for spatial split.")
+            train_data, val_data = splitter.spatial_split(
+                universe=universe, remove_overlap=remove_overlap
+            )
         else:
             raise ValueError(f"Unknown split type: {split_type}")
 
@@ -153,8 +163,8 @@ def main() -> None:
     HDX_topology: list[Partial_Topology] = [
         Partial_Topology.from_range(
             chain=chain,
-            start=seg[0] - 1,
-            end=seg[1] - 1,
+            start=seg[1],
+            end=seg[1],
             fragment_index=idx,
             peptide=True,
             peptide_trim=1,
@@ -166,7 +176,7 @@ def main() -> None:
 
     # Create HDX data objects
     HDX_data: list[HDX_peptide] = [
-        HDX_peptide(dfrac=dfrac[idx], top=HDX_topology[idx]) for idx in range(len(segs))
+        HDX_peptide(dfrac=dfrac[idx], top=HDX_topology[idx]) for idx in range(len(segs) - 2)
     ]
     print(f"Created {len(HDX_data)} HDX_peptide objects.")
 
@@ -176,12 +186,38 @@ def main() -> None:
     save_split_data(HDX_data, output_dir, "full_dataset")
 
     # Run multiple data splits for each split type
-    split_types = ["random", "sequence", "sequence_cluster", "stratified"]
+    split_types = ["random", "sequence", "sequence_cluster", "stratified", "spatial"]
     remove_overlap = True  # Or configure as needed
+
+    # Load MDAnalysis Universe for spatial split
+    import MDAnalysis as mda
+
+    # Define the path to the closed state topology and a representative trajectory
+    # These paths are relative to the 'splitdata_ISO.py' script
+    traj_base_dir = os.path.join(
+        os.path.dirname(__file__), "../../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
+    )
+    closed_topology_file = os.path.join(traj_base_dir, "TeaA_ref_closed_state.pdb")
+    # Using the filtered sliced trajectory as a representative for spatial calculations
+    representative_trajectory_file = os.path.join(
+        traj_base_dir, "sliced_trajectories/TeaA_filtered_sliced.xtc"
+    )
+
+    try:
+        universe = mda.Universe(closed_topology_file)
+        print(
+            f"Loaded MDAnalysis Universe from {closed_topology_file} and {representative_trajectory_file}"
+        )
+    except Exception as e:
+        print(f"Warning: Could not load MDAnalysis Universe for spatial split: {e}")
+        universe = None  # Set to None if loading fails
 
     for split_type in split_types:
         split_output_dir = os.path.join(output_dir, split_type)
         print(f"\n--- Generating {num_splits} splits for type: {split_type} ---")
+        if split_type == "spatial" and universe is None:
+            print("Skipping spatial split as MDAnalysis Universe could not be loaded.")
+            continue
         run_data_splits(
             num_splits=num_splits,
             output_dir=split_output_dir,
@@ -189,6 +225,7 @@ def main() -> None:
             feature_topology=feature_topology,
             split_type=split_type,
             remove_overlap=remove_overlap,
+            universe=universe,  # Pass universe to run_data_splits
         )
 
     print(f"\nAll splits completed and saved to: {output_dir}")
