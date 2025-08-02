@@ -1,18 +1,26 @@
+import json
+from pathlib import Path
+from typing import Union
+
+from jaxent.src.interfaces.topology.core import Partial_Topology
+
+
+class PTSerialiser:
+    """Function container for serializing and deserializing topology objects"""
 
     ### Serialization
-    def to_json(self) -> str:
+    @staticmethod
+    def to_json(top: Partial_Topology) -> str:
         """Serialize to JSON string"""
-        return json.dumps(self._to_dict(), indent=2)
+        return json.dumps(top._to_dict(), indent=2)
 
-    @classmethod
-    def from_json(cls, json_str: str) -> "Partial_Topology":
+    @staticmethod
+    def from_json(top: Partial_Topology, json_str: str) -> Partial_Topology:
         """Deserialize from JSON string"""
-        return cls._from_dict(json.loads(json_str))
+        return top._from_dict(json.loads(json_str))
 
-    @classmethod
-    def save_list_to_json(
-        cls, topologies: list["Partial_Topology"], filepath: Union[str, Path]
-    ) -> None:
+    @staticmethod
+    def save_list_to_json(topologies: list[Partial_Topology], filepath: Union[str, Path]) -> None:
         """Save a list of Partial_Topology objects to a JSON file
 
         Args:
@@ -45,8 +53,8 @@
         except Exception as e:
             raise IOError(f"Failed to write topologies to {filepath}: {e}")
 
-    @classmethod
-    def load_list_from_json(cls, filepath: Union[str, Path]) -> list["Partial_Topology"]:
+    @staticmethod
+    def load_list_from_json(filepath: Union[str, Path]) -> list[Partial_Topology]:
         """Load a list of Partial_Topology objects from a JSON file
 
         Args:
@@ -92,7 +100,9 @@
 
         # Convert dictionaries back to Partial_Topology objects
         try:
-            topologies = [cls._from_dict(topo_dict) for topo_dict in data["topologies"]]
+            topologies = [
+                Partial_Topology._from_dict(topo_dict) for topo_dict in data["topologies"]
+            ]
         except Exception as e:
             raise ValueError(f"Failed to parse topology data: {e}")
 

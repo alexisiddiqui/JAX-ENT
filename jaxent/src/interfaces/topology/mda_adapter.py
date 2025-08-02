@@ -1,8 +1,24 @@
+### MDA Universe methods
+from typing import Optional, Union
 
-    ### MDA Universe methods
-    @classmethod
+import MDAnalysis as mda
+import numpy as np
+from MDAnalysis.core.groups import Residue
+from tqdm import tqdm
+
+from jaxent.src.interfaces.topology.core import Partial_Topology
+from jaxent.src.interfaces.topology.factory import TopologyFactory
+from jaxent.src.interfaces.topology.pairwise import PairwiseComparisons
+from jaxent.src.interfaces.topology.utils import group_set_by_chain, rank_and_index
+from jaxent.src.models.func.common import compute_trajectory_average_com_distances
+
+
+class mda_TopologyAdapter:
+    """Adapter class for converting MDAnalysis Universe objects to Partial_Topology objects."""
+
+    @staticmethod
     def _build_chain_selection_string(
-        cls, universe: mda.Universe, chain_id: str, base_selection: Optional[str] = None
+        universe: mda.Universe, chain_id: str, base_selection: Optional[str] = None
     ) -> tuple[str, mda.AtomGroup]:
         """
         Utility method to build a selection string for a specific chain,
@@ -47,9 +63,8 @@
 
         return selection_string, fallback_atoms
 
-    @classmethod
+    @staticmethod
     def from_mda_universe(
-        cls,
         universe: mda.Universe,
         mode: str = "residue",
         include_selection: str = "protein",
@@ -58,7 +73,7 @@
         termini_chain_selection: str = "protein",
         fragment_name_template: str = "auto",
         renumber_residues: bool = False,
-    ) -> list["Partial_Topology"]:
+    ) -> list[Partial_Topology]:
         """Extract Partial_Topology objects from an MDAnalysis Universe
 
         Args:
@@ -126,8 +141,10 @@
 
         for chain_id, chain_atoms in chains.items():
             # Use utility method to build chain selection string
-            chain_selection_string, fallback_atoms = cls._build_chain_selection_string(
-                universe, chain_id, termini_chain_selection
+            chain_selection_string, fallback_atoms = (
+                mda_TopologyAdapter._build_chain_selection_string(
+                    universe, chain_id, termini_chain_selection
+                )
             )
 
             if chain_selection_string:
@@ -135,7 +152,7 @@
                     termini_atoms = universe.select_atoms(chain_selection_string)
                     if len(termini_atoms) == 0:
                         # Try without base selection
-                        chain_only_selection, _ = cls._build_chain_selection_string(
+                        chain_only_selection, _ = mda_TopologyAdapter._build_chain_selection_string(
                             universe, chain_id
                         )
                         if chain_only_selection:
@@ -232,7 +249,7 @@
                         resname="chain",
                     )
 
-                topology = cls.from_residues(
+                topology = TopologyFactory.from_residues(
                     chain=chain_id,
                     residues=residue_numbers,
                     fragment_sequence=sequence_str,
@@ -261,7 +278,7 @@
                             chain=chain_id, resid=new_resid, resname=residue.resname
                         )
 
-                    topology = cls.from_single(
+                    topology = TopologyFactory.from_single(
                         chain=chain_id,
                         residue=new_resid,
                         fragment_sequence=res_sequence,
@@ -275,10 +292,9 @@
 
         return partial_topologies
 
-    @classmethod
+    @staticmethod
     def to_mda_group(
-        cls,
-        topologies: Union[set["Partial_Topology"], list["Partial_Topology"]],
+        topologies: Union[set[Partial_Topology], list[Partial_Topology]],
         universe: mda.Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -348,15 +364,17 @@
             chain_atoms = chains[chain_id]
 
             # Use utility method to build chain selection string for terminal exclusion
-            chain_selection_string, fallback_atoms = cls._build_chain_selection_string(
-                universe, chain_id, termini_chain_selection
+            chain_selection_string, fallback_atoms = (
+                mda_TopologyAdapter._build_chain_selection_string(
+                    universe, chain_id, termini_chain_selection
+                )
             )
 
             try:
                 if chain_selection_string:
                     termini_atoms = universe.select_atoms(chain_selection_string)
                     if len(termini_atoms) == 0:
-                        chain_only_selection, _ = cls._build_chain_selection_string(
+                        chain_only_selection, _ = mda_TopologyAdapter._build_chain_selection_string(
                             universe, chain_id
                         )
                         if chain_only_selection:
@@ -412,7 +430,7 @@
             unique_resids = sorted(set(chain_target_resids))
             resid_selection = f"resid {' '.join(map(str, unique_resids))}"
 
-            chain_sel_str, _ = cls._build_chain_selection_string(universe, chain_id)
+            chain_sel_str, _ = mda_TopologyAdapter._build_chain_selection_string(universe, chain_id)
             if chain_sel_str:
                 per_chain_selection_parts.append(f"(({chain_sel_str}) and ({resid_selection}))")
             else:
@@ -453,10 +471,9 @@
         else:
             return target_atoms.residues
 
-    @classmethod
+    @staticmethod
     def to_mda_residue_dict(
-        cls,
-        topologies: Union[set["Partial_Topology"], list["Partial_Topology"]],
+        topologies: Union[set[Partial_Topology], list[Partial_Topology]],
         universe: mda.Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -483,7 +500,7 @@
         Returns:
             A dictionary mapping chain ID to a list of residue indices.
         """
-        residue_group = cls.to_mda_group(
+        residue_group = mda_TopologyAdapter.to_mda_group(
             topologies=topologies,
             universe=universe,
             include_selection=include_selection,
@@ -512,14 +529,13 @@
 
         return residue_dict
 
-    @classmethod
+    @staticmethod
     def find_common_residues(
-        cls,
         ensemble: list[mda.Universe],
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str]] = "resname SOL",
         renumber_residues: bool = True,  # Changed default to False
-    ) -> tuple[set["Partial_Topology"], set["Partial_Topology"]]:
+    ) -> tuple[set[Partial_Topology], set[Partial_Topology]]:
         """Find common residues across an ensemble of MDAnalysis Universe objects.
 
         Args:
@@ -559,7 +575,7 @@
         for i, universe in enumerate(ensemble):
             try:
                 # Extract chain topologies with filtering
-                chain_topos = cls.from_mda_universe(
+                chain_topos = mda_TopologyAdapter.from_mda_universe(
                     universe,
                     mode="chain",
                     include_selection=include_selection[i],
@@ -592,7 +608,7 @@
 
             try:
                 # Find intersection of residues across all universes for this chain
-                common_chain_topo = cls.merge(
+                common_chain_topo = TopologyFactory.merge(
                     topos_for_chain,
                     trim=False,
                     intersection=True,
@@ -600,7 +616,9 @@
                 )
 
                 # Extract individual residues from the common chain
-                residue_topos = common_chain_topo.extract_residues(use_peptide_trim=False)
+                residue_topos = TopologyFactory.extract_residues(
+                    common_chain_topo, use_peptide_trim=False
+                )
                 common_residue_topologies.update(residue_topos)
 
             except ValueError as e:
@@ -617,7 +635,7 @@
         all_chain_topologies_by_universe = []
         for i, universe in enumerate(ensemble):
             try:
-                all_chain_topos = cls.from_mda_universe(
+                all_chain_topos = mda_TopologyAdapter.from_mda_universe(
                     universe,
                     mode="chain",
                     include_selection=include_selection[i],
@@ -659,7 +677,7 @@
 
         # Remove duplicates from excluded set using contains_topology
         # Group by chain first for efficiency
-        excluded_by_chain = cls.group_set_by_chain(excluded_residue_topologies)
+        excluded_by_chain = group_set_by_chain(excluded_residue_topologies)
         excluded_unique = set()
 
         for chain_id, chain_topos in tqdm(
@@ -670,7 +688,7 @@
                 # Check if this topology is already represented in the same chain
                 is_duplicate = False
                 for existing_topo in chain_unique:
-                    if excluded_topo.contains_topology(existing_topo):
+                    if PairwiseComparisons.contains_topology(excluded_topo, existing_topo):
                         is_duplicate = True
                         break
 
@@ -686,10 +704,9 @@
 
         return common_residue_topologies, excluded_residue_topologies
 
-    @classmethod
+    @staticmethod
     def partial_topology_pairwise_distances(
-        cls,
-        topologies: list["Partial_Topology"],
+        topologies: list[Partial_Topology],
         universe: mda.Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -756,7 +773,7 @@
         for topo in topologies:
             try:
                 # Use existing to_mda_group method from Partial_Topology
-                group = cls.to_mda_group(
+                group = mda_TopologyAdapter.to_mda_group(
                     topologies={topo},  # Convert single topology to set
                     universe=universe,
                     include_selection=include_selection,
@@ -794,12 +811,11 @@
 
         return distance_matrix, distance_std
 
-    @classmethod
+    @staticmethod
     def get_atomgroup_reordering_indices(
-        cls,
         mda_groups: list[Union[mda.ResidueGroup, mda.AtomGroup]],
         universe: mda.Universe,
-        target_topologies: Optional[list["Partial_Topology"]] = None,
+        target_topologies: Optional[list[Partial_Topology]] = None,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -849,7 +865,7 @@
                         chain_id = getattr(res.atoms[0], "segid", None) or getattr(
                             res.atoms[0], "chainid", "A"
                         )
-                        topo = cls.from_single(
+                        topo = TopologyFactory.from_single(
                             chain=chain_id,
                             residue=res.resid,
                             fragment_name=f"{chain_id}_{res.resname}{res.resid}",
@@ -871,7 +887,7 @@
                             )
 
                         chain_id = list(chain_ids)[0]
-                        topo = cls.from_residues(
+                        topo = TopologyFactory.from_residues(
                             chain=chain_id,
                             residues=resids,
                             fragment_name=f"{chain_id}_multi",
@@ -884,7 +900,7 @@
                         chain_id = getattr(res.atoms[0], "segid", None) or getattr(
                             res.atoms[0], "chainid", "A"
                         )
-                        topo = cls.from_single(
+                        topo = TopologyFactory.from_single(
                             chain=chain_id,
                             residue=res.resid,
                             fragment_name=f"{chain_id}_{res.resname}{res.resid}",
@@ -906,7 +922,7 @@
                             )
 
                         chain_id = list(chain_ids)[0]
-                        topo = cls.from_residues(
+                        topo = TopologyFactory.from_residues(
                             chain=chain_id,
                             residues=resids,
                             fragment_name=f"{chain_id}_multi",
@@ -917,14 +933,14 @@
                 target_topologies.append(topo)
 
             # Rank and index the topologies using default ordering
-            target_topologies = cls.rank_and_index(target_topologies, check_trim=False)
+            target_topologies = rank_and_index(target_topologies, check_trim=False)
 
         # Build a mapping from topology characteristics to mda_groups index
         mda_group_lookup = {}
 
         # Build renumbering mapping if needed
         if renumber_residues:
-            renumber_mapping = cls._build_renumbering_mapping(
+            renumber_mapping = mda_TopologyAdapter._build_renumbering_mapping(
                 universe, exclude_termini, termini_chain_selection
             )
 
@@ -1008,7 +1024,7 @@
 
         for target_topo in target_topologies:
             # Validate topology containment
-            cls._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 target_topo, universe, exclude_termini, termini_chain_selection, renumber_residues
             )
 
@@ -1028,9 +1044,8 @@
 
         return result_indices
 
-    @classmethod
+    @staticmethod
     def get_residuegroup_reordering_indices(
-        cls,
         residue_group: Union[mda.ResidueGroup, mda.AtomGroup],
     ) -> list[int]:
         """Get indices to reorder individual residues in a ResidueGroup/AtomGroup by topology ranking.
@@ -1067,7 +1082,7 @@
         # Create (sort_key, original_index) pairs
         keyed_residues = []
         for i, residue in enumerate(residues):
-            sort_key = cls.get_mda_group_sort_key(residue)
+            sort_key = mda_TopologyAdapter.get_mda_group_sort_key(residue)
             keyed_residues.append((sort_key, i))
 
         # Sort by sort_key and extract original indices
@@ -1076,9 +1091,8 @@
 
         return reorder_indices
 
-    @classmethod
+    @staticmethod
     def _build_renumbering_mapping(
-        cls,
         universe: mda.Universe,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
@@ -1106,7 +1120,7 @@
 
         for chain_id, chain_atoms in chains.items():
             # Get chain selection for terminal exclusion
-            chain_selection_string, _ = cls._build_chain_selection_string(
+            chain_selection_string, _ = mda_TopologyAdapter._build_chain_selection_string(
                 universe, chain_id, termini_chain_selection
             )
 
@@ -1114,7 +1128,7 @@
                 try:
                     termini_atoms = universe.select_atoms(chain_selection_string)
                     if len(termini_atoms) == 0:
-                        chain_only_selection, _ = cls._build_chain_selection_string(
+                        chain_only_selection, _ = mda_TopologyAdapter._build_chain_selection_string(
                             universe, chain_id
                         )
                         if chain_only_selection:
@@ -1154,10 +1168,9 @@
 
         return renumber_mapping
 
-    @classmethod
+    @staticmethod
     def _validate_topology_containment(
-        cls,
-        topology: "Partial_Topology",
+        topology: Partial_Topology,
         universe: mda.Universe,
         exclude_termini: bool = True,
         renumber_residues: bool = True,
@@ -1166,7 +1179,9 @@
         chain_id = topology.chain
 
         # Get chain selection
-        chain_selection_string, _ = cls._build_chain_selection_string(universe, chain_id)
+        chain_selection_string, _ = mda_TopologyAdapter._build_chain_selection_string(
+            universe, chain_id
+        )
 
         if chain_selection_string:
             try:
@@ -1278,6 +1293,7 @@
         length = len(resids)
 
         # Generate chain score (same logic as Partial_Topology._get_chain_score)
+        # # TODO - this should be replaced with a common function for both this and Partial_Topology.
         # This allows proper alphanumeric sorting: A < B < ... < 1 < 2 < ...
         chain_score = tuple(ord(c) for c in chain_id)
 
