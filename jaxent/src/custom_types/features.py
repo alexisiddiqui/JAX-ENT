@@ -95,6 +95,9 @@ class AbstractFeatures(ABC):
         if not filepath.endswith(".npz"):
             filepath += ".npz"
 
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
         # Get flattened data
         arrays, static_data = self.tree_flatten()
         dynamic_slots, _ = self._get_grouped_slots()
@@ -107,9 +110,13 @@ class AbstractFeatures(ABC):
             "__dynamic_slots__": dynamic_slots,
         }
 
-        # Add arrays with their corresponding slot names
+        # Add arrays with their corresponding slot names, handling None for dynamic slots
         for i, slot in enumerate(dynamic_slots):
-            save_dict[slot] = arrays[i]
+            value = getattr(self, slot)
+            if value is None:
+                save_dict[slot] = None  # Store None directly
+            else:
+                save_dict[slot] = arrays[i]
 
         # Use jnp.savez to save everything
         jnp.savez(filepath, **save_dict)
@@ -153,8 +160,12 @@ class AbstractFeatures(ABC):
                     f"Loaded class {actual_class.__name__} is not a subclass of {cls.__name__}"
                 )
 
-            # Extract arrays in the correct order
-            arrays = tuple(data[slot] for slot in dynamic_slots)
+            # Extract arrays in the correct order, handling None values
+            arrays = tuple(
+                data[slot].item() if isinstance(data[slot], np.ndarray) and data[slot].shape == () and data[slot].item() is None
+                else data[slot]
+                for slot in dynamic_slots
+            )
 
             # Create the instance
             instance = actual_class.tree_unflatten(static_data, arrays)
