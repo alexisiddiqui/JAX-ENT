@@ -75,7 +75,6 @@ def frame_average_features(
         feature_array = jnp.asarray(feature_array)
 
         # Calculate weighted average across frames
-        # Expand weights to match feature dimensions if needed
         weights = frame_weights.reshape(1, -1)
         averaged = jnp.sum(feature_array * weights, axis=-1)
         averaged_features[slot] = averaged

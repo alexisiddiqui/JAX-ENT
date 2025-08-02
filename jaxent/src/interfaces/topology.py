@@ -25,7 +25,7 @@ class Partial_Topology:
     fragment_name: str = "seg"  # Fragment identifier/name
     fragment_index: Optional[int] = None
     peptide: bool = False  # Whether this is treated as a peptide
-    peptide_trim: int = 2  # Residues to trim from start when peptide=True
+    peptide_trim: Optional[int] = None  # Residues to trim from start when peptide=True
 
     # Computed properties (not stored in JSON)
     residue_start: int = field(init=False, repr=False)
@@ -92,7 +92,7 @@ class Partial_Topology:
         fragment_name: str = "seg",
         fragment_index: Optional[int] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: Optional[int] = None,
     ) -> "Partial_Topology":
         """Create from a contiguous range of residues"""
         residues = list(range(int(start), int(end) + 1))
@@ -115,7 +115,7 @@ class Partial_Topology:
         fragment_name: str = "seg",
         fragment_index: Optional[int] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: Optional[int] = None,
     ) -> "Partial_Topology":
         """Create from an arbitrary list of residues"""
         return cls(
@@ -137,7 +137,7 @@ class Partial_Topology:
         fragment_name: str = "seg",
         fragment_index: Optional[int] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: Optional[int] = None,
     ) -> "Partial_Topology":
         """Create from a single residue"""
         return cls(
@@ -1099,9 +1099,7 @@ class Partial_Topology:
             # Create renumbering mapping from the list of ALL included residues for the chain,
             # not just the ones in the current selection. This ensures consistent numbering.
             if renumber_residues:
-                final_residue_mapping = {
-                    res.resid: i for i, res in enumerate(included_residues, 1)
-                }
+                final_residue_mapping = {res.resid: i for i, res in enumerate(included_residues, 1)}
             else:
                 # When not renumbering, the mapping is identity for all residues in the chain
                 final_residue_mapping = {res.resid: res.resid for res in full_chain_residues}
@@ -1319,9 +1317,7 @@ class Partial_Topology:
 
             # Create renumbering mapping from the FINAL list of residues after all filtering - SAME as from_mda_universe
             if renumber_residues:
-                renumber_to_original = {
-                    i: res.resid for i, res in enumerate(included_residues, 1)
-                }
+                renumber_to_original = {i: res.resid for i, res in enumerate(included_residues, 1)}
             else:
                 renumber_to_original = {res.resid: res.resid for res in full_chain_residues}
 
