@@ -1,8 +1,13 @@
+from typing import Optional, Union
 
+from jaxent.src.interfaces.topology.core import Partial_Topology
+from jaxent.src.interfaces.topology.pairwise import PairwiseComparisons
+
+
+class TopologyFactory:
     ### Operations for creating and merging topologies
-    @classmethod
+    @staticmethod
     def from_range(
-        cls,
         chain: Union[str, int],
         start: int,
         end: int,
@@ -11,10 +16,10 @@
         fragment_index: Optional[int] = None,
         peptide: bool = False,
         peptide_trim: int = 2,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Create from a contiguous range of residues"""
         residues = list(range(int(start), int(end) + 1))
-        return cls(
+        return Partial_Topology(
             chain=chain,
             residues=residues,
             fragment_sequence=fragment_sequence,
@@ -24,9 +29,8 @@
             peptide_trim=peptide_trim,
         )
 
-    @classmethod
+    @staticmethod
     def from_residues(
-        cls,
         chain: Union[str, int],
         residues: list[int],
         fragment_sequence: Union[str, list[str]] = "",
@@ -34,9 +38,9 @@
         fragment_index: Optional[int] = None,
         peptide: bool = False,
         peptide_trim: int = 2,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Create from an arbitrary list of residues"""
-        return cls(
+        return Partial_Topology(
             chain=chain,
             residues=residues,
             fragment_sequence=fragment_sequence,
@@ -46,9 +50,8 @@
             peptide_trim=peptide_trim,
         )
 
-    @classmethod
+    @staticmethod
     def from_single(
-        cls,
         chain: Union[str, int],
         residue: int,
         fragment_sequence: Union[str, list[str]] = "",
@@ -56,9 +59,9 @@
         fragment_index: Optional[int] = None,
         peptide: bool = False,
         peptide_trim: int = 2,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Create from a single residue"""
-        return cls(
+        return Partial_Topology(
             chain=chain,
             residues=[residue],
             fragment_sequence=fragment_sequence,
@@ -68,16 +71,15 @@
             peptide_trim=peptide_trim,
         )
 
-    @classmethod
+    @staticmethod
     def merge(
-        cls,
-        topologies: list["Partial_Topology"],
+        topologies: list[Partial_Topology],
         trim: bool = False,
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
         merged_index: Optional[int] = None,
         intersection: bool = False,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Merge multiple topologies into a single topology
 
         Args:
@@ -170,7 +172,7 @@
             merged_peptide = False
             merged_peptide_trim = 0
 
-        return cls.from_residues(
+        return TopologyFactory.from_residues(
             chain=first_chain,
             residues=merged_residues,
             fragment_sequence=merged_sequence,
@@ -180,14 +182,14 @@
             peptide_trim=merged_peptide_trim,
         )
 
-    @classmethod
+    @staticmethod
     def merge_contiguous(
-        cls,
-        topologies: list["Partial_Topology"],
+        Partial_Topology,
+        topologies: list[Partial_Topology],
         trim: bool = False,
         gap_tolerance: int = 0,
         **kwargs,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Merge topologies that are contiguous or nearly contiguous
 
         Args:
@@ -227,16 +229,15 @@
 
         return cls.merge(sorted_topos, trim=trim, **kwargs)
 
-    @classmethod
+    @staticmethod
     def merge_overlapping(
-        cls,
-        topologies: list["Partial_Topology"],
+        topologies: list[Partial_Topology],
         trim: bool = False,
         min_overlap: int = 1,
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
         merged_index: Optional[int] = None,
-    ) -> "Partial_Topology":
+    ) -> Partial_Topology:
         """Merge topologies that have overlapping residues
 
         Args:
@@ -257,7 +258,7 @@
             raise ValueError("Cannot merge empty list of topologies")
 
         if len(topologies) < 2:
-            return cls.merge(
+            return TopologyFactory.merge(
                 topologies,
                 trim=trim,
                 merged_name=merged_name,
@@ -270,7 +271,7 @@
             has_sufficient_overlap = False
             for j, topo2 in enumerate(topologies):
                 if i != j:
-                    overlap = topo1.get_overlap(topo2, check_trim=trim)
+                    overlap = PairwiseComparisons.get_overlap(topo1, topo2, check_trim=trim)
                     if len(overlap) >= min_overlap:
                         has_sufficient_overlap = True
                         break
@@ -282,46 +283,50 @@
                     f"does not have at least {min_overlap} overlapping residues with any other topology"
                 )
 
-        return cls.merge(
+        return TopologyFactory.merge(
             topologies,
             trim=trim,
             merged_name=merged_name,
             merged_sequence=merged_sequence,
             merged_index=merged_index,
         )
-    def extract_residues(self, use_peptide_trim: bool = True) -> list["Partial_Topology"]:
+
+    @staticmethod
+    def extract_residues(
+        topology: Partial_Topology, use_peptide_trim: bool = True
+    ) -> list[Partial_Topology]:
         """Extract individual residues
 
         Args:
             use_peptide_trim: If True and this is a peptide, use peptide_residues.
                              If False, use all residues regardless of peptide settings.
         """
-        if self.length == 1:
-            return [self]
+        if topology.length == 1:
+            return [topology]
 
-        if use_peptide_trim and self.peptide and self.peptide_residues:
-            residues_to_extract = self.peptide_residues
+        if use_peptide_trim and topology.peptide and topology.peptide_residues:
+            residues_to_extract = topology.peptide_residues
         else:
-            residues_to_extract = self.residues
+            residues_to_extract = topology.residues
 
         return [
-            Partial_Topology.from_single(
-                chain=self.chain,
+            TopologyFactory.from_single(
+                chain=topology.chain,
                 residue=res,
-                fragment_sequence=self.fragment_sequence,
-                fragment_name=self.fragment_name,
-                fragment_index=self.fragment_index,
+                fragment_sequence=topology.fragment_sequence,
+                fragment_name=topology.fragment_name,
+                fragment_index=topology.fragment_index,
                 peptide=False,  # Individual residues are not peptides
-                peptide_trim=self.peptide_trim,
+                peptide_trim=topology.peptide_trim,
             )
             for res in residues_to_extract
         ]
 
     ###
-
+    @staticmethod
     def remove_residues_by_topologies(
-        self, topologies_to_remove: list["Partial_Topology"]
-    ) -> "Partial_Topology":
+        topology: Partial_Topology, topologies_to_remove: list[Partial_Topology]
+    ) -> Partial_Topology:
         """Remove residues from this topology based on other topologies
 
         Args:
@@ -337,9 +342,9 @@
         """
         # Verify all topologies are on the same chain
         for topo in topologies_to_remove:
-            if topo.chain != self.chain:
+            if topo.chain != topology.chain:
                 raise ValueError(
-                    f"Cannot remove residues from different chain: {topo.chain} != {self.chain}"
+                    f"Cannot remove residues from different chain: {topo.chain} != {topology.chain}"
                 )
 
         # Collect all residues to remove
@@ -355,12 +360,40 @@
             raise ValueError("No residues remaining after removal")
 
         # Create new topology with remaining residues
-        return Partial_Topology.from_residues(
-            chain=self.chain,
+        return TopologyFactory.from_residues(
+            chain=topology.chain,
             residues=new_residues,
-            fragment_sequence=self.fragment_sequence,
-            fragment_name=self.fragment_name,
-            fragment_index=self.fragment_index,
-            peptide=self.peptide,
-            peptide_trim=self.peptide_trim,
+            fragment_sequence=topology.fragment_sequence,
+            fragment_name=topology.fragment_name,
+            fragment_index=topology.fragment_index,
+            peptide=topology.peptide,
+            peptide_trim=topology.peptide_trim,
+        )
+
+    @staticmethod
+    def union(
+        top: Partial_Topology, other: Partial_Topology, check_trim: bool = False
+    ) -> Partial_Topology:
+        """
+        Combine two topologies into a single topology containing all residues
+        """
+        if top.chain != other.chain:
+            raise ValueError("Cannot combine topologies with different chains")
+
+        top_active = top._get_active_residues(check_trim)
+        other_active = other._get_active_residues(check_trim)
+
+        all_active = sorted(set(top_active) | set(other_active))
+        min_res, max_res = min(all_active), max(all_active)
+
+        combined_residues = list(range(min_res, max_res + 1))
+
+        return TopologyFactory.from_residues(
+            chain=top.chain,
+            residues=combined_residues,
+            fragment_sequence=top.fragment_sequence,
+            fragment_name=top.fragment_name,
+            fragment_index=top.fragment_index,
+            peptide=top.peptide,
+            peptide_trim=top.peptide_trim,
         )
