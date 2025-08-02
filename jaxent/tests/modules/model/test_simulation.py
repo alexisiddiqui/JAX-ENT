@@ -69,6 +69,9 @@ class MockInputFeatures(Input_Features[Any]):
             return NotImplemented
         return jnp.array_equal(self.data, other.data)
 
+    def feat_pred(self) -> jax.Array:
+        return self.data
+
 
 # Register MockInputFeatures as a PyTree
 register_pytree_node(
