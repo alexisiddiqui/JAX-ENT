@@ -197,8 +197,9 @@ tests/_*
 *.dat
 _*/
 
-# exclude folders called HDXer
-HDXer/
+# exclude folders called HDXer inside notebooks
+notebooks/**/HDXer/
+
 .npz
 .npy
 .jpz.npz
