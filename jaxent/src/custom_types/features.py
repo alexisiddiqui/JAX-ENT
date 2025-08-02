@@ -181,9 +181,10 @@ class AbstractFeatures(ABC):
         for slot_name in self._get_ordered_slots():
             value = getattr(self, slot_name)
             if slot_name in self.__features__:
-                features_dict[slot_name] = jnp.asarray(value)
-            elif value is None:
-                features_dict[slot_name] = "__NONE__"  # Special marker for None
+                if value is None:
+                    features_dict[slot_name] = None  # Store None directly
+                else:
+                    features_dict[slot_name] = jnp.asarray(value).astype(jnp.float32)
             else:
                 features_dict[slot_name] = value
 
@@ -222,7 +223,8 @@ class AbstractFeatures(ABC):
         for slot_name in cls._get_ordered_slots():
             if slot_name in data:
                 loaded_value = data[slot_name]
-                if isinstance(loaded_value, np.ndarray) and loaded_value.shape == () and loaded_value.item() == "__NONE__":
+                # Check if the loaded value is a NumPy array containing a single None
+                if isinstance(loaded_value, np.ndarray) and loaded_value.shape == () and loaded_value.item() is None:
                     features_kwargs[slot_name] = None
                 else:
                     features_kwargs[slot_name] = loaded_value
