@@ -27,7 +27,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     """
 
     base_include_selection: str = "protein"
-    base_exclude_selection: str = "resname PRO or resid 1"
+    base_exclude_selection: str = "resname PRO"
+    exclude_termini: bool = True
 
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
@@ -142,7 +143,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 universe,
                 include_selection=self.final_include_selection[idx],
                 exclude_selection=self.final_exclude_selection[idx],
-                exclude_termini=True,
+                exclude_termini=self.exclude_termini,
                 renumber_residues=True,
             )
             common_residue_group = cast(mda.ResidueGroup, common_residue_group)
@@ -156,7 +157,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                     universe,
                     include_selection=self.final_include_selection[idx],
                     exclude_selection=self.final_exclude_selection[idx],
-                    exclude_termini=True,
+                    exclude_termini=self.exclude_termini,
                     renumber_residues=True,
                 )
 
@@ -230,7 +231,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 universe=universe,
                 include_selection=self.final_include_selection[idx],
                 exclude_selection=self.final_exclude_selection[idx],
-                exclude_termini=True,
+                exclude_termini=self.exclude_termini,
                 termini_chain_selection="protein",
                 renumber_residues=True,
                 mda_atom_filtering="name N",
@@ -243,7 +244,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 universe=universe,
                 include_selection=self.final_include_selection[idx],
                 exclude_selection=self.final_exclude_selection[idx],
-                exclude_termini=True,
+                exclude_termini=self.exclude_termini,
                 termini_chain_selection="protein",
                 renumber_residues=True,
                 mda_atom_filtering="name H or name HN",
