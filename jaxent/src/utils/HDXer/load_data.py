@@ -6,7 +6,7 @@ data in both individual residue and segment formats, with flexible time point ha
 
 Supported formats:
 1. Individual residue format: ResID1 ResID2 frac1 frac2 frac3 ...
-2. Segment format: Res1 Res2 frac1 frac2 frac3 ...
+2. Segment output format: Res1 Res2 frac1 frac2 frac3 ...
 3. dfrac output format: tab-separated fractions with time header
 """
 
@@ -15,6 +15,8 @@ import re
 from typing import List, Optional, Tuple
 
 import jax.numpy as jnp
+import numpy as np
+import pandas as pd
 from jax import Array
 
 
@@ -172,7 +174,7 @@ def save_segs_file(filename: str, segments: List[Tuple[int, int]]) -> None:
     print(f"Saved segments file: {filename}")
 
 
-def save_HDXer_dfrac(
+def save_HDXer_segfrac(
     dfrac_filename: str,
     segs_filename: str,
     data: List[List[float]],
@@ -191,6 +193,27 @@ def save_HDXer_dfrac(
     """
     save_dfrac_file(dfrac_filename, data, timepoints)
     save_segs_file(segs_filename, segments)
+
+
+def load_segfrac_tonumpy(
+    filename: str,
+) -> np.ndarray:
+    """
+    Load data saved from save_dfrac_file or save_segs_file into a numpy array.
+
+    Args:
+        filename: Path to the data file
+
+    Returns:
+        Numpy array of deuteration fractions
+    """
+    return pd.read_csv(
+        filename,
+        # delim_whitespace=True,
+        sep=r"\s+",
+        comment="#",
+        header=None,
+    ).to_numpy()
 
 
 def _parse_header(header_line: str) -> Tuple[List[float], str]:
