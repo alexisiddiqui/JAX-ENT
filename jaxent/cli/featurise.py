@@ -127,7 +127,7 @@ def main():
     bv_parser.add_argument(
         "--mda_selection_exclusion",
         type=str,
-        default="resname PRO or resid 1",
+        default="resname PRO",
         help="MDAnalysis selection string for atoms to exclude.",
     )
 
@@ -204,7 +204,7 @@ def main():
     linear_bv_parser.add_argument(
         "--mda_selection_exclusion",
         type=str,
-        default="resname PRO or resid 1",
+        default="resname PRO",
         help="MDAnalysis selection string for atoms to exclude.",
     )
 
@@ -272,7 +272,7 @@ def main():
     nethdx_parser.add_argument(
         "--mda_selection_exclusion",
         type=str,
-        default="resname PRO or resid 1",
+        default="resname PRO",
         help="MDAnalysis selection string for atoms to exclude.",
     )
 
