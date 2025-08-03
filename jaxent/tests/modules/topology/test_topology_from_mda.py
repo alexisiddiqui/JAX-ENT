@@ -4,7 +4,11 @@ import MDAnalysis as mda
 import numpy as np
 import pytest
 
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import (
+    TopologyFactory,
+    mda_TopologyAdapter,
+    rank_and_index,
+)
 
 
 @pytest.fixture
@@ -22,7 +26,7 @@ class TestPartialTopologyFromMDA:
     def test_extract_by_chain_mode(self, bpti_universe):
         """Test extraction of topologies by chain mode"""
         # Extract topologies by chain
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", include_selection="protein"
         )
 
@@ -42,7 +46,7 @@ class TestPartialTopologyFromMDA:
     def test_extract_by_residue_mode(self, bpti_universe):
         """Test extraction of topologies by residue mode"""
         # Extract topologies by residue
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
@@ -62,7 +66,7 @@ class TestPartialTopologyFromMDA:
     def test_custom_selection(self, bpti_universe):
         """Test custom atom selection criteria"""
         # Extract only CA atoms from residues 10-20
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein and name CA and resid 10-20",
@@ -82,7 +86,7 @@ class TestPartialTopologyFromMDA:
     def test_exclude_selection(self, bpti_universe):
         """Test exclusion criteria"""
         # First get all residues
-        all_topologies = Partial_Topology.from_mda_universe(
+        all_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein",
@@ -90,7 +94,7 @@ class TestPartialTopologyFromMDA:
         )
 
         # Then get with exclusion
-        exclude_topologies = Partial_Topology.from_mda_universe(
+        exclude_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein",
@@ -113,7 +117,7 @@ class TestPartialTopologyFromMDA:
         """Test custom fragment naming template"""
         # Use custom naming template
         template = "res_{chain}_{resname}{resid}"
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein and resid 1-5",
@@ -128,11 +132,11 @@ class TestPartialTopologyFromMDA:
     def test_exclude_termini(self, bpti_universe):
         """Test excluding termini from chains"""
         # Extract with and without terminal exclusion
-        with_termini = Partial_Topology.from_mda_universe(
+        with_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False
         )
 
-        without_termini = Partial_Topology.from_mda_universe(
+        without_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True
         )
 
@@ -176,11 +180,11 @@ class TestPartialTopologyFromMDA:
         )
 
         # Test with renumber_residues=False to see actual residue number differences
-        with_termini_no_renumber = Partial_Topology.from_mda_universe(
+        with_termini_no_renumber = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False, renumber_residues=False
         )
 
-        without_termini_no_renumber = Partial_Topology.from_mda_universe(
+        without_termini_no_renumber = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True, renumber_residues=False
         )
 
@@ -207,21 +211,21 @@ class TestFindCommonResidues:
     def test_empty_ensemble_raises_error(self):
         """Test that empty ensemble raises ValueError"""
         with pytest.raises(ValueError, match="Empty ensemble provided"):
-            Partial_Topology.find_common_residues([])
+            mda_TopologyAdapter.find_common_residues([])
 
     def test_single_universe_termini_exclusion(self, bpti_universe):
         """Test exact termini exclusion behavior with single universe"""
         ensemble = [bpti_universe]
 
         # Get baseline - all protein residues with and without termini
-        baseline_with_termini = Partial_Topology.from_mda_universe(
+        baseline_with_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False
         )[0]
-        baseline_without_termini = Partial_Topology.from_mda_universe(
+        baseline_without_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True
         )[0]
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection="resname SOL"
         )
 
@@ -255,7 +259,7 @@ class TestFindCommonResidues:
         for n_universes in [2, 3, 5]:
             ensemble = [bpti_universe] * n_universes
 
-            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
                 ensemble, include_selection="protein", exclude_selection="resname SOL"
             )
 
@@ -276,14 +280,14 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         # Get baseline to understand the expected behavior
-        baseline_with_termini = Partial_Topology.from_mda_universe(
+        baseline_with_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False
         )[0]
-        baseline_without_termini = Partial_Topology.from_mda_universe(
+        baseline_without_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True
         )[0]
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
 
@@ -310,13 +314,13 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         # Test 1: Full protein shows termini exclusion effect
-        common_full, excluded_full = Partial_Topology.find_common_residues(
+        common_full, excluded_full = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
         full_ids = sorted([list(topo.residues)[0] for topo in common_full])
 
         # Test 2: Restricted selection preserves original numbering
-        common_restricted, excluded_restricted = Partial_Topology.find_common_residues(
+        common_restricted, excluded_restricted = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein and resid 10-20", exclude_selection=""
         )
         restricted_ids = sorted([list(topo.residues)[0] for topo in common_restricted])
@@ -349,14 +353,14 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         # Baseline: no ignore selection
-        common_baseline, excluded_baseline = Partial_Topology.find_common_residues(
+        common_baseline, excluded_baseline = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
         baseline_count = len(common_baseline)
 
         # Test hydrogen exclusion (if present)
         try:
-            common_no_h, excluded_no_h = Partial_Topology.find_common_residues(
+            common_no_h, excluded_no_h = mda_TopologyAdapter.find_common_residues(
                 ensemble, include_selection="protein", exclude_selection="name H*"
             )
             # Should have same or fewer common residues (hydrogens don't define residues)
@@ -368,7 +372,7 @@ class TestFindCommonResidues:
             pass
 
         # Test backbone-only selection
-        common_backbone, excluded_backbone = Partial_Topology.find_common_residues(
+        common_backbone, excluded_backbone = mda_TopologyAdapter.find_common_residues(
             ensemble,
             include_selection="protein and name CA",  # Only CA atoms
             exclude_selection="",
@@ -392,7 +396,7 @@ class TestFindCommonResidues:
         ]
 
         for start, end in test_ranges:
-            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
                 ensemble,
                 include_selection=f"protein and resid {start}-{end}",
                 exclude_selection="",
@@ -442,7 +446,7 @@ class TestFindCommonResidues:
         ]
 
         for start, end in test_ranges:
-            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
                 ensemble,
                 include_selection=f"protein and resid {start}-{end}",
                 exclude_selection="",
@@ -496,7 +500,7 @@ class TestFindCommonResidues:
         """Test specific chain identification and handling"""
         ensemble = [bpti_universe]
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
 
@@ -524,7 +528,7 @@ class TestFindCommonResidues:
         """Test detailed properties of returned residues"""
         ensemble = [bpti_universe]
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
 
@@ -552,17 +556,19 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe, bpti_universe, bpti_universe]
 
         # Get individual chain topologies for comparison
-        individual_chains = Partial_Topology.from_mda_universe(
+        individual_chains = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", include_selection="protein"
         )
-        individual_residues = individual_chains[0].extract_residues(use_peptide_trim=False)
+        individual_residues = TopologyFactory.extract_residues(
+            individual_chains[0], use_peptide_trim=False
+        )
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
 
         # For identical universes, common residues should match the exclude_termini=True extraction
-        baseline_no_termini = Partial_Topology.from_mda_universe(
+        baseline_no_termini = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True
         )[0]
 
@@ -576,7 +582,7 @@ class TestFindCommonResidues:
 
         # Test 1: Invalid residue selection
         with pytest.raises(ValueError, match="Failed to extract topologies"):
-            Partial_Topology.find_common_residues(
+            mda_TopologyAdapter.find_common_residues(
                 [bpti_universe],
                 include_selection="resname NONEXISTENT",
                 exclude_selection="",
@@ -584,13 +590,13 @@ class TestFindCommonResidues:
 
         # Test 2: Invalid atom selection
         with pytest.raises(ValueError, match="Failed to extract topologies"):
-            Partial_Topology.find_common_residues(
+            mda_TopologyAdapter.find_common_residues(
                 [bpti_universe], include_selection="name FAKEATOM", exclude_selection=""
             )
 
         # Test 3: Out of range residue selection
         with pytest.raises(ValueError, match="Failed to extract topologies"):
-            Partial_Topology.find_common_residues(
+            mda_TopologyAdapter.find_common_residues(
                 [bpti_universe],
                 include_selection="protein and resid 9999",
                 exclude_selection="",
@@ -600,7 +606,7 @@ class TestFindCommonResidues:
         """Test strict uniqueness and non-overlap requirements"""
         ensemble = [bpti_universe, bpti_universe]  # Identical universes
 
-        common_residues, excluded_residues = Partial_Topology.find_common_residues(
+        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
             ensemble, include_selection="protein", exclude_selection=""
         )
 
@@ -628,7 +634,7 @@ class TestFindCommonResidues:
 
         # Test that together they account for reasonable total
         total_residues = len(common_set) + len(excluded_set)
-        baseline_total = Partial_Topology.from_mda_universe(
+        baseline_total = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False
         )[0].length
 
@@ -643,14 +649,14 @@ class TestToMDAGroup:
     def test_basic_conversion(self, bpti_universe):
         """Test basic conversion from Partial_Topology to MDAnalysis groups"""
         # First extract topologies from universe
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein and resid 10-20"
         )
 
         assert len(topologies) > 0, "Should extract some topologies"
 
         # Convert back to MDAnalysis group
-        residue_group = Partial_Topology.to_mda_group(
+        residue_group = mda_TopologyAdapter.to_mda_group(
             set(topologies), bpti_universe, include_selection="protein"
         )
 
@@ -678,12 +684,12 @@ class TestToMDAGroup:
     def test_atom_filtering(self, bpti_universe):
         """Test atom filtering in to_mda_group"""
         # Extract chain topology
-        chain_topologies = Partial_Topology.from_mda_universe(
+        chain_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", include_selection="protein"
         )
 
         # Convert to AtomGroup with CA-only filter
-        ca_atoms = Partial_Topology.to_mda_group(
+        ca_atoms = mda_TopologyAdapter.to_mda_group(
             set(chain_topologies),
             bpti_universe,
             include_selection="protein",
@@ -706,7 +712,7 @@ class TestToMDAGroup:
     def test_subset_selection(self, bpti_universe):
         """Test selecting a subset of residues"""
         # Extract all residues
-        all_residue_topologies = Partial_Topology.from_mda_universe(
+        all_residue_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
@@ -714,7 +720,7 @@ class TestToMDAGroup:
         subset = set(all_residue_topologies[:5])
 
         # Convert to MDAnalysis group
-        subset_group = Partial_Topology.to_mda_group(
+        subset_group = mda_TopologyAdapter.to_mda_group(
             subset, bpti_universe, include_selection="protein"
         )
 
@@ -723,7 +729,7 @@ class TestToMDAGroup:
 
         # Test a different subset
         middle_subset = set(all_residue_topologies[10:15])
-        middle_group = Partial_Topology.to_mda_group(
+        middle_group = mda_TopologyAdapter.to_mda_group(
             middle_subset, bpti_universe, include_selection="protein"
         )
 
@@ -737,17 +743,17 @@ class TestToMDAGroup:
     def test_exclude_selection(self, bpti_universe):
         """Test exclude_selection parameter"""
         # Get all protein residues
-        all_topologies = Partial_Topology.from_mda_universe(
+        all_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
         # First get without exclusion
-        all_group = Partial_Topology.to_mda_group(
+        all_group = mda_TopologyAdapter.to_mda_group(
             set(all_topologies), bpti_universe, include_selection="protein"
         )
 
         # Then with exclusion
-        exclude_group = Partial_Topology.to_mda_group(
+        exclude_group = mda_TopologyAdapter.to_mda_group(
             set(all_topologies),
             bpti_universe,
             include_selection="protein",
@@ -765,7 +771,7 @@ class TestToMDAGroup:
     def test_round_trip_conversion(self, bpti_universe):
         """Test round-trip conversion between Universe, Partial_Topology, and back"""
         # Extract specific residues
-        original_topologies = Partial_Topology.from_mda_universe(
+        original_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein and resid 10-20",
@@ -773,7 +779,7 @@ class TestToMDAGroup:
         )
 
         # Convert back to MDAnalysis group
-        mda_group = Partial_Topology.to_mda_group(
+        mda_group = mda_TopologyAdapter.to_mda_group(
             set(original_topologies),
             bpti_universe,
             include_selection="protein",
@@ -781,7 +787,7 @@ class TestToMDAGroup:
         )
 
         # Convert back to Partial_Topology again
-        round_trip_topologies = Partial_Topology.from_mda_universe(
+        round_trip_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection=f"protein and resid {' '.join(str(res.resid) for res in mda_group)}",
@@ -808,21 +814,21 @@ class TestToMDAGroup:
         """Test error conditions in to_mda_group"""
         # Empty topology set should raise error
         with pytest.raises(ValueError, match="No topologies provided"):
-            Partial_Topology.to_mda_group(set(), bpti_universe, include_selection="protein")
+            mda_TopologyAdapter.to_mda_group(set(), bpti_universe, include_selection="protein")
 
         # Invalid selection should raise error
-        valid_topologies = Partial_Topology.from_mda_universe(
+        valid_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
         with pytest.raises(ValueError, match="Invalid include selection"):
-            Partial_Topology.to_mda_group(
+            mda_TopologyAdapter.to_mda_group(
                 set(valid_topologies), bpti_universe, include_selection="nonexistent_selection"
             )
 
         # Invalid atom filtering should raise error
         with pytest.raises(ValueError, match="Invalid atom filtering"):
-            Partial_Topology.to_mda_group(
+            mda_TopologyAdapter.to_mda_group(
                 set(valid_topologies),
                 bpti_universe,
                 include_selection="protein",
@@ -832,7 +838,7 @@ class TestToMDAGroup:
     def test_to_mda_residue_dict(self, bpti_universe):
         """Test conversion to a dictionary of residue indices by chain."""
         # Extract topologies for residues 10-20
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein and resid 10-20",
@@ -840,7 +846,7 @@ class TestToMDAGroup:
         )
 
         # Convert to residue dictionary
-        residue_dict = Partial_Topology.to_mda_residue_dict(
+        residue_dict = mda_TopologyAdapter.to_mda_residue_dict(
             set(topologies),
             bpti_universe,
             include_selection="protein",
@@ -860,7 +866,7 @@ class TestToMDAGroup:
         )
 
         # Test with exclusion
-        residue_dict_excluded = Partial_Topology.to_mda_residue_dict(
+        residue_dict_excluded = mda_TopologyAdapter.to_mda_residue_dict(
             set(topologies),
             bpti_universe,
             include_selection="protein",
@@ -881,7 +887,7 @@ class TestPartialTopologyPairwiseDistances:
     def test_basic_calculation(self, bpti_universe):
         """Test basic distance calculation between a few residue topologies."""
         # Extract topologies from the universe to ensure they exist
-        all_topologies = Partial_Topology.from_mda_universe(
+        all_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
@@ -890,7 +896,7 @@ class TestPartialTopologyPairwiseDistances:
         selected_indices = [0, 10, 20]  # First, 11th, and 21st residue
         topologies = [all_topologies[i] for i in selected_indices]
 
-        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+        dist_matrix, dist_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False
         )
 
@@ -911,7 +917,7 @@ class TestPartialTopologyPairwiseDistances:
     def test_manual_comparison_single_frame(self, bpti_universe):
         """Test distance calculation against a manual calculation for a single frame."""
         # Extract topologies from the universe to ensure they exist
-        all_topologies = Partial_Topology.from_mda_universe(
+        all_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
@@ -920,7 +926,7 @@ class TestPartialTopologyPairwiseDistances:
 
         # Create a multi-residue topology by extracting consecutive residues
         # and merging them
-        multi_residues = Partial_Topology.merge(all_topologies[20:23])  # 21st-23rd residues
+        multi_residues = TopologyFactory.merge(all_topologies[20:23])  # 21st-23rd residues
 
         topologies = [single_residue, multi_residues]
 
@@ -935,7 +941,7 @@ class TestPartialTopologyPairwiseDistances:
         res_multi_com = bpti_universe.select_atoms(multi_selection).center_of_mass()
         manual_dist = np.linalg.norm(res_single_com - res_multi_com)
 
-        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+        dist_matrix, dist_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False
         )
 
@@ -946,12 +952,12 @@ class TestPartialTopologyPairwiseDistances:
     def test_empty_topologies_list_raises_error(self, bpti_universe):
         """Test that an empty list of topologies raises a ValueError."""
         with pytest.raises(ValueError, match="topologies list cannot be empty"):
-            Partial_Topology.partial_topology_pairwise_distances([], bpti_universe)
+            mda_TopologyAdapter.partial_topology_pairwise_distances([], bpti_universe)
 
     def test_mixed_topology_types(self, bpti_universe):
         """Test that the function works with a mix of single and multi-residue topologies."""
         # Extract topologies from the universe to ensure they exist
-        all_topologies = Partial_Topology.from_mda_universe(
+        all_topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="residue", include_selection="protein"
         )
 
@@ -959,16 +965,16 @@ class TestPartialTopologyPairwiseDistances:
         single_residue1 = all_topologies[5]  # 6th residue
 
         # Create a range topology by merging consecutive residues
-        range_topology = Partial_Topology.merge(all_topologies[10:16])  # 11th-16th residues
+        range_topology = TopologyFactory.merge(all_topologies[10:16])  # 11th-16th residues
 
         # Create a non-contiguous multi-residue topology
-        noncontiguous_topology = Partial_Topology.merge(
+        noncontiguous_topology = TopologyFactory.merge(
             [all_topologies[20], all_topologies[25], all_topologies[30]]
         )
 
         topologies = [single_residue1, range_topology, noncontiguous_topology]
 
-        dist_matrix, dist_std = Partial_Topology.partial_topology_pairwise_distances(
+        dist_matrix, dist_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
             topologies, bpti_universe, renumber_residues=False, verbose=False
         )
 
@@ -985,7 +991,7 @@ class TestGetMDAGroupSortKey:
     def test_sort_key_residuegroup(self, bpti_universe):
         # Extract a ResidueGroup for a range of residues
         residues = bpti_universe.select_atoms("protein and resid 10-15").residues
-        sort_key = Partial_Topology.get_mda_group_sort_key(residues)
+        sort_key = mda_TopologyAdapter.get_mda_group_sort_key(residues)
         # Should be a tuple of length 4
         assert isinstance(sort_key, tuple) and len(sort_key) == 4
         # Chain ID length should be int
@@ -1000,13 +1006,13 @@ class TestGetMDAGroupSortKey:
     def test_sort_key_atomgroup(self, bpti_universe):
         # Extract an AtomGroup for a range of residues
         atoms = bpti_universe.select_atoms("protein and resid 10-15")
-        sort_key = Partial_Topology.get_mda_group_sort_key(atoms)
+        sort_key = mda_TopologyAdapter.get_mda_group_sort_key(atoms)
         assert isinstance(sort_key, tuple) and len(sort_key) == 4
 
     def test_sort_key_single_residue(self, bpti_universe):
         # Single residue as ResidueGroup
         residue = bpti_universe.select_atoms("protein and resid 10").residues
-        sort_key = Partial_Topology.get_mda_group_sort_key(residue)
+        sort_key = mda_TopologyAdapter.get_mda_group_sort_key(residue)
         assert isinstance(sort_key, tuple) and len(sort_key) == 4
 
     # def test_error_on_multiple_chains(self, bpti_universe):
@@ -1022,7 +1028,7 @@ class TestGetMDAGroupSortKey:
     #         fake_res.atoms[0].segid = "B"
     #         residues = list(residues) + [fake_res]
     #     with pytest.raises(ValueError):
-    #         Partial_Topology.get_mda_group_sort_key(residues)
+    #         mda_TopologyAdapter.get_mda_group_sort_key(residues)
 
     def test_error_on_empty_group(self, bpti_universe):
         # Empty ResidueGroup
@@ -1030,11 +1036,11 @@ class TestGetMDAGroupSortKey:
 
         empty_group = ResidueGroup([], bpti_universe)
         with pytest.raises(ValueError):
-            Partial_Topology.get_mda_group_sort_key(empty_group)
+            mda_TopologyAdapter.get_mda_group_sort_key(empty_group)
 
     def test_error_on_invalid_type(self):
         with pytest.raises(TypeError):
-            Partial_Topology.get_mda_group_sort_key("not_a_group")
+            mda_TopologyAdapter.get_mda_group_sort_key("not_a_group")
 
 
 class TestGetResidueGroupReorderingIndices:
@@ -1046,7 +1052,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 15 14 13 12 11 10").residues
 
         # Get reordering indices
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
 
         # Apply reordering
         reordered_residues = [residues[i] for i in indices]
@@ -1064,7 +1070,7 @@ class TestGetResidueGroupReorderingIndices:
         # Select atoms from multiple residues
         atoms = bpti_universe.select_atoms("protein and name CA and resid 20 18 16 14 12 10")
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(atoms)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(atoms)
         reordered_residues = [atoms.residues[i] for i in indices]
 
         # Check ordering
@@ -1075,7 +1081,7 @@ class TestGetResidueGroupReorderingIndices:
         """Test that single residue returns identity ordering"""
         residue = bpti_universe.select_atoms("protein and resid 10").residues
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residue)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residue)
 
         assert indices == [0], "Single residue should return identity index [0]"
 
@@ -1086,18 +1092,18 @@ class TestGetResidueGroupReorderingIndices:
         empty_group = ResidueGroup([], bpti_universe)
 
         with pytest.raises(ValueError, match="Group contains no residues"):
-            Partial_Topology.get_residuegroup_reordering_indices(empty_group)
+            mda_TopologyAdapter.get_residuegroup_reordering_indices(empty_group)
 
     def test_invalid_type_raises_error(self):
         """Test that invalid group type raises TypeError"""
         with pytest.raises(TypeError, match="residue_group must be a ResidueGroup or AtomGroup"):
-            Partial_Topology.get_residuegroup_reordering_indices("not_a_group")
+            mda_TopologyAdapter.get_residuegroup_reordering_indices("not_a_group")
 
     def test_already_ordered_residues(self, bpti_universe):
         """Test reordering residues that are already in correct order"""
         residues = bpti_universe.select_atoms("protein and resid 10-15").residues
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
 
         # Should return identity ordering
         expected_indices = list(range(len(residues)))
@@ -1111,14 +1117,14 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
 
         # Get reordering indices
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
         reordered_residues = [residues[i] for i in indices]
 
         # Create corresponding Partial_Topology objects
         partial_topologies = []
         for res in residues:
             chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
-            topo = Partial_Topology.from_single(
+            topo = TopologyFactory.from_single(
                 chain=chain_id,
                 residue=res.resid,
                 fragment_name=f"{chain_id}_{res.resname}{res.resid}",
@@ -1126,7 +1132,7 @@ class TestGetResidueGroupReorderingIndices:
             partial_topologies.append(topo)
 
         # Sort using Partial_Topology method
-        sorted_topologies = Partial_Topology.rank_and_index(partial_topologies.copy())
+        sorted_topologies = rank_and_index(partial_topologies.copy())
 
         # Compare orderings
         mda_ordered_resids = [res.resid for res in reordered_residues]
@@ -1142,7 +1148,7 @@ class TestGetResidueGroupReorderingIndices:
         all_residues = bpti_universe.select_atoms("protein and resid 10-15").residues
 
         # Get indices for single chain
-        indices = Partial_Topology.get_residuegroup_reordering_indices(all_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(all_residues)
         reordered = [all_residues[i] for i in indices]
 
         # Should be ordered by residue number within chain
@@ -1156,7 +1162,7 @@ class TestGetResidueGroupReorderingIndices:
         # Generate sort keys manually and compare with method results
         manual_keys = []
         for res in residues:
-            key = Partial_Topology.get_mda_group_sort_key(res)
+            key = mda_TopologyAdapter.get_mda_group_sort_key(res)
             manual_keys.append(key)
 
         # Sort using manual keys
@@ -1165,7 +1171,7 @@ class TestGetResidueGroupReorderingIndices:
         manual_indices = [i for _, i in indexed_keys]
 
         # Compare with method result
-        method_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        method_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
 
         assert manual_indices == method_indices, (
             f"Manual sort indices {manual_indices} should match method indices {method_indices}"
@@ -1176,7 +1182,7 @@ class TestGetResidueGroupReorderingIndices:
         # Test with gaps in residue numbering
         scattered_residues = bpti_universe.select_atoms("protein and resid 10 12 14 16 18").residues
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(scattered_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(scattered_residues)
         reordered = [scattered_residues[i] for i in indices]
 
         # Should still be ordered by residue number
@@ -1189,7 +1195,7 @@ class TestGetResidueGroupReorderingIndices:
         original_resnames = [res.resname for res in residues]
         original_resids = [res.resid for res in residues]
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
         reordered = [residues[i] for i in indices]
 
         # Check that residue properties are preserved
@@ -1209,14 +1215,14 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 30 10 25 15 20").residues
 
         # Method 1: Use get_residuegroup_reordering_indices
-        indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
         method1_order = [residues[i].resid for i in indices]
 
         # Method 2: Create individual topologies and sort
         topologies = []
         for res in residues:
             chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
-            topo = Partial_Topology.from_single(
+            topo = TopologyFactory.from_single(
                 chain=chain_id, residue=res.resid, fragment_name=f"res_{res.resid}"
             )
             topologies.append(topo)
@@ -1240,7 +1246,7 @@ class TestGetResidueGroupReorderingIndices:
         shuffled_selection = f"protein and resid {' '.join(map(str, reversed(residue_ids)))}"
         shuffled_residues = bpti_universe.select_atoms(shuffled_selection).residues
 
-        indices = Partial_Topology.get_residuegroup_reordering_indices(shuffled_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(shuffled_residues)
         reordered = [shuffled_residues[i] for i in indices]
 
         # Check that all residues are included and ordered
@@ -1254,15 +1260,15 @@ class TestGetResidueGroupReorderingIndices:
         res1 = bpti_universe.select_atoms("protein and resid 10").residues[0]
         res2 = bpti_universe.select_atoms("protein and resid 20").residues[0]
 
-        key1 = Partial_Topology.get_mda_group_sort_key(res1)
-        key2 = Partial_Topology.get_mda_group_sort_key(res2)
+        key1 = mda_TopologyAdapter.get_mda_group_sort_key(res1)
+        key2 = mda_TopologyAdapter.get_mda_group_sort_key(res2)
 
         # Earlier residue should have smaller sort key
         assert key1 < key2, f"Earlier residue should have smaller sort key: {key1} < {key2}"
 
         # Test with residue groups
         res_group = bpti_universe.select_atoms("protein and resid 10-12").residues
-        group_key = Partial_Topology.get_mda_group_sort_key(res_group)
+        group_key = mda_TopologyAdapter.get_mda_group_sort_key(res_group)
 
         assert isinstance(group_key, tuple), "Sort key should be a tuple"
         assert len(group_key) == 4, "Sort key should have 4 elements"
@@ -1272,9 +1278,9 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
 
         # Call method multiple times
-        indices1 = Partial_Topology.get_residuegroup_reordering_indices(residues)
-        indices2 = Partial_Topology.get_residuegroup_reordering_indices(residues)
-        indices3 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices1 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices2 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices3 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
 
         # All calls should produce identical results
         assert indices1 == indices2 == indices3, "Multiple calls should produce identical results"
@@ -1291,14 +1297,14 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 35 15 25 10 20 30").residues
 
         # Get MDA ordering
-        mda_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        mda_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
         mda_ordered_resids = [residues[i].resid for i in mda_indices]
 
         # Create corresponding topologies and sort using rank_order
         topologies = []
         for res in residues:
             chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
-            topo = Partial_Topology.from_single(
+            topo = TopologyFactory.from_single(
                 chain=chain_id, residue=res.resid, fragment_name=f"{chain_id}_{res.resid}"
             )
             topologies.append(topo)
@@ -1317,20 +1323,20 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 40 20 30 10").residues
 
         # Get MDA ordering
-        mda_indices = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        mda_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
         mda_ordered_resids = [residues[i].resid for i in mda_indices]
 
         # Create topologies and use rank_and_index
         topologies = []
         for res in residues:
             chain_id = getattr(res.atoms[0], "segid", None) or getattr(res.atoms[0], "chainid", "A")
-            topo = Partial_Topology.from_single(
+            topo = TopologyFactory.from_single(
                 chain=chain_id, residue=res.resid, fragment_name=f"res_{res.resid}"
             )
             topologies.append(topo)
 
         # Use rank_and_index to sort and assign indices
-        ranked_topologies = Partial_Topology.rank_and_index(topologies)
+        ranked_topologies = rank_and_index(topologies)
         ranked_resids = [topo.residues[0] for topo in ranked_topologies]
 
         assert mda_ordered_resids == ranked_resids, (
@@ -1349,8 +1355,8 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 10 11 12").residues
 
         # Test multiple orderings to ensure stability
-        indices1 = Partial_Topology.get_residuegroup_reordering_indices(residues)
-        indices2 = Partial_Topology.get_residuegroup_reordering_indices(residues)
+        indices1 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices2 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
 
         # Should be identical (stable sort)
         assert indices1 == indices2, "Sorting should be stable"
@@ -1365,7 +1371,9 @@ class TestBuildRenumberingMapping:
 
     def test_basic_renumbering_mapping(self, bpti_universe):
         """Test basic renumbering mapping creation"""
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         assert isinstance(mapping, dict), "Should return a dictionary"
         assert len(mapping) > 0, "Should have mappings for at least some residues"
@@ -1386,10 +1394,10 @@ class TestBuildRenumberingMapping:
 
     def test_renumbering_with_termini_exclusion(self, bpti_universe):
         """Test renumbering mapping with terminal exclusion"""
-        mapping_with_termini = Partial_Topology._build_renumbering_mapping(
+        mapping_with_termini = mda_TopologyAdapter._build_renumbering_mapping(
             bpti_universe, exclude_termini=False
         )
-        mapping_without_termini = Partial_Topology._build_renumbering_mapping(
+        mapping_without_termini = mda_TopologyAdapter._build_renumbering_mapping(
             bpti_universe, exclude_termini=True
         )
 
@@ -1418,7 +1426,9 @@ class TestBuildRenumberingMapping:
 
     def test_renumbering_preserves_chain_separation(self, bpti_universe):
         """Test that renumbering preserves chain separation"""
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         # Group mappings by chain
         chain_mappings = {}
@@ -1448,7 +1458,9 @@ class TestBuildRenumberingMapping:
 
     def test_renumbering_with_single_residue_chain(self, bpti_universe):
         """Test renumbering behavior with very short chains"""
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         # BPTI typically has one chain, so test the general behavior
         chain_mappings = {}
@@ -1464,10 +1476,12 @@ class TestBuildRenumberingMapping:
     def test_renumbering_consistency_with_from_mda_universe(self, bpti_universe):
         """Test that renumbering mapping is consistent with from_mda_universe"""
         # Get the renumbering mapping
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         # Extract topologies with renumbering
-        topologies = Partial_Topology.from_mda_universe(
+        topologies = mda_TopologyAdapter.from_mda_universe(
             bpti_universe,
             mode="residue",
             include_selection="protein",
@@ -1504,14 +1518,18 @@ class TestBuildRenumberingMapping:
         """Test handling of edge cases in universe structure"""
         # This is hard to test without creating artificial universes
         # But we can test the basic functionality
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=False
+        )
 
         # Should have mappings for all residues
         assert len(mapping) > 0, "Should have mappings even without terminal exclusion"
 
     def test_renumbering_bidirectional_lookup(self, bpti_universe):
         """Test that renumbering mapping can be used for bidirectional lookup"""
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         # Create reverse mapping
         reverse_mapping = {}
@@ -1528,7 +1546,9 @@ class TestBuildRenumberingMapping:
 
     def test_renumbering_with_no_terminal_exclusion(self, bpti_universe):
         """Test renumbering without terminal exclusion"""
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=False
+        )
 
         # Should include all residues
         assert len(mapping) > 0, "Should have mappings for all residues"
@@ -1567,7 +1587,7 @@ class TestValidateTopologyContainment:
         """Test validation of valid topology containment"""
         # Create a topology that should be valid
         # Use a residue that is known to be valid after exclusion (e.g., 2, as 1 is usually excluded)
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=2,  # Should be within range after terminal exclusion
             fragment_name="test_residue",
@@ -1575,7 +1595,7 @@ class TestValidateTopologyContainment:
 
         # Should not raise any errors
         try:
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
         except ValueError as e:
@@ -1584,7 +1604,7 @@ class TestValidateTopologyContainment:
     def test_invalid_topology_residue_out_of_range(self, bpti_universe):
         """Test validation fails for out-of-range residues"""
         # Create topology with residue number that's too high
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=9999,  # Should be out of range
             fragment_name="invalid_residue",
@@ -1592,14 +1612,14 @@ class TestValidateTopologyContainment:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_invalid_topology_residue_negative(self, bpti_universe):
         """Test validation fails for negative residue numbers"""
         # Create topology with negative residue number
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=-1,  # Invalid residue number
             fragment_name="negative_residue",
@@ -1607,14 +1627,14 @@ class TestValidateTopologyContainment:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_invalid_topology_residue_zero(self, bpti_universe):
         """Test validation fails for zero residue number"""
         # Create topology with zero residue number
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=0,  # Invalid residue number
             fragment_name="zero_residue",
@@ -1622,14 +1642,16 @@ class TestValidateTopologyContainment:
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_validation_with_terminal_exclusion(self, bpti_universe):
         """Test validation behavior with terminal exclusion"""
         # Get the actual range of available residues
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         # Find the range of valid residues for chain A
         chain_resids = [
@@ -1644,31 +1666,33 @@ class TestValidateTopologyContainment:
         max_resid = max(chain_resids)
 
         # Test valid residue (should pass)
-        valid_topology = Partial_Topology.from_single(
+        valid_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=min_resid, fragment_name="valid_residue"
         )
 
         # Should not raise
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             valid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )
 
         # Test invalid residue (should fail)
-        invalid_topology = Partial_Topology.from_single(
+        invalid_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=max_resid + 1,  # One beyond range
             fragment_name="invalid_residue",
         )
 
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 invalid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_validation_without_terminal_exclusion(self, bpti_universe):
         """Test validation behavior without terminal exclusion"""
         # Get the range with all residues included
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=False)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=False
+        )
 
         chain_resids = [
             new_resid
@@ -1681,12 +1705,12 @@ class TestValidateTopologyContainment:
         max_resid = max(chain_resids)
 
         # Test residue that would be valid without terminal exclusion
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=max_resid, fragment_name="terminal_residue"
         )
 
         # Should not raise when terminals are not excluded
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             topology, bpti_universe, exclude_termini=False, renumber_residues=True
         )
 
@@ -1700,25 +1724,25 @@ class TestValidateTopologyContainment:
             pytest.skip("No protein residues found")
 
         # Test with original residue number (should pass)
-        valid_topology = Partial_Topology.from_single(
+        valid_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id,
             residue=original_resids[len(original_resids) // 2],  # Middle residue
             fragment_name="original_residue",
         )
 
         # Should not raise
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             valid_topology, bpti_universe, exclude_termini=False, renumber_residues=False
         )
 
         # Test with invalid original residue number (should fail)
         invalid_resid = max(original_resids) + 100
-        invalid_topology = Partial_Topology.from_single(
+        invalid_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=invalid_resid, fragment_name="invalid_original"
         )
 
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 invalid_topology, bpti_universe, exclude_termini=False, renumber_residues=False
             )
 
@@ -1730,19 +1754,19 @@ class TestValidateTopologyContainment:
         if not valid_residues_for_multi:
             pytest.skip("Not enough valid residues for multi-residue topology test")
 
-        topology = Partial_Topology.from_residues(
+        topology = TopologyFactory.from_residues(
             chain=self.actual_chain_id,
             residues=valid_residues_for_multi,  # Should be valid range
             fragment_name="multi_residue",
         )
 
         # Should not raise
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )
 
         # Test with some invalid residues
-        invalid_topology = Partial_Topology.from_residues(
+        invalid_topology = TopologyFactory.from_residues(
             chain=self.actual_chain_id,
             residues=[
                 valid_residues_for_multi[0],
@@ -1753,14 +1777,14 @@ class TestValidateTopologyContainment:
         )
 
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 invalid_topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_validation_with_nonexistent_chain(self, bpti_universe):
         """Test validation fails for nonexistent chain"""
         # Create topology with nonexistent chain
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain="Z",  # Likely nonexistent
             residue=1,
             fragment_name="nonexistent_chain",
@@ -1768,20 +1792,20 @@ class TestValidateTopologyContainment:
 
         # Should raise ValueError about no residues found for chain
         with pytest.raises(ValueError, match="No residues found for chain"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_validation_error_messages(self, bpti_universe):
         """Test that validation error messages are informative"""
         # Create topology with out-of-range residue
-        topology = Partial_Topology.from_single(
+        topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=9999, fragment_name="test_residue"
         )
 
         # Check that error message contains useful information
         with pytest.raises(ValueError) as exc_info:
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
@@ -1800,7 +1824,7 @@ class TestValidateTopologyContainment:
         if len(valid_peptide_res) < 10:
             pytest.skip("Not enough valid residues for peptide topology test")
 
-        peptide_topology = Partial_Topology.from_residues(
+        peptide_topology = TopologyFactory.from_residues(
             chain=self.actual_chain_id,
             residues=valid_peptide_res,
             fragment_name="peptide_test",
@@ -1809,14 +1833,16 @@ class TestValidateTopologyContainment:
         )
 
         # Should validate based on full residue list, not trimmed
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             peptide_topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )
 
     def test_validation_boundary_conditions(self, bpti_universe):
         """Test validation at boundary conditions"""
         # Get the actual range of available residues
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         chain_resids = [
             new_resid
@@ -1830,50 +1856,52 @@ class TestValidateTopologyContainment:
         max_resid = max(chain_resids)
 
         # Test minimum valid residue
-        min_topology = Partial_Topology.from_single(
+        min_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=min_resid, fragment_name="min_residue"
         )
 
         # Should not raise
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             min_topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )
 
         # Test maximum valid residue
-        max_topology = Partial_Topology.from_single(
+        max_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=max_resid, fragment_name="max_residue"
         )
 
         # Should not raise
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             max_topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )
 
         # Test one below minimum (should fail)
         if min_resid > 1:
-            below_min_topology = Partial_Topology.from_single(
+            below_min_topology = TopologyFactory.from_single(
                 chain=self.actual_chain_id, residue=min_resid - 1, fragment_name="below_min"
             )
 
             with pytest.raises(ValueError, match="contains residues .* that are not available"):
-                Partial_Topology._validate_topology_containment(
+                mda_TopologyAdapter._validate_topology_containment(
                     below_min_topology, bpti_universe, exclude_termini=True, renumber_residues=True
                 )
 
         # Test one above maximum (should fail)
-        above_max_topology = Partial_Topology.from_single(
+        above_max_topology = TopologyFactory.from_single(
             chain=self.actual_chain_id, residue=max_resid + 1, fragment_name="above_max"
         )
 
         with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            Partial_Topology._validate_topology_containment(
+            mda_TopologyAdapter._validate_topology_containment(
                 above_max_topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
 
     def test_validation_performance_with_large_topology(self, bpti_universe):
         """Test validation performance with large topology"""
         # Create topology with many residues
-        mapping = Partial_Topology._build_renumbering_mapping(bpti_universe, exclude_termini=True)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=True
+        )
 
         chain_resids = [
             new_resid
@@ -1884,13 +1912,13 @@ class TestValidateTopologyContainment:
             pytest.skip("Need at least 10 residues for this test")
 
         # Test with large but valid topology
-        large_topology = Partial_Topology.from_residues(
+        large_topology = TopologyFactory.from_residues(
             chain=self.actual_chain_id,
             residues=chain_resids,  # All valid residues
             fragment_name="large_topology",
         )
 
         # Should not raise and should complete reasonably quickly
-        Partial_Topology._validate_topology_containment(
+        mda_TopologyAdapter._validate_topology_containment(
             large_topology, bpti_universe, exclude_termini=True, renumber_residues=True
         )

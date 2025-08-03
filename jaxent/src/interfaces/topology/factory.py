@@ -1,7 +1,7 @@
 from typing import Optional, Union
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
-from jaxent.src.interfaces.topology.pairwise import PairwiseComparisons
+from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 
 
 class TopologyFactory:
@@ -184,7 +184,6 @@ class TopologyFactory:
 
     @staticmethod
     def merge_contiguous(
-        Partial_Topology,
         topologies: list[Partial_Topology],
         trim: bool = False,
         gap_tolerance: int = 0,
@@ -215,7 +214,7 @@ class TopologyFactory:
             current = sorted_topos[i]
             next_topo = sorted_topos[i + 1]
 
-            gap = current.get_gap_to(next_topo, check_trim=trim)
+            gap = PairwiseTopologyComparisons.get_gap_to(current, next_topo, check_trim=trim)
             if gap is None:  # Overlapping is OK
                 continue
             elif gap > gap_tolerance:
@@ -227,7 +226,7 @@ class TopologyFactory:
                     f"(starts at {min(next_residues)}) exceeds tolerance of {gap_tolerance}"
                 )
 
-        return cls.merge(sorted_topos, trim=trim, **kwargs)
+        return TopologyFactory.merge(sorted_topos, trim=trim, **kwargs)
 
     @staticmethod
     def merge_overlapping(
@@ -271,7 +270,7 @@ class TopologyFactory:
             has_sufficient_overlap = False
             for j, topo2 in enumerate(topologies):
                 if i != j:
-                    overlap = PairwiseComparisons.get_overlap(topo1, topo2, check_trim=trim)
+                    overlap = PairwiseTopologyComparisons.get_overlap(topo1, topo2, check_trim=trim)
                     if len(overlap) >= min_overlap:
                         has_sufficient_overlap = True
                         break
@@ -325,7 +324,9 @@ class TopologyFactory:
     ###
     @staticmethod
     def remove_residues_by_topologies(
-        topology: Partial_Topology, topologies_to_remove: list[Partial_Topology]
+        topology: Partial_Topology,
+        topologies_to_remove: list[Partial_Topology],
+        check_trim: bool = False,
     ) -> Partial_Topology:
         """Remove residues from this topology based on other topologies
 
@@ -353,7 +354,11 @@ class TopologyFactory:
             residues_to_remove.update(topo.residues)
 
         # Create new residue list with specified residues removed
-        new_residues = [res for res in self.residues if res not in residues_to_remove]
+        new_residues = [
+            res
+            for res in topology._get_active_residues(check_trim)
+            if res not in residues_to_remove
+        ]
 
         # If no residues left, raise error
         if not new_residues:

@@ -15,9 +15,9 @@ class PTSerialiser:
         return json.dumps(top._to_dict(), indent=2)
 
     @staticmethod
-    def from_json(top: Partial_Topology, json_str: str) -> Partial_Topology:
+    def from_json(json_str: str) -> Partial_Topology:
         """Deserialize from JSON string"""
-        return top._from_dict(json.loads(json_str))
+        return Partial_Topology._from_dict(json.loads(json_str))
 
     @staticmethod
     def save_list_to_json(topologies: list[Partial_Topology], filepath: Union[str, Path]) -> None:

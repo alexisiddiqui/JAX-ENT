@@ -3,9 +3,16 @@ import random
 from typing import Optional, Sequence
 
 import MDAnalysis as mda
+from interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import (
+    PairwiseTopologyComparisons,
+    Partial_Topology,
+    TopologyFactory,
+    calculate_fragment_redundancy,
+    group_set_by_chain,
+)
 
 
 def filter_common_residues(
@@ -40,10 +47,9 @@ def filter_common_residues(
     for i, data in tqdm(enumerate(dataset), total=len(dataset), desc="Filtering fragments"):
         assert data.top is not None, "Topology is not defined in the experimental data."
 
-        # Use the robust topology intersection method to check for overlap
-        # This automatically handles chain matching, peptide trimming, etc.
+        # Use PairwiseTopologyComparisons.intersects for robust overlap checking
         has_common_residues = any(
-            data.top.intersects(common_topo, check_trim=check_trim)
+            PairwiseTopologyComparisons.intersects(data.top, common_topo, check_trim=check_trim)
             for common_topo in common_residues
         )
 
@@ -127,7 +133,7 @@ class DataSplitter:
         # Handle common_residues - either provided or computed from ensemble
         if common_residues is None and ensemble is not None:
             # For now, use the first selection string - could be enhanced to use all
-            common_residues, excluded_residues = Partial_Topology.find_common_residues(
+            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
                 ensemble,
                 include_selection=self.include_selection,
                 exclude_selection=self.exclude_selection,
@@ -169,7 +175,7 @@ class DataSplitter:
 
         # Calculate fragment overlaps for centrality sampling
         if self.dataset.data:  # Only calculate if we have data
-            self.fragment_overlaps = Partial_Topology.calculate_fragment_redundancy(
+            self.fragment_overlaps = calculate_fragment_redundancy(
                 [data.top for data in self.dataset.data], mode="mean", check_trim=check_trim
             )
         else:
@@ -205,13 +211,13 @@ class DataSplitter:
         Returns:
             Dictionary mapping chain -> merged Partial_Topology for that chain
         """
-        common_residues_by_chain = Partial_Topology.group_set_by_chain(self.common_residues)
+        common_residues_by_chain = group_set_by_chain(self.common_residues)
         splittable_residues = {}
 
         for chain, chain_residues in common_residues_by_chain.items():
             if chain_residues:
                 try:
-                    merged_topo = Partial_Topology.merge(
+                    merged_topo = TopologyFactory.merge(
                         list(chain_residues),
                         trim=self.check_trim,
                         merged_name=f"splittable_chain_{chain}",
@@ -239,13 +245,13 @@ class DataSplitter:
         Returns:
             Dictionary mapping chain -> merged Partial_Topology for that chain
         """
-        topologies_by_chain = Partial_Topology.group_set_by_chain(set(topologies))
+        topologies_by_chain = group_set_by_chain(set(topologies))
         merged_topologies = {}
 
         for chain, chain_topologies in topologies_by_chain.items():
             if chain_topologies:
                 try:
-                    merged_topo = Partial_Topology.merge(
+                    merged_topo = TopologyFactory.merge(
                         list(chain_topologies),
                         trim=check_trim,
                         merged_name=f"{name_prefix}_chain_{chain}",
@@ -287,34 +293,37 @@ class DataSplitter:
             if chain in merged_train_topologies:
                 train_topo = merged_train_topologies[chain]
 
-                # Check if there's overlap between train and val topologies for this chain
-                if val_topo.intersects(train_topo, check_trim=self.check_trim):
-                    overlap_residues = val_topo.get_overlap(train_topo, check_trim=self.check_trim)
+                # Use PairwiseTopologyComparisons.intersects for overlap checking
+                if PairwiseTopologyComparisons.intersects(
+                    val_topo, train_topo, check_trim=self.check_trim
+                ):
+                    overlap_residues = PairwiseTopologyComparisons.get_overlap(
+                        val_topo, train_topo, check_trim=self.check_trim
+                    )
                     print(f"Chain {chain}: Found {len(overlap_residues)} overlapping residues")
 
                     # Create a temporary topology with overlapping residues to remove
-                    overlap_topo = Partial_Topology.from_residues(
+                    overlap_topo = TopologyFactory.from_residues(
                         chain=chain, residues=overlap_residues, fragment_name="overlap_temp"
                     )
 
                     try:
                         # Remove overlapping residues from validation topology
-                        updated_val_topo = val_topo.remove_residues([overlap_topo])
+                        updated_val_topo = TopologyFactory.remove_residues_by_topologies(
+                            val_topo, [overlap_topo]
+                        )
                         updated_val_topologies[chain] = updated_val_topo
                         print(
                             f"Chain {chain}: Removed overlap, val topology now has {len(updated_val_topo.residues)} residues"
                         )
                     except ValueError as e:
-                        # If no residues remain after removal, skip this chain for validation
                         print(
                             f"Chain {chain}: Skipping validation topology - no residues remain after overlap removal: {e}"
                         )
                         continue
                 else:
-                    # No overlap, keep original topology
                     updated_val_topologies[chain] = val_topo
             else:
-                # No corresponding train topology for this chain, keep original
                 updated_val_topologies[chain] = val_topo
 
         # Update merged topologies
@@ -1044,9 +1053,9 @@ class DataSplitter:
 
         print(f"Computing spatial distances for {len(source_topologies)} topologies...")
 
-        # Step 2: Compute pairwise distances using trajectory data
+        # Use TopologyFactory.partial_topology_pairwise_distances for distance calculation
         try:
-            distance_matrix, distance_std = Partial_Topology.partial_topology_pairwise_distances(
+            distance_matrix, distance_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
                 topologies=source_topologies,
                 universe=universe,
                 include_selection=include_selection,
@@ -1111,18 +1120,14 @@ class DataSplitter:
             val_topologies, self.check_trim, "val_spatial"
         )
 
-        # Step 7: Remove overlaps between merged topologies if requested
         if remove_overlap:
             merged_val_topologies = self._remove_overlaps(
                 merged_train_topologies, merged_val_topologies
             )
 
-        # Step 8: Use filter_common_residues to create final train/val sets
-        # Convert merged topologies back to sets for filtering
         train_topology_set = set(merged_train_topologies.values())
         val_topology_set = set(merged_val_topologies.values())
 
-        # Filter entire dataset using the merged topologies
         final_train_data = filter_common_residues(
             self.dataset.data, train_topology_set, check_trim=self.check_trim
         )
