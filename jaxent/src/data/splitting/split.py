@@ -137,6 +137,7 @@ class DataSplitter:
                 ensemble,
                 include_selection=self.include_selection,
                 exclude_selection=self.exclude_selection,
+                renumber_residues=False,
             )
         elif common_residues is None and ensemble is None:
             raise ValueError("Either common_residues or ensemble must be provided")
@@ -998,6 +999,9 @@ class DataSplitter:
         remove_overlap: bool = False,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
+        renumber_residues: bool = False,
+        exclude_termini: bool = True,
+        termini_chain_selection: Optional[str] = "protein",
         start: Optional[int] = None,
         stop: Optional[int] = None,
         step: Optional[int] = None,
@@ -1053,6 +1057,9 @@ class DataSplitter:
 
         print(f"Computing spatial distances for {len(source_topologies)} topologies...")
 
+        if termini_chain_selection is None:
+            termini_chain_selection = "protein"
+
         # Use TopologyFactory.partial_topology_pairwise_distances for distance calculation
         try:
             distance_matrix, distance_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
@@ -1060,9 +1067,9 @@ class DataSplitter:
                 universe=universe,
                 include_selection=include_selection,
                 exclude_selection=exclude_selection,
-                exclude_termini=True,
-                termini_chain_selection=include_selection,
-                renumber_residues=True,
+                exclude_termini=exclude_termini,
+                termini_chain_selection=termini_chain_selection,
+                renumber_residues=renumber_residues,
                 start=start,
                 stop=stop,
                 step=step,
