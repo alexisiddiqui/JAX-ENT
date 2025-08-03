@@ -1778,7 +1778,7 @@ class TestValidateTopologyContainment:
         )
 
         # Should raise ValueError about no residues found for chain
-        with pytest.raises(ValueError, match="No residues found for chain"):
+        with pytest.raises(ValueError, match="No atoms found for chain"):
             mda_TopologyAdapter._validate_topology_containment(
                 topology, bpti_universe, exclude_termini=True, renumber_residues=True
             )
