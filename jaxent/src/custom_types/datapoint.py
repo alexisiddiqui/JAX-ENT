@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import Partial_Topology, PTSerialiser
 
 
 @dataclass()
@@ -145,7 +145,7 @@ class ExpD_Datapoint:
             topologies = [dp.top for dp in datapoints]
 
             # Save topologies to JSON
-            Partial_Topology.save_list_to_json(topologies, json_path)
+            PTSerialiser.save_list_to_json(topologies, json_path)
 
             # Extract features
             features_list = []
@@ -240,7 +240,7 @@ class ExpD_Datapoint:
 
         try:
             # Load topologies
-            topologies = Partial_Topology.load_list_from_json(json_path)
+            topologies = PTSerialiser.load_list_from_json(json_path)
 
             # Load features
             df = pd.read_csv(csv_path)

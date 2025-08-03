@@ -250,7 +250,7 @@ class TestBVModel:
         assert hasattr(self.model, "forward")
         assert hasattr(self.model, "base_include_selection")
         assert hasattr(self.model, "base_exclude_selection")
-        assert self.model.base_exclude_selection == "resname PRO or resid 1"
+        assert self.model.base_exclude_selection == "resname PRO"
 
     def test_selection_combination(self):
         """Test _combine_selections method."""
@@ -279,7 +279,7 @@ class TestBVModel:
 
         # Should combine with base selections
         expected_include = "(protein) and (resname ALA)"
-        expected_exclude = "(resname PRO or resid 1) or (resname PRO)"
+        expected_exclude = "(resname PRO) or (resname PRO)"
 
         assert all(sel == expected_include for sel in inc_list)
         assert all(sel == expected_exclude for sel in exc_list)
@@ -293,7 +293,7 @@ class TestBVModel:
 
         # Should use base selections only
         assert all(sel == "protein" for sel in inc_list)
-        assert all(sel == "resname PRO or resid 1" for sel in exc_list)
+        assert all(sel == "resname PRO" for sel in exc_list)
 
     def test_prepare_selection_lists_per_universe(self):
         """Test _prepare_selection_lists with per-universe selections."""
@@ -309,8 +309,8 @@ class TestBVModel:
 
         assert inc_list[0] == "(protein) and (resname ALA)"
         assert inc_list[1] == "(protein) and (resname GLY)"
-        assert exc_list[0] == "(resname PRO or resid 1) or (resname PRO)"
-        assert exc_list[1] == "(resname PRO or resid 1) or (resname SER)"
+        assert exc_list[0] == "(resname PRO) or (resname PRO)"
+        assert exc_list[1] == "(resname PRO) or (resname SER)"
 
     def test_initialise_single_universe(self):
         """Test initialise method with a single universe."""
