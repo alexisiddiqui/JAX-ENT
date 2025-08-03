@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 import MDAnalysis as mda
 import numpy as np
@@ -9,15 +9,17 @@ from jaxent.src.interfaces.topology import (
     mda_TopologyAdapter,
     rank_and_index,
 )
+from jaxent.tests.test_utils import get_inst_path
 
 
 @pytest.fixture
 def bpti_universe():
     """Load BPTI structure as an MDAnalysis Universe"""
-    pdb_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    if not os.path.exists(pdb_path):
+    inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+    pdb_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    if not pdb_path.exists():
         pytest.skip(f"Test PDB file not found: {pdb_path}")
-    return mda.Universe(pdb_path)
+    return mda.Universe(str(pdb_path))
 
 
 class TestPartialTopologyFromMDA:
