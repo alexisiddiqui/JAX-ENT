@@ -660,11 +660,11 @@ class mda_TopologyAdapter:
                 if chain_id in included_by_chain:
                     # Remove included residues from this chain
                     try:
-                        excluded_chain_topo = all_chain_topo.remove_residues(
-                            [included_by_chain[chain_id]]
+                        excluded_chain_topo = TopologyFactory.remove_residues_by_topologies(
+                            all_chain_topo, [included_by_chain[chain_id]]
                         )
-                        excluded_residues = excluded_chain_topo.extract_residues(
-                            use_peptide_trim=False
+                        excluded_residues = TopologyFactory.extract_residues(
+                            excluded_chain_topo, use_peptide_trim=False
                         )
                         excluded_residue_topologies.update(excluded_residues)
                     except ValueError:
