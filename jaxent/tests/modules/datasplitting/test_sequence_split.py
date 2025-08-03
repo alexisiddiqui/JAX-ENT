@@ -6,7 +6,8 @@ import pytest
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology.factory import TopologyFactory
+from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 
 
 # Mock ExpD_Datapoint for testing
@@ -31,7 +32,7 @@ def create_sequential_topologies(chain="A", count=10, start_pos=1, gap=5, length
 
     for i in range(count):
         topologies.append(
-            Partial_Topology.from_range(
+            TopologyFactory.from_range(
                 chain, current_pos, current_pos + length - 1, fragment_name=f"seq_{chain}_{i + 1}"
             )
         )
@@ -51,7 +52,7 @@ def create_interleaved_chain_topologies(chains=["A", "B", "C"], count_per_chain=
         for chain in chains:
             start = chain_starts[chain] + (i * 15)
             topologies.append(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain, start, start + 10, fragment_name=f"interleaved_{chain}_{i + 1}"
                 )
             )
@@ -66,7 +67,7 @@ def create_overlapping_topologies(chain="A", count=12, base_start=1, overlap=3):
     for i in range(count):
         start = base_start + (i * (10 - overlap))  # Each fragment overlaps by 'overlap' residues
         topologies.append(
-            Partial_Topology.from_range(
+            TopologyFactory.from_range(
                 chain, start, start + 9, fragment_name=f"overlap_{chain}_{i + 1}"
             )
         )
@@ -87,7 +88,7 @@ def create_peptide_sequence_topologies(chains=["A", "B"], count_per_chain=8):
         for i in range(count_per_chain):
             trim = trim_values[i % len(trim_values)]
             topologies.append(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain,
                     start,
                     start + length - 1,
@@ -126,12 +127,12 @@ def create_common_residues_for_chains(chains, coverage_factor=0.8):
 
         if range1_end >= 1:
             common_residues.add(
-                Partial_Topology.from_range(chain, 1, range1_end, fragment_name=f"common_{chain}_1")
+                TopologyFactory.from_range(chain, 1, range1_end, fragment_name=f"common_{chain}_1")
             )
 
         if range2_end >= range2_start:
             common_residues.add(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain, range2_start, range2_end, fragment_name=f"common_{chain}_2"
                 )
             )
@@ -140,7 +141,7 @@ def create_common_residues_for_chains(chains, coverage_factor=0.8):
             dummy_start = 500
             while len(common_residues) < 2:
                 common_residues.add(
-                    Partial_Topology.from_range(
+                    TopologyFactory.from_range(
                         chain,
                         dummy_start,
                         dummy_start + 5,
@@ -165,7 +166,7 @@ def create_common_residues_for_chains(chains, coverage_factor=0.8):
 
         if end_pos >= 1:
             common_residues.add(
-                Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                TopologyFactory.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
             )
 
     return common_residues
@@ -196,12 +197,13 @@ def setup_splitter(request):
             return [
                 dp
                 for dp in dataset
-                if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                if any(
+                    PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                    for ct in common_topos
+                )
             ]
 
-        patcher1 = patch(
-            "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
-        )
+        patcher1 = patch("jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy")
         patcher2 = patch(
             "jaxent.src.data.splitting.split.filter_common_residues", side_effect=mock_filter_func
         )
@@ -261,10 +263,10 @@ class TestSequenceSplitBasicFunctionality:
         """Test that datapoints are sorted by sequence position before splitting."""
         # Create topologies in random order, but with predictable sequence positions
         topologies = [
-            Partial_Topology.from_range("A", 100, 110, fragment_name="frag_3"),
-            Partial_Topology.from_range("A", 10, 20, fragment_name="frag_1"),
-            Partial_Topology.from_range("A", 50, 60, fragment_name="frag_2"),
-            Partial_Topology.from_range("A", 150, 160, fragment_name="frag_4"),
+            TopologyFactory.from_range("A", 100, 110, fragment_name="frag_3"),
+            TopologyFactory.from_range("A", 10, 20, fragment_name="frag_1"),
+            TopologyFactory.from_range("A", 50, 60, fragment_name="frag_2"),
+            TopologyFactory.from_range("A", 150, 160, fragment_name="frag_4"),
         ]
 
         datapoints = create_datapoints_from_topologies(topologies)
@@ -377,10 +379,10 @@ class TestSequenceSplitMultiChain:
         """Test that chain ID takes precedence in sorting."""
         # Create topologies where chain B starts before chain A in sequence position
         topologies = [
-            Partial_Topology.from_range("B", 1, 10, fragment_name="chain_B_early"),
-            Partial_Topology.from_range("A", 50, 60, fragment_name="chain_A_later"),
-            Partial_Topology.from_range("A", 5, 15, fragment_name="chain_A_early"),
-            Partial_Topology.from_range("B", 100, 110, fragment_name="chain_B_later"),
+            TopologyFactory.from_range("B", 1, 10, fragment_name="chain_B_early"),
+            TopologyFactory.from_range("A", 50, 60, fragment_name="chain_A_later"),
+            TopologyFactory.from_range("A", 5, 15, fragment_name="chain_A_early"),
+            TopologyFactory.from_range("B", 100, 110, fragment_name="chain_B_later"),
         ]
 
         datapoints = create_datapoints_from_topologies(topologies)
@@ -621,7 +623,7 @@ class TestSequenceSplitEdgeCases:
 
         mock_datapoint = MockExpD_Datapoint(mock_topology, 0)
         # Add another valid datapoint to ensure the dataset size check passes
-        valid_topology = Partial_Topology.from_range("A", 1, 10, fragment_name="valid_frag")
+        valid_topology = TopologyFactory.from_range("A", 1, 10, fragment_name="valid_frag")
         valid_datapoint = MockExpD_Datapoint(valid_topology, 1)
         datapoints = [mock_datapoint, valid_datapoint]
         common_residues = create_common_residues_for_chains(["A"])
@@ -725,10 +727,10 @@ class TestSequenceSplitSpecificBehavior:
         """Test that training gets early sequence regions, validation gets late regions."""
         # Create well-separated topologies
         topologies = [
-            Partial_Topology.from_range("A", 10, 20, fragment_name="early_1"),
-            Partial_Topology.from_range("A", 30, 40, fragment_name="early_2"),
-            Partial_Topology.from_range("A", 100, 110, fragment_name="late_1"),
-            Partial_Topology.from_range("A", 120, 130, fragment_name="late_2"),
+            TopologyFactory.from_range("A", 10, 20, fragment_name="early_1"),
+            TopologyFactory.from_range("A", 30, 40, fragment_name="early_2"),
+            TopologyFactory.from_range("A", 100, 110, fragment_name="late_1"),
+            TopologyFactory.from_range("A", 120, 130, fragment_name="late_2"),
         ]
 
         datapoints = create_datapoints_from_topologies(topologies)

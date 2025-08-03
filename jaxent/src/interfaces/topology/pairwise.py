@@ -43,7 +43,7 @@ class PairwiseTopologyComparisons:
     def is_superset_of(
         top: Partial_Topology, other: Partial_Topology, check_trim: bool = False
     ) -> bool:
-        return PairwiseComparisons.is_subset_of(other, top, check_trim)
+        return PairwiseTopologyComparisons.is_subset_of(other, top, check_trim)
 
     @staticmethod
     def get_overlap(
@@ -91,7 +91,7 @@ class PairwiseTopologyComparisons:
         if top.chain != other.chain:
             return None
 
-        if PairwiseComparisons.intersects(top, other, check_trim):
+        if PairwiseTopologyComparisons.intersects(top, other, check_trim):
             return None  # They overlap
 
         top_residues = top._get_active_residues(check_trim)

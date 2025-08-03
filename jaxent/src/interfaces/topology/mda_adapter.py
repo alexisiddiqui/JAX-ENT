@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
 from jaxent.src.interfaces.topology.factory import TopologyFactory
-from jaxent.src.interfaces.topology.pairwise import PairwiseComparisons
+from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 from jaxent.src.interfaces.topology.utils import group_set_by_chain, rank_and_index
 from jaxent.src.models.func.common import compute_trajectory_average_com_distances
 
@@ -660,11 +660,11 @@ class mda_TopologyAdapter:
                 if chain_id in included_by_chain:
                     # Remove included residues from this chain
                     try:
-                        excluded_chain_topo = all_chain_topo.remove_residues(
-                            [included_by_chain[chain_id]]
+                        excluded_chain_topo = TopologyFactory.remove_residues_by_topologies(
+                            all_chain_topo, [included_by_chain[chain_id]]
                         )
-                        excluded_residues = excluded_chain_topo.extract_residues(
-                            use_peptide_trim=False
+                        excluded_residues = TopologyFactory.extract_residues(
+                            excluded_chain_topo, use_peptide_trim=False
                         )
                         excluded_residue_topologies.update(excluded_residues)
                     except ValueError:
@@ -688,7 +688,7 @@ class mda_TopologyAdapter:
                 # Check if this topology is already represented in the same chain
                 is_duplicate = False
                 for existing_topo in chain_unique:
-                    if PairwiseComparisons.contains_topology(excluded_topo, existing_topo):
+                    if PairwiseTopologyComparisons.contains_topology(excluded_topo, existing_topo):
                         is_duplicate = True
                         break
 

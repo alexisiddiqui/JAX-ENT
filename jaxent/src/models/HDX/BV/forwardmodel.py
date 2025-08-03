@@ -6,7 +6,7 @@ import MDAnalysis as mda
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import Partial_Topology, mda_TopologyAdapter, rank_and_index
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_intrinsic_rates
@@ -121,7 +121,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         )
 
         # Find common residues across the ensemble using combined selections
-        self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
+        self.common_topology: set[Partial_Topology] = mda_TopologyAdapter.find_common_residues(
             ensemble,
             include_selection=self.final_include_selection,
             exclude_selection=self.final_exclude_selection,
@@ -138,7 +138,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             # Calculate intrinsic rates for the entire universe
 
             # Convert common topology to MDA residue group for mapping
-            common_residue_group = Partial_Topology.to_mda_group(
+            common_residue_group = mda_TopologyAdapter.to_mda_group(
                 self.common_topology,
                 universe,
                 include_selection=self.final_include_selection[idx],
@@ -152,7 +152,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             # Map results back to Partial_Topology objects
             for topo in self.common_topology:
                 # Get the corresponding residue group for this topology from this universe
-                topo_residue_group = Partial_Topology.to_mda_group(
+                topo_residue_group = mda_TopologyAdapter.to_mda_group(
                     {topo},
                     universe,
                     include_selection=self.final_include_selection[idx],
@@ -185,9 +185,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
         # Convert to list format for compatibility with existing code
         # Sort by topology to ensure consistent ordering
-        sorted_topologies = Partial_Topology.rank_and_index(
-            list(self.common_k_ints_map.keys()), check_trim=False
-        )
+        sorted_topologies = rank_and_index(list(self.common_k_ints_map.keys()), check_trim=False)
         self.common_k_ints = [self.common_k_ints_map[topo] for topo in sorted_topologies]
         self.topology_order = sorted_topologies  # Store ordering for reference
 
@@ -226,7 +224,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
         for idx, universe in enumerate(ensemble):
             # Get N atoms (for heavy atom contacts)
-            n_atoms = Partial_Topology.to_mda_group(
+            n_atoms = mda_TopologyAdapter.to_mda_group(
                 topologies=self.common_topology,
                 universe=universe,
                 include_selection=self.final_include_selection[idx],
@@ -239,7 +237,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             n_atoms = cast(mda.AtomGroup, n_atoms)
 
             # Get H atoms (for H-bond acceptor contacts)
-            h_atoms = Partial_Topology.to_mda_group(
+            h_atoms = mda_TopologyAdapter.to_mda_group(
                 topologies=self.common_topology,
                 universe=universe,
                 include_selection=self.final_include_selection[idx],
@@ -269,7 +267,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
             # --- Ensure ordering matches self.topology_order ---
             # Get reordering indices for this universe
-            reorder_indices = Partial_Topology.get_residuegroup_reordering_indices(n_atoms)
+            reorder_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(n_atoms)
             # Reorder contacts accordingly
             _heavy_contacts = [_heavy_contacts[i] for i in reorder_indices]
             _o_contacts = [_o_contacts[i] for i in reorder_indices]
