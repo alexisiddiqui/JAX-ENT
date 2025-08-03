@@ -73,7 +73,7 @@ class TopologyFactory:
 
     @staticmethod
     def merge(
-        topologies: list[Partial_Topology],
+        topologies: list[Partial_Topology] | set[Partial_Topology],
         trim: bool = False,
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
