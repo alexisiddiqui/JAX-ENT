@@ -47,6 +47,13 @@ from jaxent.src.models.func.common import compute_trajectory_average_com_distanc
 
 
 class mda_TopologyAdapter:
+    @staticmethod
+    def get_mda_group_sort_key(
+        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
+    ) -> tuple[int, tuple[int, ...], float, int]:
+        """Public method to generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
+        return mda_TopologyAdapter._get_mda_group_sort_key(group)
+
     """Adapter class for converting MDAnalysis Universe objects to Partial_Topology objects."""
 
     # ================================================================================
@@ -92,16 +99,18 @@ class mda_TopologyAdapter:
             Chain ID string (defaults to 'A' if not found)
         """
         if hasattr(atom_or_residue, "atoms"):
-            # It's a residue
             atom = atom_or_residue.atoms[0] if len(atom_or_residue.atoms) > 0 else atom_or_residue
         else:
-            # It's an atom
             atom = atom_or_residue
 
-        # FIX: Prioritize 'chainid' over 'segid'. The 'chainid' is the standard
-        # PDB field for the chain identifier, whereas 'segid' can be used for other
-        # purposes and was causing incorrect chain assignment (e.g., 'SYST' instead of 'X').
-        return getattr(atom, "chainid", None) or getattr(atom, "segid", "A")
+        # Prefer chainid for chain ID extraction, fallback to segid, then 'A'
+        chain_id = getattr(atom, "chainid", None)
+        if chain_id is not None and chain_id != "":
+            return chain_id
+        chain_id = getattr(atom, "segid", None)
+        if chain_id is not None and chain_id != "":
+            return chain_id
+        return "A"
 
     @staticmethod
     def _extract_sequence(residues: list, return_list: bool = False) -> Union[str, list[str]]:
@@ -438,12 +447,28 @@ class mda_TopologyAdapter:
         else:
             termini_atoms = mda.AtomGroup(chain_atoms, universe)
 
-        # Get full chain residues for terminal exclusion
+        # Get full chain residues for terminal exclusion and mapping
         full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
+
+        # Create residue mapping BEFORE applying terminal exclusion
+        # This ensures the numbering scheme accounts for all residues including termini
+        if renumber_residues:
+            residue_mapping = {i: res.resid for i, res in enumerate(full_chain_residues, 1)}
+        else:
+            residue_mapping = {res.resid: res.resid for res in full_chain_residues}
 
         # Apply terminal exclusion
         if exclude_termini and len(full_chain_residues) > 2:
             included_residues = full_chain_residues[1:-1]
+
+            # also remove first and last residues from mapping if renumbering
+            min_res = min(residue_mapping.keys())
+            max_res = max(residue_mapping.keys())
+
+            # remove first and last residues from mapping
+            _ = residue_mapping.pop(min_res, None)
+            _ = residue_mapping.pop(max_res, None)
+
         else:
             included_residues = full_chain_residues
 
@@ -459,12 +484,6 @@ class mda_TopologyAdapter:
 
         # Sort residues by original resid
         sorted_residues = sorted(chain_residues.values(), key=lambda r: r.resid)
-
-        # Create residue mapping
-        if renumber_residues:
-            residue_mapping = {i: res.resid for i, res in enumerate(included_residues, 1)}
-        else:
-            residue_mapping = {res.resid: res.resid for res in full_chain_residues}
 
         return sorted_residues, residue_mapping, included_resids
 
@@ -625,7 +644,7 @@ class mda_TopologyAdapter:
             ]
 
         if not chain_atoms:
-            raise ValueError(f"No atoms found for chain {chain_id}")
+            raise ValueError(f"No residues found for chain {chain_id}")
 
         # Process chain to get available residues
         sorted_residues, residue_mapping, _ = mda_TopologyAdapter._process_chain_residues(
@@ -638,7 +657,7 @@ class mda_TopologyAdapter:
         )
 
         if not sorted_residues:
-            raise ValueError(f"No residues found for chain {chain_id} after filtering")
+            raise ValueError(f"No residues found for chain {chain_id}")
 
         # Get available residue IDs based on renumbering
         if renumber_residues:
@@ -652,9 +671,7 @@ class mda_TopologyAdapter:
 
         if missing_residues:
             raise ValueError(
-                f"Topology {topology} contains residues {missing_residues} "
-                f"that are not available in chain {chain_id}. "
-                f"Available residues: {sorted(available_resids)}"
+                f"Topology {topology} contains residues {missing_residues} that are not available"
             )
 
     # ================================================================================
