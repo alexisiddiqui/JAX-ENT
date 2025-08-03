@@ -99,7 +99,7 @@ class TopologyFactory:
         """
         if not topologies:
             raise ValueError("Cannot merge empty list of topologies")
-
+        topologies = list(topologies)  # Ensure we can iterate multiple times
         # Validate all topologies are on the same chain
         first_chain = topologies[0].chain
         for topo in topologies:
