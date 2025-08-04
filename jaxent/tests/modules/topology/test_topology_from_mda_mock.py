@@ -786,6 +786,53 @@ class TestToMDAGroup:
             bpti_universe,
             mode="residue",
             include_selection="protein and resid 10-20",
+            renumber_residues=False,
+        )
+
+        # Convert back to MDAnalysis group
+        mda_group = mda_TopologyAdapter.to_mda_group(
+            set(original_topologies),
+            bpti_universe,
+            include_selection="protein",
+            renumber_residues=False,
+        )
+
+        # Convert back to Partial_Topology again
+        round_trip_topologies = mda_TopologyAdapter.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection=f"protein and resid {' '.join(str(res.resid) for res in mda_group)}",
+            renumber_residues=False,
+        )
+
+        # length of original residues should match mda_group
+        assert len(original_topologies) == len(mda_group), (
+            f"Original topologies length {len(original_topologies)} should match MDAnalysis group length {len(mda_group)}"
+        )
+
+        # Compare the original and round-trip topologies
+        assert len(original_topologies) == len(round_trip_topologies), (
+            "Should have same number of topologies"
+        )
+
+        # Sort both by residue number for comparison
+        original_sorted = sorted(original_topologies, key=lambda t: t.residues[0])
+        round_trip_sorted = sorted(round_trip_topologies, key=lambda t: t.residues[0])
+
+        # Check residue sequences match
+        original_resids = [t.residues[0] for t in original_sorted]
+        round_trip_resids = [t.residues[0] for t in round_trip_sorted]
+        assert original_resids == round_trip_resids, (
+            "Residue IDs should match after round-trip conversion"
+        )
+
+    def test_round_trip_conversion_renumbering(self, bpti_universe):
+        """Test round-trip conversion between Universe, Partial_Topology, and back"""
+        # Extract specific residues
+        original_topologies = mda_TopologyAdapter.from_mda_universe(
+            bpti_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
             renumber_residues=True,
         )
 
@@ -803,6 +850,11 @@ class TestToMDAGroup:
             mode="residue",
             include_selection=f"protein and resid {' '.join(str(res.resid) for res in mda_group)}",
             renumber_residues=True,
+        )
+
+        # length of original residues should match mda_group
+        assert len(original_topologies) == len(mda_group), (
+            f"Original topologies length {len(original_topologies)} should match MDAnalysis group length {len(mda_group)}"
         )
 
         # Compare the original and round-trip topologies
