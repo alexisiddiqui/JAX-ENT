@@ -547,7 +547,7 @@ class mda_TopologyAdapter:
         Args:
             chain_id: Chain identifier
             residues: List of MDAnalysis Residue objects
-            residue_mapping: Mapping from new to original residue IDs
+            residue_mapping: Mapping from original to new residue IDs
             mode: "chain" for one topology per chain, "residue" for one per residue
             fragment_name_template: Template for naming fragments
 
@@ -561,13 +561,14 @@ class mda_TopologyAdapter:
 
         # Get mapped residue numbers
         residue_numbers = []
-        reverse_mapping = {v: k for k, v in residue_mapping.items()}
+
         for res in residues:
-            if res.resid in reverse_mapping:
-                residue_numbers.append(reverse_mapping[res.resid])
-            else:
-                # Fallback if residue not in mapping (shouldn't happen)
-                residue_numbers.append(res.resid)
+            if res.resid in residue_mapping:
+                residue_numbers.append(residue_mapping[res.resid])
+
+        assert len(residue_numbers) == len(residues), (
+            "Residue mapping did not match the number of residues"
+        )
 
         if mode == "chain":
             # Create one topology per chain
