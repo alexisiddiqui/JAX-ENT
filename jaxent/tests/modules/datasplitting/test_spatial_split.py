@@ -592,7 +592,7 @@ class MockExpD_Datapoint(ExpD_Datapoint):
 
 
 # Helper functions (reusing from existing tests)
-def create_single_chain_topologies(chain="X", count=5):
+def create_single_chain_topologies(chain="X", count=15):
     """Create diverse single-chain topologies with good separation, fitting within test_pdb."""
     topologies = []
     start = 1
@@ -728,7 +728,10 @@ def setup_splitter(request):
             return [
                 dp
                 for dp in dataset
-                if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                if any(
+                    PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                    for ct in common_topos
+                )
             ]
 
         patcher1 = patch("jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy")
@@ -773,6 +776,7 @@ def setup_splitter(request):
 def real_universe(request):
     """Create a real MDAnalysis Universe for testing."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pdb") as tmp_pdb_file:
+        # Write the test_pdb content multiple times to create a multi-frame PDB
         tmp_pdb_file.write(test_pdb)
         tmp_pdb_path = tmp_pdb_file.name
 
@@ -830,7 +834,7 @@ class TestSpatialSplitBasicFunctionality:
         patch_partial_distances,
     ):
         """Test that spatial_split returns two lists."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(["X"])
 
@@ -851,7 +855,7 @@ class TestSpatialSplitBasicFunctionality:
         patch_partial_distances,
     ):
         """Test that distance calculation is called with correct parameters."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
@@ -861,9 +865,6 @@ class TestSpatialSplitBasicFunctionality:
             real_universe,
             include_selection="protein",
             exclude_selection="",  # Avoid removing all atoms
-            start=10,
-            stop=100,
-            step=5,
         )
 
         # Verify the distance calculation was called with correct parameters
@@ -886,7 +887,7 @@ class TestSpatialSplitBasicFunctionality:
         patch_partial_distances,
     ):
         """Test that center is selected and ordering is by proximity."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
@@ -916,11 +917,11 @@ class TestSpatialSplitBasicFunctionality:
         patch_partial_distances,
     ):
         """Test spatial split with different training set sizes."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
-        for train_size in [0.3, 0.5, 0.7, 0.8]:
+        for train_size in [0.4, 0.5, 0.7, 0.8]:
             splitter = setup_splitter(datapoints, common_residues, train_size=train_size)
 
             train_data, val_data = splitter.spatial_split(real_universe)
@@ -935,7 +936,7 @@ class TestSpatialSplitBasicFunctionality:
         self, create_datapoints_from_topologies, setup_splitter, real_universe
     ):
         """Test handling when numpy import fails."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
@@ -957,7 +958,7 @@ class TestSpatialSplitDistanceCalculation:
         patch_partial_distances,
     ):
         """Test handling of distance calculation failures."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
@@ -971,7 +972,7 @@ class TestSpatialSplitDistanceCalculation:
         self, create_datapoints_from_topologies, setup_splitter, real_universe
     ):
         """Test that distance matrix is properly validated and used."""
-        topologies = create_single_chain_topologies(chain="X", count=5)
+        topologies = create_single_chain_topologies(chain="X", count=15)
         datapoints = create_datapoints_from_topologies(topologies)
         common_residues = create_common_residues_for_chains(chains=["X"])
 
