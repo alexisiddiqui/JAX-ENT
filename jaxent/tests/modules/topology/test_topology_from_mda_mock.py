@@ -840,7 +840,7 @@ class TestToMDAGroup:
         mda_group = mda_TopologyAdapter.to_mda_group(
             set(original_topologies),
             bpti_universe,
-            include_selection="protein",
+            include_selection="protein and resid 10-20",
             renumber_residues=True,
         )
 
