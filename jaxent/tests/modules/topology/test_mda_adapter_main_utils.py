@@ -46,7 +46,9 @@ class TestMdaGroupToTopology:
 
     def test_single_residue_atom_group(self, chain_groups):
         """Test topology creation from single residue AtomGroup"""
-        topology = mda_TopologyAdapter._mda_group_to_topology(chain_groups["single_atoms"])
+        topology = mda_TopologyAdapter._mda_group_to_topology(
+            chain_groups["single_atoms"], exclude_termini=False
+        )
 
         assert isinstance(topology, Partial_Topology)
         assert topology.chain == chain_groups["chain_id"]
@@ -55,7 +57,9 @@ class TestMdaGroupToTopology:
 
     def test_multi_residue_atom_group(self, chain_groups):
         """Test topology creation from multi-residue AtomGroup"""
-        topology = mda_TopologyAdapter._mda_group_to_topology(chain_groups["multi_atoms"])
+        topology = mda_TopologyAdapter._mda_group_to_topology(
+            chain_groups["multi_atoms"], exclude_termini=False
+        )
 
         assert isinstance(topology, Partial_Topology)
         assert topology.chain == chain_groups["chain_id"]
@@ -64,7 +68,9 @@ class TestMdaGroupToTopology:
 
     def test_residue_group(self, chain_groups):
         """Test topology creation from ResidueGroup"""
-        topology = mda_TopologyAdapter._mda_group_to_topology(chain_groups["residue_group"])
+        topology = mda_TopologyAdapter._mda_group_to_topology(
+            chain_groups["residue_group"], exclude_termini=False
+        )
 
         assert isinstance(topology, Partial_Topology)
         assert topology.chain == chain_groups["chain_id"]
@@ -74,7 +80,7 @@ class TestMdaGroupToTopology:
         """Test custom fragment naming"""
         template = "{chain}_custom_{resid}_{resname}"
         topology = mda_TopologyAdapter._mda_group_to_topology(
-            chain_groups["single_atoms"], fragment_name_template=template
+            chain_groups["single_atoms"], fragment_name_template=template, exclude_termini=False
         )
 
         assert "custom" in topology.fragment_name
@@ -345,7 +351,9 @@ class TestIntegratedBehavior:
     def test_topology_roundtrip(self, bpti_universe, chain_groups):
         """Test creating topology from group and validating it"""
         # Create topology from MDA group
-        topology = mda_TopologyAdapter._mda_group_to_topology(chain_groups["single_atoms"])
+        topology = mda_TopologyAdapter._mda_group_to_topology(
+            chain_groups["single_atoms"], exclude_termini=False
+        )
 
         # Validate it exists in universe
         mda_TopologyAdapter._validate_topology_containment(
@@ -359,22 +367,25 @@ class TestIntegratedBehavior:
     def test_renumbering_integration(self, bpti_universe, chain_groups):
         """Test renumbering mapping with topology validation"""
         # Build renumbering mapping
-        mapping = mda_TopologyAdapter._build_renumbering_mapping(bpti_universe)
+        mapping = mda_TopologyAdapter._build_renumbering_mapping(
+            bpti_universe, exclude_termini=False
+        )
 
         # Create topology with renumbering
         topologies = mda_TopologyAdapter.from_mda_universe(
-            bpti_universe, mode="residue", renumber_residues=True
+            bpti_universe, mode="residue", renumber_residues=True, exclude_termini=False
         )
 
         if topologies:
             # Validate with renumbering
             mda_TopologyAdapter._validate_topology_containment(
-                topologies[0], bpti_universe, renumber_residues=True
+                topologies[1], bpti_universe, renumber_residues=True, exclude_termini=False
             )
 
             # Create lookup key with mapping
             lookup_key = mda_TopologyAdapter._create_mda_group_lookup_key(
-                chain_groups["single_atoms"], mapping
+                chain_groups["single_atoms"],
+                mapping,
             )
             assert lookup_key is not None, (
                 f"Lookup key creation failed for {chain_groups['single_atoms']}",

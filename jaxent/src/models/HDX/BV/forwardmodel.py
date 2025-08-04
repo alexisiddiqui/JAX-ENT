@@ -267,7 +267,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
             # --- Ensure ordering matches self.topology_order ---
             # Get reordering indices for this universe
-            reorder_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(n_atoms)
+            reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(n_atoms)
             # Reorder contacts accordingly
             _heavy_contacts = [_heavy_contacts[i] for i in reorder_indices]
             _o_contacts = [_o_contacts[i] for i in reorder_indices]
