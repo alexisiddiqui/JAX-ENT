@@ -1468,6 +1468,7 @@ class mda_TopologyAdapter:
                     termini_chain_selection=termini_chain_selection,
                     renumber_residues=renumber_residues,
                     mda_atom_filtering=None,
+                    check_trim=check_trim,
                 )
 
                 if isinstance(group, mda.ResidueGroup):
