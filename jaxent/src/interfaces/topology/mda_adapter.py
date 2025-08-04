@@ -59,6 +59,139 @@ class mda_TopologyAdapter:
     # ================================================================================
     # SHARED UTILITY METHODS - Used across multiple public methods
     # ================================================================================
+    @staticmethod
+    def _check_chain(
+        chain_id: str, sample_atom: Union[mda.AtomGroup, mda.ResidueGroup]
+    ) -> tuple[str, tuple[bool, bool]]:
+        if (
+            not isinstance(sample_atom, mda.Universe)
+            and hasattr(sample_atom, "chainid")
+            and sample_atom.chainid == chain_id
+        ):
+            has_chainid = True
+        else:
+            has_chainid = False
+        if (
+            not isinstance(sample_atom, mda.Universe)
+            and hasattr(sample_atom, "segid")
+            and sample_atom.segid == chain_id
+        ):
+            has_segid = True
+        else:
+            has_segid = False
+
+        return (
+            chain_id,
+            (
+                has_chainid,
+                has_segid,
+            ),
+        )
+
+    @staticmethod
+    def _extract_chain_identifier(
+        atom_or_universe: Union[mda.AtomGroup, mda.ResidueGroup, mda.Universe],
+        chain_id: Optional[str] = None,
+    ) -> tuple[str, tuple[bool, bool]]:
+        """Extract chain identifier with consistent chainid/segid preference logic.
+
+        If both chainid and segid are available, the shorter one is preferred.
+        If both are the same length, chainid is preferred.
+
+        If a chain_id is provided, it will be used directly to check which attribute to use.
+
+
+        Args:
+            atom_or_universe: Either an MDAnalysis Atom/Residue or Universe object
+            return_available_attrs: If True, return tuple of (chain_id, has_chainid, has_segid)
+
+        Returns:
+            str: Chain identifier (or tuple if return_available_attrs=True)
+        """
+
+        # Determine if we're working with an atom/residue or universe
+        if hasattr(atom_or_universe, "atoms"):
+            # This is a Universe or similar container
+            if hasattr(atom_or_universe, "select_atoms"):
+                # Universe object - check first atom for available attributes
+                atoms = atom_or_universe.atoms
+                sample_atom = atoms[0]
+            else:
+                # ResidueGroup or similar - get first atom
+                sample_atom = (
+                    atom_or_universe.atoms[0]
+                    if len(atom_or_universe.atoms) > 0
+                    else atom_or_universe
+                )
+        else:
+            # Single atom or residue
+            if hasattr(atom_or_universe, "atoms"):
+                sample_atom = (
+                    atom_or_universe.atoms[0]
+                    if len(atom_or_universe.atoms) > 0
+                    else atom_or_universe
+                )
+            else:
+                sample_atom = atom_or_universe
+
+        assert not isinstance(sample_atom, mda.Universe), (
+            "Universe filtering did not occur as expected."
+        )
+
+        # First check if chain_id is provided
+        if chain_id is not None:
+            # check if chain_id is a valid attribute
+            return mda_TopologyAdapter._check_chain(chain_id, sample_atom)
+
+        # Check that chainid and segid are < 4 characters long and not empty
+
+        chainid_value = None
+        segid_value = None
+        if not isinstance(sample_atom, mda.Universe) and hasattr(sample_atom, "chainid"):
+            has_chainid = True
+            chainid_value = sample_atom.chainid.strip()
+        else:
+            has_chainid = False
+
+        if not isinstance(sample_atom, mda.Universe) and hasattr(sample_atom, "segid"):
+            has_segid = True
+            segid_value = sample_atom.segid.strip()
+        else:
+            has_segid = False
+
+        if not any([has_chainid, has_segid]):
+            raise ValueError(
+                f"Atom or residue from {atom_or_universe} does not have chainid or segid attributes. ",
+            )
+
+        # if either chainid or segid is available, use the shorter one
+        # first check if chainid_value or segid_value is not None
+        #
+        if chainid_value is not None and segid_value is not None:
+            if len(chainid_value) <= len(segid_value):
+                selected_chainid = chainid_value
+            elif len(chainid_value) == len(segid_value):
+                # if both are the same length, prefer chainid
+                selected_chainid = segid_value
+            else:
+                selected_chainid = segid_value
+        elif chainid_value is not None:
+            selected_chainid = chainid_value
+        elif segid_value is not None:
+            selected_chainid = segid_value
+        else:
+            raise ValueError(
+                "This suggests that both chainid and segid are None, when both are present",
+                f"Atom or residue from {atom_or_universe} does not have chainid or segid attributes despite passing the initial checks.",
+                f"Chainid: {chainid_value}, Segid: {segid_value}",
+                f"Has chainid: {has_chainid}, Has segid: {has_segid}",
+                f"Chain id Length: {len(chainid_value) if chainid_value else 'N/A'}, Segid Length: {len(segid_value) if segid_value else 'N/A'}",
+            )
+
+        assert not isinstance(sample_atom, mda.Universe), (
+            "Universe filtering did not occur as expected."
+        )
+        return mda_TopologyAdapter._check_chain(selected_chainid, sample_atom)
 
     @staticmethod
     def _build_residue_selection_string(
@@ -89,7 +222,7 @@ class mda_TopologyAdapter:
             return f"({resid_selection})"
 
     @staticmethod
-    def _get_chain_id(atom_or_residue) -> str:
+    def _get_chain_id(atom_or_residue: Union[mda.AtomGroup, mda.ResidueGroup]) -> str:
         """Extract chain ID from an atom or residue.
 
         Args:
@@ -98,19 +231,7 @@ class mda_TopologyAdapter:
         Returns:
             Chain ID string (defaults to 'A' if not found)
         """
-        if hasattr(atom_or_residue, "atoms"):
-            atom = atom_or_residue.atoms[0] if len(atom_or_residue.atoms) > 0 else atom_or_residue
-        else:
-            atom = atom_or_residue
-
-        # Prefer chainid for chain ID extraction, fallback to segid, then 'A'
-        chain_id = getattr(atom, "chainid", None)
-        if chain_id is not None and chain_id != "":
-            return chain_id
-        chain_id = getattr(atom, "segid", None)
-        if chain_id is not None and chain_id != "":
-            return chain_id
-        return "A"
+        return mda_TopologyAdapter._extract_chain_identifier(atom_or_residue)[0]
 
     @staticmethod
     def _extract_sequence(residues: list, return_list: bool = False) -> Union[str, list[str]]:
@@ -686,14 +807,15 @@ class mda_TopologyAdapter:
         Utility method to build a selection string for a specific chain,
         accounting for available attributes in the universe.
         """
-        has_segid = hasattr(universe.atoms[0], "segid") if len(universe.atoms) > 0 else False
-        has_chainid = hasattr(universe.atoms[0], "chainid") if len(universe.atoms) > 0 else False
+        selected_chain_id, (has_chainid, has_segid) = mda_TopologyAdapter._extract_chain_identifier(
+            universe, chain_id
+        )
 
         chain_selection_parts = []
         if has_segid:
-            chain_selection_parts.append(f"segid {chain_id}")
+            chain_selection_parts.append(f"segid {selected_chain_id}")
         if has_chainid:
-            chain_selection_parts.append(f"chainid {chain_id}")
+            chain_selection_parts.append(f"chainid {selected_chain_id}")
 
         fallback_atoms = mda.AtomGroup([], universe)
 
