@@ -25,7 +25,13 @@ The library is structured around several key components that interact to form a 
     *   `ExpD_Datapoint` (`jaxent/src/data/loader.py`) is the base for experimental data points.
     *   `HDX_peptide` and `HDX_protection_factor` (`jaxent/src/types/HDX.py`) are concrete implementations for HDX-MS data.
     *   `ExpD_Dataloader` (`jaxent/src/data/loader.py`) loads and manages experimental datasets.
-    *   `Partial_Topology` (`jaxent/src/interfaces/topology.py`) represents molecular fragments and is used to align experimental data with structural features.
+    *   The `jaxent/src/interfaces/topology/` directory now contains a comprehensive set of modules for handling molecular fragments and their relationships:
+    *   `Partial_Topology` (`jaxent/src/interfaces/topology/core.py`) represents molecular fragments and is used to align experimental data with structural features.
+    *   `TopologyFactory` (`jaxent/src/interfaces/topology/factory.py`) provides methods for creating and manipulating `Partial_Topology` objects.
+    *   `PairwiseTopologyComparisons` (`jaxent/src/interfaces/topology/pairwise.py`) offers methods for comparing `Partial_Topology` objects.
+    *   `mda_TopologyAdapter` (`jaxent/src/interfaces/topology/mda_adapter.py`) facilitates conversion between MDAnalysis Universe objects and `Partial_Topology` objects.
+    *   `PTSerialiser` (`jaxent/src/interfaces/topology/serialise.py`) handles serialization and deserialization of `Partial_Topology` objects.
+    *   `utils.py` (`jaxent/src/interfaces/topology/utils.py`) provides utility functions for topology handling.
     *   `create_sparse_map` (`jaxent/src/data/splitting/sparse_map.py`) creates a sparse mapping matrix to connect residue-wise features to experimental fragments, crucial for handling incomplete or peptide-level data.
     *   `DataSplitter` (`jaxent/src/data/splitting/split.py`) provides functionalities for splitting experimental data into training and validation sets (random, stratified, spatial, cluster-based splits).
 
