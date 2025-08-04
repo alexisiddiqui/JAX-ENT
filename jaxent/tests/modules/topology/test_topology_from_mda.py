@@ -895,7 +895,10 @@ class TestToMDAGroup:
 
         # Convert back to MDAnalysis group
         residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies), test_universe, include_selection="protein", renumber_residues=False
+            set(topologies),
+            test_universe,
+            include_selection="protein",
+            renumber_residues=False,
         )
 
         # Check if we got a ResidueGroup with the expected number of residues
@@ -918,7 +921,62 @@ class TestToMDAGroup:
 
         # Convert back to MDAnalysis group
         residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies), test_universe, include_selection="protein", renumber_residues=True
+            set(topologies),
+            test_universe,
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+        )
+
+        # Check if we got a ResidueGroup with the expected number of residues
+        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
+        assert len(residue_group) == len(topologies), (
+            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
+        )
+
+    def test_basic_conversion_renumbering_hard_exclude(self, test_universe):
+        topologies = mda_TopologyAdapter.from_mda_universe(
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+            exclude_termini=False,
+        )
+
+        assert len(topologies) > 0, "Should extract some topologies"
+
+        # Convert back to MDAnalysis group
+        residue_group = mda_TopologyAdapter.to_mda_group(
+            set(topologies),
+            test_universe,
+            include_selection="protein",
+            renumber_residues=True,
+            exclude_termini=False,
+        )
+
+        # Check if we got a ResidueGroup with the expected number of residues
+        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
+        assert len(residue_group) == len(topologies), (
+            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
+        )
+
+    def test_basic_conversion_renumbering_hard(self, test_universe):
+        """Test basic conversion from Partial_Topology to MDAnalysis groups"""
+        # First extract topologies from universe
+        topologies = mda_TopologyAdapter.from_mda_universe(
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+        )
+
+        assert len(topologies) > 0, "Should extract some topologies"
+
+        # Convert back to MDAnalysis group
+        residue_group = mda_TopologyAdapter.to_mda_group(
+            set(topologies),
+            test_universe,
+            include_selection="protein",
+            renumber_residues=True,
         )
 
         # Check if we got a ResidueGroup with the expected number of residues
@@ -931,7 +989,9 @@ class TestToMDAGroup:
         """Test atom filtering in to_mda_group"""
         # Extract chain topology
         chain_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", include_selection="protein"
+            test_universe,
+            mode="chain",
+            include_selection="protein",
         )
 
         # Convert to AtomGroup with CA-only filter
@@ -1096,20 +1156,33 @@ class TestGetAtomgroupReorderingIndices:
         """Test basic reordering functionality"""
         # Extract some topologies
         topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="residue", include_selection="protein and resid 10-15"
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-15",
+            renumber_residues=False,
+            exclude_termini=False,
         )
 
         # Create corresponding MDA groups (shuffled order)
         mda_groups = []
         for topo in reversed(topologies):  # Reverse order
             group = mda_TopologyAdapter.to_mda_group(
-                {topo}, test_universe, include_selection="protein"
+                {topo},
+                test_universe,
+                include_selection="protein and resid 10-15",
+                renumber_residues=False,
+                exclude_termini=False,
             )
             mda_groups.append(group)
 
         # Get reordering indices
         indices = mda_TopologyAdapter.get_atomgroup_reordering_indices(
-            mda_groups, test_universe, target_topologies=topologies
+            mda_groups,
+            test_universe,
+            target_topologies=topologies,
+            include_selection="protein and resid 10-15",
+            renumber_residues=False,
+            exclude_termini=False,
         )
 
         # Should provide indices to restore original order
