@@ -268,19 +268,25 @@ class TestSharedUtilityMethods:
         single_residue = protein_atoms.residues[0]
         single_res_group = single_residue.atoms
 
-        topology_single = mda_TopologyAdapter._mda_group_to_topology(single_res_group)
+        topology_single = mda_TopologyAdapter._mda_group_to_topology(
+            single_res_group, exclude_termini=False
+        )
         assert len(topology_single.residues) == 1
 
         # Test with multiple residues (same chain)
         multi_residues = protein_atoms.residues[:3]
         multi_res_group = multi_residues.atoms
 
-        topology_multi = mda_TopologyAdapter._mda_group_to_topology(multi_res_group)
+        topology_multi = mda_TopologyAdapter._mda_group_to_topology(
+            multi_res_group, exclude_termini=False
+        )
         assert len(topology_multi.residues) == 3
 
         # Test with ResidueGroup
         residue_group = protein_atoms.residues[:2]
-        topology_resgroup = mda_TopologyAdapter._mda_group_to_topology(residue_group)
+        topology_resgroup = mda_TopologyAdapter._mda_group_to_topology(
+            residue_group, exclude_termini=False
+        )
         assert len(topology_resgroup.residues) == 2
 
     def test_create_mda_group_lookup_key(self, bpti_universe):
@@ -344,7 +350,7 @@ class TestSharedUtilityMethods:
             assert isinstance(key, tuple)
             assert len(key) == 2
             assert isinstance(key[0], str)  # chain_id
-            assert isinstance(key[1], int)  # new_resid
+            assert isinstance(key[1], (int, np.integer))  # new_resid
 
         # Values should be original resids (could be numpy integers)
         for value in mapping.values():

@@ -42,7 +42,7 @@ from tqdm import tqdm
 from jaxent.src.interfaces.topology.core import Partial_Topology
 from jaxent.src.interfaces.topology.factory import TopologyFactory
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
-from jaxent.src.interfaces.topology.utils import group_set_by_chain, rank_and_index
+from jaxent.src.interfaces.topology.utils import group_set_by_chain
 from jaxent.src.models.func.common import compute_trajectory_average_com_distances
 
 
@@ -437,7 +437,7 @@ class mda_TopologyAdapter:
     def _process_chain_residues(
         universe: mda.Universe,
         chain_id: str,
-        chain_atoms: list,
+        selected_atoms: list[mda.AtomGroup | Residue] | mda.ResidueGroup | mda.AtomGroup,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
@@ -449,7 +449,7 @@ class mda_TopologyAdapter:
         Args:
             universe: MDAnalysis Universe object
             chain_id: Chain identifier
-            chain_atoms: List of atoms in the chain
+            selected_atoms: List of atoms in the chain after selections
             exclude_termini: Whether to exclude terminal residues
             termini_chain_selection: Selection string for terminal identification
             renumber_residues: Whether to renumber residues from 1
@@ -457,54 +457,66 @@ class mda_TopologyAdapter:
         Returns:
             Tuple of:
             - sorted_residues: List of sorted, filtered residues
-            - residue_mapping: Dict mapping new resid to original resid (or identity if not renumbering)
+            - residue_mapping: Dict mapping original resid to new resid (or identity if not renumbering)
             - included_resids: Set of original resids that are included after filtering
         """
+
+        if isinstance(selected_atoms, mda.ResidueGroup):
+            selected_residues = [res for res in selected_atoms.residues]
+        elif isinstance(selected_atoms, mda.AtomGroup):
+            selected_residues = list(set(selected_atoms.residues))
+        elif isinstance(selected_atoms, list):
+            # Handle list of atoms, residues, or groups
+            selected_residues = []
+            for group in selected_atoms:
+                if hasattr(group, "residues"):  # AtomGroup or ResidueGroup
+                    selected_residues.extend(group.residues)
+                elif hasattr(group, "residue"):  # Single Atom
+                    selected_residues.append(group.residue)
+                else:
+                    # Assume it's already a Residue object
+                    selected_residues.append(group)
+            # Remove duplicates while preserving order
+            seen = set()
+            selected_residues = [
+                res
+                for res in selected_residues
+                if res.resid not in seen and not seen.add(res.resid)
+            ]
+        else:
+            raise TypeError(f"Unsupported selected_atoms type: {type(selected_atoms)}")
+
         # Build chain selection for terminal identification
         chain_selection_string, _ = mda_TopologyAdapter._build_chain_selection_string(
             universe, chain_id, termini_chain_selection
         )
 
         # Get atoms for terminal identification
-        if chain_selection_string:
-            try:
-                termini_atoms = universe.select_atoms(chain_selection_string)
-                if len(termini_atoms) == 0:
-                    # Try without base selection
-                    chain_only_selection, _ = mda_TopologyAdapter._build_chain_selection_string(
-                        universe, chain_id
-                    )
-                    if chain_only_selection:
-                        termini_atoms = universe.select_atoms(chain_only_selection)
-                    else:
-                        termini_atoms = mda.AtomGroup(chain_atoms, universe)
-            except Exception:
-                termini_atoms = mda.AtomGroup(chain_atoms, universe)
-        else:
-            termini_atoms = mda.AtomGroup(chain_atoms, universe)
+        try:
+            termini_atoms = universe.select_atoms(chain_selection_string)
+        except Exception:
+            raise ValueError(
+                f"Invalid chain selection '{chain_selection_string}' for chain '{chain_id}'"
+            )
 
         # Get full chain residues for terminal exclusion and mapping
         full_chain_residues = sorted(termini_atoms.residues, key=lambda r: r.resid)
 
         # Create residue mapping BEFORE applying terminal exclusion
         # This ensures the numbering scheme accounts for all residues including termini
+        # Renumbering simply shifts the residue IDs to start from 1 from the selected residues
         if renumber_residues:
-            residue_mapping = {i: res.resid for i, res in enumerate(full_chain_residues, 1)}
+            # Create a mapping from original resid to new resid
+            residue_start = min(selected_residues, key=lambda r: r.resid).resid
+            residue_mapping: dict[int, int] = {
+                res.resid: res.resid - residue_start + 1 for res in selected_residues
+            }
         else:
-            residue_mapping = {res.resid: res.resid for res in full_chain_residues}
+            residue_mapping: dict[int, int] = {res.resid: res.resid for res in selected_residues}
 
         # Apply terminal exclusion
         if exclude_termini and len(full_chain_residues) > 2:
             included_residues = full_chain_residues[1:-1]
-
-            # also remove first and last residues from mapping if renumbering
-            min_res = min(residue_mapping.keys())
-            max_res = max(residue_mapping.keys())
-
-            # remove first and last residues from mapping
-            _ = residue_mapping.pop(min_res, None)
-            _ = residue_mapping.pop(max_res, None)
-
         else:
             included_residues = full_chain_residues
 
@@ -513,15 +525,17 @@ class mda_TopologyAdapter:
 
         # Filter chain atoms to only include residues that pass terminal exclusion
         chain_residues = {}
-        for atom in chain_atoms:
-            resid = atom.resid
-            if resid in included_resids and resid not in chain_residues:
-                chain_residues[resid] = atom.residue
+        complete_residue_mapping: dict[int, int] = {}
+        for res in selected_residues:
+            orig_resid = res.resid
+            if orig_resid in included_resids and orig_resid not in chain_residues:
+                chain_residues[orig_resid] = res
+                complete_residue_mapping[orig_resid] = residue_mapping.get(orig_resid)
 
         # Sort residues by original resid
         sorted_residues = sorted(chain_residues.values(), key=lambda r: r.resid)
 
-        return sorted_residues, residue_mapping, included_resids
+        return sorted_residues, complete_residue_mapping, included_resids
 
     @staticmethod
     def _create_topology_from_residues(
@@ -608,6 +622,11 @@ class mda_TopologyAdapter:
     @staticmethod
     def _mda_group_to_topology(
         mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        include_selection: str = "protein",
+        exclude_selection: Optional[str] = None,
+        exclude_termini: bool = True,
+        termini_chain_selection: str = "protein",
+        renumber_residues: bool = True,
         fragment_name_template: str = "auto",
     ) -> Partial_Topology:
         """Convert an MDAnalysis group to a Partial_Topology.
@@ -640,9 +659,38 @@ class mda_TopologyAdapter:
             raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
         chain_id = list(chain_ids)[0]
 
-        # Get residue IDs
-        resids = [res.resid for res in residues]
+        if hasattr(mda_group, "universe"):
+            group_universe = mda_group.universe
+        else:
+            raise TypeError(
+                "mda_group must have a universe attribute",
+                f"Got {type(mda_group)} without universe attribute.mda_group: {mda_group}",
+            )
 
+        # Apply selection pipeline
+        selected_atoms, _ = mda_TopologyAdapter._apply_selection_pipeline(
+            group_universe, include_selection, exclude_selection
+        )
+
+        _, residue_mapping, _ = mda_TopologyAdapter._process_chain_residues(
+            group_universe,
+            chain_id,
+            selected_atoms,
+            exclude_termini,
+            termini_chain_selection,
+            renumber_residues,
+        )
+
+        # Create new residue ids based on residues in mapping
+        new_resids = []
+        for res in residues:
+            if res.resid in residue_mapping.keys():
+                new_resids.append(residue_mapping[res.resid])
+
+        if not new_resids:
+            raise ValueError(
+                f"No residues found in mapping for group with {len(residues)} residues"
+            )
         # Create topology based on number of residues
         if len(residues) == 1:
             res = residues[0]
@@ -657,7 +705,7 @@ class mda_TopologyAdapter:
 
             return TopologyFactory.from_single(
                 chain=chain_id,
-                residue=res.resid,
+                residue=new_resids[0],
                 fragment_sequence=sequence,
                 fragment_name=fragment_name,
                 peptide=False,
@@ -667,14 +715,14 @@ class mda_TopologyAdapter:
                 fragment_name = f"{chain_id}_multi"
             else:
                 fragment_name = fragment_name_template.format(
-                    chain=chain_id, resid=f"{min(resids)}-{max(resids)}", resname="multi"
+                    chain=chain_id, resid=f"{min(new_resids)}-{max(new_resids)}", resname="multi"
                 )
 
             sequence = mda_TopologyAdapter._extract_sequence(residues)
 
             return TopologyFactory.from_residues(
                 chain=chain_id,
-                residues=resids,
+                residues=new_resids,
                 fragment_sequence=sequence,
                 fragment_name=fragment_name,
                 peptide=False,
@@ -833,10 +881,10 @@ class mda_TopologyAdapter:
         if renumber_residues:
             available_resids = set(residue_mapping.keys())
         else:
-            available_resids = {r.resid for r in sorted_residues}
+            available_resids = set(residue_mapping.values())
 
         # Check topology residues
-        active_residues = topology._get_active_residues(check_trim=False)
+        active_residues = topology._get_active_residues(check_trim=True)
         missing_residues = set(active_residues) - available_resids
 
         if missing_residues:
@@ -1096,6 +1144,7 @@ class mda_TopologyAdapter:
         termini_chain_selection: str = "protein",
         renumber_residues: bool = False,
         mda_atom_filtering: Optional[str] = None,
+        check_trim: bool = True,
     ) -> Union["mda.ResidueGroup", "mda.AtomGroup"]:
         """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects.
 
@@ -1115,12 +1164,12 @@ class mda_TopologyAdapter:
             topologies = list(topologies)
 
         # Apply selection pipeline
-        selected_atoms, chains = mda_TopologyAdapter._apply_selection_pipeline(
+        _, chains = mda_TopologyAdapter._apply_selection_pipeline(
             universe, include_selection, exclude_selection
         )
 
         # Group topologies by chain
-        topologies_by_chain = {}
+        topologies_by_chain: Dict[str | int, list[Partial_Topology]] = {}
         for topo in topologies:
             if topo.chain not in topologies_by_chain:
                 topologies_by_chain[topo.chain] = []
@@ -1148,17 +1197,11 @@ class mda_TopologyAdapter:
             if not sorted_residues:
                 continue
 
-            # Create reverse mapping for renumbering
-            if renumber_residues:
-                renumber_to_original = residue_mapping
-            else:
-                renumber_to_original = {res.resid: res.resid for res in sorted_residues}
-
             # Map topology residues to original residues
             chain_target_resids = []
             for topo in chain_topologies:
-                for topo_resid in topo.residues:
-                    original_resid = renumber_to_original.get(topo_resid)
+                for topo_resid in topo._get_active_residues(check_trim=check_trim):
+                    original_resid = residue_mapping.get(topo_resid)
                     if original_resid is not None:
                         chain_target_resids.append(original_resid)
 
@@ -1276,7 +1319,7 @@ class mda_TopologyAdapter:
         return common_residue_topologies, excluded_residue_topologies
 
     @staticmethod
-    def get_residuegroup_reordering_indices(
+    def get_residuegroup_ranking_indices(
         residue_group: Union[mda.ResidueGroup, mda.AtomGroup],
     ) -> list[int]:
         """Get indices to reorder individual residues in a ResidueGroup/AtomGroup by topology ranking."""
@@ -1310,64 +1353,80 @@ class mda_TopologyAdapter:
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
+        check_trim: bool = True,
     ) -> list[int]:
         """Get indices to reorder a list of MDAnalysis groups to match topology order.
+        Currently this does a fuzzy match to find the best match between mda_groups and target_topologies.
+        This does not
+
+        To do this, mda_groups are converted to Partial_Topology objects
+
+        If not target_topologies are provided, the groups will be ranked directly from using _get_mda_group_sort_key.
 
         Refactored to use shared utility methods.
         """
-        if not mda_groups:
-            return []
 
-        # If no target topologies provided, extract them from mda_groups and rank them
+        # If no target topologies provided, extract indices based on _get_mda_group_sort_key
         if target_topologies is None:
-            target_topologies = []
-            for mda_group in mda_groups:
-                try:
-                    topo = mda_TopologyAdapter._mda_group_to_topology(mda_group)
-                    target_topologies.append(topo)
-                except (ValueError, TypeError):
-                    continue
+            scores = [
+                mda_TopologyAdapter._get_mda_group_sort_key(mda_group) for mda_group in mda_groups
+            ]
+            reorder_indices = sorted(range(len(scores)), key=lambda i: scores[i])
 
-            target_topologies = rank_and_index(target_topologies, check_trim=False)
+            return reorder_indices
 
-        # Build renumbering mapping if needed
-        renumber_mapping = None
-        if renumber_residues:
-            renumber_mapping = mda_TopologyAdapter._build_renumbering_mapping(
-                universe, exclude_termini, termini_chain_selection
+        assert isinstance(target_topologies, list), "target_topologies must be a list"
+        assert len(target_topologies) == len(mda_groups), (
+            "target_topologies and mda_groups must have the same length"
+        )
+        assert all(isinstance(topo, Partial_Topology) for topo in target_topologies), (
+            "All target_topologies must be Partial_Topology instances"
+        )
+        assert all(
+            isinstance(mda_group, (mda.ResidueGroup, mda.AtomGroup)) for mda_group in mda_groups
+        ), "All mda_groups must be ResidueGroup or AtomGroup instances"
+
+        # extract mda_groups as Partial_Topology objects
+        converted_topologies = []
+        for mda_group in mda_groups:
+            converted_topology = mda_TopologyAdapter._mda_group_to_topology(
+                mda_group,
+                include_selection=include_selection,
+                exclude_selection=exclude_selection,
+                exclude_termini=exclude_termini,
+                termini_chain_selection=termini_chain_selection,
+                renumber_residues=renumber_residues,
             )
+            converted_topologies.append(converted_topology)
 
-        # Build a mapping from topology characteristics to mda_groups index
-        mda_group_lookup = {}
-        for i, mda_group in enumerate(mda_groups):
-            lookup_key = mda_TopologyAdapter._create_mda_group_lookup_key(
-                mda_group, renumber_mapping
-            )
-            if lookup_key:
-                mda_group_lookup[lookup_key] = i
-
-        # Find indices for each target topology
-        result_indices = []
-        for target_topo in target_topologies:
-            # Validate topology containment
-            mda_TopologyAdapter._validate_topology_containment(
-                target_topo, universe, exclude_termini, termini_chain_selection, renumber_residues
-            )
-
-            # Create lookup key for the target topology
-            chain_id = target_topo.chain
-            active_residues = target_topo._get_active_residues(check_trim=False)
-            lookup_key = (chain_id, frozenset(active_residues))
-
-            if lookup_key not in mda_group_lookup:
-                available_keys = list(mda_group_lookup.keys())
-                raise ValueError(
-                    f"Cannot find MDA group for topology {target_topo} "
-                    f"(chain={chain_id}, resids={sorted(active_residues)}). "
-                    f"Available groups: {available_keys[:5]}{'...' if len(available_keys) > 5 else ''}"
+        # use PairwiseTopologyComparisons.get_overlap() to find the best match between converted_topologies and target_topologies
+        overlaps = []
+        for converted_topo in converted_topologies:
+            overlap_scores = [
+                len(
+                    list(
+                        PairwiseTopologyComparisons.get_overlap(
+                            converted_topo, target_topo, check_trim=check_trim
+                        )
+                    )
                 )
+                for target_topo in target_topologies
+            ]
+            overlaps.append(overlap_scores)
 
-            result_indices.append(mda_group_lookup[lookup_key])
+        # Find the index of the target topology with the maximum overlap for each converted topology
+        result_indices = []
+        for overlap_scores in overlaps:
+            max_index = np.argmax(overlap_scores)
+            result_indices.append(max_index)
+
+        # assert that the result indices are unique
+        if len(set(result_indices)) != len(result_indices):
+            raise ValueError(
+                "Result indices are not unique, indicating a mismatch in topology matching."
+                f"Result indices: {result_indices}",
+                f"Overlaps: {overlaps}",
+            )
 
         return result_indices
 
