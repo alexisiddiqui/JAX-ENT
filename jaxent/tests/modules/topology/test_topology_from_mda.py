@@ -885,14 +885,40 @@ class TestToMDAGroup:
         """Test basic conversion from Partial_Topology to MDAnalysis groups"""
         # First extract topologies from universe
         topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="residue", include_selection="protein and resid 10-20"
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=False,
         )
 
         assert len(topologies) > 0, "Should extract some topologies"
 
         # Convert back to MDAnalysis group
         residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies), test_universe, include_selection="protein"
+            set(topologies), test_universe, include_selection="protein", renumber_residues=False
+        )
+
+        # Check if we got a ResidueGroup with the expected number of residues
+        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
+        assert len(residue_group) == len(topologies), (
+            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
+        )
+
+    def test_basic_conversion_renumbering(self, test_universe):
+        """Test basic conversion from Partial_Topology to MDAnalysis groups"""
+        # First extract topologies from universe
+        topologies = mda_TopologyAdapter.from_mda_universe(
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+        )
+
+        assert len(topologies) > 0, "Should extract some topologies"
+
+        # Convert back to MDAnalysis group
+        residue_group = mda_TopologyAdapter.to_mda_group(
+            set(topologies), test_universe, include_selection="protein", renumber_residues=True
         )
 
         # Check if we got a ResidueGroup with the expected number of residues
