@@ -104,6 +104,7 @@ class TestPartialTopologyFromMDA:
             include_selection="protein",
             exclude_selection="resid 1-5",
             exclude_termini=False,
+            renumber_residues=False,
         )
 
         # Should have fewer topologies with exclusion
