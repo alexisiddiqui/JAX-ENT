@@ -634,6 +634,24 @@ class TestPartialTopologyFromMDA:
             mode="residue",
             include_selection="protein and resid 10-20",
             exclude_termini=False,
+            renumber_residues=False,
+        )
+
+        assert 10 <= len(topologies) <= 11, "Should extract ~11 topologies (residues 10-20)"
+
+        # Check residue numbers are preserved (not renumbered)
+        residue_ids = sorted([topo.residues[0] for topo in topologies])
+        expected_count = len(residue_ids)
+        expected_range = list(range(10, 10 + expected_count))
+        assert residue_ids == expected_range, (
+            f"Expected residue numbering from 10 to {10 + expected_count - 1}, got: {residue_ids}"
+        )
+
+        topologies = mda_TopologyAdapter.from_mda_universe(
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            exclude_termini=False,
             renumber_residues=True,
         )
 
@@ -643,7 +661,7 @@ class TestPartialTopologyFromMDA:
         # Check residue numbers are renumbered from 1
         residue_ids = sorted([topo.residues[0] for topo in topologies])
         expected_count = len(residue_ids)
-        expected_range = list(range(10, expected_count + 10))
+        expected_range = list(range(1, expected_count + 1))
         assert residue_ids == expected_range, (
             f"Expected residue numbering starting from 1, residues: {residue_ids}"
         )
