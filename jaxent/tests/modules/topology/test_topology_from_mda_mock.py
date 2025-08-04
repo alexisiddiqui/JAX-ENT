@@ -1047,7 +1047,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 15 14 13 12 11 10").residues
 
         # Get reordering indices
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         # Apply reordering
         reordered_residues = [residues[i] for i in indices]
@@ -1065,7 +1065,7 @@ class TestGetResidueGroupReorderingIndices:
         # Select atoms from multiple residues
         atoms = bpti_universe.select_atoms("protein and name CA and resid 20 18 16 14 12 10")
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(atoms)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(atoms)
         reordered_residues = [atoms.residues[i] for i in indices]
 
         # Check ordering
@@ -1076,7 +1076,7 @@ class TestGetResidueGroupReorderingIndices:
         """Test that single residue returns identity ordering"""
         residue = bpti_universe.select_atoms("protein and resid 10").residues
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residue)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residue)
 
         assert indices == [0], "Single residue should return identity index [0]"
 
@@ -1087,18 +1087,18 @@ class TestGetResidueGroupReorderingIndices:
         empty_group = ResidueGroup([], bpti_universe)
 
         with pytest.raises(ValueError, match="Group contains no residues"):
-            mda_TopologyAdapter.get_residuegroup_reordering_indices(empty_group)
+            mda_TopologyAdapter.get_residuegroup_ranking_indices(empty_group)
 
     def test_invalid_type_raises_error(self):
         """Test that invalid group type raises TypeError"""
         with pytest.raises(TypeError, match="residue_group must be a ResidueGroup or AtomGroup"):
-            mda_TopologyAdapter.get_residuegroup_reordering_indices("not_a_group")
+            mda_TopologyAdapter.get_residuegroup_ranking_indices("not_a_group")
 
     def test_already_ordered_residues(self, bpti_universe):
         """Test reordering residues that are already in correct order"""
         residues = bpti_universe.select_atoms("protein and resid 10-15").residues
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         # Should return identity ordering
         expected_indices = list(range(len(residues)))
@@ -1112,7 +1112,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
 
         # Get reordering indices
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
         reordered_residues = [residues[i] for i in indices]
 
         # Create corresponding Partial_Topology objects
@@ -1143,7 +1143,7 @@ class TestGetResidueGroupReorderingIndices:
         all_residues = bpti_universe.select_atoms("protein and resid 10-15").residues
 
         # Get indices for single chain
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(all_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(all_residues)
         reordered = [all_residues[i] for i in indices]
 
         # Should be ordered by residue number within chain
@@ -1166,7 +1166,7 @@ class TestGetResidueGroupReorderingIndices:
         manual_indices = [i for _, i in indexed_keys]
 
         # Compare with method result
-        method_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        method_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         assert manual_indices == method_indices, (
             f"Manual sort indices {manual_indices} should match method indices {method_indices}"
@@ -1177,7 +1177,7 @@ class TestGetResidueGroupReorderingIndices:
         # Test with gaps in residue numbering
         scattered_residues = bpti_universe.select_atoms("protein and resid 10 12 14 16 18").residues
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(scattered_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(scattered_residues)
         reordered = [scattered_residues[i] for i in indices]
 
         # Should still be ordered by residue number
@@ -1190,7 +1190,7 @@ class TestGetResidueGroupReorderingIndices:
         original_resnames = [res.resname for res in residues]
         original_resids = [res.resid for res in residues]
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
         reordered = [residues[i] for i in indices]
 
         # Check that residue properties are preserved
@@ -1210,7 +1210,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 30 10 25 15 20").residues
 
         # Method 1: Use get_residuegroup_reordering_indices
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
         method1_order = [residues[i].resid for i in indices]
 
         # Method 2: Create individual topologies and sort
@@ -1241,7 +1241,7 @@ class TestGetResidueGroupReorderingIndices:
         shuffled_selection = f"protein and resid {' '.join(map(str, reversed(residue_ids)))}"
         shuffled_residues = bpti_universe.select_atoms(shuffled_selection).residues
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(shuffled_residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(shuffled_residues)
         reordered = [shuffled_residues[i] for i in indices]
 
         # Check that all residues are included and ordered
@@ -1273,9 +1273,9 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 25 10 30 15 20").residues
 
         # Call method multiple times
-        indices1 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
-        indices2 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
-        indices3 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices1 = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
+        indices2 = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
+        indices3 = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         # All calls should produce identical results
         assert indices1 == indices2 == indices3, "Multiple calls should produce identical results"
@@ -1292,7 +1292,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 35 15 25 10 20 30").residues
 
         # Get MDA ordering
-        mda_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        mda_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
         mda_ordered_resids = [residues[i].resid for i in mda_indices]
 
         # Create corresponding topologies and sort using rank_order
@@ -1318,7 +1318,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 40 20 30 10").residues
 
         # Get MDA ordering
-        mda_indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        mda_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
         mda_ordered_resids = [residues[i].resid for i in mda_indices]
 
         # Create topologies and use rank_and_index
@@ -1350,8 +1350,8 @@ class TestGetResidueGroupReorderingIndices:
         residues = bpti_universe.select_atoms("protein and resid 10 11 12").residues
 
         # Test multiple orderings to ensure stability
-        indices1 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
-        indices2 = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices1 = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
+        indices2 = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         # Should be identical (stable sort)
         assert indices1 == indices2, "Sorting should be stable"
@@ -1379,7 +1379,7 @@ class TestBuildRenumberingMapping:
             assert len(key) == 2, "Keys should be (chain_id, new_resid) pairs"
             chain_id, new_resid = key
             assert isinstance(chain_id, str), "Chain ID should be string"
-            assert isinstance(new_resid, int), "New resid should be integer"
+            assert isinstance(new_resid, (int, np.integer)), "New resid should be integer"
 
         # Check that all values are original residue IDs
         for orig_resid in mapping.values():
