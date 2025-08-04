@@ -54,10 +54,55 @@ class mda_TopologyAdapter:
         """Public method to generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         return mda_TopologyAdapter._get_mda_group_sort_key(group)
 
+    @staticmethod
+    def _get_mda_group_sort_key(
+        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
+    ) -> tuple[int, tuple[int, ...], float, int]:
+        """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
+        if isinstance(group, Residue):
+            residues = [group]
+            chain_id = mda_TopologyAdapter._get_chain_id(group)
+        elif isinstance(group, mda.ResidueGroup):
+            residues = [res for res in group.residues]
+            if len(residues) == 0:
+                raise ValueError("ResidueGroup contains no residues")
+
+            # Verify single chain
+            chain_ids = {mda_TopologyAdapter._get_chain_id(res) for res in residues}
+            if len(chain_ids) > 1:
+                raise ValueError(
+                    f"ResidueGroup contains residues from multiple chains: {chain_ids}"
+                )
+            chain_id = list(chain_ids)[0]
+        elif isinstance(group, mda.AtomGroup):
+            residues = list(group.residues)
+            if len(residues) == 0:
+                raise ValueError("AtomGroup contains no residues")
+
+            # Verify single chain
+            chain_ids = {mda_TopologyAdapter._get_chain_id(atom) for atom in group}
+            if len(chain_ids) > 1:
+                raise ValueError(f"AtomGroup contains atoms from multiple chains: {chain_ids}")
+            chain_id = list(chain_ids)[0]
+        else:
+            raise TypeError("group must be a Residue, ResidueGroup, or AtomGroup")
+
+        if isinstance(chain_id, str):
+            chain_id = chain_id.upper()
+        else:
+            chain_id = str(chain_id)
+
+        resids = [r.resid for r in residues]
+        avg_residue = sum(resids) / len(resids)
+        length = len(resids)
+        chain_score = tuple(ord(c) for c in chain_id)
+
+        return (len(chain_id), chain_score, avg_residue, -length)
+
     """Adapter class for converting MDAnalysis Universe objects to Partial_Topology objects."""
 
     # ================================================================================
-    # SHARED UTILITY METHODS - Used across multiple public methods
+    # SHARED UTILITY METHODS - To be tetsted
     # ================================================================================
     @staticmethod
     def _check_chain(
@@ -270,136 +315,6 @@ class mda_TopologyAdapter:
 
         sequence = [aa_map.get(res.resname, "X") for res in residues]
         return sequence if return_list else "".join(sequence)
-
-    @staticmethod
-    def _mda_group_to_topology(
-        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
-        fragment_name_template: str = "auto",
-    ) -> Partial_Topology:
-        """Convert an MDAnalysis group to a Partial_Topology.
-
-        Args:
-            mda_group: MDAnalysis ResidueGroup or AtomGroup
-            fragment_name_template: Template for naming the topology
-
-        Returns:
-            Partial_Topology object
-
-        Raises:
-            ValueError: If group contains residues from multiple chains
-            TypeError: If group type is not supported
-        """
-        # Extract residues
-        if isinstance(mda_group, mda.ResidueGroup):
-            residues = list(mda_group)
-        elif isinstance(mda_group, mda.AtomGroup):
-            residues = list(mda_group.residues)
-        else:
-            raise TypeError(f"Unsupported group type: {type(mda_group)}")
-
-        if not residues:
-            raise ValueError("Group contains no residues")
-
-        # Verify single chain and get chain ID
-        chain_ids = {mda_TopologyAdapter._get_chain_id(res) for res in residues}
-        if len(chain_ids) > 1:
-            raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
-        chain_id = list(chain_ids)[0]
-
-        # Get residue IDs
-        resids = [res.resid for res in residues]
-
-        # Create topology based on number of residues
-        if len(residues) == 1:
-            res = residues[0]
-            if fragment_name_template == "auto":
-                fragment_name = f"{chain_id}_{res.resname}{res.resid}"
-            else:
-                fragment_name = fragment_name_template.format(
-                    chain=chain_id, resid=res.resid, resname=res.resname
-                )
-
-            sequence = mda_TopologyAdapter._extract_sequence([res])
-
-            return TopologyFactory.from_single(
-                chain=chain_id,
-                residue=res.resid,
-                fragment_sequence=sequence,
-                fragment_name=fragment_name,
-                peptide=False,
-            )
-        else:
-            if fragment_name_template == "auto":
-                fragment_name = f"{chain_id}_multi"
-            else:
-                fragment_name = fragment_name_template.format(
-                    chain=chain_id, resid=f"{min(resids)}-{max(resids)}", resname="multi"
-                )
-
-            sequence = mda_TopologyAdapter._extract_sequence(residues)
-
-            return TopologyFactory.from_residues(
-                chain=chain_id,
-                residues=resids,
-                fragment_sequence=sequence,
-                fragment_name=fragment_name,
-                peptide=False,
-            )
-
-    @staticmethod
-    def _create_mda_group_lookup_key(
-        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
-        renumber_mapping: Optional[Dict] = None,
-    ) -> Optional[tuple[str, frozenset[int]]]:
-        """Create a lookup key for an MDA group.
-
-        Args:
-            mda_group: MDAnalysis ResidueGroup or AtomGroup
-            renumber_mapping: Optional renumbering mapping dict
-
-        Returns:
-            Tuple of (chain_id, frozenset(resids)) or None if invalid
-        """
-        # Extract residues
-        if isinstance(mda_group, mda.ResidueGroup):
-            residues = list(mda_group)
-        elif isinstance(mda_group, mda.AtomGroup):
-            residues = list(mda_group.residues)
-        else:
-            return None
-
-        if not residues:
-            return None
-
-        # Get chain IDs and verify single chain
-        chain_ids = set()
-        resids = []
-
-        for res in residues:
-            chain_id = mda_TopologyAdapter._get_chain_id(res)
-            chain_ids.add(chain_id)
-
-            if renumber_mapping:
-                # Try to find renumbered resid
-                original_resid = res.resid
-                renumbered_resid = None
-                for (ch, new_id), orig_id in renumber_mapping.items():
-                    if ch == chain_id and orig_id == original_resid:
-                        renumbered_resid = new_id
-                        break
-                if renumbered_resid is not None:
-                    resids.append(renumbered_resid)
-            else:
-                resids.append(res.resid)
-
-        if len(chain_ids) > 1:
-            raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
-
-        if not resids:
-            return None
-
-        chain_id = list(chain_ids)[0]
-        return (chain_id, frozenset(resids))
 
     @staticmethod
     def _normalize_parameters(
@@ -686,6 +601,140 @@ class mda_TopologyAdapter:
 
         return topologies
 
+    # ================================================================================
+    # UTILITY METHODS
+    # ================================================================================
+
+    @staticmethod
+    def _mda_group_to_topology(
+        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        fragment_name_template: str = "auto",
+    ) -> Partial_Topology:
+        """Convert an MDAnalysis group to a Partial_Topology.
+
+        Args:
+            mda_group: MDAnalysis ResidueGroup or AtomGroup
+            fragment_name_template: Template for naming the topology
+
+        Returns:
+            Partial_Topology object
+
+        Raises:
+            ValueError: If group contains residues from multiple chains
+            TypeError: If group type is not supported
+        """
+        # Extract residues
+        if isinstance(mda_group, mda.ResidueGroup):
+            residues = list(mda_group)
+        elif isinstance(mda_group, mda.AtomGroup):
+            residues = list(mda_group.residues)
+        else:
+            raise TypeError(f"Unsupported group type: {type(mda_group)}")
+
+        if not residues:
+            raise ValueError("Group contains no residues")
+
+        # Verify single chain and get chain ID
+        chain_ids = {mda_TopologyAdapter._get_chain_id(res) for res in residues}
+        if len(chain_ids) > 1:
+            raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
+        chain_id = list(chain_ids)[0]
+
+        # Get residue IDs
+        resids = [res.resid for res in residues]
+
+        # Create topology based on number of residues
+        if len(residues) == 1:
+            res = residues[0]
+            if fragment_name_template == "auto":
+                fragment_name = f"{chain_id}_{res.resname}{res.resid}"
+            else:
+                fragment_name = fragment_name_template.format(
+                    chain=chain_id, resid=res.resid, resname=res.resname
+                )
+
+            sequence = mda_TopologyAdapter._extract_sequence([res])
+
+            return TopologyFactory.from_single(
+                chain=chain_id,
+                residue=res.resid,
+                fragment_sequence=sequence,
+                fragment_name=fragment_name,
+                peptide=False,
+            )
+        else:
+            if fragment_name_template == "auto":
+                fragment_name = f"{chain_id}_multi"
+            else:
+                fragment_name = fragment_name_template.format(
+                    chain=chain_id, resid=f"{min(resids)}-{max(resids)}", resname="multi"
+                )
+
+            sequence = mda_TopologyAdapter._extract_sequence(residues)
+
+            return TopologyFactory.from_residues(
+                chain=chain_id,
+                residues=resids,
+                fragment_sequence=sequence,
+                fragment_name=fragment_name,
+                peptide=False,
+            )
+
+    @staticmethod
+    def _create_mda_group_lookup_key(
+        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        renumber_mapping: Optional[Dict] = None,
+    ) -> Optional[tuple[str, frozenset[int]]]:
+        """Create a lookup key for an MDA group.
+
+        Args:
+            mda_group: MDAnalysis ResidueGroup or AtomGroup
+            renumber_mapping: Optional renumbering mapping dict
+
+        Returns:
+            Tuple of (chain_id, frozenset(resids)) or None if invalid
+        """
+        # Extract residues
+        if isinstance(mda_group, mda.ResidueGroup):
+            residues = list(mda_group)
+        elif isinstance(mda_group, mda.AtomGroup):
+            residues = list(mda_group.residues)
+        else:
+            return None
+
+        if not residues:
+            return None
+
+        # Get chain IDs and verify single chain
+        chain_ids = set()
+        resids = []
+
+        for res in residues:
+            chain_id = mda_TopologyAdapter._get_chain_id(res)
+            chain_ids.add(chain_id)
+
+            if renumber_mapping:
+                # Try to find renumbered resid
+                original_resid = res.resid
+                renumbered_resid = None
+                for (ch, new_id), orig_id in renumber_mapping.items():
+                    if ch == chain_id and orig_id == original_resid:
+                        renumbered_resid = new_id
+                        break
+                if renumbered_resid is not None:
+                    resids.append(renumbered_resid)
+            else:
+                resids.append(res.resid)
+
+        if len(chain_ids) > 1:
+            raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
+
+        if not resids:
+            raise ValueError("No residues found in the group")
+
+        chain_id = list(chain_ids)[0]
+        return (chain_id, frozenset(resids))
+
     @staticmethod
     def _build_renumbering_mapping(
         universe: mda.Universe,
@@ -796,7 +845,7 @@ class mda_TopologyAdapter:
             )
 
     # ================================================================================
-    # UTILITY METHODS
+    # CHAIN METHODS
     # ================================================================================
 
     @staticmethod
@@ -831,51 +880,6 @@ class mda_TopologyAdapter:
         return selection_string, fallback_atoms
 
     @staticmethod
-    def _get_mda_group_sort_key(
-        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
-    ) -> tuple[int, tuple[int, ...], float, int]:
-        """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
-        if isinstance(group, Residue):
-            residues = [group]
-            chain_id = mda_TopologyAdapter._get_chain_id(group)
-        elif isinstance(group, mda.ResidueGroup):
-            residues = [res for res in group.residues]
-            if len(residues) == 0:
-                raise ValueError("ResidueGroup contains no residues")
-
-            # Verify single chain
-            chain_ids = {mda_TopologyAdapter._get_chain_id(res) for res in residues}
-            if len(chain_ids) > 1:
-                raise ValueError(
-                    f"ResidueGroup contains residues from multiple chains: {chain_ids}"
-                )
-            chain_id = list(chain_ids)[0]
-        elif isinstance(group, mda.AtomGroup):
-            residues = list(group.residues)
-            if len(residues) == 0:
-                raise ValueError("AtomGroup contains no residues")
-
-            # Verify single chain
-            chain_ids = {mda_TopologyAdapter._get_chain_id(atom) for atom in group}
-            if len(chain_ids) > 1:
-                raise ValueError(f"AtomGroup contains atoms from multiple chains: {chain_ids}")
-            chain_id = list(chain_ids)[0]
-        else:
-            raise TypeError("group must be a Residue, ResidueGroup, or AtomGroup")
-
-        if isinstance(chain_id, str):
-            chain_id = chain_id.upper()
-        else:
-            chain_id = str(chain_id)
-
-        resids = [r.resid for r in residues]
-        avg_residue = sum(resids) / len(resids)
-        length = len(resids)
-        chain_score = tuple(ord(c) for c in chain_id)
-
-        return (len(chain_id), chain_score, avg_residue, -length)
-
-    @staticmethod
     def _remove_duplicates_by_chain(
         residue_topologies: Union[list[Partial_Topology], set[Partial_Topology]],
     ) -> set[Partial_Topology]:
@@ -900,10 +904,6 @@ class mda_TopologyAdapter:
             unique.update(chain_unique)
 
         return unique
-
-    # ================================================================================
-    # CHAIN METHODS
-    # ================================================================================
 
     @staticmethod
     def _find_included_residues_by_chain(
