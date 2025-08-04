@@ -1295,9 +1295,8 @@ class TestTopologyCommonResiduesMerged:
         try:
             # Test find_common_residues method
             common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
-                mock_universes
+                mock_universes,
             )
-
             # Convert to dictionary for easier verification
             common_by_chain = {}
             excluded_by_chain = {}

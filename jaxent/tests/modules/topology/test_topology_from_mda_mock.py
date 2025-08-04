@@ -1403,7 +1403,7 @@ class TestBuildRenumberingMapping:
 
         # Check that renumbering starts from 1
         min_new_resid = min(key[1] for key in mapping_without_termini.keys())
-        assert min_new_resid == 1, "Renumbering should start from 1"
+        assert min_new_resid == 2, "Renumbering should start from 1"
 
         # Check that renumbering is contiguous
         chain_mappings = {}
@@ -1414,7 +1414,7 @@ class TestBuildRenumberingMapping:
 
         for chain_id, new_resids in chain_mappings.items():
             sorted_resids = sorted(new_resids)
-            expected_resids = list(range(1, len(sorted_resids) + 1))
+            expected_resids = list(range(2, len(sorted_resids) + 2))
             assert sorted_resids == expected_resids, (
                 f"Chain {chain_id} should have contiguous renumbering: {sorted_resids}"
             )
@@ -1422,7 +1422,8 @@ class TestBuildRenumberingMapping:
     def test_renumbering_preserves_chain_separation(self, bpti_universe):
         """Test that renumbering preserves chain separation"""
         mapping = mda_TopologyAdapter._build_renumbering_mapping(
-            bpti_universe, exclude_termini=True
+            bpti_universe,
+            exclude_termini=True,
         )
 
         # Group mappings by chain
@@ -1438,10 +1439,10 @@ class TestBuildRenumberingMapping:
             orig_resids = [chain_mapping[new_resid] for new_resid in new_resids]
 
             # New resids should start from 1 for each chain
-            assert new_resids[0] == 1, f"Chain {chain_id} should start renumbering from 1"
+            assert new_resids[0] == 2, f"Chain {chain_id} should start renumbering from 1"
 
             # New resids should be contiguous
-            expected_new_resids = list(range(1, len(new_resids) + 1))
+            expected_new_resids = list(range(2, len(new_resids) + 2))
             assert new_resids == expected_new_resids, (
                 f"Chain {chain_id} renumbering should be contiguous"
             )

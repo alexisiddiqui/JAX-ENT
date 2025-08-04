@@ -923,7 +923,9 @@ class TestToMDAGroup:
         # Test protein has one chain 'X'
         assert len(residue_dict) == 1, "Should find residues in one chain"
         chain_id = list(residue_dict.keys())[0]
-        assert chain_id == "X", "Chain should be X"
+        assert chain_id == "X", (
+            f"Chain should be 'X', mda chain ID is {test_universe.atoms[0].chainID}"
+        )
 
         # Check the residue numbers
         resids = residue_dict[chain_id]
