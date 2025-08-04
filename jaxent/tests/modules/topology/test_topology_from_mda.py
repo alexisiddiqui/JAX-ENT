@@ -938,7 +938,7 @@ class TestToMDAGroup:
             test_universe,
             mode="residue",
             include_selection="protein and resid 10-20",
-            renumber_residues=True,
+            renumber_residues=False,
             exclude_termini=True,
         )
 
@@ -949,6 +949,32 @@ class TestToMDAGroup:
             set(topologies),
             test_universe,
             include_selection="protein",
+            renumber_residues=False,
+            exclude_termini=True,
+        )
+
+        # Check if we got a ResidueGroup with the expected number of residues
+        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
+        assert len(residue_group) == len(topologies), (
+            f"Should contain {len(topologies)} topoology residues, got residue group {len(residue_group)}"
+        )
+
+    def test_basic_conversion_renumbering_hard_exclude_renumber(self, test_universe):
+        topologies = mda_TopologyAdapter.from_mda_universe(
+            test_universe,
+            mode="residue",
+            include_selection="protein and resid 10-20",
+            renumber_residues=True,
+            exclude_termini=True,
+        )
+
+        assert len(topologies) > 0, "Should extract some topologies"
+
+        # Convert back to MDAnalysis group
+        residue_group = mda_TopologyAdapter.to_mda_group(
+            set(topologies),
+            test_universe,
+            include_selection="protein and resid 10-20",
             renumber_residues=True,
             exclude_termini=True,
         )
@@ -956,7 +982,7 @@ class TestToMDAGroup:
         # Check if we got a ResidueGroup with the expected number of residues
         assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
         assert len(residue_group) == len(topologies), (
-            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
+            f"Should contain {len(topologies)} topoology residues, got residue group {len(residue_group)}"
         )
 
     def test_to_mda_residue_dict(self, test_universe):

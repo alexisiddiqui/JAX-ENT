@@ -11,6 +11,7 @@ import pytest
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.interfaces.topology.factory import TopologyFactory
+from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 
 test_pdb = """"TITLE     MDANALYSIS FRAME 0: Created by PDBWriter
 CRYST1   63.649   63.649   63.649  90.00  90.00  90.00 P 1           1
