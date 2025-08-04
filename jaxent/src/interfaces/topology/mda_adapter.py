@@ -276,7 +276,9 @@ class mda_TopologyAdapter:
         return mda_TopologyAdapter._extract_chain_identifier(atom_or_residue)[0]
 
     @staticmethod
-    def _extract_sequence(residues: list, return_list: bool = False) -> Union[str, list[str]]:
+    def _extract_sequence(
+        residues: list[Residue], return_list: bool = False
+    ) -> Union[str, list[str]]:
         """Extract amino acid sequence from residues.
 
         Args:

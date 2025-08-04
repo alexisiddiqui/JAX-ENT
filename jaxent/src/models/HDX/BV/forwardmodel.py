@@ -9,7 +9,7 @@ from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology, mda_TopologyAdapter, rank_and_index
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
-from jaxent.src.models.func.uptake import calculate_intrinsic_rates
+from jaxent.src.models.func.uptake import calculate_HDXrate
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.models.HDX.forward import (
@@ -147,7 +147,9 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 renumber_residues=True,
             )
             common_residue_group = cast(mda.ResidueGroup, common_residue_group)
-            k_ints_res_dict = calculate_intrinsic_rates(universe, common_residue_group)
+            k_ints_res_dict = calculate_HDXrate(
+                common_residue_group, self.config.temperature, self.config.ph
+            )
 
             # Map results back to Partial_Topology objects
             for topo in self.common_topology:
