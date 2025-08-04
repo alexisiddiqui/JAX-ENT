@@ -632,8 +632,9 @@ class TestPartialTopologyFromMDA:
         topologies = mda_TopologyAdapter.from_mda_universe(
             test_universe,
             mode="residue",
-            include_selection="protein and name CA and resid 10-20",
+            include_selection="protein and resid 10-20",
             exclude_termini=False,
+            renumber_residues=True,
         )
 
         # Should get topologies for residues in the specified range
@@ -644,7 +645,7 @@ class TestPartialTopologyFromMDA:
         expected_count = len(residue_ids)
         expected_range = list(range(10, expected_count + 10))
         assert residue_ids == expected_range, (
-            f"Expected sequential residue numbering starting from 1, residues: {residue_ids}"
+            f"Expected residue numbering starting from 1, residues: {residue_ids}"
         )
 
     def test_exclude_selection(self, test_universe):
@@ -825,11 +826,12 @@ class TestFindCommonResidues:
                 include_selection=f"protein and resid {start}-{end}",
                 exclude_selection="",
                 renumber_residues=True,
+                exclude_termini=True,
             )
 
             # With renumbering=True, residues are renumbered based on their position
             expected_max = end - start + 1  # Original range size
-            expected_after_termini = max(0, expected_max - 2)  # Minus termini
+            expected_after_termini = max(0, expected_max)  # Minus termini
 
             assert len(common_residues) <= expected_max, (
                 f"Range {start}-{end}: too many residues {len(common_residues)} > {expected_max}"
@@ -1012,7 +1014,7 @@ class TestGetResidueGroupReorderingIndices:
         residues = test_universe.select_atoms("protein and resid 15 14 13 12 11 10").residues
 
         # Get reordering indices
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residues)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
 
         # Apply reordering
         reordered_residues = [residues[i] for i in indices]
@@ -1029,7 +1031,7 @@ class TestGetResidueGroupReorderingIndices:
         """Test that single residue returns identity ordering"""
         residue = test_universe.select_atoms("protein and resid 10").residues
 
-        indices = mda_TopologyAdapter.get_residuegroup_reordering_indices(residue)
+        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residue)
 
         assert indices == [0], "Single residue should return identity index [0]"
 
@@ -1040,7 +1042,7 @@ class TestGetResidueGroupReorderingIndices:
         empty_group = ResidueGroup([], test_universe)
 
         with pytest.raises(ValueError, match="Group contains no residues"):
-            mda_TopologyAdapter.get_residuegroup_reordering_indices(empty_group)
+            mda_TopologyAdapter.get_residuegroup_ranking_indices(empty_group)
 
 
 class TestGetAtomgroupReorderingIndices:
@@ -1098,7 +1100,7 @@ class TestBuildRenumberingMapping:
             assert len(key) == 2, "Keys should be (chain_id, new_resid) pairs"
             chain_id, new_resid = key
             assert isinstance(chain_id, str), "Chain ID should be string"
-            assert isinstance(new_resid, int), "New resid should be integer"
+            assert isinstance(new_resid, np.integer), "New resid should be integer"
 
     def test_renumbering_with_termini_exclusion(self, test_universe):
         """Test renumbering mapping with terminal exclusion"""
@@ -1187,7 +1189,7 @@ class TestIntegrationTests:
         mda_group = mda_TopologyAdapter.to_mda_group(
             set(original_topologies),
             test_universe,
-            include_selection="protein",
+            include_selection="protein and resid 10-20",
             renumber_residues=True,
         )
 
