@@ -253,7 +253,15 @@ ATOM     14  CA  GLY A   3      14.222  -0.349   1.000  1.00 10.00           C
 ATOM     15  C   GLY A   3      13.023  -1.100   1.000  1.00 10.00           C  
 ATOM     16  O   GLY A   3      11.963  -0.513   1.000  1.00 10.00           O  
 ATOM     17  H   GLY A   3      15.000  -0.700   1.000  1.00 10.00           H  
-TER      18      GLY A   3
+ATOM     18  N   SER A   4      12.000  -2.000   1.000  1.00 10.00           N  
+ATOM     19  CA  SER A   4      11.000  -1.000   1.000  1.00 10.00           C  
+ATOM     20  C   SER A   4      10.000  -2.000   1.000  1.00 10.00           C  
+ATOM     21  O   SER A   4       9.000  -1.000   1.000  1.00 10.00           O  
+ATOM     22  N   TYR A   5       8.000  -2.000   1.000  1.00 10.00           N  
+ATOM     23  CA  TYR A   5       7.000  -1.000   1.000  1.00 10.00           C  
+ATOM     24  C   TYR A   5       6.000  -2.000   1.000  1.00 10.00           C  
+ATOM     25  O   TYR A   5       5.000  -1.000   1.000  1.00 10.00           O  
+TER      26      TYR A   5
 END
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as f:
@@ -295,14 +303,18 @@ END
         with patch("jaxent.src.featurise.run_featurise") as mock_featurise:
             # Create mock features and topology - match the actual output structure
             mock_features = BV_input_features(
-                heavy_contacts=jnp.ones((1, 10)),  # 1 residue (common), 10 frames
-                acceptor_contacts=jnp.ones((1, 10)),
-                k_ints=jnp.ones(1),
+                heavy_contacts=jnp.ones((5, 10)),  # 1 residue (common), 10 frames
+                acceptor_contacts=jnp.ones((5, 10)),
+                k_ints=jnp.ones(5),
             )
 
             # Mock topology should match what the actual function returns
             mock_topology = [
-                TopologyFactory.from_single("A", 2, fragment_name="common_chain_A")  # VAL residue
+                TopologyFactory.from_single("A", 1, fragment_name="common_chain_A"),  # ALA residue
+                TopologyFactory.from_single("A", 2, fragment_name="common_chain_A"),  # VAL residue
+                TopologyFactory.from_single("A", 3, fragment_name="common_chain_A"),  # GLY residue
+                TopologyFactory.from_single("A", 4, fragment_name="common_chain_A"),  # SER residue
+                TopologyFactory.from_single("A", 5, fragment_name="common_chain_A"),  # TYR residue
             ]
 
             mock_featurise.return_value = ([mock_features], [mock_topology])
