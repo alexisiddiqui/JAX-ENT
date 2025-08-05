@@ -85,7 +85,7 @@ class DataSplitter:
         random_seed: int = 42,
         ensemble: list[mda.Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
-        check_trim: bool = False,
+        check_trim: bool = True,
         peptide_trim: int = 2,
         centrality: bool = True,
         train_size: float = 0.5,
