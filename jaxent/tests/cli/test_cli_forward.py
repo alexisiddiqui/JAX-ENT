@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from jaxent.src.models.HDX.BV.features import BV_output_features, uptake_BV_output_features
 from jaxent.src.utils.jit_fn import jit_Guard
 from jaxent.tests.test_utils import get_inst_path
 
@@ -48,7 +49,7 @@ def featurised_data():
             "--peptide_trim",
             "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
@@ -131,9 +132,9 @@ def test_cli_forward_bv_model(featurised_data):
             prediction_path = forward_output_dir / f"test_bv_forward_{i}.npz"
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Use BV_output_features.load instead of np.load
+            output_features = BV_output_features.load(str(prediction_path))
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
@@ -216,9 +217,9 @@ def test_cli_forward_bv_model_uptake(featurised_data):
             prediction_path = forward_output_dir / f"test_bv_forward_{i}.npz"
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Use uptake_BV_output_features.load instead of np.load
+            output_features = uptake_BV_output_features.load(str(prediction_path))
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
@@ -312,9 +313,12 @@ def test_cli_forward_multiple_simulations(featurised_data):
             )  # _0 because num_simulations is 1
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Choose loader based on num_timepoints
+            if num_timepoints_list[i] == 0:
+                output_features = BV_output_features.load(str(prediction_path))
+            else:
+                output_features = uptake_BV_output_features.load(str(prediction_path))
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
