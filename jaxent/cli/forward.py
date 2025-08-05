@@ -202,6 +202,8 @@ def main():
 
     args = parser.parse_args()
 
+    
+
     # Create output directory
     output_path = Path(args.output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -213,7 +215,11 @@ def main():
 
         # Special handling for 'timepoints' to allow multiple values per simulation
         if arg_name == "timepoints":
-            return arg_value
+            # If timepoints is an empty list or a list containing only None, return None
+            if not arg_value or (isinstance(arg_value, list) and all(x is None for x in arg_value)):
+                return None
+            # Otherwise, return the list of timepoints as floats
+            return [float(val) for val in arg_value]
 
         if len(arg_value) == 1:
             return [dtype(arg_value[0])] * expected_len
@@ -282,15 +288,14 @@ def main():
         # Create Model_Parameters for current simulation
         current_model_parameters: Model_Parameters
         if args.model_type == "bv":
+            timepoints_processed = _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
             current_model_parameters = BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=jnp.asarray(
-                    _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
-                ),
+                timepoints=(jnp.asarray(timepoints_processed) if timepoints_processed is not None else None),
             )
             config = BV_model_Config(
                 num_timepoints=_process_arg_list(
@@ -305,9 +310,7 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=jnp.asarray(
-                    _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
-                ),
+                timepoints=(jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")) if _process_arg_list(args.timepoints, args.num_simulations, "timepoints") is not None else None),
             )
             config = linear_BV_model_Config(
                 num_timepoints=_process_arg_list(

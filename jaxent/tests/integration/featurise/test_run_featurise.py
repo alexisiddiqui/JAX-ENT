@@ -30,8 +30,18 @@ def test_run_featurise():
     features, feat_top = run_featurise(ensemble, featuriser_settings)
 
     assert len(features) == len(models)
-
     print(features)
+
+    assert features[0].heavy_contacts is not None
+    assert features[0].acceptor_contacts is not None
+    assert features[0].k_ints is not None
+
+    num_residues = 52
+    num_frames = 500
+
+    assert features[0].heavy_contacts.shape == (num_residues, num_frames)
+    assert features[0].acceptor_contacts.shape == (num_residues, num_frames)
+    assert features[0].k_ints.shape == (num_residues,)
 
 
 def test_run_featurise_ensemble():
