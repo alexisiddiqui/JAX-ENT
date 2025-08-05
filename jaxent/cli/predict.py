@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.base import ForwardModel
-from jaxent.src.custom_types.features import Input_Features
+from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
@@ -278,7 +278,7 @@ def main():
     output_file_path = output_path / f"{args.output_name}.npz"
     if output_features:
         first_output = output_features[0]
-        jnp.savez(output_file_path, predictions=first_output.y_pred())
+        Output_Features.save(first_output, str(output_file_path))
         print(f"Predictions saved to {output_file_path}")
     else:
         print("No output features generated.")

@@ -23,6 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
+from jaxent.src.custom_types.features import AbstractFeatures, Output_Features
+
 
 def main():
     """Main function to run the featurisation and prediction pipeline."""
@@ -155,6 +159,60 @@ def main():
 
     print(f"\nRunning predict command: {' '.join(predict_command)}")
     predict_result = subprocess.run(predict_command, capture_output=True, text=True, check=False)
+    output_features_path = predict_output_dir / f"{args.name}.npz"
+    output_features: Output_Features = AbstractFeatures.load(str(output_features_path))
+
+    # save output features as a csv
+    output_csv_path = predict_output_dir / f"{args.name}_features.csv"
+
+    array = output_features.y_pred()
+    # save np.ndarray as a csv - handle both 2D and 3D data
+    # Data structure: residues along first dim, timepoints (if present) along second, n_frames always last
+    array = np.asarray(array)
+
+    if array.ndim == 2:
+        # 2D array: (residues, n_frames) - transpose for CSV format (frames, residues)
+        transposed_array = array.T
+        header = ",".join(
+            [f"Residue_{r}_Frame_{f}" for f in range(array.shape[1]) for r in range(array.shape[0])]
+        )
+        np.savetxt(
+            output_csv_path,
+            transposed_array,
+            delimiter=",",
+            header=header,
+            comments="",
+        )
+    elif array.ndim == 3:
+        # 3D array: (residues, timepoints, n_frames) - reshape for CSV format
+        n_residues, n_timepoints, n_frames = array.shape
+        # Reshape to (n_frames, residues * timepoints)
+        reshaped_array = array.transpose(2, 0, 1).reshape(n_frames, -1)
+        # Create header: Residue_i_Timepoint_j_Frame_k for each combination
+        header = ",".join(
+            [
+                f"Residue_{r}_Timepoint_{t}_Frame_{f}"
+                for f in range(n_frames)
+                for r in range(n_residues)
+                for t in range(n_timepoints)
+            ]
+        )
+        np.savetxt(
+            output_csv_path,
+            reshaped_array,
+            delimiter=",",
+            header=header,
+            comments="",
+        )
+    else:
+        # 1D array or higher dimensions - flatten
+        np.savetxt(
+            output_csv_path,
+            array.flatten(),
+            delimiter=",",
+            header="Uptake/Protection Factors",
+            comments="",
+        )
 
     print("Predict STDOUT:", predict_result.stdout)
     if predict_result.stderr:
