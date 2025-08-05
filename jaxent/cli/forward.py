@@ -4,17 +4,18 @@ from pathlib import Path
 import jax.numpy as jnp
 import numpy as np
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.base import ForwardModel
-from jaxent.src.custom_types.features import Input_Features
+from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
+from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict_forward import run_forward
 
 
@@ -59,7 +60,6 @@ def main():
         default=1,
         help="Number of simulation parameter sets to run. Parameters provided as single values will be broadcast.",
     )
-    
 
     subparsers = parser.add_subparsers(
         dest="model_type", required=True, help="Type of forward model to use for prediction."
@@ -210,7 +210,7 @@ def main():
     def _process_arg_list(arg_value, expected_len, arg_name, dtype=float):
         if arg_value is None:
             return None  # Handled later for frame_weights/mask
-        
+
         # Special handling for 'timepoints' to allow multiple values per simulation
         if arg_name == "timepoints":
             return arg_value
@@ -271,7 +271,7 @@ def main():
 
     # Load Partial_Topology (not directly used by run_forward, but good practice to load if featurised data is provided)
     print(f"Loading topology from {args.topology_path}")
-    topology = Partial_Topology.load_list_from_json(args.topology_path)
+    topology = pt.PTSerialiser.load_list_from_json(args.topology_path)
     print(f"Loaded {len(topology)} topology entries.")
 
     # Prepare sequences of ForwardModel and Simulation_Parameters
@@ -288,7 +288,9 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
+                timepoints=jnp.asarray(
+                    _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
+                ),
             )
             config = BV_model_Config(
                 num_timepoints=_process_arg_list(
@@ -303,7 +305,9 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")),
+                timepoints=jnp.asarray(
+                    _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
+                ),
             )
             config = linear_BV_model_Config(
                 num_timepoints=_process_arg_list(
@@ -312,7 +316,7 @@ def main():
             )
             forward_models_list.append(linear_BV_model(config=config))
         elif args.model_type == "nethdx":
-            current_model_parameters = NetHDX__Model_Parameters(
+            current_model_parameters = NetHDX_Model_Parameters(
                 shell_energy_scaling=jnp.array(
                     _process_arg_list(
                         args.shell_energy_scaling, args.num_simulations, "shell_energy_scaling"
@@ -381,12 +385,7 @@ def main():
         if output_features_for_sim:
             # Assuming each output_features_for_sim is a Sequence of Output_Features
             # and we want to save the y_pred of the first one.
-            first_output = output_features_for_sim[i]
-            print(first_output.y_pred())
-            print(first_output.y_pred().shape)
-
-            # breakpoint()
-            jnp.savez(output_file_path, predictions=first_output.y_pred())
+            Output_Features.save(output_features_for_sim[0], str(output_file_path))
             print(f"Predictions for simulation {i} saved to {output_file_path}")
         else:
             print(f"No output features generated for simulation {i}.")

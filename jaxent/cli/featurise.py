@@ -4,11 +4,12 @@ from pathlib import Path
 import jax.numpy as jnp
 import MDAnalysis as mda
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.config import FeaturiserSettings
+from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
@@ -358,17 +359,12 @@ def main():
 
     # Save features using jnp.savez
     features_path = output_path / "features.npz"
-    jnp.savez(
-        features_path,
-        heavy_contacts=features_set.heavy_contacts,
-        acceptor_contacts=features_set.acceptor_contacts,
-        k_ints=features_set.k_ints,
-    )
+    Input_Features.save(features_set, str(features_path))
     print(f"Features saved to {features_path}")
 
     # Save topology using Partial_Topology.save_list_to_json
     topology_file = output_path / "topology.json"
-    Partial_Topology.save_list_to_json(topology_set, topology_file)
+    pt.PTSerialiser.save_list_to_json(topology_set, topology_file)
     print(f"Topology saved to {topology_file}")
 
     print("Featurisation complete.")
