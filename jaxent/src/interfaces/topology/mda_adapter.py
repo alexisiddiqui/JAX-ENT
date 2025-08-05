@@ -288,6 +288,11 @@ class mda_TopologyAdapter:
         Returns:
             Amino acid sequence as string or list
         """
+
+        # check that residues is a list of Residue objects
+        if not all(isinstance(res, Residue) for res in residues):
+            raise TypeError("residues must be a list of MDAnalysis Residue objects")
+
         aa_map = {
             "ALA": "A",
             "ARG": "R",
@@ -904,6 +909,9 @@ class mda_TopologyAdapter:
         Utility method to build a selection string for a specific chain,
         accounting for available attributes in the universe.
         """
+        if not isinstance(chain_id, str):
+            raise TypeError(f"chain_id must be a string, got {type(chain_id)}")
+
         selected_chain_id, (has_chainID, has_segid) = mda_TopologyAdapter._extract_chain_identifier(
             universe, chain_id
         )
