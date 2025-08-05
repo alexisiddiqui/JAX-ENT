@@ -318,6 +318,8 @@ def test_cli_forward_multiple_simulations(featurised_data):
             # Choose loader based on num_timepoints
 
             output_features = Output_Features.load(str(prediction_path))
+            print(f"Output features  {output_features}")
+
             predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")

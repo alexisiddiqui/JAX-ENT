@@ -2,7 +2,6 @@ import argparse
 from pathlib import Path
 
 import jax.numpy as jnp
-import numpy as np
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.base import ForwardModel
@@ -10,10 +9,8 @@ from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict_forward import run_forward
@@ -202,8 +199,6 @@ def main():
 
     args = parser.parse_args()
 
-    
-
     # Create output directory
     output_path = Path(args.output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -232,25 +227,10 @@ def main():
 
     # Load Input_Features (assuming a single set of features for all simulations)
     print(f"Loading features from {args.features_path}")
-    features_data = np.load(args.features_path)
-
-    input_features: Input_Features
-    if args.model_type == "bv" or args.model_type == "linear_bv":
-        input_features = BV_input_features(
-            heavy_contacts=jnp.asarray(features_data["heavy_contacts"]),
-            acceptor_contacts=jnp.asarray(features_data["acceptor_contacts"]),
-            k_ints=jnp.asarray(features_data["k_ints"]) if "k_ints" in features_data else None,
-        )
-    elif args.model_type == "nethdx":
-        input_features = NetHDX_input_features(
-            contact_matrices=jnp.asarray(features_data["contact_matrices"]),
-            residue_ids=jnp.asarray(features_data["residue_ids"]),
-            network_metrics=features_data["network_metrics"]
-            if "network_metrics" in features_data
-            else None,
-        )
-    else:
-        raise ValueError(f"Unknown model type: {args.model_type}")
+    try:
+        input_features = Input_Features.load(args.features_path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Features file not found: {args.features_path}")
 
     # Get number of frames
     n_frames = input_features.features_shape[-1]
@@ -288,14 +268,18 @@ def main():
         # Create Model_Parameters for current simulation
         current_model_parameters: Model_Parameters
         if args.model_type == "bv":
-            timepoints_processed = _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
+            timepoints_processed = _process_arg_list(
+                args.timepoints, args.num_simulations, "timepoints"
+            )
             current_model_parameters = BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=(jnp.asarray(timepoints_processed) if timepoints_processed is not None else None),
+                timepoints=(
+                    jnp.asarray(timepoints_processed) if timepoints_processed is not None else None
+                ),
             )
             config = BV_model_Config(
                 num_timepoints=_process_arg_list(
@@ -310,7 +294,14 @@ def main():
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=(jnp.asarray(_process_arg_list(args.timepoints, args.num_simulations, "timepoints")) if _process_arg_list(args.timepoints, args.num_simulations, "timepoints") is not None else None),
+                timepoints=(
+                    jnp.asarray(
+                        _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
+                    )
+                    if _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
+                    is not None
+                    else None
+                ),
             )
             config = linear_BV_model_Config(
                 num_timepoints=_process_arg_list(
