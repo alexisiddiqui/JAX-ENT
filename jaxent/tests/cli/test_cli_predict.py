@@ -21,8 +21,7 @@ def test_cli_predict_bv_model():
 
         # --- Run Featurise CLI ---
         featurise_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/featurise.py",
+            "jaxent-featurise",
             "--top_path",
             str(topology_path),
             "--trajectory_path",
@@ -44,7 +43,7 @@ def test_cli_predict_bv_model():
             "--peptide_trim",
             "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
@@ -76,8 +75,7 @@ def test_cli_predict_bv_model():
 
         # --- Run Predict CLI ---
         predict_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/predict.py",
+            "jaxent-predict",
             "--features_path",
             str(features_npz_path),
             "--topology_path",
@@ -146,8 +144,7 @@ def test_cli_predict_bv_model_uptake():
 
         # --- Run Featurise CLI ---
         featurise_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/featurise.py",
+            "jaxent-predict",
             "--top_path",
             str(topology_path),
             "--trajectory_path",
@@ -169,7 +166,7 @@ def test_cli_predict_bv_model_uptake():
             "--peptide_trim",
             "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
