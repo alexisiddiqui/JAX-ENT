@@ -920,7 +920,7 @@ class TestSpatialSplit:
             splitter.spatial_split(universe=real_universe)
 
     @patch(
-        "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
+        "jaxent.src.data.splitting.split.mda_TopologyAdapter.partial_topology_pairwise_distances"
     )
     def test_spatial_split_distance_calculation_error(
         self, mock_distances, sample_dataset, real_universe, common_residues
@@ -973,7 +973,7 @@ class TestSpatialSplit:
 
         # Capture the distance calculation
         with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
+            "jaxent.src.data.splitting.split.mda_TopologyAdapter.partial_topology_pairwise_distances"
         ) as mock_distances:
             # Create a mock distance matrix where distances increase with index
             n_samples = len(sample_dataset.data)
