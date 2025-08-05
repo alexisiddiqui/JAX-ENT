@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from custom_types.features import Output_Features
 
-from jaxent.src.models.HDX.BV.features import BV_output_features, uptake_BV_output_features
 from jaxent.src.utils.jit_fn import jit_Guard
 from jaxent.tests.test_utils import get_inst_path
 
@@ -133,7 +133,7 @@ def test_cli_forward_bv_model(featurised_data):
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
             # Use BV_output_features.load instead of np.load
-            output_features = BV_output_features.load(str(prediction_path))
+            output_features = Output_Features.load(str(prediction_path))
             predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
@@ -218,7 +218,7 @@ def test_cli_forward_bv_model_uptake(featurised_data):
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
             # Use uptake_BV_output_features.load instead of np.load
-            output_features = uptake_BV_output_features.load(str(prediction_path))
+            output_features = Output_Features.load(str(prediction_path))
             predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
@@ -290,10 +290,12 @@ def test_cli_forward_multiple_simulations(featurised_data):
                 str(bv_bhs[i]),
                 "--temperature",
                 str(temperatures[i]),
-                *current_timepoints_args,
-                "--frame_weights",
-                *[str(w) for w in random_weights],
             ]
+
+            if timepoints_list[i] is not None:
+                forward_command.extend(["--timepoints"] + timepoints_list[i].split())
+
+            forward_command.extend(["--frame_weights"] + [str(w) for w in random_weights])
 
             print(f"Running forward command (Sim {i}): {' '.join(forward_command[:20])}...")
             forward_result = subprocess.run(
@@ -314,10 +316,8 @@ def test_cli_forward_multiple_simulations(featurised_data):
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
             # Choose loader based on num_timepoints
-            if num_timepoints_list[i] == 0:
-                output_features = BV_output_features.load(str(prediction_path))
-            else:
-                output_features = uptake_BV_output_features.load(str(prediction_path))
+
+            output_features = Output_Features.load(str(prediction_path))
             predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
