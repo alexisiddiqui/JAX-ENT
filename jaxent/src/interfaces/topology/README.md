@@ -1,5 +1,21 @@
 # Topology Interface: Summary of Classes and Methods
 
+
+usage:
+
+import jaxent.src.interfaces.topology as pt
+
+topology = pt.Partial_Topology(
+            chain=chain,
+            residues=residues,
+            fragment_sequence=fragment_sequence,
+            fragment_name=fragment_name,
+            fragment_index=fragment_index,
+            peptide=peptide,
+            peptide_trim=peptide_trim,
+        )
+
+
 ---
 
 ## `/core.py`
