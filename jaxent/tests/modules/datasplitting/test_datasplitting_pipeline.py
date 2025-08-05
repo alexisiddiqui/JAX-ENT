@@ -303,18 +303,16 @@ END
         with patch("jaxent.src.featurise.run_featurise") as mock_featurise:
             # Create mock features and topology - match the actual output structure
             mock_features = BV_input_features(
-                heavy_contacts=jnp.ones((5, 10)),  # 1 residue (common), 10 frames
-                acceptor_contacts=jnp.ones((5, 10)),
-                k_ints=jnp.ones(5),
+                heavy_contacts=jnp.ones((3, 10)),  # 1 residue (common), 10 frames
+                acceptor_contacts=jnp.ones((3, 10)),
+                k_ints=jnp.ones(3),
             )
 
             # Mock topology should match what the actual function returns
             mock_topology = [
-                TopologyFactory.from_single("A", 1, fragment_name="common_chain_A"),  # ALA residue
                 TopologyFactory.from_single("A", 2, fragment_name="common_chain_A"),  # VAL residue
                 TopologyFactory.from_single("A", 3, fragment_name="common_chain_A"),  # GLY residue
                 TopologyFactory.from_single("A", 4, fragment_name="common_chain_A"),  # SER residue
-                TopologyFactory.from_single("A", 5, fragment_name="common_chain_A"),  # TYR residue
             ]
 
             mock_featurise.return_value = ([mock_features], [mock_topology])
