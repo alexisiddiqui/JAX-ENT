@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional
+from warnings import deprecated
 
 import MDAnalysis as mda
 import numpy as np
@@ -67,6 +68,7 @@ def calculate_HDXrate(
     return {residue: k_int[i] for i, residue in enumerate(residue_list)}
 
 
+@deprecated("calculate_intrinsic_rates is deprecated. Use calculate_HDXrate instead.")
 def calculate_intrinsic_rates(
     universe: mda.Universe, residue_group: Optional[mda.ResidueGroup] = None
 ) -> Dict[Residue, float]:
