@@ -5,13 +5,13 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.custom_types.HDX import HDX_protection_factor
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.tests.plots.datasplitting import plot_split_visualization
@@ -163,7 +163,7 @@ def test_compare_splitting_approaches():
     common_residues_features = set(feature_topology[0])
 
     # Method 2: Universe approach (original)
-    common_residues_universe = Partial_Topology.find_common_residues(
+    common_residues_universe = pt.mda_TopologyAdapter.find_common_residues(
         universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 

@@ -105,12 +105,13 @@ class Partial_Topology:
     def _to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary"""
         # Include all the core data fields that should be persisted
+        import jax.numpy as jnp
         return {
-            "chain": self.chain,
-            "residues": self.residues,
+            "chain": int(self.chain) if isinstance(self.chain, jnp.integer) else self.chain,
+            "residues": [int(r) if isinstance(r, jnp.integer) else r for r in self.residues],
             "fragment_sequence": self.fragment_sequence,
             "fragment_name": self.fragment_name,
-            "fragment_index": self.fragment_index,
+            "fragment_index": int(self.fragment_index) if self.fragment_index is not None and isinstance(self.fragment_index, jnp.integer) else self.fragment_index,
             "peptide": self.peptide,
             "peptide_trim": self.peptide_trim,
         }
