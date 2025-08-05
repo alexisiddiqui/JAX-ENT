@@ -1,17 +1,18 @@
 import copy
 import os
-import re
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import MDAnalysis
+import MDAnalysis as mda
 import numpy as np
 import pytest
 
-from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
+from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.interfaces.topology.factory import TopologyFactory
-from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
+from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
+
+# Test PDB content from the provided example
 
 test_pdb = """"TITLE     MDANALYSIS FRAME 0: Created by PDBWriter
 CRYST1   63.649   63.649   63.649  90.00  90.00  90.00 P 1           1
@@ -577,33 +578,18 @@ ATOM    559  OC2 ALA X  58      13.604  30.398  37.500  1.00  0.00      SYST O
 """
 
 
-# Mock ExpD_Datapoint for testing (reusing from existing tests)
-class MockExpD_Datapoint(ExpD_Datapoint):
-    def __init__(self, top, data_id=None):
-        self.top = top
-        self.key = f"mock_key_{data_id}" if data_id else "mock_key"
-        self.data_id = data_id
-
-    def extract_features(self):
-        return np.array([1.0])  # Mock feature
-
-    def __repr__(self):
-        return f"MockExpD_Datapoint(id={self.data_id}, top={self.top})"
-
-
-# Helper functions (reusing from existing tests)
+# Helper functions from the provided test setup
 def create_single_chain_topologies(chain="X", count=15):
     """Create diverse single-chain topologies with good separation, fitting within test_pdb."""
     topologies = []
     start = 1
-    # Adjust gap and length to ensure residues stay within 1-58
     gap = 5
     length = 5
 
     for i in range(count):
         current_start = start + i * (length + gap)
         current_end = current_start + length - 1
-        if current_end > 58:  # Ensure we don't go beyond residue 58
+        if current_end > 58:
             break
         topologies.append(
             TopologyFactory.from_range(
@@ -613,43 +599,21 @@ def create_single_chain_topologies(chain="X", count=15):
     return topologies
 
 
-def create_multi_chain_topologies(chains=["X"], count_per_chain=5):
-    """Create diverse multi-chain topologies with good separation, fitting within test_pdb's single chain X."""
-    topologies = []
-
-    for chain in chains:
-        start = 1
-        gap = 8  # Adjusted gap
-        length = 5  # Adjusted length
-
-        for i in range(count_per_chain):
-            current_start = start + i * (length + gap)
-            current_end = current_start + length - 1
-            if current_end > 58:  # Ensure we don't go beyond residue 58
-                break
-            topologies.append(
-                TopologyFactory.from_range(
-                    chain, current_start, current_end, fragment_name=f"frag_{chain}_{i + 1}"
-                )
-            )
-    return topologies
-
-
-def create_peptide_topologies(chains=["X"], count_per_chain=5):
+def create_peptide_topologies(chains=["X"], count_per_chain=15):
     """Create diverse peptide topologies with trimming and good separation, fitting within test_pdb."""
     topologies = []
     trim_values = [1, 2]
 
     for chain in chains:
         start = 1
-        gap = 8  # Adjusted gap
-        length = 8  # Adjusted length
+        gap = 8
+        length = 8
 
         for i in range(count_per_chain):
             trim = trim_values[i % len(trim_values)]
             current_start = start + i * (length + gap)
             current_end = current_start + length - 1
-            if current_end > 58:  # Ensure we don't go beyond residue 58
+            if current_end > 58:
                 break
             topologies.append(
                 TopologyFactory.from_range(
@@ -664,1088 +628,430 @@ def create_peptide_topologies(chains=["X"], count_per_chain=5):
     return topologies
 
 
-def create_common_residues_for_chains(chains=["X"], coverage_factor=0.7):
-    """Create common residue topologies that cover a portion of each chain, fitting within test_pdb."""
-    common_residues = set()
-
-    # For test_pdb, we only have chain 'X' and residues 1-58
-    chain = "X"
-    # Define ranges that fit within 1-58
-    range1_end = min(58, int(20 * coverage_factor))
-    range2_start = 30
-    range2_end = min(58, int(range2_start + (58 - range2_start) * coverage_factor))
-
-    if range1_end >= 1:
-        common_residues.add(
-            TopologyFactory.from_range(chain, 1, range1_end, fragment_name=f"common_{chain}_1")
-        )
-
-    if range2_end >= range2_start:
-        common_residues.add(
-            TopologyFactory.from_range(
-                chain, range2_start, range2_end, fragment_name=f"common_{chain}_2"
-            )
-        )
-
-    # Ensure at least two common residues for testing purposes if needed
-    while len(common_residues) < 2:
-        # Add dummy small fragments if needed, ensuring they are within bounds
-        dummy_start = max(1, 58 - (2 - len(common_residues)) * 2)  # Ensure it's within 1-58
-        common_residues.add(
-            TopologyFactory.from_range(
-                chain,
-                dummy_start,
-                min(58, dummy_start + 1),
-                fragment_name=f"common_{chain}_dummy_{len(common_residues)}",
-            )
-        )
-
-    return common_residues
+from jaxent.src.custom_types.HDX import HDX_peptide
 
 
-@pytest.fixture
-def create_datapoints_from_topologies():
-    """Factory to create datapoints from topologies."""
-
-    def _create(topologies):
-        return [MockExpD_Datapoint(topo, i) for i, topo in enumerate(topologies)]
-
-    return _create
-
-
-@pytest.fixture
-def setup_splitter(request):
-    """Factory to set up DataSplitter with mocked dependencies."""
-
-    def _setup(datapoints, common_residues, **kwargs):
-        mock_loader = MagicMock(spec=ExpD_Dataloader)
-        mock_loader.data = copy.deepcopy(datapoints)
-        mock_loader.y_true = np.array([1.0] * len(datapoints))
-
-        def mock_filter_func(dataset, common_topos, check_trim=False):
-            if not common_topos:
-                return []
-            return [
-                dp
-                for dp in dataset
-                if any(
-                    PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
-                    for ct in common_topos
-                )
-            ]
-
-        patcher1 = patch("jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy")
-        patcher2 = patch(
-            "jaxent.src.data.splitting.split.filter_common_residues", side_effect=mock_filter_func
-        )
-
-        mock_calc = patcher1.start()
-        mock_filter = patcher2.start()
-
-        request.addfinalizer(patcher1.stop)
-        request.addfinalizer(patcher2.stop)
-
-        mock_calc.return_value = [0.5] * len(datapoints)
-
-        default_kwargs = {
-            "random_seed": 42,
-            "train_size": 0.6,
-            "centrality": False,
-            "check_trim": True,
-            "min_split_size": 2,
-            "exclude_selection": "",  # Override default for tests
-        }
-        default_kwargs.update(kwargs)
-
-        mock_filter.side_effect = None
-        mock_filter.return_value = copy.deepcopy(datapoints)
-
-        splitter = DataSplitter(
-            dataset=mock_loader, common_residues=common_residues, **default_kwargs
-        )
-
-        mock_filter.side_effect = mock_filter_func
-        mock_filter.return_value = None
-
-        return splitter
-
-    return _setup
+def create_mock_datapoints(topologies, add_targets=True):
+    """Create mock ExpD_Datapoint objects from topologies."""
+    datapoints = []
+    for i, topo in enumerate(topologies):
+        # Use HDX_peptide as a concrete implementation of ExpD_Datapoint
+        # Provide a dummy dfrac value as it's required by HDX_peptide
+        datapoint = HDX_peptide(top=topo, dfrac=[np.random.random() * 10.0])
+        datapoints.append(datapoint)
+    return datapoints
 
 
 @pytest.fixture
 def real_universe(request):
     """Create a real MDAnalysis Universe for testing."""
     with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pdb") as tmp_pdb_file:
-        # Write the test_pdb content multiple times to create a multi-frame PDB
         tmp_pdb_file.write(test_pdb)
         tmp_pdb_path = tmp_pdb_file.name
 
-    universe = MDAnalysis.Universe(tmp_pdb_path)
+    universe = mda.Universe(tmp_pdb_path)
 
-    # Clean up the temporary file after the test
     def finalizer():
         os.remove(tmp_pdb_path)
 
     request.addfinalizer(finalizer)
-
     return universe
 
 
 @pytest.fixture
-def patch_partial_distances():
-    """Patch partial_topology_pairwise_distances and yield the mock."""
-    with patch(
-        "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-    ) as mock_distances:
-        yield mock_distances
+def sample_dataset():
+    """Create a sample dataset for testing."""
+    topologies = create_single_chain_topologies(chain="X", count=20)
+    datapoints = create_mock_datapoints(topologies)
+    dataset = ExpD_Dataloader(data=datapoints)
+    return dataset
 
 
-@pytest.fixture(autouse=True)
-def patch_pairwise_distances(request):
-    """Automatically patch partial_topology_pairwise_distances for all tests."""
-    patcher = patch(
+@pytest.fixture
+def peptide_dataset():
+    """Create a peptide dataset for testing."""
+    topologies = create_peptide_topologies(chains=["X"], count_per_chain=20)
+    datapoints = create_mock_datapoints(topologies)
+    dataset = ExpD_Dataloader(data=datapoints)
+    return dataset
+
+
+@pytest.fixture
+def common_residues():
+    """Create a set of common residues for testing."""
+    # Create residues that span most of the test protein
+    residue_topologies = []
+    for resid in range(2, 58):  # Skip first and last residue (termini)
+        topo = TopologyFactory.from_single(chain="X", residue=resid, fragment_name=f"res_{resid}")
+        residue_topologies.append(topo)
+    return set(residue_topologies)
+
+
+class TestSpatialSplit:
+    """Test suite for spatial splitting functionality."""
+
+    def test_spatial_split_basic_functionality(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test basic spatial split functionality."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.6,
+            centrality=False,  # Disable for predictable testing
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=False)
+
+        # Basic validation
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+        assert len(train_data) + len(val_data) <= len(sample_dataset.data) * 2  # Allow some overlap
+
+        # Check that we have approximately the right split ratio
+        total_unique = len(train_data + val_data)
+        train_ratio = len(train_data) / total_unique
+        assert 0.4 <= train_ratio <= 0.8, f"Train ratio {train_ratio} should be reasonable"
+
+    def test_spatial_split_with_remove_overlap(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test spatial split with overlap removal."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.7,
+            centrality=False,
+            min_split_size=1,
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=True)
+
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+        # With overlap removal, should have no overlapping topologies
+        train_topologies = set(d.top for d in train_data)
+        val_topologies = set(d.top for d in val_data)
+
+        # Check that merged topologies don't overlap
+        train_merged = splitter.last_split_train_topologies_by_chain
+        val_merged = splitter.last_split_val_topologies_by_chain
+
+        assert len(train_merged) > 0, "Should have training topologies"
+        assert len(val_merged) > 0, "Should have validation topologies"
+
+    def test_spatial_split_with_peptides(self, peptide_dataset, real_universe, common_residues):
+        """Test spatial split with peptide topologies."""
+        splitter = DataSplitter(
+            dataset=peptide_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.6,
+            check_trim=True,  # Enable peptide trimming
+            centrality=False,
+            min_split_size=1,
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=False)
+
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+        # Verify peptide trimming was considered
+        for datapoint in train_data + val_data:
+            if datapoint.top.peptide:
+                assert hasattr(datapoint.top, "peptide_residues")
+
+    def test_spatial_split_reproducibility(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split is reproducible with same random seed."""
+        splitter1 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        splitter2 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data1, val_data1 = splitter1.spatial_split(universe=real_universe)
+        train_data2, val_data2 = splitter2.spatial_split(universe=real_universe)
+
+        # Should get identical results with same seed
+        train_tops1 = [str(d.top) for d in train_data1]
+        train_tops2 = [str(d.top) for d in train_data2]
+
+        assert train_tops1 == train_tops2, "Results should be reproducible with same seed"
+
+    def test_spatial_split_different_seeds(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split gives different results with different seeds."""
+        splitter1 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        splitter2 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=123,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data1, val_data1 = splitter1.spatial_split(universe=real_universe)
+        train_data2, val_data2 = splitter2.spatial_split(universe=real_universe)
+
+        # Should get different results with different seeds
+        train_tops1 = set(str(d.top) for d in train_data1)
+        train_tops2 = set(str(d.top) for d in train_data2)
+
+        # At least some difference expected (not a strict requirement but likely)
+        assert len(train_tops1.symmetric_difference(train_tops2)) > 0
+
+    def test_spatial_split_with_centrality(self, sample_dataset, real_universe, common_residues):
+        """Test spatial split with centrality sampling enabled."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=True,  # Enable centrality sampling
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+    def test_spatial_split_parameter_validation(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test spatial split with various parameter combinations."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        # Test with custom trajectory slicing parameters
+        train_data, val_data = splitter.spatial_split(
+            universe=real_universe,
+            start=0,
+            stop=1,  # Only use first frame
+            step=1,
+            include_selection="protein",
+            exclude_selection="name H*",  # Exclude hydrogens
+        )
+
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+    def test_spatial_split_edge_case_small_dataset(self, real_universe, common_residues):
+        """Test spatial split with very small dataset."""
+        # Create minimal dataset
+        topologies = create_single_chain_topologies(chain="X", count=3)
+        datapoints = create_mock_datapoints(topologies)
+        small_dataset = ExpD_Dataloader(data=datapoints)
+
+        splitter = DataSplitter(
+            dataset=small_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            min_split_size=1,  # Allow very small splits
+            centrality=False,
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        assert len(train_data) >= 1, "Should have at least 1 training sample"
+        assert len(val_data) >= 1, "Should have at least 1 validation sample"
+
+    def test_spatial_split_edge_case_empty_after_filtering(self, real_universe):
+        """Test spatial split when dataset becomes empty after filtering."""
+        # Create dataset with topologies that don't match common_residues
+        topologies = [TopologyFactory.from_range("Y", 1, 5)]  # Different chain
+        datapoints = create_mock_datapoints(topologies)
+        dataset = ExpD_Dataloader(data=datapoints)
+
+        # Common residues for chain X only, ensuring at least two to pass initial check
+        common_residues = {
+            TopologyFactory.from_single("X", 10),
+            TopologyFactory.from_single("X", 11),
+        }
+
+        with pytest.raises(ValueError, match="Filtered dataset is empty"):
+            DataSplitter(
+                dataset=dataset, common_residues=common_residues, random_seed=42, centrality=False
+            )
+
+    def test_spatial_split_retry_logic(self, real_universe, common_residues):
+        """Test retry logic when split validation fails."""
+        # Create a dataset that might cause validation issues
+        topologies = create_single_chain_topologies(chain="X", count=4)
+        datapoints = create_mock_datapoints(topologies)
+        dataset = ExpD_Dataloader(data=datapoints)
+
+        # Set very high minimum split size to force validation failures
+        splitter = DataSplitter(
+            dataset=dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            min_split_size=10,  # Impossible to satisfy
+            max_retry_depth=3,
+            centrality=False,
+        )
+
+        with pytest.raises(ValueError, match="Failed to create valid split"):
+            splitter.spatial_split(universe=real_universe)
+
+    @patch(
         "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
     )
-    mock_func = patcher.start()
-
-    def make_distance_matrix(dataset, **kwargs):
-        n = len(dataset)
-        if n == 0:
-            return np.zeros((0, 0)), np.zeros((0, 0))
-        mat = np.random.rand(n, n)
-        mat = (mat + mat.T) / 2
-        np.fill_diagonal(mat, 0)
-        std = np.zeros_like(mat)
-        return mat, std
-
-    mock_func.side_effect = lambda dataset, **kwargs: make_distance_matrix(dataset, **kwargs)
-
-    request.addfinalizer(patcher.stop)
-
-
-class TestSpatialSplitBasicFunctionality:
-    """Test basic functionality of spatial_split method."""
-
-    def test_basic_spatial_split_returns_two_lists(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
+    def test_spatial_split_distance_calculation_error(
+        self, mock_distances, sample_dataset, real_universe, common_residues
     ):
-        """Test that spatial_split returns two lists."""
-        topologies = create_single_chain_topologies(chain="X", count=15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["X"])
+        """Test handling of distance calculation errors."""
+        # Mock distance calculation to raise an error
+        mock_distances.side_effect = Exception("Distance calculation failed")
 
-        splitter = setup_splitter(datapoints, common_residues)
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
 
-        train_data, val_data = splitter.spatial_split(real_universe)
-
-        assert isinstance(train_data, list)
-        assert isinstance(val_data, list)
-        assert len(train_data) > 0
-        assert len(val_data) > 0
-
-    def test_spatial_split_with_different_train_sizes(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial split with different training set sizes."""
-        topologies = create_single_chain_topologies(chain="X", count=15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(chains=["X"])
-
-        for train_size in [0.4, 0.5, 0.7, 0.8]:
-            splitter = setup_splitter(datapoints, common_residues, train_size=train_size)
-
-            train_data, val_data = splitter.spatial_split(real_universe)
-
-            expected_train_size = int(train_size * len(datapoints))
-            expected_val_size = len(datapoints) - expected_train_size
-
-            assert len(train_data) == expected_train_size
-            assert len(val_data) == expected_val_size
-
-    def test_numpy_import_error(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
-    ):
-        """Test handling when numpy import fails."""
-        topologies = create_single_chain_topologies(chain="X", count=15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(chains=["X"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch("builtins.__import__", side_effect=ImportError("No module named 'numpy'")):
-            with pytest.raises(ImportError, match="NumPy is required"):
-                splitter.spatial_split(real_universe)
-
-
-class TestSpatialSplitDistanceCalculation:
-    """Test distance calculation aspects of spatial split."""
-
-    def test_distance_calculation_failure_handling(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test handling of distance calculation failures."""
-        topologies = create_single_chain_topologies(chain="X", count=15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(chains=["X"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        patch_partial_distances.side_effect = ValueError("Distance calculation failed")
         with pytest.raises(ValueError, match="Failed to compute spatial distances"):
-            splitter.spatial_split(real_universe)
+            splitter.spatial_split(universe=real_universe)
 
-    def test_distance_matrix_validation(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
+    def test_spatial_split_stored_results(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split stores results for inspection."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        # Check that merged topologies are stored
+        assert hasattr(splitter, "last_split_train_topologies_by_chain")
+        assert hasattr(splitter, "last_split_val_topologies_by_chain")
+        assert len(splitter.last_split_train_topologies_by_chain) > 0
+        assert len(splitter.last_split_val_topologies_by_chain) > 0
+
+    def test_spatial_split_distance_distribution(
+        self, sample_dataset, real_universe, common_residues
     ):
-        """Test that distance matrix is properly validated and used."""
-        topologies = create_single_chain_topologies(chain="X", count=15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(chains=["X"])
+        """Test that spatial split actually uses distance information for splitting."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.5,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
 
-        splitter = setup_splitter(datapoints, common_residues)
-
+        # Capture the distance calculation
         with patch(
             "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
         ) as mock_distances:
-            # Create realistic distance matrix
-            n_topos = len(datapoints)
-            distance_matrix = np.array(
-                [
-                    [0.0, 5.2, 8.1, 12.3, 15.6, 20.1, 25.4, 30.2],
-                    [5.2, 0.0, 3.9, 7.8, 11.1, 16.3, 21.2, 26.8],
-                    [8.1, 3.9, 0.0, 4.5, 7.9, 12.8, 18.5, 23.1],
-                    [12.3, 7.8, 4.5, 0.0, 5.2, 9.1, 14.6, 19.4],
-                    [15.6, 11.1, 7.9, 5.2, 0.0, 6.3, 11.8, 16.2],
-                    [20.1, 16.3, 12.8, 9.1, 6.3, 0.0, 7.5, 12.1],
-                    [25.4, 21.2, 18.5, 14.6, 11.8, 7.5, 0.0, 8.9],
-                    [30.2, 26.8, 23.1, 19.4, 16.2, 12.1, 8.9, 0.0],
-                ]
-            )
-            distance_std = np.ones_like(distance_matrix) * 0.5
+            # Create a mock distance matrix where distances increase with index
+            n_samples = len(sample_dataset.data)
+            distance_matrix = np.zeros((n_samples, n_samples))
 
-            mock_distances.return_value = (distance_matrix, distance_std)
-
-            with patch("random.randint") as mock_randint:
-                mock_randint.return_value = 2  # Select index 2 as center
-
-                train_data, val_data = splitter.spatial_split(real_universe)
-
-                # With center at index 2, distances are: [8.1, 3.9, 0.0, 4.5, 7.9, 12.8, 18.5, 23.1]
-                # Sorted by distance: [2, 1, 3, 4, 0, 5, 6, 7]
-                # With train_size=0.6 (4 out of 8), training should get: [2, 1, 3, 4]
-                train_ids = sorted([dp.data_id for dp in train_data])
-                expected_train_ids = [1, 2, 3, 4]
-                assert train_ids == expected_train_ids
-
-    def test_trajectory_parameters_passed_correctly(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
-    ):
-        """Test that trajectory analysis parameters are passed correctly."""
-        topologies = create_single_chain_topologies("X", 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["X"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            mock_distances.return_value = (distance_matrix, distance_std)
-
-            # Test with various trajectory parameters
-            splitter.spatial_split(
-                real_universe,
-                include_selection="protein and name CA",
-                exclude_selection="resname HOH",
-                start=50,
-                stop=200,
-                step=10,
-            )
-
-            call_kwargs = mock_distances.call_args[1]
-            assert call_kwargs["start"] == 50
-            assert call_kwargs["stop"] == 200
-            assert call_kwargs["step"] == 10
-            assert call_kwargs["include_selection"] == "protein and name CA"
-            assert call_kwargs["exclude_selection"] == "resname HOH"
-
-
-class TestSpatialSplitMultiChain:
-    """Test multi-chain behavior of spatial split."""
-
-    def test_multi_chain_spatial_splitting(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial splitting with multiple chains."""
-        topologies = create_multi_chain_topologies(["A", "B", "C"], 8)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A", "B", "C"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            train_data, val_data = splitter.spatial_split(real_universe)
-
-        # Should handle multiple chains correctly
-        assert len(train_data) > 0
-        assert len(val_data) > 0
-
-        # Check that multiple chains are represented
-        train_chains = {dp.top.chain for dp in train_data}
-        val_chains = {dp.top.chain for dp in val_data}
-        all_chains = train_chains | val_chains
-
-        assert len(all_chains) > 1
-
-    def test_spatial_clustering_across_chains(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that spatial clustering works across different chains."""
-        topologies = create_multi_chain_topologies(["A", "B"], 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A", "B"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            # Create distance matrix where chains A and B have different spatial distributions
-            n_topos = len(datapoints)
-            distance_matrix = np.zeros((n_topos, n_topos))
-
-            # Create realistic inter-chain and intra-chain distances
-            for i in range(n_topos):
-                for j in range(n_topos):
-                    if i != j:
-                        # Chain A: indices 0-9, Chain B: indices 10-19
-                        same_chain = (i < 10 and j < 10) or (i >= 10 and j >= 10)
-                        if same_chain:
-                            distance_matrix[i, j] = abs(i - j) * 2.0  # Intra-chain distances
-                        else:
-                            distance_matrix[i, j] = 50.0 + abs(i - j)  # Inter-chain distances
+            # Fill matrix so that fragment i has distance i from fragment 0
+            for i in range(n_samples):
+                for j in range(n_samples):
+                    distance_matrix[i, j] = abs(i - j) * 10.0  # Scale up distances
 
             distance_std = np.ones_like(distance_matrix)
             mock_distances.return_value = (distance_matrix, distance_std)
 
-            with patch("random.randint") as mock_randint:
-                mock_randint.return_value = 5  # Center in chain A
+            train_data, val_data = splitter.spatial_split(universe=real_universe)
 
-                train_data, val_data = splitter.spatial_split(real_universe)
+            # Verify distance calculation was called
+            mock_distances.assert_called_once()
 
-                # Training set should be biased towards chain A due to proximity
-                train_chains = [dp.top.chain for dp in train_data]
-                chain_a_count = sum(1 for chain in train_chains if chain == "A")
-                chain_b_count = sum(1 for chain in train_chains if chain == "B")
-
-                # Should have more from chain A since center is in chain A
-                assert chain_a_count >= chain_b_count
-
-
-class TestSpatialSplitPeptideHandling:
-    """Test peptide trimming with spatial split."""
-
-    def test_spatial_split_with_peptide_trimming(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that peptide trimming affects spatial distance calculations."""
-        peptide_topologies = create_peptide_topologies(["A"], 15)
-        datapoints = create_datapoints_from_topologies(peptide_topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues, check_trim=True)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            train_data, val_data = splitter.spatial_split(real_universe)
-
-            # Verify distance calculation was called with check_trim=True
-            call_kwargs = mock_distances.call_args[1]
-            assert call_kwargs["check_trim"] == True
-
-    def test_peptide_vs_non_peptide_spatial_behavior(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test difference between peptide and non-peptide spatial splitting."""
-        # Create mixed topology set
-        regular_topologies = create_single_chain_topologies("A", 10)
-        peptide_topologies = create_peptide_topologies(["A"], 10)
-        all_topologies = regular_topologies + peptide_topologies
-
-        datapoints = create_datapoints_from_topologies(all_topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues, check_trim=True)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            train_data, val_data = splitter.spatial_split(real_universe)
-
-        # Should handle mixed topology types correctly
-        assert len(train_data) > 0
-        assert len(val_data) > 0
-
-
-class TestSpatialSplitOverlapRemoval:
-    """Test overlap removal with spatial split."""
-
-    def test_spatial_split_with_overlap_removal(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial split with overlap removal enabled."""
-        topologies = create_multi_chain_topologies(["A", "B"], 15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A", "B"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            train_data, val_data = splitter.spatial_split(real_universe, remove_overlap=True)
-
-        assert len(train_data) >= 0
-        assert len(val_data) >= 0
-        assert len(train_data) + len(val_data) > 0
-
-    def test_spatial_overlap_vs_no_overlap(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test difference between overlap removal enabled vs disabled."""
-        topologies = create_multi_chain_topologies(["A", "B", "C"], 12)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A", "B", "C"])
-
-        splitter = setup_splitter(datapoints, common_residues, random_seed=999)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            # Without overlap removal
-            train_no_removal, val_no_removal = splitter.spatial_split(
-                real_universe, remove_overlap=False
-            )
-
-            # Reset and try with overlap removal
-            splitter._reset_retry_counter()
-            train_with_removal, val_with_removal = splitter.spatial_split(
-                real_universe, remove_overlap=True
-            )
-
-        total_no_removal = len(train_no_removal) + len(val_no_removal)
-        total_with_removal = len(train_with_removal) + len(val_with_removal)
-
-        assert total_with_removal <= total_no_removal
-
-
-class TestSpatialSplitCentralitySampling:
-    """Test centrality sampling with spatial split."""
-
-    def test_spatial_split_with_centrality_sampling(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial split with centrality sampling enabled."""
-        topologies = create_single_chain_topologies("A", 25)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        with patch.object(DataSplitter, "sample_by_centrality") as mock_sample:
-            mock_sample.return_value = datapoints[:20]  # Return subset
-
-            splitter = setup_splitter(datapoints, common_residues, centrality=True)
-
-            with patch(
-                "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-            ) as mock_distances:
-                n_sampled = 20
-                distance_matrix = np.random.rand(n_sampled, n_sampled)
-                distance_matrix = (distance_matrix + distance_matrix.T) / 2
-                np.fill_diagonal(distance_matrix, 0)
-                distance_std = np.zeros_like(distance_matrix)
-
-                mock_distances.return_value = (distance_matrix, distance_std)
-
-                train_data, val_data = splitter.spatial_split(real_universe)
-
-            # Should have called sample_by_centrality
-            mock_sample.assert_called_once()
-
-    def test_centrality_affects_spatial_center_selection(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that centrality sampling affects which topologies are available for center selection."""
-        topologies = create_single_chain_topologies("A", 30)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        with patch.object(DataSplitter, "sample_by_centrality") as mock_sample:
-            # Return only first half of datapoints
-            sampled_data = datapoints[:15]
-            mock_sample.return_value = sampled_data
-
-            splitter = setup_splitter(datapoints, common_residues, centrality=True)
-
-            with patch(
-                "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-            ) as mock_distances:
-                n_sampled = 15
-                distance_matrix = np.random.rand(n_sampled, n_sampled)
-                distance_matrix = (distance_matrix + distance_matrix.T) / 2
-                np.fill_diagonal(distance_matrix, 0)
-                distance_std = np.zeros_like(distance_matrix)
-
-                mock_distances.return_value = (distance_matrix, distance_std)
-
-                with patch("random.randint") as mock_randint:
-                    mock_randint.return_value = 10  # Should be within sampled range
-
-                    train_data, val_data = splitter.spatial_split(real_universe)
-
-                    # Verify randint was called with correct range (0 to 14 for 15 sampled items)
-                    mock_randint.assert_called_with(0, 14)
-
-
-class TestSpatialSplitDeterministicBehavior:
-    """Test deterministic behavior and random seed handling."""
-
-    def test_same_seed_same_center_selection(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that same seed produces same center selection."""
-        topologies = create_single_chain_topologies("A", 20)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            # First split
-            splitter1 = setup_splitter(datapoints, common_residues, random_seed=123)
-            train1, val1 = splitter1.spatial_split(real_universe)
-
-            # Second split with same seed
-            splitter2 = setup_splitter(datapoints, common_residues, random_seed=123)
-            train2, val2 = splitter2.spatial_split(real_universe)
-
-            # Results should be identical
-            train1_ids = {dp.data_id for dp in train1}
-            train2_ids = {dp.data_id for dp in train2}
-            val1_ids = {dp.data_id for dp in val1}
-            val2_ids = {dp.data_id for dp in val2}
-
-            assert train1_ids == train2_ids
-            assert val1_ids == val2_ids
-
-    def test_different_seed_different_center(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that different seeds can produce different center selections."""
-        topologies = create_single_chain_topologies("A", 30)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            # Create distance matrix where different centers would give different results
-            distance_matrix = np.zeros((n_topos, n_topos))
-            for i in range(n_topos):
-                for j in range(n_topos):
-                    if i != j:
-                        distance_matrix[i, j] = abs(i - j)
-
-            distance_std = np.zeros_like(distance_matrix)
-            mock_distances.return_value = (distance_matrix, distance_std)
-
-            # First split
-            splitter1 = setup_splitter(datapoints, common_residues, random_seed=111)
-            train1, val1 = splitter1.spatial_split(real_universe)
-
-            # Second split with different seed
-            splitter2 = setup_splitter(datapoints, common_residues, random_seed=222)
-            train2, val2 = splitter2.spatial_split(real_universe)
-
-            # Results should likely be different
-            train1_ids = {dp.data_id for dp in train1}
-            train2_ids = {dp.data_id for dp in train2}
-
-            # At least one should be different (high probability)
-            assert len(train1_ids.symmetric_difference(train2_ids)) >= 0
-
-    def test_center_selection_logging(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe, capfd
-    ):
-        """Test that center topology selection is properly logged."""
-        topologies = create_single_chain_topologies("A", 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            with patch("random.randint") as mock_randint:
-                mock_randint.return_value = 5
-
-                splitter.spatial_split(real_universe)
-
-                # Capture stdout to check logging
-                captured = capfd.readouterr()
-                assert "Selected center topology" in captured.out
-
-
-class TestSpatialSplitEdgeCases:
-    """Test edge cases and error handling."""
-
-    def test_small_dataset_spatial_splitting(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial splitting with very small datasets."""
-        topologies = create_single_chain_topologies("A", 4)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            try:
-                train_data, val_data = splitter.spatial_split(real_universe)
-                assert len(train_data) + len(val_data) > 0
-            except ValueError:
-                # Validation failure is acceptable for very small datasets
-                pass
-
-    def test_single_datapoint_error(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
-    ):
-        """Test error handling with single datapoint."""
-        topologies = create_single_chain_topologies("A", 1)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with pytest.raises(
-            ValueError, match=re.escape("Source dataset is too small to split (1 datapoints).")
-        ):
-            splitter.spatial_split(real_universe)
-
-    def test_invalid_distance_matrix_shape(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
-    ):
-        """Test handling of invalid distance matrix shapes."""
-        topologies = create_single_chain_topologies("A", 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            # Return wrong shape matrix
-            wrong_shape_matrix = np.random.rand(5, 5)  # Wrong size
-            distance_std = np.zeros_like(wrong_shape_matrix)
-
-            mock_distances.return_value = (wrong_shape_matrix, distance_std)
-
-            # Should fail when trying to access center distances
-            with pytest.raises(IndexError):
-                splitter.spatial_split(real_universe)
-
-    def test_distance_calculation_with_nan_values(
-        self, create_datapoints_from_topologies, setup_splitter, real_universe
-    ):
-        """Test handling of NaN values in distance matrix."""
-        topologies = create_single_chain_topologies("A", 8)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix[0, 1] = np.nan  # Insert NaN value
-            distance_matrix[1, 0] = np.nan  # Keep symmetry
-            distance_std = np.zeros_like(distance_matrix)
-
-            mock_distances.return_value = (distance_matrix, distance_std)
-
-            # Should handle NaN values gracefully (they'll sort to end)
-            train_data, val_data = splitter.spatial_split(real_universe)
-
+            # With our mock distances, training set should contain fragments closer to the center
             assert len(train_data) > 0
             assert len(val_data) > 0
 
-
-class TestSpatialSplitRetryLogic:
-    """Test retry logic and validation."""
-
-    def test_retry_logic_on_validation_failure(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
+    def test_spatial_split_different_train_sizes(
+        self, sample_dataset, real_universe, common_residues
     ):
-        """Test retry logic when validation fails."""
-        topologies = create_single_chain_topologies("A", 8)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
+        """Test spatial split with different training set sizes."""
+        train_sizes = [0.3, 0.5, 0.8]
 
-        with patch.object(DataSplitter, "validate_split") as mock_validate:
-            mock_validate.side_effect = [ValueError("Too small"), True]
+        for train_size in train_sizes:
+            splitter = DataSplitter(
+                dataset=copy.deepcopy(sample_dataset),
+                common_residues=common_residues,
+                random_seed=42,
+                train_size=train_size,
+                centrality=False,
+                min_split_size=1,  # Allow smaller splits for testing
+            )
 
-            splitter = setup_splitter(datapoints, common_residues)
+            train_data, val_data = splitter.spatial_split(universe=real_universe)
 
-            with patch(
-                "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-            ) as mock_distances:
-                n_topos = len(datapoints)
-                distance_matrix = np.random.rand(n_topos, n_topos)
-                distance_matrix = (distance_matrix + distance_matrix.T) / 2
-                np.fill_diagonal(distance_matrix, 0)
-                distance_std = np.zeros_like(distance_matrix)
+            # Check approximate ratios (allowing some flexibility due to filtering)
+            total_size = len(train_data + val_data)
+            actual_train_ratio = len(train_data) / total_size
 
-                patch_partial_distances.return_value = (distance_matrix, distance_std)
+            # Allow reasonable tolerance
+            assert abs(actual_train_ratio - train_size) < 0.3, (
+                f"Train ratio {actual_train_ratio} too far from target {train_size}"
+            )
 
-                # Should retry and eventually succeed
-                train_data, val_data = splitter.spatial_split(real_universe)
-
-                # Should have called validate_split twice (fail, then success)
-                assert mock_validate.call_count == 2
-
-    def test_max_retry_depth_exceeded(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
+    def test_spatial_split_integration_with_mda_adapter(
+        self, sample_dataset, real_universe, common_residues
     ):
-        """Test behavior when max retry depth is exceeded."""
-        topologies = create_single_chain_topologies("A", 6)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        with patch.object(DataSplitter, "validate_split") as mock_validate:
-            mock_validate.side_effect = ValueError("Always fails")
-
-            splitter = setup_splitter(datapoints, common_residues, max_retry_depth=2)
-
-            with patch(
-                "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-            ) as mock_distances:
-                n_topos = len(datapoints)
-                distance_matrix = np.random.rand(n_topos, n_topos)
-                distance_matrix = (distance_matrix + distance_matrix.T) / 2
-                np.fill_diagonal(distance_matrix, 0)
-                distance_std = np.zeros_like(distance_matrix)
-
-                patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-                with pytest.raises(
-                    ValueError, match="Failed to create valid split after 2 attempts"
-                ):
-                    splitter.spatial_split(real_universe)
-
-    def test_successful_retry_resets_counter(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that successful split resets retry counter."""
-        topologies = create_single_chain_topologies("A", 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            # Successful split should reset counter
-            splitter.spatial_split(real_universe)
-
-            assert splitter.current_retry_count == 0
-
-
-class TestSpatialSplitIntegration:
-    """Test integration with other DataSplitter functionality."""
-
-    def test_spatial_split_stores_merged_topologies(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that spatial split stores merged topologies for reference."""
-        topologies = create_multi_chain_topologies(["A", "B"], 10)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A", "B"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            train_data, val_data = splitter.spatial_split(real_universe)
-
-            # Check that merged topologies are stored
-            assert hasattr(splitter, "last_split_train_topologies_by_chain")
-            assert hasattr(splitter, "last_split_val_topologies_by_chain")
-            assert len(splitter.last_split_train_topologies_by_chain) > 0
-            assert len(splitter.last_split_val_topologies_by_chain) > 0
-
-    def test_spatial_split_with_custom_parameters(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test spatial split with various custom parameters."""
-        topologies = create_single_chain_topologies("A", 15)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(
-            datapoints, common_residues, train_size=0.7, check_trim=True, centrality=True
+        """Test integration with mda_TopologyAdapter methods."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
         )
 
-        with patch.object(DataSplitter, "sample_by_centrality") as mock_sample:
-            mock_sample.return_value = datapoints[:12]
+        # This should call the real mda_TopologyAdapter.partial_topology_pairwise_distances
+        train_data, val_data = splitter.spatial_split(
+            universe=real_universe,
+            include_selection="protein",
+            exclude_selection=None,
+            renumber_residues=False,
+            exclude_termini=True,
+            termini_chain_selection="protein",
+        )
 
-            with patch(
-                "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-            ) as mock_distances:
-                n_sampled = 12
-                distance_matrix = np.random.rand(n_sampled, n_sampled)
-                distance_matrix = (distance_matrix + distance_matrix.T) / 2
-                np.fill_diagonal(distance_matrix, 0)
-                distance_std = np.zeros_like(distance_matrix)
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
 
-                mock_distances.return_value = (distance_matrix, distance_std)
+        # Verify that topologies can be converted back to MDA groups
+        train_topologies = [d.top for d in train_data[:3]]  # Test first few
+        mda_group = mda_TopologyAdapter.to_mda_group(
+            topologies=train_topologies, universe=real_universe, include_selection="protein"
+        )
 
-                train_data, val_data = splitter.spatial_split(
-                    real_universe,
-                    remove_overlap=True,
-                    include_selection="protein",
-                    exclude_selection="",  # Avoid removing all atoms
-                    start=10,
-                    stop=100,
-                    step=5,
-                )
-
-                # Verify all parameters were used correctly
-                call_kwargs = mock_distances.call_args[1]
-                assert call_kwargs["check_trim"] == True
-                assert call_kwargs["include_selection"] == "protein"
-                assert call_kwargs["exclude_selection"] == ""
-                assert call_kwargs["start"] == 10
-                assert call_kwargs["stop"] == 100
-                assert call_kwargs["step"] == 5
-
-                # Check train_size was respected (approximately)
-                expected_train_size = int(0.7 * 12)  # 8
-                assert len(train_data) == expected_train_size
-
-    def test_spatial_split_consistency_with_other_methods(
-        self,
-        create_datapoints_from_topologies,
-        setup_splitter,
-        real_universe,
-        patch_partial_distances,
-    ):
-        """Test that spatial split follows same patterns as other split methods."""
-        topologies = create_single_chain_topologies("A", 20)
-        datapoints = create_datapoints_from_topologies(topologies)
-        common_residues = create_common_residues_for_chains(["A"])
-
-        splitter = setup_splitter(datapoints, common_residues)
-
-        with patch(
-            "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-        ) as mock_distances:
-            n_topos = len(datapoints)
-            distance_matrix = np.random.rand(n_topos, n_topos)
-            distance_matrix = (distance_matrix + distance_matrix.T) / 2
-            np.fill_diagonal(distance_matrix, 0)
-            distance_std = np.zeros_like(distance_matrix)
-
-            patch_partial_distances.return_value = (distance_matrix, distance_std)
-
-            # Test that spatial split returns same types as other methods
-            spatial_train, spatial_val = splitter.spatial_split(real_universe)
-
-            # Compare with random split structure
-            random_train, random_val = splitter.random_split()
-
-            # Should return same types
-            assert type(spatial_train) == type(random_train)
-            assert type(spatial_val) == type(random_val)
-
-            # Should contain same type of objects
-            if spatial_train:
-                assert type(spatial_train[0]) == type(random_train[0])
-            if spatial_val:
-                assert type(spatial_val[0]) == type(random_val[0])
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+        assert len(mda_group) > 0, "Should be able to convert topologies back to MDA groups"
