@@ -2,8 +2,8 @@ import os
 import time
 import traceback
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
@@ -17,6 +17,7 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import jax.numpy as jnp
 from MDAnalysis import Universe
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
 from jaxent.src.custom_types.HDX import HDX_protection_factor
 
@@ -27,7 +28,6 @@ from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
@@ -113,7 +113,7 @@ class OptimizationTestEnvironment:
 
             # Create experimental data with validation
             try:
-                top_segments = Partial_Topology.find_common_residues(
+                top_segments = pt.mda_TopologyAdapter.find_common_residues(
                     self.universes, ignore_mda_selection="(resname PRO or resid 1) "
                 )
 
@@ -341,10 +341,9 @@ def test_jit_optimization_stress_comprehensive():
     Tests various permutations of initialization, optimization, and parameter changes.
     """
     # File paths - adjust these to match your environment
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
+    inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+    topology_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_dir / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
 
     # Check if files exist
     if not (os.path.exists(topology_path) and os.path.exists(trajectory_path)):
