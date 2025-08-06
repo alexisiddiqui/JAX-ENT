@@ -5,7 +5,9 @@ import pytest
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter, filter_common_residues
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import (
+    TopologyFactory,
+)
 
 
 # Mock ExpD_Datapoint for testing
@@ -22,16 +24,16 @@ class MockExpD_Datapoint(ExpD_Datapoint):
 @pytest.fixture
 def create_test_topologies():
     """Create test Partial_Topology objects."""
-    topo1 = Partial_Topology.from_range("A", 1, 10, fragment_name="topo1")
-    topo2 = Partial_Topology.from_range("A", 5, 15, fragment_name="topo2")
-    topo3 = Partial_Topology.from_range("A", 15, 25, fragment_name="topo3")
-    topo4 = Partial_Topology.from_range("B", 1, 10, fragment_name="topo4")  # Different chain
+    topo1 = TopologyFactory.from_range("A", 1, 10, fragment_name="topo1")
+    topo2 = TopologyFactory.from_range("A", 5, 15, fragment_name="topo2")
+    topo3 = TopologyFactory.from_range("A", 15, 25, fragment_name="topo3")
+    topo4 = TopologyFactory.from_range("B", 1, 10, fragment_name="topo4")  # Different chain
 
     # With peptide trimming
-    topo5 = Partial_Topology.from_range(
+    topo5 = TopologyFactory.from_range(
         "A", 1, 10, fragment_name="topo5", peptide=True, peptide_trim=2
     )
-    topo6 = Partial_Topology.from_range(
+    topo6 = TopologyFactory.from_range(
         "A", 5, 15, fragment_name="topo6", peptide=True, peptide_trim=3
     )
 
@@ -67,7 +69,7 @@ class TestFilterCommonResidues:
     def test_filter_with_matching_residues(self, create_test_datapoints):
         """Test filtering with matching residues."""
         # Common residues in chain A, residues 5-10 (at least 2 residues)
-        common_residues = {Partial_Topology.from_range("A", 5, 10, fragment_name="common")}
+        common_residues = {TopologyFactory.from_range("A", 5, 10, fragment_name="common")}
 
         # Only datapoints with topologies that intersect with residues 5-10 on chain A should remain
         # These are dp1 (1-10), dp2 (5-15), and dp5 (1-10 peptide)
@@ -82,7 +84,7 @@ class TestFilterCommonResidues:
     def test_filter_with_no_matches(self, create_test_datapoints):
         """Test filtering with no matching residues (should raise ValueError)."""
         # Common residues in chain C - no match with any datapoint (at least 2 residues)
-        common_residues = {Partial_Topology.from_range("C", 1, 10, fragment_name="common")}
+        common_residues = {TopologyFactory.from_range("C", 1, 10, fragment_name="common")}
 
         with pytest.raises(ValueError, match="Filtered dataset is empty"):
             filter_common_residues(create_test_datapoints, common_residues)
@@ -92,7 +94,7 @@ class TestFilterCommonResidues:
         # Common residues matching only trimmed regions
         # topo5 has residues 1-10 but with trim=2, effective residues are 3-10
         # topo6 has residues 5-15 but with trim=3, effective residues are 8-15
-        common_residues = {Partial_Topology.from_range("A", 8, 10, fragment_name="common")}
+        common_residues = {TopologyFactory.from_range("A", 8, 10, fragment_name="common")}
 
         # With check_trim=True, both peptide datapoints should match
         filtered_with_trim = filter_common_residues(
@@ -120,14 +122,14 @@ class TestDataSplitter:
 
             # Patch the calculate_fragment_redundancy method
             with patch(
-                "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
+                "jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy"
             ) as mock_calc:
                 mock_calc.return_value = [0.0] * len(create_test_datapoints)
 
                 # Create common residues with multiple topologies to ensure at least 2 residues
                 common_residues = {
-                    Partial_Topology.from_range("A", 1, 10, fragment_name="common1"),
-                    Partial_Topology.from_range("A", 15, 25, fragment_name="common2"),
+                    TopologyFactory.from_range("A", 1, 10, fragment_name="common1"),
+                    TopologyFactory.from_range("A", 15, 25, fragment_name="common2"),
                 }
 
                 # Mock the validation by patching the __init__ method or the specific validation

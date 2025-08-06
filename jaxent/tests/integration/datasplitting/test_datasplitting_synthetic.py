@@ -12,6 +12,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from MDAnalysis import Universe
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.custom_types.HDX import HDX_protection_factor
 from jaxent.src.data.loader import ExpD_Dataloader
@@ -19,7 +20,6 @@ from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping, create_sp
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.tests.plots.datasplitting import plot_split_visualization
@@ -58,7 +58,7 @@ def test_create_sparse_map():
     print(len(feature_topology[0]))
 
     # create top segments from universe
-    top_segments = Partial_Topology.find_common_residues(
+    top_segments = pt.mda_TopologyAdapter.find_common_residues(
         universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print(len(top_segments))
@@ -137,7 +137,7 @@ def test_create_sparse_map_ensemble():
     print(len(feature_topology[0]))
 
     # create top segments from universe
-    top_segments = Partial_Topology.find_common_residues(
+    top_segments = pt.mda_TopologyAdapter.find_common_residues(
         universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print(len(top_segments))
@@ -207,7 +207,7 @@ def test_random_split():
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
+    top_segments = pt.mda_TopologyAdapter.find_common_residues(
         universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
     print("top_segments", len(top_segments))

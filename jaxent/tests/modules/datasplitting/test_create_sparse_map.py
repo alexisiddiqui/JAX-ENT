@@ -13,7 +13,7 @@ from jaxent.src.data.loader import ExpD_Datapoint
 # Import the classes and functions under test
 # Note: You would need to adjust these imports based on your actual module structure
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping, create_sparse_map
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import Partial_Topology, TopologyFactory
 
 
 @dataclass(slots=True)
@@ -52,19 +52,19 @@ class TestCreateSparseMap:
         """Set up test fixtures before each test method"""
         # Create test topologies - Chain A residues 1-10
         self.feature_topologies = [
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=1, fragment_index=0, fragment_name="res1"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=2, fragment_index=1, fragment_name="res2"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=3, fragment_index=2, fragment_name="res3"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=4, fragment_index=3, fragment_name="res4"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=5, fragment_index=4, fragment_name="res5"
             ),
         ]
@@ -85,11 +85,11 @@ class TestCreateSparseMap:
         # Create test output features (experimental peptides)
         self.output_features = [
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=1, end=3, fragment_name="pep1"),
+                top=TopologyFactory.from_range(chain="A", start=1, end=3, fragment_name="pep1"),
                 dfrac=[0.1, 0.2, 0.3],
             ),
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=3, end=5, fragment_name="pep2"),
+                top=TopologyFactory.from_range(chain="A", start=3, end=5, fragment_name="pep2"),
                 dfrac=[0.4, 0.5, 0.6],
             ),
         ]
@@ -123,11 +123,11 @@ class TestCreateSparseMap:
         """Test with non-overlapping peptides"""
         non_overlapping_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=1, end=2, fragment_name="pep1"),
+                top=TopologyFactory.from_range(chain="A", start=1, end=2, fragment_name="pep1"),
                 dfrac=[0.1, 0.2],
             ),
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=4, end=5, fragment_name="pep2"),
+                top=TopologyFactory.from_range(chain="A", start=4, end=5, fragment_name="pep2"),
                 dfrac=[0.4, 0.5],
             ),
         ]
@@ -153,11 +153,11 @@ class TestCreateSparseMap:
         """Test with single residue peptides"""
         single_residue_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_single(chain="A", residue=2, fragment_name="pep1"),
+                top=TopologyFactory.from_single(chain="A", residue=2, fragment_name="pep1"),
                 dfrac=[0.1],
             ),
             MockExpDatapoint(
-                top=Partial_Topology.from_single(chain="A", residue=4, fragment_name="pep2"),
+                top=TopologyFactory.from_single(chain="A", residue=4, fragment_name="pep2"),
                 dfrac=[0.4],
             ),
         ]
@@ -184,10 +184,10 @@ class TestCreateSparseMap:
         """Test with multiple chains"""
         # Add some chain B topologies
         multi_chain_features = self.feature_topologies + [
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="B", residue=1, fragment_index=5, fragment_name="resB1"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="B", residue=2, fragment_index=6, fragment_name="resB2"
             ),
         ]
@@ -210,11 +210,11 @@ class TestCreateSparseMap:
         # Output features from both chains
         multi_chain_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=1, end=2, fragment_name="pepA"),
+                top=TopologyFactory.from_range(chain="A", start=1, end=2, fragment_name="pepA"),
                 dfrac=[0.1, 0.2],
             ),
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="B", start=1, end=2, fragment_name="pepB"),
+                top=TopologyFactory.from_range(chain="B", start=1, end=2, fragment_name="pepB"),
                 dfrac=[0.3, 0.4],
             ),
         ]
@@ -240,7 +240,7 @@ class TestCreateSparseMap:
         """Test peptide trimming functionality"""
         # Create peptide topologies with trimming
         peptide_features = [
-            Partial_Topology.from_range(
+            TopologyFactory.from_range(
                 chain="A",
                 start=1,
                 end=5,
@@ -258,7 +258,7 @@ class TestCreateSparseMap:
         # Output peptide that overlaps with trimmed region
         trimmed_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=3, end=4, fragment_name="exp_pep"),
+                top=TopologyFactory.from_range(chain="A", start=3, end=4, fragment_name="exp_pep"),
                 dfrac=[0.1, 0.2],
             )
         ]
@@ -305,11 +305,11 @@ class TestCreateSparseMap:
             )
 
         # Test missing fragment indices
-        bad_topology = [Partial_Topology.from_single(chain="A", residue=1, fragment_index=None)]
+        bad_topology = [TopologyFactory.from_single(chain="A", residue=1, fragment_index=None)]
         bad_input = MockInputFeatures(features=jnp.array([[1.0]]))
         bad_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_single(chain="A", residue=1, fragment_name="pep1"),
+                top=TopologyFactory.from_single(chain="A", residue=1, fragment_name="pep1"),
                 dfrac=[0.1],
             )
         ]
@@ -324,8 +324,8 @@ class TestCreateSparseMap:
 
         # Test non-unique fragment indices
         duplicate_topology = [
-            Partial_Topology.from_single(chain="A", residue=1, fragment_index=0),
-            Partial_Topology.from_single(chain="A", residue=2, fragment_index=0),  # Duplicate index
+            TopologyFactory.from_single(chain="A", residue=1, fragment_index=0),
+            TopologyFactory.from_single(chain="A", residue=2, fragment_index=0),  # Duplicate index
         ]
         duplicate_input = MockInputFeatures(features=jnp.array([[1.0], [2.0]]))
 
@@ -342,7 +342,7 @@ class TestCreateSparseMap:
         # Output features that don't overlap with feature topology
         no_overlap_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_range(
+                top=TopologyFactory.from_range(
                     chain="B", start=10, end=12, fragment_name="no_overlap"
                 ),
                 dfrac=[0.1, 0.2, 0.3],
@@ -363,12 +363,12 @@ class TestCreateSparseMap:
         complex_output = [
             # Peptide that fully contains a single residue
             MockExpDatapoint(
-                top=Partial_Topology.from_single(chain="A", residue=2, fragment_name="single"),
+                top=TopologyFactory.from_single(chain="A", residue=2, fragment_name="single"),
                 dfrac=[0.1],
             ),
             # Peptide that partially overlaps
             MockExpDatapoint(
-                top=Partial_Topology.from_range(chain="A", start=1, end=4, fragment_name="partial"),
+                top=TopologyFactory.from_range(chain="A", start=1, end=4, fragment_name="partial"),
                 dfrac=[0.1, 0.2, 0.3, 0.4],
             ),
         ]
@@ -438,13 +438,13 @@ class TestCreateSparseMap:
         """Test that fragment indices are properly sorted"""
         # Create topologies with out-of-order indices
         unsorted_topology = [
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=3, fragment_index=2, fragment_name="res3"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=1, fragment_index=0, fragment_name="res1"
             ),
-            Partial_Topology.from_single(
+            TopologyFactory.from_single(
                 chain="A", residue=2, fragment_index=1, fragment_name="res2"
             ),
         ]
@@ -453,7 +453,7 @@ class TestCreateSparseMap:
 
         single_output = [
             MockExpDatapoint(
-                top=Partial_Topology.from_single(chain="A", residue=2, fragment_name="test"),
+                top=TopologyFactory.from_single(chain="A", residue=2, fragment_name="test"),
                 dfrac=[0.1],
             )
         ]
