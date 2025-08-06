@@ -12,6 +12,7 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 import pytest
+from interfaces.topology.serialise import PTSerialiser
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.HDX import HDX_peptide, HDX_protection_factor
@@ -518,7 +519,7 @@ class TestSaveLoad:
         csv_path = temp_dir / "unknown.csv"
 
         # Create valid topology file
-        Partial_Topology.save_list_to_json([sample_topologies[0]], json_path)
+        PTSerialiser.save_list_to_json([sample_topologies[0]], json_path)
 
         # Create CSV with unknown type
         pd.DataFrame(
@@ -533,7 +534,7 @@ class TestSaveLoad:
         json_path = temp_dir / "missing_cols.json"
         csv_path = temp_dir / "missing_cols.csv"
 
-        Partial_Topology.save_list_to_json([sample_topologies[0]], json_path)
+        PTSerialiser.save_list_to_json([sample_topologies[0]], json_path)
 
         # Create CSV missing required columns
         pd.DataFrame({"0": [1.0]}).to_csv(csv_path, index=False)
@@ -606,7 +607,7 @@ class TestSaveLoad:
         json_path = temp_dir / "corrupted.json"
         csv_path = temp_dir / "corrupted.csv"
 
-        Partial_Topology.save_list_to_json([sample_topologies[0]], json_path)
+        PTSerialiser.save_list_to_json([sample_topologies[0]], json_path)
 
         # Create corrupted CSV
         with open(csv_path, "w") as f:
@@ -623,7 +624,7 @@ class TestSaveLoad:
         base_name = temp_dir / "cleanup_test"
 
         with patch(
-            "jaxent.src.interfaces.topology.Partial_Topology.save_list_to_json",
+            "jaxent.src.interfaces.topology.PTSerialiser.save_list_to_json",
             side_effect=Exception("Simulated error"),
         ):
             with pytest.raises(IOError, match="Failed to save datapoints:"):

@@ -75,7 +75,7 @@ class linear_BV_Model_Parameters(Model_Parameters):
             bv_bc=self.bv_bc * jnp.asarray(scalar),
             bv_bh=self.bv_bh * scalar,
             temperature=self.temperature,
-            num_timepoints=self.num_timepoints,
+            timepoints=self.timepoints,
         )
 
     __rmul__ = __mul__
@@ -85,7 +85,7 @@ class linear_BV_Model_Parameters(Model_Parameters):
             bv_bc=self.bv_bc - other.bv_bc,
             bv_bh=self.bv_bh - other.bv_bh,
             temperature=self.temperature,
-            num_timepoints=self.num_timepoints,
+            timepoints=self.timepoints,
         )
 
     def update_parameters(
@@ -95,7 +95,7 @@ class linear_BV_Model_Parameters(Model_Parameters):
             bv_bc=new_params.bv_bc,
             bv_bh=new_params.bv_bh,
             temperature=self.temperature,
-            num_timepoints=self.num_timepoints,
+            timepoints=self.timepoints,
         )
 
     # def tree_flatten(self):

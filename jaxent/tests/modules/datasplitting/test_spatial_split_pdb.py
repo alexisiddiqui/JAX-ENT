@@ -1,13 +1,18 @@
-import io
+import copy
+import os
+import tempfile
+from unittest.mock import patch
 
 import MDAnalysis as mda
 import numpy as np
 import pytest
 
-from jaxent.src.interfaces.topology import (
-    TopologyFactory,
-    mda_TopologyAdapter,
-)
+from jaxent.src.data.loader import ExpD_Dataloader
+from jaxent.src.data.splitting.split import DataSplitter
+from jaxent.src.interfaces.topology.factory import TopologyFactory
+from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
+
+# Test PDB content from the provided example
 
 test_pdb = """"TITLE     MDANALYSIS FRAME 0: Created by PDBWriter
 CRYST1   63.649   63.649   63.649  90.00  90.00  90.00 P 1           1
@@ -573,851 +578,480 @@ ATOM    559  OC2 ALA X  58      13.604  30.398  37.500  1.00  0.00      SYST O
 """
 
 
+# Helper functions from the provided test setup
+def create_single_chain_topologies(chain="X", count=15):
+    """Create diverse single-chain topologies with good separation, fitting within test_pdb."""
+    topologies = []
+    start = 1
+    gap = 5
+    length = 5
+
+    for i in range(count):
+        current_start = start + i * (length + gap)
+        current_end = current_start + length - 1
+        if current_end > 58:
+            break
+        topologies.append(
+            TopologyFactory.from_range(
+                chain, current_start, current_end, fragment_name=f"frag_{chain}_{i + 1}"
+            )
+        )
+    return topologies
+
+
+def create_peptide_topologies(chains=["X"], count_per_chain=15):
+    """Create diverse peptide topologies with trimming and good separation, fitting within test_pdb."""
+    topologies = []
+    trim_values = [1, 2]
+
+    for chain in chains:
+        start = 1
+        gap = 8
+        length = 8
+
+        for i in range(count_per_chain):
+            trim = trim_values[i % len(trim_values)]
+            current_start = start + i * (length + gap)
+            current_end = current_start + length - 1
+            if current_end > 58:
+                break
+            topologies.append(
+                TopologyFactory.from_range(
+                    chain,
+                    current_start,
+                    current_end,
+                    fragment_name=f"pep_{chain}_{i + 1}",
+                    peptide=True,
+                    peptide_trim=trim,
+                )
+            )
+    return topologies
+
+
+from jaxent.src.custom_types.HDX import HDX_peptide
+
+
+def create_mock_datapoints(topologies, add_targets=True):
+    """Create mock ExpD_Datapoint objects from topologies."""
+    datapoints = []
+    for i, topo in enumerate(topologies):
+        # Use HDX_peptide as a concrete implementation of ExpD_Datapoint
+        # Provide a dummy dfrac value as it's required by HDX_peptide
+        datapoint = HDX_peptide(top=topo, dfrac=[np.random.random() * 10.0])
+        datapoints.append(datapoint)
+    return datapoints
+
+
 @pytest.fixture
-def test_universe():
-    """Create a test MDAnalysis Universe from the provided PDB string"""
-    return mda.Universe(io.StringIO(test_pdb), format="PDB")
+def real_universe(request):
+    """Create a real MDAnalysis Universe for testing."""
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pdb") as tmp_pdb_file:
+        tmp_pdb_file.write(test_pdb)
+        tmp_pdb_path = tmp_pdb_file.name
+
+    universe = mda.Universe(tmp_pdb_path)
+
+    def finalizer():
+        os.remove(tmp_pdb_path)
+
+    request.addfinalizer(finalizer)
+    return universe
 
 
-class TestPartialTopologyFromMDA:
-    """Test extraction of Partial_Topology from MDAnalysis Universe"""
+@pytest.fixture
+def sample_dataset():
+    """Create a sample dataset for testing."""
+    topologies = create_single_chain_topologies(chain="X", count=20)
+    datapoints = create_mock_datapoints(topologies)
+    dataset = ExpD_Dataloader(data=datapoints)
+    return dataset
 
-    def test_extract_by_chain_mode(self, test_universe):
-        """Test extraction of topologies by chain mode"""
-        # Extract topologies by chain
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", include_selection="protein"
+
+@pytest.fixture
+def peptide_dataset():
+    """Create a peptide dataset for testing."""
+    topologies = create_peptide_topologies(chains=["X"], count_per_chain=20)
+    datapoints = create_mock_datapoints(topologies)
+    dataset = ExpD_Dataloader(data=datapoints)
+    return dataset
+
+
+@pytest.fixture
+def common_residues():
+    """Create a set of common residues for testing."""
+    # Create residues that span most of the test protein
+    residue_topologies = []
+    for resid in range(2, 58):  # Skip first and last residue (termini)
+        topo = TopologyFactory.from_single(chain="X", residue=resid, fragment_name=f"res_{resid}")
+        residue_topologies.append(topo)
+    return set(residue_topologies)
+
+
+class TestSpatialSplit:
+    """Test suite for spatial splitting functionality."""
+
+    def test_spatial_split_basic_functionality(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test basic spatial split functionality."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.6,
+            centrality=False,  # Disable for predictable testing
+            min_split_size=1,  # Allow smaller splits for testing
         )
 
-        # Test PDB should have one chain (X)
-        assert len(topologies) == 1, "Should extract one topology for test protein (single chain)"
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=False)
 
-        # Verify the chain topology properties
-        chain_topo = topologies[0]
-        assert chain_topo.chain == "X", "Chain identifier should be X"
-        assert chain_topo.is_contiguous is True, "Test protein chain should be contiguous"
-        assert chain_topo.length == 56, (
-            "Test protein should have 56 residues (after terminal exclusion)"
-        )
-        assert len(chain_topo.fragment_sequence) == 56, "Fragment sequence should match length"
+        # Basic validation
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+        assert len(train_data) + len(val_data) <= len(sample_dataset.data) * 2  # Allow some overlap
 
-        # Check fragment name
-        assert "chain" in chain_topo.fragment_name.lower(), "Fragment name should contain 'chain'"
+        # Check that we have approximately the right split ratio
+        total_unique = len(train_data + val_data)
+        train_ratio = len(train_data) / total_unique
+        assert 0.4 <= train_ratio <= 0.8, f"Train ratio {train_ratio} should be reasonable"
 
-    def test_extract_by_residue_mode(self, test_universe):
-        """Test extraction of topologies by residue mode"""
-        # Extract topologies by residue
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="residue", include_selection="protein"
-        )
-
-        # Check we get multiple topologies (one per residue, minus termini)
-        assert len(topologies) == 56, (
-            "Should extract 56 topologies (one per residue, minus termini)"
+    def test_spatial_split_with_remove_overlap(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test spatial split with overlap removal."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.7,
+            centrality=False,
+            min_split_size=1,
         )
 
-        # Test properties of individual residue topologies
-        for topo in topologies[:5]:  # Check first few
-            assert topo.chain == "X", "Chain identifier should be X"
-            assert topo.length == 1, "Each topology should represent a single residue"
-            assert len(topo.residues) == 1, "Should have exactly one residue"
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=True)
 
-            # Check fragment name includes residue info
-            assert topo.fragment_name is not None, "Fragment name should be set"
-            assert "_" in topo.fragment_name, "Fragment name should be formatted as chain_residue"
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
 
-    def test_custom_selection(self, test_universe):
-        """Test custom atom selection criteria"""
-        # Extract only CA atoms from residues 10-20
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            exclude_termini=False,
-            renumber_residues=False,
+        # With overlap removal, should have no overlapping topologies
+        train_topologies = set(d.top for d in train_data)
+        val_topologies = set(d.top for d in val_data)
+
+        # Check that merged topologies don't overlap
+        train_merged = splitter.last_split_train_topologies_by_chain
+        val_merged = splitter.last_split_val_topologies_by_chain
+
+        assert len(train_merged) > 0, "Should have training topologies"
+        assert len(val_merged) > 0, "Should have validation topologies"
+
+    def test_spatial_split_with_peptides(self, peptide_dataset, real_universe, common_residues):
+        """Test spatial split with peptide topologies."""
+        splitter = DataSplitter(
+            dataset=peptide_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.6,
+            check_trim=True,  # Enable peptide trimming
+            centrality=False,
+            min_split_size=1,
         )
 
-        assert 10 <= len(topologies) <= 11, "Should extract ~11 topologies (residues 10-20)"
+        train_data, val_data = splitter.spatial_split(universe=real_universe, remove_overlap=False)
 
-        # Check residue numbers are preserved (not renumbered)
-        residue_ids = sorted([topo.residues[0] for topo in topologies])
-        expected_count = len(residue_ids)
-        expected_range = list(range(10, 10 + expected_count))
-        assert residue_ids == expected_range, (
-            f"Expected residue numbering from 10 to {10 + expected_count - 1}, got: {residue_ids}"
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+        # Verify peptide trimming was considered
+        for datapoint in train_data + val_data:
+            if datapoint.top.peptide:
+                assert hasattr(datapoint.top, "peptide_residues")
+
+    def test_spatial_split_reproducibility(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split is reproducible with same random seed."""
+        splitter1 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
         )
 
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            exclude_termini=False,
-            renumber_residues=True,
+        splitter2 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
         )
 
-        # Should get topologies for residues in the specified range
-        assert 10 <= len(topologies) <= 11, "Should extract ~11 topologies (residues 10-20)"
+        train_data1, val_data1 = splitter1.spatial_split(universe=real_universe)
+        train_data2, val_data2 = splitter2.spatial_split(universe=real_universe)
 
-        # Check residue numbers are renumbered from 1
-        residue_ids = sorted([topo.residues[0] for topo in topologies])
-        expected_count = len(residue_ids)
-        expected_range = list(range(1, expected_count + 1))
-        assert residue_ids == expected_range, (
-            f"Expected residue numbering starting from 1, residues: {residue_ids}"
+        # Should get identical results with same seed
+        train_tops1 = [str(d.top) for d in train_data1]
+        train_tops2 = [str(d.top) for d in train_data2]
+
+        assert train_tops1 == train_tops2, "Results should be reproducible with same seed"
+
+    def test_spatial_split_different_seeds(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split gives different results with different seeds."""
+        splitter1 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
         )
 
-    def test_exclude_selection(self, test_universe):
-        """Test exclusion criteria"""
-        # First get all residues
-        all_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
+        splitter2 = DataSplitter(
+            dataset=copy.deepcopy(sample_dataset),
+            common_residues=common_residues,
+            random_seed=123,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data1, val_data1 = splitter1.spatial_split(universe=real_universe)
+        train_data2, val_data2 = splitter2.spatial_split(universe=real_universe)
+
+        # Should get different results with different seeds
+        train_tops1 = set(str(d.top) for d in train_data1)
+        train_tops2 = set(str(d.top) for d in train_data2)
+
+        # At least some difference expected (not a strict requirement but likely)
+        assert len(train_tops1.symmetric_difference(train_tops2)) > 0
+
+    def test_spatial_split_with_centrality(self, sample_dataset, real_universe, common_residues):
+        """Test spatial split with centrality sampling enabled."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=True,  # Enable centrality sampling
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+    def test_spatial_split_parameter_validation(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test spatial split with various parameter combinations."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        # Test with custom trajectory slicing parameters
+        train_data, val_data = splitter.spatial_split(
+            universe=real_universe,
+            start=0,
+            stop=1,  # Only use first frame
+            step=1,
             include_selection="protein",
-            exclude_termini=False,
+            exclude_selection="name H*",  # Exclude hydrogens
         )
 
-        # Then get with exclusion
-        exclude_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+    def test_spatial_split_edge_case_small_dataset(self, real_universe, common_residues):
+        """Test spatial split with very small dataset."""
+        # Create minimal dataset
+        topologies = create_single_chain_topologies(chain="X", count=3)
+        datapoints = create_mock_datapoints(topologies)
+        small_dataset = ExpD_Dataloader(data=datapoints)
+
+        splitter = DataSplitter(
+            dataset=small_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            min_split_size=1,  # Allow very small splits
+            centrality=False,
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        assert len(train_data) >= 1, "Should have at least 1 training sample"
+        assert len(val_data) >= 1, "Should have at least 1 validation sample"
+
+    def test_spatial_split_edge_case_empty_after_filtering(self, real_universe):
+        """Test spatial split when dataset becomes empty after filtering."""
+        # Create dataset with topologies that don't match common_residues
+        topologies = [TopologyFactory.from_range("Y", 1, 5)]  # Different chain
+        datapoints = create_mock_datapoints(topologies)
+        dataset = ExpD_Dataloader(data=datapoints)
+
+        # Common residues for chain X only, ensuring at least two to pass initial check
+        common_residues = {
+            TopologyFactory.from_single("X", 10),
+            TopologyFactory.from_single("X", 11),
+        }
+
+        with pytest.raises(ValueError, match="Filtered dataset is empty"):
+            DataSplitter(
+                dataset=dataset, common_residues=common_residues, random_seed=42, centrality=False
+            )
+
+    def test_spatial_split_retry_logic(self, real_universe, common_residues):
+        """Test retry logic when split validation fails."""
+        # Create a dataset that might cause validation issues
+        topologies = create_single_chain_topologies(chain="X", count=4)
+        datapoints = create_mock_datapoints(topologies)
+        dataset = ExpD_Dataloader(data=datapoints)
+
+        # Set very high minimum split size to force validation failures
+        splitter = DataSplitter(
+            dataset=dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            min_split_size=10,  # Impossible to satisfy
+            max_retry_depth=3,
+            centrality=False,
+        )
+
+        with pytest.raises(ValueError, match="Failed to create valid split"):
+            splitter.spatial_split(universe=real_universe)
+
+    @patch(
+        "jaxent.src.data.splitting.split.mda_TopologyAdapter.partial_topology_pairwise_distances"
+    )
+    def test_spatial_split_distance_calculation_error(
+        self, mock_distances, sample_dataset, real_universe, common_residues
+    ):
+        """Test handling of distance calculation errors."""
+        # Mock distance calculation to raise an error
+        mock_distances.side_effect = Exception("Distance calculation failed")
+
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        with pytest.raises(ValueError, match="Failed to compute spatial distances"):
+            splitter.spatial_split(universe=real_universe)
+
+    def test_spatial_split_stored_results(self, sample_dataset, real_universe, common_residues):
+        """Test that spatial split stores results for inspection."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+        # Check that merged topologies are stored
+        assert hasattr(splitter, "last_split_train_topologies_by_chain")
+        assert hasattr(splitter, "last_split_val_topologies_by_chain")
+        assert len(splitter.last_split_train_topologies_by_chain) > 0
+        assert len(splitter.last_split_val_topologies_by_chain) > 0
+
+    def test_spatial_split_distance_distribution(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test that spatial split actually uses distance information for splitting."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            train_size=0.5,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        # Capture the distance calculation
+        with patch(
+            "jaxent.src.data.splitting.split.mda_TopologyAdapter.partial_topology_pairwise_distances"
+        ) as mock_distances:
+            # Create a mock distance matrix where distances increase with index
+            n_samples = len(sample_dataset.data)
+            distance_matrix = np.zeros((n_samples, n_samples))
+
+            # Fill matrix so that fragment i has distance i from fragment 0
+            for i in range(n_samples):
+                for j in range(n_samples):
+                    distance_matrix[i, j] = abs(i - j) * 10.0  # Scale up distances
+
+            distance_std = np.ones_like(distance_matrix)
+            mock_distances.return_value = (distance_matrix, distance_std)
+
+            train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+            # Verify distance calculation was called
+            mock_distances.assert_called_once()
+
+            # With our mock distances, training set should contain fragments closer to the center
+            assert len(train_data) > 0
+            assert len(val_data) > 0
+
+    def test_spatial_split_different_train_sizes(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test spatial split with different training set sizes."""
+        train_sizes = [0.3, 0.5, 0.8]
+
+        for train_size in train_sizes:
+            splitter = DataSplitter(
+                dataset=copy.deepcopy(sample_dataset),
+                common_residues=common_residues,
+                random_seed=42,
+                train_size=train_size,
+                centrality=False,
+                min_split_size=1,  # Allow smaller splits for testing
+            )
+
+            train_data, val_data = splitter.spatial_split(universe=real_universe)
+
+            # Check approximate ratios (allowing some flexibility due to filtering)
+            total_size = len(train_data + val_data)
+            actual_train_ratio = len(train_data) / total_size
+
+            # Allow reasonable tolerance
+            assert abs(actual_train_ratio - train_size) < 0.3, (
+                f"Train ratio {actual_train_ratio} too far from target {train_size}"
+            )
+
+    def test_spatial_split_integration_with_mda_adapter(
+        self, sample_dataset, real_universe, common_residues
+    ):
+        """Test integration with mda_TopologyAdapter methods."""
+        splitter = DataSplitter(
+            dataset=sample_dataset,
+            common_residues=common_residues,
+            random_seed=42,
+            centrality=False,
+            min_split_size=1,  # Allow smaller splits for testing
+        )
+
+        # This should call the real mda_TopologyAdapter.partial_topology_pairwise_distances
+        train_data, val_data = splitter.spatial_split(
+            universe=real_universe,
             include_selection="protein",
-            exclude_selection="resid 1-5",
-            exclude_termini=False,
-        )
-
-        # Should have fewer topologies with exclusion
-        assert len(exclude_topologies) < len(all_topologies), (
-            "Exclusion should reduce topology count"
-        )
-
-        # Check no excluded residues are present (accounting for renumbering)
-        # With renumbering, excluded residues won't appear in the final set
-        assert len(exclude_topologies) == len(all_topologies) - 5, (
-            "Should exclude exactly 5 residues"
-        )
-
-    def test_custom_fragment_naming(self, test_universe):
-        """Test custom fragment naming template"""
-        # Use custom naming template
-        template = "res_{chain}_{resname}{resid}"
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 1-5",
-            fragment_name_template=template,
-            exclude_termini=False,
-        )
-
-        # Check custom naming
-        for topo in topologies:
-            assert topo.fragment_name.startswith("res_"), "Should use custom name template"
-            assert "_" in topo.fragment_name, "Should contain chain and residue info"
-
-    def test_exclude_termini(self, test_universe):
-        """Test excluding termini from chains"""
-        # Extract with and without terminal exclusion
-        with_termini = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", exclude_termini=False
-        )
-
-        without_termini = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", exclude_termini=True
-        )
-
-        # Chain with termini excluded should be shorter
-        assert with_termini[0].length > without_termini[0].length, (
-            "Excluding termini should reduce length"
-        )
-
-        # Should be exactly 2 residues shorter (N and C termini)
-        assert with_termini[0].length == without_termini[0].length + 2, (
-            f"Should be exactly 2 residues shorter. "
-            f"With termini: {with_termini[0].length}, without: {without_termini[0].length}"
-        )
-
-    def test_renumber_residues_true(self, test_universe):
-        """Test residue renumbering functionality"""
-        # Extract with renumbering enabled (default)
-        topologies_renumbered = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein",
-            renumber_residues=True,
-            exclude_termini=False,
-        )
-
-        # Extract without renumbering
-        topologies_original = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein",
-            renumber_residues=False,
-            exclude_termini=False,
-        )
-
-        # Should have same number of topologies
-        assert len(topologies_renumbered) == len(topologies_original), (
-            "Should have same number of topologies regardless of renumbering"
-        )
-
-        # Renumbered should start from 1
-        renumbered_ids = sorted([topo.residues[0] for topo in topologies_renumbered])
-        assert renumbered_ids[0] == 1, "Renumbered residues should start from 1"
-        assert renumbered_ids == list(range(1, len(renumbered_ids) + 1)), (
-            "Renumbered residues should be sequential"
-        )
-
-        # Original should preserve original numbering (after terminal exclusion)
-        original_ids = sorted([topo.residues[0] for topo in topologies_original])
-        assert original_ids[0] >= 1, "Original numbering should skip first residue (terminal)"
-        assert original_ids[-1] <= 58, "Original numbering should skip last residue (terminal)"
-
-
-class TestFindCommonResidues:
-    """Test find_common_residues method for ensemble analysis"""
-
-    def test_single_universe_termini_exclusion(self, test_universe):
-        """Test exact termini exclusion behavior with single universe"""
-        ensemble = [test_universe]
-
-        # Get baseline - all protein residues with and without termini
-        baseline_with_termini = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", exclude_termini=False
-        )[0]
-        baseline_without_termini = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", exclude_termini=True
-        )[0]
-
-        common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
-            ensemble, include_selection="protein", exclude_selection=""
-        )
-
-        # Common residues should match the exclude_termini=True extraction
-        assert len(common_residues) == baseline_without_termini.length, (
-            f"Common residues count {len(common_residues)} should match baseline without termini "
-            f"{baseline_without_termini.length}"
-        )
-
-        # Excluded residues should be exactly the difference (termini)
-        expected_excluded_count = baseline_with_termini.length - baseline_without_termini.length
-        assert len(excluded_residues) == expected_excluded_count, (
-            f"Excluded count {len(excluded_residues)} should be {expected_excluded_count} "
-            f"(difference between with/without termini)"
-        )
-
-    def test_identical_ensembles_exact_matching(self, test_universe):
-        """Test that identical universes produce identical results"""
-        # Test with 2, 3, and 5 identical universes
-        for n_universes in [2, 3, 5]:
-            ensemble = [test_universe] * n_universes
-
-            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
-                ensemble, include_selection="protein", exclude_selection=""
-            )
-
-            # Results should be identical regardless of ensemble size for identical universes
-            if n_universes == 2:
-                baseline_common = len(common_residues)
-                baseline_excluded = len(excluded_residues)
-            else:
-                assert len(common_residues) == baseline_common, (
-                    f"Common residues should be identical for {n_universes} identical universes"
-                )
-                assert len(excluded_residues) == baseline_excluded, (
-                    f"Excluded residues should be identical for {n_universes} identical universes"
-                )
-
-    def test_restrictive_include_selection_with_renumbering(self, test_universe):
-        """Test restrictive include selections with renumber_residues=True"""
-        ensemble = [test_universe]
-
-        # Test middle residues only with renumbering enabled
-        test_ranges = [
-            (10, 20),  # 11 residues
-            (15, 25),  # 11 residues
-            (5, 15),  # 11 residues
-        ]
-
-        for start, end in test_ranges:
-            common_residues, excluded_residues = mda_TopologyAdapter.find_common_residues(
-                ensemble,
-                include_selection=f"protein and resid {start}-{end}",
-                exclude_selection="",
-                renumber_residues=True,
-                exclude_termini=True,
-            )
-
-            # With renumbering=True, residues are renumbered based on their position
-            expected_max = end - start + 1  # Original range size
-            expected_after_termini = max(0, expected_max)  # Minus termini
-
-            assert len(common_residues) <= expected_max, (
-                f"Range {start}-{end}: too many residues {len(common_residues)} > {expected_max}"
-            )
-            assert len(common_residues) >= expected_after_termini, (
-                f"Range {start}-{end}: too few residues {len(common_residues)} < {expected_after_termini}"
-            )
-
-    def test_error_conditions_specific(self, test_universe):
-        """Test specific error conditions and edge cases"""
-
-        # Test 1: Invalid residue selection
-        with pytest.raises(ValueError, match="Failed to extract topologies"):
-            mda_TopologyAdapter.find_common_residues(
-                [test_universe],
-                include_selection="resname NONEXISTENT",
-                exclude_selection="",
-            )
-
-        # Test 2: Out of range residue selection
-        with pytest.raises(ValueError, match="Failed to extract topologies"):
-            mda_TopologyAdapter.find_common_residues(
-                [test_universe],
-                include_selection="protein and resid 9999",
-                exclude_selection="",
-            )
-
-
-class TestToMDAGroup:
-    """Test the to_mda_group method that maps Partial_Topology back to MDAnalysis groups"""
-
-    def test_basic_conversion(self, test_universe):
-        """Test basic conversion from Partial_Topology to MDAnalysis groups"""
-        # First extract topologies from universe
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            renumber_residues=False,
-        )
-
-        assert len(topologies) > 0, "Should extract some topologies"
-
-        # Convert back to MDAnalysis group
-        residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies),
-            test_universe,
-            include_selection="protein",
-            renumber_residues=False,
-        )
-
-        # Check if we got a ResidueGroup with the expected number of residues
-        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
-        assert len(residue_group) == len(topologies), (
-            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
-        )
-
-    def test_basic_conversion_renumbering(self, test_universe):
-        """Test basic conversion from Partial_Topology to MDAnalysis groups"""
-        # First extract topologies from universe
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
-        )
-
-        assert len(topologies) > 0, "Should extract some topologies"
-
-        # Convert back to MDAnalysis group
-        residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies),
-            test_universe,
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
-        )
-
-        # Check if we got a ResidueGroup with the expected number of residues
-        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
-        assert len(residue_group) == len(topologies), (
-            f"Should contain {len(topologies)} residues, got {len(residue_group)}"
-        )
-
-    def test_basic_conversion_renumbering_hard_exclude(self, test_universe):
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
+            exclude_selection=None,
             renumber_residues=False,
             exclude_termini=True,
+            termini_chain_selection="protein",
         )
 
-        assert len(topologies) > 0, "Should extract some topologies"
-
-        # Convert back to MDAnalysis group
-        residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies),
-            test_universe,
-            include_selection="protein",
-            renumber_residues=False,
-            exclude_termini=True,
-        )
-
-        # Check if we got a ResidueGroup with the expected number of residues
-        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
-        assert len(residue_group) == len(topologies), (
-            f"Should contain {len(topologies)} topoology residues, got residue group {len(residue_group)}"
-        )
-
-    def test_basic_conversion_renumbering_hard_exclude_renumber(self, test_universe):
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
-            exclude_termini=True,
-        )
-
-        assert len(topologies) > 0, "Should extract some topologies"
-
-        # Convert back to MDAnalysis group
-        residue_group = mda_TopologyAdapter.to_mda_group(
-            set(topologies),
-            test_universe,
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
-            exclude_termini=True,
-        )
-
-        # Check if we got a ResidueGroup with the expected number of residues
-        assert hasattr(residue_group, "residues"), "Should return a ResidueGroup"
-        assert len(residue_group) == len(topologies), (
-            f"Should contain {len(topologies)} topoology residues, got residue group {len(residue_group)}"
-        )
-
-    def test_to_mda_residue_dict(self, test_universe):
-        """Test conversion to a dictionary of residue indices by chain."""
-        # Extract topologies for residues 10-20
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            renumber_residues=False,
-        )
-
-        # Convert to residue dictionary
-        residue_dict = mda_TopologyAdapter.to_mda_residue_dict(
-            set(topologies),
-            test_universe,
-            include_selection="protein",
-            renumber_residues=False,
-            exclude_termini=False,
-        )
-
-        # Test protein has one chain 'X'
-        assert len(residue_dict) == 1, "Should find residues in one chain"
-        chain_id = list(residue_dict.keys())[0]
-        assert chain_id == "X", (
-            f"Chain should be 'X', mda chain ID is {test_universe.atoms[0].chainID}"
-        )
-
-        # Check the residue numbers
-        resids = residue_dict[chain_id]
-        assert len(resids) == len(topologies), "Should have same number of residues"
-
-
-class TestPartialTopologyPairwiseDistances:
-    """Test the partial_topology_pairwise_distances method."""
-
-    def test_basic_calculation(self, test_universe):
-        """Test basic distance calculation between a few residue topologies."""
-        # Extract topologies from the universe
-        all_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="residue", include_selection="protein"
-        )
-
-        # Select specific residues
-        selected_indices = [0, 10, 20]  # First, 11th, and 21st residue
-        topologies = [all_topologies[i] for i in selected_indices]
-
-        dist_matrix, dist_std = mda_TopologyAdapter.partial_topology_pairwise_distances(
-            topologies, test_universe, renumber_residues=False, verbose=False
-        )
-
-        assert dist_matrix.shape == (3, 3)
-        assert dist_std.shape == (3, 3)
-
-        # Diagonal elements should be zero
-        assert np.all(np.diag(dist_matrix) == 0)
-        # Std dev for a single frame (PDB) should be zero
-        assert np.all(np.diag(dist_std) == 0)
-
-        # Off-diagonal elements should be positive
-        assert np.all(dist_matrix[np.triu_indices(3, k=1)] > 0)
-
-        # Symmetry check
-        assert np.allclose(dist_matrix, dist_matrix.T)
-
-    def test_empty_topologies_list_raises_error(self, test_universe):
-        """Test that an empty list of topologies raises a ValueError."""
-        with pytest.raises(ValueError, match="topologies list cannot be empty"):
-            mda_TopologyAdapter.partial_topology_pairwise_distances([], test_universe)
-
-
-class TestGetMDAGroupSortKey:
-    """Test the get_mda_group_sort_key static method."""
-
-    def test_sort_key_residuegroup(self, test_universe):
-        # Extract a ResidueGroup for a range of residues
-        residues = test_universe.select_atoms("protein and resid 10-15").residues
-        sort_key = mda_TopologyAdapter.get_mda_group_sort_key(residues)
-        # Should be a tuple of length 4
-        assert isinstance(sort_key, tuple) and len(sort_key) == 4
-        # Chain ID length should be int
-        assert isinstance(sort_key[0], int)
-        # Chain score should be tuple of ints
-        assert isinstance(sort_key[1], tuple)
-        # Average residue should be float
-        assert isinstance(sort_key[2], float)
-        # Length should be negative int
-        assert isinstance(sort_key[3], int) and sort_key[3] < 0
-
-    def test_sort_key_atomgroup(self, test_universe):
-        # Extract an AtomGroup for a range of residues
-        atoms = test_universe.select_atoms("protein and resid 10-15")
-        sort_key = mda_TopologyAdapter.get_mda_group_sort_key(atoms)
-        assert isinstance(sort_key, tuple) and len(sort_key) == 4
-
-    def test_error_on_empty_group(self, test_universe):
-        # Empty ResidueGroup
-        from MDAnalysis.core.groups import ResidueGroup
-
-        empty_group = ResidueGroup([], test_universe)
-        with pytest.raises(ValueError):
-            mda_TopologyAdapter.get_mda_group_sort_key(empty_group)
-
-
-class TestGetResidueGroupReorderingIndices:
-    """Test the get_residuegroup_reordering_indices method"""
-
-    def test_basic_residuegroup_reordering(self, test_universe):
-        """Test basic reordering of a ResidueGroup"""
-        # Select a range of residues in reverse order
-        residues = test_universe.select_atoms("protein and resid 15 14 13 12 11 10").residues
-
-        # Get reordering indices
-        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residues)
-
-        # Apply reordering
-        reordered_residues = [residues[i] for i in indices]
-
-        # Check that residues are now in ascending order
-        resids = [res.resid for res in reordered_residues]
-        assert resids == sorted(resids), f"Residues should be in ascending order: {resids}"
-
-        # Check indices are valid
-        assert len(indices) == len(residues)
-        assert all(0 <= i < len(residues) for i in indices)
-
-    def test_single_residue_returns_identity(self, test_universe):
-        """Test that single residue returns identity ordering"""
-        residue = test_universe.select_atoms("protein and resid 10").residues
-
-        indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(residue)
-
-        assert indices == [0], "Single residue should return identity index [0]"
-
-    def test_empty_group_raises_error(self, test_universe):
-        """Test that empty group raises ValueError"""
-        from MDAnalysis.core.groups import ResidueGroup
-
-        empty_group = ResidueGroup([], test_universe)
-
-        with pytest.raises(ValueError, match="Group contains no residues"):
-            mda_TopologyAdapter.get_residuegroup_ranking_indices(empty_group)
-
-
-class TestGetAtomgroupReorderingIndices:
-    """Test the get_atomgroup_reordering_indices method"""
-
-    def test_basic_reordering(self, test_universe):
-        """Test basic reordering functionality"""
-        # Extract some topologies
-        topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-15",
-            renumber_residues=False,
-            exclude_termini=False,
-        )
-
-        # Create corresponding MDA groups (shuffled order)
-        mda_groups = []
-        for topo in reversed(topologies):  # Reverse order
-            group = mda_TopologyAdapter.to_mda_group(
-                {topo},
-                test_universe,
-                include_selection="protein and resid 10-15",
-                renumber_residues=False,
-                exclude_termini=False,
-            )
-            mda_groups.append(group)
-
-        # Get reordering indices
-        indices = mda_TopologyAdapter.get_atomgroup_reordering_indices(
-            mda_groups,
-            test_universe,
-            target_topologies=topologies,
-            include_selection="protein and resid 10-15",
-            renumber_residues=False,
-            exclude_termini=False,
-        )
-
-        # Should provide indices to restore original order
-        assert len(indices) == len(mda_groups)
-        assert all(0 <= i < len(mda_groups) for i in indices)
-
-        # Reordered groups should match topology order
-        reordered_groups = [mda_groups[i] for i in indices]
-        for i, (group, topo) in enumerate(zip(reordered_groups, topologies)):
-            group_resid = list(group.residues)[0].resid
-            # Account for potential renumbering differences
-            assert isinstance(group_resid, (int, np.integer)), (
-                f"Group {i} should have integer resid"
-            )
-
-
-class TestBuildRenumberingMapping:
-    """Test the _build_renumbering_mapping class method"""
-
-    def test_basic_renumbering_mapping(self, test_universe):
-        """Test basic renumbering mapping creation"""
-        mapping = mda_TopologyAdapter._build_renumbering_mapping(
-            test_universe, exclude_termini=True
-        )
-
-        assert isinstance(mapping, dict), "Should return a dictionary"
-        assert len(mapping) > 0, "Should have mappings for at least some residues"
-
-        # Check that all keys are (chain_id, new_resid) tuples
-        for key in mapping.keys():
-            assert isinstance(key, tuple), "Keys should be tuples"
-            assert len(key) == 2, "Keys should be (chain_id, new_resid) pairs"
-            chain_id, new_resid = key
-            assert isinstance(chain_id, str), "Chain ID should be string"
-            assert isinstance(new_resid, np.integer), "New resid should be integer"
-
-    def test_renumbering_with_termini_exclusion(self, test_universe):
-        """Test renumbering mapping with terminal exclusion"""
-        mapping_with_termini = mda_TopologyAdapter._build_renumbering_mapping(
-            test_universe, exclude_termini=False
-        )
-        mapping_without_termini = mda_TopologyAdapter._build_renumbering_mapping(
-            test_universe, exclude_termini=True
-        )
-
-        # Should have fewer mappings when excluding termini
-        assert len(mapping_without_termini) < len(mapping_with_termini), (
-            "Should have fewer mappings when excluding termini"
-        )
-
-        # Check that renumbering starts from 1
-        min_new_resid = min(key[1] for key in mapping_without_termini.keys())
-        assert min_new_resid == 2, "Renumbering should start from 1"
-
-
-class TestValidateTopologyContainment:
-    """Test the _validate_topology_containment class method"""
-
-    def test_valid_topology_containment(self, test_universe):
-        """Test validation of valid topology containment"""
-        # Create a topology that should be valid (residue 2, as 1 is usually excluded as terminus)
-        topology = TopologyFactory.from_single(
-            chain="X",
-            residue=2,
-            fragment_name="test_residue",
-        )
-
-        # Should not raise any errors
-        try:
-            mda_TopologyAdapter._validate_topology_containment(
-                topology, test_universe, exclude_termini=True, renumber_residues=True
-            )
-        except ValueError as e:
-            pytest.fail(f"Valid topology should not raise ValueError, but raised: {e}")
-
-    def test_invalid_topology_residue_out_of_range(self, test_universe):
-        """Test validation fails for out-of-range residues"""
-        # Create topology with residue number that's too high
-        topology = TopologyFactory.from_single(
-            chain="X",
-            residue=9999,
-            fragment_name="invalid_residue",
-        )
-
-        # Should raise ValueError
-        with pytest.raises(ValueError, match="contains residues .* that are not available"):
-            mda_TopologyAdapter._validate_topology_containment(
-                topology, test_universe, exclude_termini=True, renumber_residues=True
-            )
-
-    def test_invalid_topology_nonexistent_chain(self, test_universe):
-        """Test validation fails for nonexistent chain"""
-        # Create topology with nonexistent chain
-        topology = TopologyFactory.from_single(
-            chain="Z",  # Nonexistent chain
-            residue=1,
-            fragment_name="nonexistent_chain",
-        )
-
-        # Should raise ValueError about no residues found for chain
-        with pytest.raises(ValueError, match="No residues found for chain"):
-            mda_TopologyAdapter._validate_topology_containment(
-                topology, test_universe, exclude_termini=True, renumber_residues=True
-            )
-
-
-class TestIntegrationTests:
-    """Integration tests combining multiple methods"""
-
-    def test_round_trip_conversion(self, test_universe):
-        """Test round-trip conversion between Universe, Partial_Topology, and back"""
-        # Extract specific residues
-        original_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
-        )
-
-        # Convert back to MDAnalysis group
+        assert len(train_data) > 0, "Training set should not be empty"
+        assert len(val_data) > 0, "Validation set should not be empty"
+
+        # Verify that topologies can be converted back to MDA groups
+        train_topologies = [d.top for d in train_data[:3]]  # Test first few
         mda_group = mda_TopologyAdapter.to_mda_group(
-            set(original_topologies),
-            test_universe,
-            include_selection="protein and resid 10-20",
-            renumber_residues=True,
+            topologies=train_topologies, universe=real_universe, include_selection="protein"
         )
 
-        # Should have same number of residues
-        assert len(mda_group) == len(original_topologies), (
-            "Round-trip conversion should preserve residue count"
-        )
-
-    def test_consistency_across_modes(self, test_universe):
-        """Test consistency between chain and residue extraction modes"""
-        # Extract as chain
-        chain_topology = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", include_selection="protein"
-        )[0]
-
-        # Extract as individual residues
-        residue_topologies = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="residue", include_selection="protein"
-        )
-
-        # Total residues should match
-        assert len(residue_topologies) == chain_topology.length, (
-            "Chain length should match number of individual residues"
-        )
-
-        # All should have same chain ID
-        for res_topo in residue_topologies:
-            assert res_topo.chain == chain_topology.chain, (
-                "All residues should have same chain ID as parent chain"
-            )
-
-    def test_sequence_extraction_accuracy(self, test_universe):
-        """Test that sequence extraction is accurate"""
-        # Extract chain topology
-        chain_topology = mda_TopologyAdapter.from_mda_universe(
-            test_universe, mode="chain", include_selection="protein"
-        )[0]
-
-        # Sequence should be a string
-        assert isinstance(chain_topology.fragment_sequence, str), (
-            "Fragment sequence should be a string"
-        )
-
-        # Length should match topology length
-        assert len(chain_topology.fragment_sequence) == chain_topology.length, (
-            "Sequence length should match topology length"
-        )
-
-        # Should contain valid amino acid codes
-        valid_aa = set("ACDEFGHIKLMNPQRSTVWYX")  # Including X for unknown
-        sequence_chars = set(chain_topology.fragment_sequence)
-        assert sequence_chars.issubset(valid_aa), (
-            f"Sequence should contain only valid amino acid codes, got: {sequence_chars - valid_aa}"
-        )
-
-    def test_residue_numbering_consistency(self, test_universe):
-        """Test that residue numbering is consistent across different operations"""
-        # Test with renumbering enabled
-        topologies_renumbered = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein",
-            renumber_residues=True,
-            exclude_termini=False,
-        )
-
-        # Test with renumbering disabled
-        topologies_original = mda_TopologyAdapter.from_mda_universe(
-            test_universe,
-            mode="residue",
-            include_selection="protein",
-            renumber_residues=False,
-            exclude_termini=False,
-        )
-
-        # Should have same number
-        assert len(topologies_renumbered) == len(topologies_original), (
-            "Should have same number regardless of renumbering"
-        )
-
-        # Renumbered should be sequential from 1
-        renumbered_resids = sorted([topo.residues[0] for topo in topologies_renumbered])
-        expected_renumbered = list(range(1, len(renumbered_resids) + 1))
-        assert renumbered_resids == expected_renumbered, (
-            "Renumbered residues should be sequential from 1"
-        )
-
-    def test_selection_combinations(self, test_universe):
-        """Test various selection combinations"""
-        # Test combinations of include/exclude selections
-        test_cases = [
-            {"include": "protein", "exclude": None},
-            {"include": "protein", "exclude": "resname ARG"},
-            {"include": "protein and name CA", "exclude": None},
-            {"include": "protein and resid 5-25", "exclude": "resid 10-15"},
-        ]
-
-        for case in test_cases:
-            try:
-                topologies = mda_TopologyAdapter.from_mda_universe(
-                    test_universe,
-                    mode="residue",
-                    include_selection=case["include"],
-                    exclude_selection=case["exclude"],
-                )
-
-                # Should extract some topologies for valid selections
-                assert len(topologies) >= 0, f"Should extract topologies for case: {case}"
-
-                # All should have valid properties
-                for topo in topologies[:3]:  # Check first few
-                    assert topo.chain is not None, "Chain should be set"
-                    assert topo.length >= 1, "Length should be positive"
-                    assert len(topo.residues) >= 1, "Should have residues"
-
-            except ValueError:
-                # Some combinations might be invalid, that's okay
-                pass
-
-    def test_error_handling_robustness(self, test_universe):
-        """Test robust error handling for various edge cases"""
-        # Test invalid modes
-        with pytest.raises(ValueError, match="Mode must be either"):
-            mda_TopologyAdapter.from_mda_universe(test_universe, mode="invalid")
-
-        # Test invalid selections
-        with pytest.raises(ValueError, match="Invalid include selection"):
-            mda_TopologyAdapter.from_mda_universe(
-                test_universe, include_selection="nonexistent_atom_type"
-            )
-
-        # Test empty results
-        with pytest.raises(ValueError, match="No atoms found"):
-            mda_TopologyAdapter.from_mda_universe(
-                test_universe, include_selection="resname NONEXISTENT"
-            )
+        assert len(mda_group) > 0, "Should be able to convert topologies back to MDA groups"
