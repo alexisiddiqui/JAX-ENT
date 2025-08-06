@@ -13,6 +13,7 @@ import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 
 
@@ -91,64 +92,27 @@ def featurise_trajectory(
     print(f"Heavy contacts length: {len(features.heavy_contacts)}")
     print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
     print(f"Kints length: {len(features.k_ints)}")
-    # Save features
-    # +1 to feature_topology numbering to match the 1-based indexing of MDAnalysis
-    # this should be now fixed
-    # feature_topology = [
-    #     pt.TopologyFactory.from_single(
-    #         chain=top.chain,
-    #         residue=top.residue_start + 1,  # Convert to 1-based indexing
-    #         fragment_index=top.fragment_index,
-    #         peptide=top.peptide,
-    #         peptide_trim=top.peptide_trim,
-    #     )
-    #     for top in feature_topology
-    # ]
 
-    if kint_data is not None:
-        kints, topology_list = kint_data
-        print(f"Loaded intrinsic rates: {kints}")
-        print(f"Rates length: {kints.shape}")
-        print(f"Topology list length: {len(topology_list)}")
-        # filter kints to match the featrure topology
-        # _feature_top = pt.TopologyFactory.merge(feature_topology)
+    _kints, _kint_topology = kint_data
 
-        # indices_to_remove = []
+    _kint_topology = pt.TopologyFactory.merge(_kint_topology)
 
-        # for i, top in enumerate(topology_list):
-        #     if not pt.PairwiseTopologyComparisons.intersects(top, _feature_top):
-        #         print(f"Removing kint {kints[i]}, {i} for topology {top}")
-        #         indices_to_remove.append(i)
-        # _kints = jnp.delete(
-        #     kints, jnp.array(indices_to_remove, dtype=int)
-        # )  # Remove indices from kints
-        # indices_to_remove = [i for i in indices_to_remove if i < features.heavy_contacts.shape[0]]
+    for top in feature_topology:
+        if not pt.PairwiseTopologyComparisons.intersects(top, _kint_topology):
+            raise ValueError(
+                f"Topology {top} does not intersect with kint topology {_kint_topology}. "
+                "Ensure that the kint topology matches the feature topology."
+            )
 
-        # _heavy_contacts = jnp.delete(
-        #     features.heavy_contacts, jnp.array(indices_to_remove, dtype=int), axis=0
-        # )
-        # _acceptor_contacts = jnp.delete(
-        #     features.acceptor_contacts, jnp.array(indices_to_remove, dtype=int), axis=0
-        # )
-
-        _kints = jnp.asarray(kints)
-        _heavy_contacts = jnp.asarray(features.heavy_contacts)
-        _acceptor_contacts = jnp.asarray(features.acceptor_contacts)
-    else:
-        _kints = features.k_ints
-        _heavy_contacts = features.heavy_contacts
-        _acceptor_contacts = features.acceptor_contacts
-    print(f"Filtered kints length: {len(_kints)}")
-    print(f"Filtered kint top length: {len(topology_list)}")
-    print(f"Feature topology lengthL {len(feature_topology)}")
-    # breakpoint()
-    features_path = os.path.join(output_dir, f"features_{output_name}.npz")
-    jnp.savez(
-        features_path,
-        heavy_contacts=_heavy_contacts,
-        acceptor_contacts=_acceptor_contacts,
+    features = BV_input_features(
+        heavy_contacts=features.heavy_contacts,
+        acceptor_contacts=features.acceptor_contacts,
         k_ints=_kints,
     )
+
+    # breakpoint()
+    features_path = os.path.join(output_dir, f"features_{output_name}.npz")
+    features.save(features_path)
     print(f"Saved {output_name} features to: {features_path}")
 
     # Save topology
