@@ -24,12 +24,12 @@ import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
@@ -72,7 +72,7 @@ def load_hdx_peptides(directory: str, dataset_name: str = "full_dataset") -> Lis
         raise FileNotFoundError(f"Dfrac file not found: {dfrac_file}")
 
     # Load topology data
-    topologies: List[Partial_Topology] = Partial_Topology.load_list_from_json(topology_file)
+    topologies: List[pt.Partial_Topology] = pt.PTSerialiser.load_list_from_json(topology_file)
 
     # Load dfrac data
     dfrac_df = pd.read_csv(dfrac_file, header=None)
@@ -101,7 +101,7 @@ def load_hdx_peptides(directory: str, dataset_name: str = "full_dataset") -> Lis
 def load_BV_features(
     feature_path: str,
     feature_top_path: Optional[str] = None,
-) -> tuple[BV_input_features, list[Partial_Topology]]:
+) -> tuple[BV_input_features, list[pt.Partial_Topology]]:
     """
     Load BV input features from a file.
 
@@ -122,7 +122,7 @@ def load_BV_features(
     # Load features
     jnp_features = np.load(feature_path, allow_pickle=True)
 
-    feat_top = Partial_Topology.load_list_from_json(feature_top_path)
+    feat_top = pt.PTSerialiser.load_list_from_json(feature_top_path)
 
     features = BV_input_features(
         heavy_contacts=jnp_features["heavy_contacts"],
@@ -138,7 +138,7 @@ def create_data_loaders(
     train_data: List[HDX_peptide],
     val_data: List[HDX_peptide],
     features: BV_input_features,
-    feature_top: list[Partial_Topology],
+    feature_top: list[pt.Partial_Topology],
 ) -> ExpD_Dataloader:
     """
     Create data loaders for training and validation datasets.
@@ -274,7 +274,7 @@ def run_optimise_ISO_TRI_BI(
     features: BV_input_features,
     forward_model: BV_model,
     model_parameters: BV_Model_Parameters,
-    feature_top: List[Partial_Topology],
+    feature_top: List[pt.Partial_Topology],
     convergence: List[float],
     loss_function: JaxEnt_Loss,
     n_steps: int = 10,
@@ -307,7 +307,7 @@ def run_optimise_ISO_TRI_BI(
 
     optimizer = OptaxOptimizer(
         learning_rate=1e-3,
-        optimizer="adamw",
+        optimizer="adam",
     )
     opt_state = optimizer.initialise(
         model=sim,
@@ -380,7 +380,7 @@ def main():
     if "full_dataset" in split_types:
         split_types.remove("full_dataset")  # Exclude the full_dataset directory from split types
     split_types.sort()  # Ensure consistent order
-    split_types = ["sequence_cluster"]
+    # split_types = ["sequence_cluster"]
     # Run optimization for all combinationsj
     total_runs = len(ensembles) * len(losses) * num_splits * len(split_types)
     current_run = 0

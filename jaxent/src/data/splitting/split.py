@@ -3,7 +3,6 @@ import random
 from typing import Optional, Sequence
 
 import MDAnalysis as mda
-from interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import (
@@ -12,6 +11,7 @@ from jaxent.src.interfaces.topology import (
     TopologyFactory,
     calculate_fragment_redundancy,
     group_set_by_chain,
+    mda_TopologyAdapter,
 )
 
 
