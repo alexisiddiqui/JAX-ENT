@@ -1,5 +1,5 @@
 # jaxENT
-### Version: Alpha 0.2.1
+### Version: Alpha 0.3.0
 Disclaimer: This project is currently under construction, the code is mostly functional but is far from complete as a package. \
 Initial release expected in the next few months. Want to stay up to date? Questions/Comments/Suggestions? Use our google form below to help drive the development of this tool.
 
