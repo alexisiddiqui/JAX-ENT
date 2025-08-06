@@ -4,7 +4,9 @@ from pathlib import Path
 
 import numpy as np
 
+from jaxent.src.custom_types.features import AbstractFeatures
 from jaxent.src.utils.jit_fn import jit_Guard
+from jaxent.tests.test_utils import get_inst_path
 
 
 @jit_Guard.test_isolation()
@@ -14,15 +16,17 @@ def test_cli_predict_bv_model():
         featurise_output_dir = Path(tmpdir) / "featurisation_output"
         predict_output_dir = Path(tmpdir) / "prediction_output"
 
-        topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-        trajectory_path = (
-            "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-        )
+        inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+        topology_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+        trajectory_path = inst_dir / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
 
-        # --- Run Featurise CLI ---
+        if not topology_path.exists() or not trajectory_path.exists():
+            raise FileNotFoundError(
+                f"Required files not found: {topology_path} or {trajectory_path}"
+            )
+
         featurise_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/featurise.py",
+            "jaxent-featurise",
             "--top_path",
             str(topology_path),
             "--trajectory_path",
@@ -30,21 +34,21 @@ def test_cli_predict_bv_model():
             "--output_dir",
             str(featurise_output_dir),
             "--name",
-            "test_bv_featurisation",
+            "test_bv",
             "bv",
             "--temperature",
             "300.0",
             "--ph",
             "7.0",
             "--num_timepoints",
-            "0",
+            "1",
+            "--timepoints",
+            "0.167",
             "--residue_ignore",
             "-2",
             "2",
-            "--peptide_trim",
-            "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
@@ -63,21 +67,20 @@ def test_cli_predict_bv_model():
         assert features_npz_path.exists()
         assert topology_json_path.exists()
 
-        features = np.load(features_npz_path)
+        features = AbstractFeatures.load(features_npz_path)
         # check featurise out
-        assert "k_ints" in features
-        assert "heavy_contacts" in features
-        assert "acceptor_contacts" in features
+        assert features.k_ints is not None
+        assert features.heavy_contacts is not None
+        assert features.acceptor_contacts is not None
         num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
         num_frames = 500
-        assert features["k_ints"].shape == (num_residues,)
-        assert features["heavy_contacts"].shape == (num_residues, num_frames)
-        assert features["acceptor_contacts"].shape == (num_residues, num_frames)
+        assert features.k_ints.shape == (num_residues,)
+        assert features.heavy_contacts.shape == (num_residues, num_frames)
+        assert features.acceptor_contacts.shape == (num_residues, num_frames)
 
         # --- Run Predict CLI ---
         predict_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/predict.py",
+            "jaxent-predict",
             "--features_path",
             str(features_npz_path),
             "--topology_path",
@@ -139,15 +142,17 @@ def test_cli_predict_bv_model_uptake():
         featurise_output_dir = Path(tmpdir) / "featurisation_output"
         predict_output_dir = Path(tmpdir) / "prediction_output"
 
-        topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-        trajectory_path = (
-            "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-        )
+        inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+        topology_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+        trajectory_path = inst_dir / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
 
-        # --- Run Featurise CLI ---
+        if not topology_path.exists() or not trajectory_path.exists():
+            raise FileNotFoundError(
+                f"Required files not found: {topology_path} or {trajectory_path}"
+            )
+
         featurise_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/featurise.py",
+            "jaxent-featurise",
             "--top_path",
             str(topology_path),
             "--trajectory_path",
@@ -155,7 +160,7 @@ def test_cli_predict_bv_model_uptake():
             "--output_dir",
             str(featurise_output_dir),
             "--name",
-            "test_bv_featurisation",
+            "test_bv",
             "bv",
             "--temperature",
             "300.0",
@@ -163,13 +168,13 @@ def test_cli_predict_bv_model_uptake():
             "7.0",
             "--num_timepoints",
             "1",
+            "--timepoints",
+            "0.167",
             "--residue_ignore",
             "-2",
             "2",
-            "--peptide_trim",
-            "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
@@ -188,21 +193,20 @@ def test_cli_predict_bv_model_uptake():
         assert features_npz_path.exists()
         assert topology_json_path.exists()
 
-        features = np.load(features_npz_path)
+        features = AbstractFeatures.load(features_npz_path)
         # check featurise out
-        assert "k_ints" in features
-        assert "heavy_contacts" in features
-        assert "acceptor_contacts" in features
+        assert features.k_ints is not None
+        assert features.heavy_contacts is not None
+        assert features.acceptor_contacts is not None
         num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
         num_frames = 500
-        assert features["k_ints"].shape == (num_residues,)
-        assert features["heavy_contacts"].shape == (num_residues, num_frames)
-        assert features["acceptor_contacts"].shape == (num_residues, num_frames)
+        assert features.k_ints.shape == (num_residues,)
+        assert features.heavy_contacts.shape == (num_residues, num_frames)
+        assert features.acceptor_contacts.shape == (num_residues, num_frames)
 
         # --- Run Predict CLI ---
         predict_command = [
-            "python",
-            "/home/alexi/Documents/JAX-ENT/jaxent/cli/predict.py",
+            "jaxent-predict",
             "--features_path",
             str(features_npz_path),
             "--topology_path",

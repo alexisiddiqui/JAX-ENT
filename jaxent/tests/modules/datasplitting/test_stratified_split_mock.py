@@ -6,7 +6,8 @@ import pytest
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology.factory import TopologyFactory
+from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 
 
 # Mock ExpD_Datapoint for testing
@@ -35,7 +36,7 @@ def create_single_chain_topologies(chain="A", count=10):
 
     for i in range(count):
         topologies.append(
-            Partial_Topology.from_range(
+            TopologyFactory.from_range(
                 chain, start, start + length - 1, fragment_name=f"frag_{chain}_{i + 1}"
             )
         )
@@ -55,7 +56,7 @@ def create_multi_chain_topologies(chains=["A", "B", "C"], count_per_chain=10):
 
         for i in range(count_per_chain):
             topologies.append(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain, start, start + length - 1, fragment_name=f"frag_{chain}_{i + 1}"
                 )
             )
@@ -77,7 +78,7 @@ def create_peptide_topologies(chains=["A", "B", "C"], count_per_chain=10):
         for i in range(count_per_chain):
             trim = trim_values[i % len(trim_values)]
             topologies.append(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain,
                     start,
                     start + length - 1,
@@ -116,12 +117,12 @@ def create_common_residues_for_chains(chains, coverage_factor=0.7):
 
         if range1_end >= 1:
             common_residues.add(
-                Partial_Topology.from_range(chain, 1, range1_end, fragment_name=f"common_{chain}_1")
+                TopologyFactory.from_range(chain, 1, range1_end, fragment_name=f"common_{chain}_1")
             )
 
         if range2_end >= range2_start:
             common_residues.add(
-                Partial_Topology.from_range(
+                TopologyFactory.from_range(
                     chain, range2_start, range2_end, fragment_name=f"common_{chain}_2"
                 )
             )
@@ -130,7 +131,7 @@ def create_common_residues_for_chains(chains, coverage_factor=0.7):
             dummy_start = 500
             while len(common_residues) < 2:
                 common_residues.add(
-                    Partial_Topology.from_range(
+                    TopologyFactory.from_range(
                         chain,
                         dummy_start,
                         dummy_start + 1,
@@ -155,7 +156,7 @@ def create_common_residues_for_chains(chains, coverage_factor=0.7):
 
         if end_pos >= 1:
             common_residues.add(
-                Partial_Topology.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
+                TopologyFactory.from_range(chain, 1, end_pos, fragment_name=f"common_{chain}")
             )
 
     return common_residues
@@ -210,12 +211,13 @@ def setup_splitter(request):
             return [
                 dp
                 for dp in dataset
-                if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                if any(
+                    PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                    for ct in common_topos
+                )
             ]
 
-        patcher1 = patch(
-            "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
-        )
+        patcher1 = patch("jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy")
         patcher2 = patch(
             "jaxent.src.data.splitting.split.filter_common_residues", side_effect=mock_filter_func
         )

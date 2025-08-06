@@ -1,10 +1,95 @@
 from typing import Dict, List, Optional
+from warnings import deprecated
 
 import MDAnalysis as mda
 import numpy as np
+from hdxrate import k_int_from_sequence
 from MDAnalysis.core.groups import Residue  # Import Residue class
 
+from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
 
+
+def calculate_HDXrate(
+    residue_group: mda.ResidueGroup,
+    temperature: float = 300.0,
+    pD: float = 7.0,
+) -> Dict[Residue, float]:
+    """
+    Calculate the intrinsic rate for a group of residues.
+    This is using the HDXrate from sequence implementation:
+
+    k_int_from_sequence('HHHHH', 300, 7.)
+    array([0.00000000e+00, 2.62430718e+03, 6.29527446e+01, 6.29527446e+01,
+    9.97734191e-01])
+
+
+    Parameters
+    ----------
+    residue_group : mda.ResidueGroup
+        The group of residues to calculate the HDX rate for.
+    temperature : float
+        The temperature in Kelvin.
+    pD : float
+        The pD value.
+
+    Returns
+    -------
+    Dict[Residue, float]
+        A dictionary mapping each residue to its HDX rate.
+    """
+
+    # Fix: residue_list should be a list of Residue objects, not a list of lists
+    residue_list: List[Residue] = [residue for residue in residue_group.residues]
+
+    chains = set()
+
+    for residue in residue_list:
+        chain_id = mda_TopologyAdapter._get_chain_id(residue.atoms)
+        if chain_id not in chains:
+            chains.add(chain_id)
+
+    assert len(chains) == 1, (
+        "All residues must belong to the same chain.",
+        f"Found chains: {chains}",
+    )
+    chains = chains.pop()
+
+    universe = residue_group.universe
+    chain_selection_string = mda_TopologyAdapter._build_chain_selection_string(
+        universe, chains, base_selection="protein"
+    )[0]
+    # Create a chain universe from the residue group
+    chain_universe = universe.select_atoms(chain_selection_string)
+
+    chain_univserse_residue_list: list[Residue] = chain_universe.residues
+
+    chain_univserse_residuegroup_indices = [
+        idx for idx, residue in enumerate(chain_univserse_residue_list) if residue in residue_list
+    ]
+    print(chain_univserse_residue_list)
+    sequence = mda_TopologyAdapter._extract_sequence(chain_univserse_residue_list, return_list=True)
+
+    if not sequence:
+        raise ValueError(
+            "No sequence could be extracted from the residue group.", f"Sequence: {sequence}"
+        )
+
+    k_int = k_int_from_sequence(sequence, temperature, pD)
+
+    if not isinstance(k_int, np.ndarray):
+        raise TypeError("k_int should be a numpy array.")
+
+    # grab the k_int values for the residues in the residue_list using their indices
+    k_int = k_int[chain_univserse_residuegroup_indices]
+
+    if len(k_int) != len(residue_list):
+        raise ValueError(
+            f"Length of k_int ({len(k_int)}) does not match number of residues ({len(residue_list)})."
+        )
+    return {residue: k_int[i] for i, residue in enumerate(residue_list)}
+
+
+@deprecated("calculate_intrinsic_rates is deprecated. Use calculate_HDXrate instead.")
 def calculate_intrinsic_rates(
     universe: mda.Universe, residue_group: Optional[mda.ResidueGroup] = None
 ) -> Dict[Residue, float]:

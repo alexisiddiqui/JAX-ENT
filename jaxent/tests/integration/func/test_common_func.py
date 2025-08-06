@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import MDAnalysis as mda
 import numpy as np
 import pytest
@@ -7,15 +9,17 @@ from jaxent.src.models.func.common import (
     compute_trajectory_average_com_distances,
     get_residue_atom_pairs,
 )
+from jaxent.tests.test_utils import get_inst_path
 
 
 @pytest.fixture(scope="module")
 def bpti_universe():
     """Fixture to load the BPTI universe, available to all tests in this module."""
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
+    inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+    topology_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+
+    trajectory_path = inst_dir / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+
     return mda.Universe(topology_path, trajectory_path)
 
 

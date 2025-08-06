@@ -14,7 +14,13 @@ from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import (
+    PairwiseTopologyComparisons,
+    Partial_Topology,
+    TopologyFactory,
+    group_set_by_chain,
+)
+from jaxent.src.interfaces.topology.serialise import PTSerialiser
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
 
@@ -59,7 +65,7 @@ def generate_diverse_peptide_groups(
         for chain in chains:
             for i in range(min(min_peptides_per_group, residues_per_chain)):
                 peptide_groups["single_residues"].append(
-                    Partial_Topology.from_single(
+                    TopologyFactory.from_single(
                         chain, i + 1, fragment_name=f"single_{chain}_{i + 1}"
                     )
                 )
@@ -75,7 +81,7 @@ def generate_diverse_peptide_groups(
                 end = min(start + length - 1, residues_per_chain)
                 if end > start:
                     peptide_groups["short_peptides"].append(
-                        Partial_Topology.from_range(
+                        TopologyFactory.from_range(
                             chain,
                             start,
                             end,
@@ -93,7 +99,7 @@ def generate_diverse_peptide_groups(
                 end = min(start + length - 1, residues_per_chain)
                 if end > start:
                     peptide_groups["medium_peptides"].append(
-                        Partial_Topology.from_range(
+                        TopologyFactory.from_range(
                             chain,
                             start,
                             end,
@@ -111,7 +117,7 @@ def generate_diverse_peptide_groups(
                 end = min(start + length - 1, residues_per_chain)
                 if end > start:
                     peptide_groups["long_peptides"].append(
-                        Partial_Topology.from_range(
+                        TopologyFactory.from_range(
                             chain,
                             start,
                             end,
@@ -135,7 +141,7 @@ def generate_diverse_peptide_groups(
             end = min(start + length - 1, residues_per_chain)
             if end > start and start <= residues_per_chain:
                 peptide_groups["overlapping_peptides"].append(
-                    Partial_Topology.from_range(
+                    TopologyFactory.from_range(
                         chain,
                         start,
                         end,
@@ -155,7 +161,7 @@ def generate_diverse_peptide_groups(
             end = min(start + length - 1, residues_per_chain)
             if end > start and start <= residues_per_chain:
                 peptide_groups["non_overlapping_peptides"].append(
-                    Partial_Topology.from_range(
+                    TopologyFactory.from_range(
                         chain,
                         start,
                         end,
@@ -171,7 +177,7 @@ def generate_diverse_peptide_groups(
         for chain in chains:
             if res_num <= residues_per_chain:
                 peptide_groups["cross_chain_coverage"].append(
-                    Partial_Topology.from_single(
+                    TopologyFactory.from_single(
                         chain, res_num, fragment_name=f"cross_{chain}_{res_num}"
                     )
                 )
@@ -184,7 +190,7 @@ def generate_diverse_peptide_groups(
             end = min(start + segment_size - 1, residues_per_chain)
             if end > start and start <= residues_per_chain:
                 peptide_groups["full_chain_coverage"].append(
-                    Partial_Topology.from_range(
+                    TopologyFactory.from_range(
                         chain,
                         start,
                         end,
@@ -247,7 +253,15 @@ ATOM     14  CA  GLY A   3      14.222  -0.349   1.000  1.00 10.00           C
 ATOM     15  C   GLY A   3      13.023  -1.100   1.000  1.00 10.00           C  
 ATOM     16  O   GLY A   3      11.963  -0.513   1.000  1.00 10.00           O  
 ATOM     17  H   GLY A   3      15.000  -0.700   1.000  1.00 10.00           H  
-TER      18      GLY A   3
+ATOM     18  N   SER A   4      12.000  -2.000   1.000  1.00 10.00           N  
+ATOM     19  CA  SER A   4      11.000  -1.000   1.000  1.00 10.00           C  
+ATOM     20  C   SER A   4      10.000  -2.000   1.000  1.00 10.00           C  
+ATOM     21  O   SER A   4       9.000  -1.000   1.000  1.00 10.00           O  
+ATOM     22  N   TYR A   5       8.000  -2.000   1.000  1.00 10.00           N  
+ATOM     23  CA  TYR A   5       7.000  -1.000   1.000  1.00 10.00           C  
+ATOM     24  C   TYR A   5       6.000  -2.000   1.000  1.00 10.00           C  
+ATOM     25  O   TYR A   5       5.000  -1.000   1.000  1.00 10.00           O  
+TER      26      TYR A   5
 END
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as f:
@@ -289,14 +303,16 @@ END
         with patch("jaxent.src.featurise.run_featurise") as mock_featurise:
             # Create mock features and topology - match the actual output structure
             mock_features = BV_input_features(
-                heavy_contacts=jnp.ones((1, 10)),  # 1 residue (common), 10 frames
-                acceptor_contacts=jnp.ones((1, 10)),
-                k_ints=jnp.ones(1),
+                heavy_contacts=jnp.ones((3, 10)),  # 1 residue (common), 10 frames
+                acceptor_contacts=jnp.ones((3, 10)),
+                k_ints=jnp.ones(3),
             )
 
             # Mock topology should match what the actual function returns
             mock_topology = [
-                Partial_Topology.from_single("A", 2, fragment_name="common_chain_A")  # VAL residue
+                TopologyFactory.from_single("A", 2, fragment_name="common_chain_A"),  # VAL residue
+                TopologyFactory.from_single("A", 3, fragment_name="common_chain_A"),  # GLY residue
+                TopologyFactory.from_single("A", 4, fragment_name="common_chain_A"),  # SER residue
             ]
 
             mock_featurise.return_value = ([mock_features], [mock_topology])
@@ -328,7 +344,7 @@ END
         assert len(common_residues) >= 75  # Should have substantial coverage
 
         # Group by chain
-        by_chain = Partial_Topology.group_set_by_chain(common_residues)
+        by_chain = group_set_by_chain(common_residues)
         assert "A" in by_chain
         assert "B" in by_chain
         assert "C" in by_chain
@@ -350,7 +366,7 @@ END
 
         # Create matching topology
         topology = [
-            Partial_Topology.from_single("A", i + 1, fragment_name=f"res_A_{i + 1}")
+            TopologyFactory.from_single("A", i + 1, fragment_name=f"res_A_{i + 1}")
             for i in range(n_residues)
         ]
 
@@ -398,7 +414,7 @@ class TestCommonResidueExtraction:
         chains = {topo.chain for topo in common_residues}
         assert len(chains) >= 4
 
-        by_chain = Partial_Topology.group_set_by_chain(common_residues)
+        by_chain = group_set_by_chain(common_residues)
         for chain in chains:
             assert len(by_chain[chain]) >= 15  # At least 15 per chain
 
@@ -413,7 +429,9 @@ class TestCommonResidueExtraction:
         # Extract individual residues from chain A
         individual_residues = set()
         for topo in chain_a_residues:
-            individual_residues.update(topo.extract_residues(use_peptide_trim=False))
+            individual_residues.update(
+                TopologyFactory.extract_residues(topo, use_peptide_trim=False)
+            )
 
         assert len(individual_residues) >= 30  # Should have substantial individual residue coverage
 
@@ -427,7 +445,7 @@ class TestCommonResidueExtraction:
 
         # Keep peptides that provide good coverage per chain
         filtered_residues = set()
-        by_chain = Partial_Topology.group_set_by_chain(all_residues)
+        by_chain = group_set_by_chain(all_residues)
 
         for chain, chain_residues in by_chain.items():
             sorted_residues = sorted(chain_residues, key=lambda t: t.residues[0])
@@ -437,7 +455,7 @@ class TestCommonResidueExtraction:
         assert len(filtered_residues) >= 60  # 4 chains × 15 peptides
 
         # Verify each chain has sufficient coverage
-        filtered_by_chain = Partial_Topology.group_set_by_chain(filtered_residues)
+        filtered_by_chain = group_set_by_chain(filtered_residues)
         for chain in by_chain.keys():
             assert len(filtered_by_chain[chain]) >= 15  # Minimum coverage maintained
 
@@ -454,18 +472,20 @@ class TestCommonResidueExtraction:
         for chain, chain_topos in by_chain.items():
             if len(chain_topos) > 1:
                 # Merge contiguous ranges
-                merged = Partial_Topology.merge_contiguous(
+                merged = TopologyFactory.merge_contiguous(
                     chain_topos, gap_tolerance=0, merged_name=f"merged_{chain}"
                 )
                 # Extract individual residues from merged topology
-                merged_common_residues.update(merged.extract_residues(use_peptide_trim=False))
+                merged_common_residues.update(
+                    TopologyFactory.extract_residues(merged, use_peptide_trim=False)
+                )
             else:
                 merged_common_residues.update(
-                    chain_topos[0].extract_residues(use_peptide_trim=False)
+                    TopologyFactory.extract_residues(chain_topos[0], use_peptide_trim=False)
                 )
 
         # Check that we have merged residues - counts will vary based on actual topology
-        result_by_chain = Partial_Topology.group_set_by_chain(merged_common_residues)
+        result_by_chain = group_set_by_chain(merged_common_residues)
 
         # Verify that we have substantial coverage per chain
         for chain in by_chain.keys():
@@ -519,16 +539,19 @@ class TestDataSplittingWithFeatureTopology:
             def mock_filter_func(dataset, common_topos, check_trim=False):
                 if not common_topos:
                     return []
+                from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
+
                 return [
                     dp
                     for dp in dataset
-                    if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                    if any(
+                        PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                        for ct in common_topos
+                    )
                 ]
 
             # Mock calculate_fragment_redundancy
-            patcher1 = patch(
-                "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
-            )
+            patcher1 = patch("jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy")
             patcher2 = patch(
                 "jaxent.src.data.splitting.split.filter_common_residues",
                 side_effect=mock_filter_func,
@@ -610,7 +633,7 @@ class TestDataSplittingWithFeatureTopology:
         )
 
         # Ensure we have at least 15 peptides per chain
-        by_chain = Partial_Topology.group_set_by_chain(set(feature_topology))
+        by_chain = group_set_by_chain(set(feature_topology))
         for chain in ["A", "B", "C"]:
             assert len(by_chain[chain]) >= 15
 
@@ -664,7 +687,9 @@ class TestDataSplittingWithFeatureTopology:
         # Extract individual residues for datapoints
         individual_residues = []
         for range_topo in feature_topology:
-            individual_residues.extend(range_topo.extract_residues(use_peptide_trim=False))
+            individual_residues.extend(
+                TopologyFactory.extract_residues(range_topo, use_peptide_trim=False)
+            )
 
         # Should have substantial individual residue coverage
         assert len(individual_residues) >= 200
@@ -699,7 +724,9 @@ class TestDataSplittingWithFeatureTopology:
         # Extract individual residues
         individual_residues = []
         for range_topo in feature_topology:
-            individual_residues.extend(range_topo.extract_residues(use_peptide_trim=True))
+            individual_residues.extend(
+                TopologyFactory.extract_residues(range_topo, use_peptide_trim=True)
+            )
 
         # Remove duplicates while preserving order
         seen = set()
@@ -765,7 +792,7 @@ class TestDataSplittingWithFeatureTopology:
 
 
 class TestFeatureTopologyIntegration:
-    """Integration tests for the complete pipeline from featurisation to splitting"""
+    """Integration tests for the complete pipeline from featurisation to data splitting"""
 
     def test_end_to_end_pipeline_simulation(self):
         """Simulate the complete pipeline from featurisation to data splitting - comprehensive"""
@@ -815,8 +842,7 @@ class TestFeatureTopologyIntegration:
         # Ensure substantial datapoint coverage
         assert len(datapoints) >= 90
 
-        # ...existing mocking code...
-
+        # Step 4: Mock data loader and splitter
         mock_loader = MagicMock(spec=ExpD_Dataloader)
         mock_loader.data = datapoints
         mock_loader.y_true = np.array([1.0] * len(datapoints))
@@ -825,12 +851,15 @@ class TestFeatureTopologyIntegration:
             return [
                 dp
                 for dp in dataset
-                if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                if any(
+                    PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                    for ct in common_topos
+                )
             ]
 
         with (
             patch(
-                "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
+                "jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy"
             ) as mock_calc,
             patch(
                 "jaxent.src.data.splitting.split.filter_common_residues",
@@ -897,10 +926,10 @@ class TestFeatureTopologyIntegration:
             topology_file = Path(temp_dir) / "feature_topology.json"
 
             # Save topology
-            Partial_Topology.save_list_to_json(feature_topology, topology_file)
+            PTSerialiser.save_list_to_json(feature_topology, topology_file)
 
             # Load topology
-            loaded_topology = Partial_Topology.load_list_from_json(topology_file)
+            loaded_topology = PTSerialiser.load_list_from_json(topology_file)
 
             # Verify loaded topology matches original
             assert len(loaded_topology) == len(feature_topology)
@@ -916,7 +945,9 @@ class TestFeatureTopologyIntegration:
             # Extract individual residues for datapoints
             individual_residues = []
             for topo in loaded_topology:
-                individual_residues.extend(topo.extract_residues(use_peptide_trim=False))
+                individual_residues.extend(
+                    TopologyFactory.extract_residues(topo, use_peptide_trim=False)
+                )
 
             # Create enough datapoints for valid splitting
             datapoints = [MockExpD_Datapoint(topo, i) for i, topo in enumerate(individual_residues)]
@@ -930,15 +961,20 @@ class TestFeatureTopologyIntegration:
             mock_loader.y_true = np.array([1.0] * len(datapoints))
 
             def mock_filter_func(dataset, common_topos, check_trim=False):
+                from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
+
                 return [
                     dp
                     for dp in dataset
-                    if any(dp.top.intersects(ct, check_trim=check_trim) for ct in common_topos)
+                    if any(
+                        PairwiseTopologyComparisons.intersects(dp.top, ct, check_trim=check_trim)
+                        for ct in common_topos
+                    )
                 ]
 
             with (
                 patch(
-                    "jaxent.src.interfaces.topology.Partial_Topology.calculate_fragment_redundancy"
+                    "jaxent.src.interfaces.topology.utils.calculate_fragment_redundancy"
                 ) as mock_calc,
                 patch(
                     "jaxent.src.data.splitting.split.filter_common_residues",

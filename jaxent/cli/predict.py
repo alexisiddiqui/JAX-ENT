@@ -3,16 +3,14 @@ from pathlib import Path
 
 import jax.numpy as jnp
 
+import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.base import ForwardModel
-from jaxent.src.custom_types.features import Input_Features
+from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
-from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict import run_predict
@@ -189,30 +187,14 @@ def main():
 
     # Load Input_Features
     print(f"Loading features from {args.features_path}")
-    features_data = jnp.load(args.features_path)
-
-    # Determine the correct Input_Features class based on model_type
-    input_features: Input_Features | BV_input_features | NetHDX_input_features
-    if args.model_type == "bv" or args.model_type == "linear_bv":
-        input_features = BV_input_features(
-            heavy_contacts=jnp.asarray(features_data["heavy_contacts"]),
-            acceptor_contacts=jnp.asarray(features_data["acceptor_contacts"]),
-            k_ints=jnp.asarray(features_data["k_ints"]),
-        )
-    elif args.model_type == "nethdx":
-        input_features = NetHDX_input_features(
-            contact_matrices=jnp.asarray(features_data["contact_matrices"]),
-            residue_ids=jnp.asarray(features_data["residue_ids"]),
-            network_metrics=features_data["network_metrics"]
-            if "network_metrics" in features_data
-            else None,
-        )
-    else:
-        raise ValueError(f"Unknown model type: {args.model_type}")
+    try:
+        input_features = Input_Features.load(args.features_path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Features file not found: {args.features_path}")
 
     # Load Partial_Topology
     print(f"Loading topology from {args.topology_path}")
-    topology = Partial_Topology.load_list_from_json(args.topology_path)
+    topology = pt.PTSerialiser.load_list_from_json(args.topology_path)
     print(f"Loaded {len(topology)} topology entries.")
 
     # Create ForwardModel and Model_Parameters
@@ -296,7 +278,7 @@ def main():
     output_file_path = output_path / f"{args.output_name}.npz"
     if output_features:
         first_output = output_features[0]
-        jnp.savez(output_file_path, predictions=first_output.y_pred())
+        Output_Features.save(first_output, str(output_file_path))
         print(f"Predictions saved to {output_file_path}")
     else:
         print("No output features generated.")

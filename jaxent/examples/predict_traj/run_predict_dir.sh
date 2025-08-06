@@ -1,8 +1,18 @@
 #!/bin/bash
 # Flexible script to run predict_traj.py for trajectories in a directory
 # Automatically discovers XTC files and matches them with PDB topology files
-# Usage: ./run_predict_flexible.sh [directory_name]
+# Usage: ./jaxent/examples/predict_traj/run_predict_dir.sh [directory_name]
 
+# How to include timepoints: 
+#   if python "$PREDICT_SCRIPT" \
+#         --topology "$topology_file" \
+#         --trajectory "$trajectory_file" \
+#         --output "$output_dir" \
+#         --name "${protein_name}_${trajectory_basename}_clustered_prediction" \
+#         --bv_bc 0.35 \
+#         --bv_bh 2.0 \
+#         --temperature 300.0 \
+#         --timepoints "0.167 1.0 10.0 120.0" ; then
 
 # Get directory name from argument or use default
 TARGET_DIR="${1:-TFES-500}"
@@ -63,7 +73,7 @@ find_topology_file() {
 
 # Find all trajectory files
 echo "Scanning for trajectory files (*.xtc) in $TARGET_DIRPATH"
-mapfile -t trajectory_files < <(find "$TARGET_DIRPATH" -maxdepth 1 -name "*.xtc" | sort)
+trajectory_files=($(find "$TARGET_DIRPATH" -maxdepth 1 -name "*.xtc" | sort))
 
 if [[ ${#trajectory_files[@]} -eq 0 ]]; then
     echo "Error: No trajectory files (*.xtc) found in $TARGET_DIRPATH"
@@ -129,9 +139,8 @@ for trajectory_file in "${trajectory_files[@]}"; do
         --name "${protein_name}_${trajectory_basename}_prediction" \
         --bv_bc 0.35 \
         --bv_bh 2.0 \
-        --temperature 300.0
-        # --timepoints "0.167 1.0 10.0 120.0" \  # Example timepoints, adjust as needed
-        ; then
+        --temperature 300.0; then
+        # --timepoints "0.167 1.0 10.0 120.0"   # Example timepoints, adjust as needed
         echo "  ✓ Successfully completed prediction for $protein_name"
         ((successful_predictions++))
     else

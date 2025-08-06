@@ -6,7 +6,11 @@ from jax.experimental import sparse
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.features import Input_Features
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import (
+    PairwiseTopologyComparisons,
+    Partial_Topology,
+    group_set_by_chain,
+)
 
 
 def create_sparse_map(
@@ -74,7 +78,7 @@ def create_sparse_map(
         print(f"Fragment {i}: {frag.top}")
 
     # Group topologies by chain for efficient processing
-    feature_topologies_by_chain = Partial_Topology.group_set_by_chain(set(feature_topology_sorted))
+    feature_topologies_by_chain = group_set_by_chain(set(feature_topology_sorted))
     output_topologies_by_chain = {}
     for i, exp_frag in enumerate(output_features):
         chain = exp_frag.top.chain
@@ -98,7 +102,6 @@ def create_sparse_map(
         exp_topology = exp_frag.top
         chain = exp_topology.chain
 
-        # Get active residues for this experimental fragment
         exp_active_residues = exp_topology._get_active_residues(check_trim=check_trim)
         exp_residue_count = len(exp_active_residues)
 
@@ -106,7 +109,6 @@ def create_sparse_map(
             print(f"Warning: Experimental fragment {frag_idx} has no active residues")
             continue
 
-        # Only check feature topologies from the same chain
         if chain not in feature_topologies_by_chain:
             print(f"Warning: No feature topologies found for chain {chain}")
             continue
@@ -115,25 +117,24 @@ def create_sparse_map(
 
         # Find intersecting feature topologies using robust methods
         for feat_topology in same_chain_features:
-            # Check if topologies intersect
-            if exp_topology.intersects(feat_topology, check_trim=check_trim):
-                # Get the overlapping residues
-                overlap_residues = exp_topology.get_overlap(feat_topology, check_trim=check_trim)
+            # Use PairwiseTopologyComparisons for intersection and overlap
+            if PairwiseTopologyComparisons.intersects(
+                exp_topology, feat_topology, check_trim=check_trim
+            ):
+                overlap_residues = PairwiseTopologyComparisons.get_overlap(
+                    exp_topology, feat_topology, check_trim=check_trim
+                )
 
                 if overlap_residues:
-                    # Get the feature index (this should be the position in the sorted list)
                     feat_idx = feat_topology.fragment_index
 
                     if feat_idx is None:
                         print(f"Warning: Feature topology {feat_topology} has no fragment_index")
                         continue
 
-                    # Calculate contribution weight based on overlap
-                    # Weight by the proportion of overlapping residues relative to experimental fragment
                     overlap_count = len(overlap_residues)
                     contribution_weight = overlap_count / exp_residue_count
 
-                    # Add this mapping
                     rows.append(frag_idx)
                     cols.append(feat_idx)
                     values.append(contribution_weight)
