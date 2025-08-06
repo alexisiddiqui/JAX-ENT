@@ -63,21 +63,22 @@ class Partial_Topology:
             self.peptide_trim = 0  # No trimming for non-peptides
 
         # Compute peptide residues only if peptide=True and length > trim
-        if self.peptide and self.length > self.peptide_trim:
-            peptide_res = self.residues[self.peptide_trim :]
+        trim_val = self.peptide_trim if self.peptide_trim is not None else 0
+        if self.peptide and self.length > trim_val:
+            peptide_res = self.residues[trim_val:]
             object.__setattr__(self, "peptide_residues", peptide_res)
         else:
             object.__setattr__(self, "peptide_residues", [])
 
-    def set_peptide(self, val: bool, trim: int = None) -> None:
+    def set_peptide(self, val: bool, trim: Optional[int] = None) -> None:
         """Update peptide settings and recompute peptide residues"""
         self.peptide = val
-        if trim is not None:
-            self.peptide_trim = trim
+        self.peptide_trim = trim if trim is not None else 0
 
         # Recompute peptide residues
-        if self.peptide and self.length > self.peptide_trim:
-            peptide_res = self.residues[self.peptide_trim :]
+        trim_val = self.peptide_trim if self.peptide_trim is not None else 0
+        if self.peptide and self.length > trim_val:
+            peptide_res = self.residues[trim_val:]
             object.__setattr__(self, "peptide_residues", peptide_res)
         else:
             object.__setattr__(self, "peptide_residues", [])
@@ -743,7 +744,13 @@ class Partial_Topology:
             sequences = [t.fragment_sequence for t in topologies if t.fragment_sequence]
             if sequences:
                 if all(isinstance(seq, str) for seq in sequences):
-                    merged_sequence = "".join(sequences)
+            # Only join if all are strings
+            if all(isinstance(seq, str) for seq in sequences):
+                merged_sequence = "".join(sequences)
+            elif sequences:
+                merged_sequence = sequences[0]
+            else:
+                merged_sequence = ""
                 else:
                     # If mixed types or lists, use first sequence
                     merged_sequence = sequences[0]
@@ -763,7 +770,7 @@ class Partial_Topology:
             # Use the minimum trim value from peptide inputs, or 0 if no peptides
             peptide_trims = [t.peptide_trim for t in topologies if t.peptide]
             merged_peptide = any(t.peptide for t in topologies)
-            merged_peptide_trim = min(peptide_trims) if peptide_trims else 0
+            merged_peptide_trim = min([t for t in peptide_trims if t is not None]) if peptide_trims else 0
         else:
             # If trim=False, result is not a peptide
             merged_peptide = False
@@ -1099,7 +1106,11 @@ class Partial_Topology:
             # Create renumbering mapping from the list of ALL included residues for the chain,
             # not just the ones in the current selection. This ensures consistent numbering.
             if renumber_residues:
-                final_residue_mapping = {res.resid: i for i, res in enumerate(included_residues, 1)}
+                # If excluding termini, start numbering from 2 (since first residue is excluded)
+                if exclude_termini and len(full_chain_residues) > 2:
+                    final_residue_mapping = {res.resid: i+1 for i, res in enumerate(included_residues)}
+                else:
+                    final_residue_mapping = {res.resid: i for i, res in enumerate(included_residues, 1)}
             else:
                 # When not renumbering, the mapping is identity for all residues in the chain
                 final_residue_mapping = {res.resid: res.resid for res in full_chain_residues}

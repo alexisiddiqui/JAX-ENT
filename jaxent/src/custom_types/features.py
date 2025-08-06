@@ -155,14 +155,17 @@ class AbstractFeatures(ABC):
             actual_class = getattr(module, class_name)
 
             # Verify that the loaded class is compatible with the calling class
-            if not issubclass(actual_class, cls):
+            if not np.issubdtype(actual_class, cls):
                 raise TypeError(
-                    f"Loaded class {actual_class.__name__} is not a subclass of {cls.__name__}"
+                    f"Loaded class {actual_class.__name__} is not compatible with {cls.__name__}"
                 )
 
             # Extract arrays in the correct order, handling None values
             arrays = tuple(
-                data[slot].item() if isinstance(data[slot], np.ndarray) and data[slot].shape == () and data[slot].item() is None
+                data[slot].item()
+                if isinstance(data[slot], np.ndarray)
+                and data[slot].shape == ()
+                and data[slot].item() is None
                 else data[slot]
                 for slot in dynamic_slots
             )
@@ -216,7 +219,7 @@ class AbstractFeatures(ABC):
         Raises:
             FileNotFoundError: If the file doesn't exist.
         """
-        if not filepath.endswith(".npz"):
+        if not str(filepath).endswith(".npz"):
             filepath += ".npz"
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Features file not found: {filepath}")
@@ -235,7 +238,11 @@ class AbstractFeatures(ABC):
             if slot_name in data:
                 loaded_value = data[slot_name]
                 # Check if the loaded value is a NumPy array containing a single None
-                if isinstance(loaded_value, np.ndarray) and loaded_value.shape == () and loaded_value.item() is None:
+                if (
+                    isinstance(loaded_value, np.ndarray)
+                    and loaded_value.shape == ()
+                    and loaded_value.item() is None
+                ):
                     features_kwargs[slot_name] = None
                 else:
                     features_kwargs[slot_name] = loaded_value

@@ -1,7 +1,20 @@
 #!/bin/bash
 # Comprehensive script to run clustering followed by predict_traj.py
 # First clusters trajectories, then runs predictions on the clustered output
-# Usage: ./run_cluster_and_predict.sh [directory_name] [number_of_clusters] [num_components]
+# Usage: ./jaxent/examples/predict_traj/run_predict_dir.sh [directory_name] [number_of_clusters] [num_components]
+
+# How to include timepoints: 
+#   if python "$PREDICT_SCRIPT" \
+#         --topology "$topology_file" \
+#         --trajectory "$clustered_trajectory" \
+#         --output "$output_dir" \
+#         --name "${protein_name}_${trajectory_basename}_clustered_prediction" \
+#         --bv_bc 0.35 \
+#         --bv_bh 2.0 \
+#         --temperature 300.0 \
+#         --timepoints "0.167 1.0 10.0 120.0" ; then
+
+
 
 # Get arguments or use defaults
 TARGET_DIR="${1:-TFES-500}"
@@ -128,8 +141,7 @@ run_prediction() {
         --bv_bc 0.35 \
         --bv_bh 2.0 \
         --temperature 300.0 \
-        # --timepoints "0.167 1.0 10.0 120.0" \  # Example timepoints, adjust as needed
-        ; then
+        --timepoints 0.167 1.0 10.0 120.0 ; then
         echo "  ✓ Prediction completed successfully"
         return 0
     else
@@ -141,7 +153,7 @@ run_prediction() {
 
 # Find all trajectory files
 echo "Scanning for trajectory files (*.xtc) in $TARGET_DIRPATH"
-mapfile -t trajectory_files < <(find "$TARGET_DIRPATH" -maxdepth 1 -name "*.xtc" | sort)
+trajectory_files=($(find "$TARGET_DIRPATH" -maxdepth 1 -name "*.xtc" | sort))
 
 if [[ ${#trajectory_files[@]} -eq 0 ]]; then
     echo "Error: No trajectory files (*.xtc) found in $TARGET_DIRPATH"

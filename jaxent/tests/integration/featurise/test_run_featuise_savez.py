@@ -70,8 +70,8 @@ def test_featurise_save_load():
         k_ints=features_set.k_ints,
     )
 
-    # STEP 2: Convert topology to JSON-serializable format using its to_dict method
-    topology_dicts = [top.to_dict() for top in topology_set]
+    # STEP 2: Convert topology to JSON-serializable format using its _to_dict method
+    topology_dicts = [top._to_dict() for top in topology_set]
 
     # Save topologies as JSON
     topology_path = output_dir / "topology.json"
@@ -98,7 +98,7 @@ def test_featurise_save_load():
     # Reconstruct Partial_Topology objects using from_dict
     from jaxent.src.interfaces.topology import Partial_Topology
 
-    loaded_topology = [Partial_Topology.from_dict(td) for td in loaded_topology_dicts]
+    loaded_topology = [Partial_Topology._from_dict(td) for td in loaded_topology_dicts]
 
     # STEP 5: Verify data integrity
     print("Verifying data integrity...")

@@ -4,8 +4,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from custom_types.features import Output_Features
 
 from jaxent.src.utils.jit_fn import jit_Guard
+from jaxent.tests.test_utils import get_inst_path
 
 
 @pytest.fixture(scope="module")
@@ -15,15 +17,17 @@ def featurised_data():
         featurise_output_dir = tmp_path / "featurisation_output"
         featurise_output_dir.mkdir()
 
-        topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-        trajectory_path = (
-            "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-        )
-        featurise_script_path = "/home/alexi/Documents/JAX-ENT/jaxent/cli/featurise.py"
+        inst_dir = get_inst_path(Path(__file__).parent.parent.parent.parent)
+        topology_path = inst_dir / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+        trajectory_path = inst_dir / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+
+        if not topology_path.exists() or not trajectory_path.exists():
+            raise FileNotFoundError(
+                f"Required files not found: {topology_path} or {trajectory_path}"
+            )
 
         featurise_command = [
-            "python",
-            featurise_script_path,
+            "jaxent-featurise",
             "--top_path",
             str(topology_path),
             "--trajectory_path",
@@ -45,7 +49,7 @@ def featurised_data():
             "--peptide_trim",
             "2",
             "--mda_selection_exclusion",
-            "resname PRO or resid 1",
+            "resname PRO",
         ]
 
         print(f"Running featurise command: {' '.join(featurise_command)}")
@@ -76,7 +80,6 @@ def test_cli_forward_bv_model(featurised_data):
         forward_output_dir.mkdir()
 
         # Use absolute paths from the project root
-        forward_script_path = "/home/alexi/Documents/JAX-ENT/jaxent/cli/forward.py"
 
         features_npz_path, topology_json_path = featurised_data
 
@@ -88,8 +91,7 @@ def test_cli_forward_bv_model(featurised_data):
         random_weights /= np.sum(random_weights)  # Normalize to sum to 1
 
         forward_command = [
-            "python",
-            forward_script_path,
+            "jaxent-forward",
             "--features_path",
             str(features_npz_path),
             "--topology_path",
@@ -130,9 +132,9 @@ def test_cli_forward_bv_model(featurised_data):
             prediction_path = forward_output_dir / f"test_bv_forward_{i}.npz"
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Use BV_output_features.load instead of np.load
+            output_features = Output_Features.load(str(prediction_path))
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
@@ -160,7 +162,6 @@ def test_cli_forward_bv_model_uptake(featurised_data):
         forward_output_dir.mkdir()
 
         # Use absolute paths from the project root
-        forward_script_path = "/home/alexi/Documents/JAX-ENT/jaxent/cli/forward.py"
 
         features_npz_path, topology_json_path = featurised_data
 
@@ -172,8 +173,7 @@ def test_cli_forward_bv_model_uptake(featurised_data):
         random_weights /= np.sum(random_weights)  # Normalize to sum to 1
 
         forward_command = [
-            "python",
-            forward_script_path,
+            "jaxent-forward",
             "--features_path",
             str(features_npz_path),
             "--topology_path",
@@ -217,9 +217,9 @@ def test_cli_forward_bv_model_uptake(featurised_data):
             prediction_path = forward_output_dir / f"test_bv_forward_{i}.npz"
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Use uptake_BV_output_features.load instead of np.load
+            output_features = Output_Features.load(str(prediction_path))
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
@@ -245,7 +245,6 @@ def test_cli_forward_multiple_simulations(featurised_data):
         forward_output_dir = tmp_path / "forward_output_multi"
         forward_output_dir.mkdir()
 
-        forward_script_path = "/home/alexi/Documents/JAX-ENT/jaxent/cli/forward.py"
         features_npz_path, topology_json_path = featurised_data
 
         num_simulations = 3
@@ -271,8 +270,7 @@ def test_cli_forward_multiple_simulations(featurised_data):
                 current_timepoints_args = ["--timepoints"] + timepoints_list[i].split()
 
             forward_command = [
-                "python",
-                forward_script_path,
+                "jaxent-forward",
                 "--features_path",
                 str(features_npz_path),
                 "--topology_path",
@@ -292,10 +290,12 @@ def test_cli_forward_multiple_simulations(featurised_data):
                 str(bv_bhs[i]),
                 "--temperature",
                 str(temperatures[i]),
-                *current_timepoints_args,
-                "--frame_weights",
-                *[str(w) for w in random_weights],
             ]
+
+            if timepoints_list[i] is not None:
+                forward_command.extend(["--timepoints"] + timepoints_list[i].split())
+
+            forward_command.extend(["--frame_weights"] + [str(w) for w in random_weights])
 
             print(f"Running forward command (Sim {i}): {' '.join(forward_command[:20])}...")
             forward_result = subprocess.run(
@@ -315,9 +315,12 @@ def test_cli_forward_multiple_simulations(featurised_data):
             )  # _0 because num_simulations is 1
             assert prediction_path.exists(), f"Output file for simulation {i} not found."
 
-            predictions_data = np.load(prediction_path)
-            assert "predictions" in predictions_data
-            predictions = predictions_data["predictions"]
+            # Choose loader based on num_timepoints
+
+            output_features = Output_Features.load(str(prediction_path))
+            print(f"Output features  {output_features}")
+
+            predictions = output_features.y_pred()
 
             print(f"\n--- Prediction Summary Statistics (Sim {i}) ---")
             print(f"Shape: {predictions.shape}")
