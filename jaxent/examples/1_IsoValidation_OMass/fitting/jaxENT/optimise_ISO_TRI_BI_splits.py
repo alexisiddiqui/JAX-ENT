@@ -10,21 +10,21 @@ This script is used to fit:
 - The fitting is performed over converagence rates 1e-3 to 1e-10 this is performed using the optimise_sweep function.
 The data are saved using hdf5 format.
 
+Usage:
+python optimise_ISO_TRI_BI_splits.py --split-types all
+python optimise_ISO_TRI_BI_splits.py --split-types random,sequence,sequence_cluster,stratified,spatial
 
 
 """
 
+import argparse  # <-- Add this import
 import copy
 import os
-import time
-from typing import List, Optional, Sequence, Tuple, cast
+import time  # <-- Add this import
+from typing import List, Sequence, Tuple, cast
 
 import jax
 import jax.numpy as jnp
-import numpy as np
-import pandas as pd
-from MDAnalysis import Universe
-from scipy.spatial.distance import pdist, squareform
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.features import Output_Features
@@ -40,100 +40,12 @@ from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.losses import (
     hdx_uptake_mean_centred_MSE_loss,
     hdx_uptake_MSE_loss,
-    maxent_convexKL_loss,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
 from jaxent.src.utils.hdf import (
     save_optimization_history_to_file,
 )
 from jaxent.src.utils.jit_fn import jit_Guard
-
-
-def load_hdx_peptides(directory: str, dataset_name: str = "full_dataset") -> List[HDX_peptide]:
-    """
-    Load HDX_peptide objects from a directory containing topology JSON and dfrac CSV files.
-
-    Args:
-        directory: Directory containing the JSON and CSV files
-        dataset_name: Base name of the files (e.g., 'train', 'val', 'full_dataset')
-
-    Returns:
-        List of HDX_peptide objects
-
-    Raises:
-        FileNotFoundError: If required files are not found
-        ValueError: If topology and dfrac data have mismatched lengths
-    """
-    # Construct file paths
-    topology_file = os.path.join(directory, f"{dataset_name}_topology.json")
-    dfrac_file = os.path.join(directory, f"{dataset_name}_dfrac.csv")
-
-    # Check if files exist
-    if not os.path.exists(topology_file):
-        raise FileNotFoundError(f"Topology file not found: {topology_file}")
-    if not os.path.exists(dfrac_file):
-        raise FileNotFoundError(f"Dfrac file not found: {dfrac_file}")
-
-    # Load topology data
-    topologies: List[pt.Partial_Topology] = pt.PTSerialiser.load_list_from_json(topology_file)
-
-    # Load dfrac data
-    dfrac_df = pd.read_csv(dfrac_file, header=None)
-    dfrac_array: np.ndarray = dfrac_df.to_numpy()
-
-    # Validate data consistency
-    if len(topologies) != len(dfrac_array):
-        raise ValueError(
-            f"Mismatch between topology count ({len(topologies)}) "
-            f"and dfrac data count ({len(dfrac_array)})"
-        )
-
-    # Create HDX_peptide objects
-    hdx_peptides: List[HDX_peptide] = [
-        HDX_peptide(dfrac=dfrac_array[i].tolist(), top=topologies[i])
-        for i in range(len(topologies))
-    ]
-
-    print(f"Loaded {len(hdx_peptides)} HDX_peptide objects from {directory}")
-    print(f"  Topology: {topology_file}")
-    print(f"  Dfrac: {dfrac_file} (shape: {dfrac_array.shape})")
-
-    return hdx_peptides
-
-
-def load_BV_features(
-    feature_path: str,
-    feature_top_path: Optional[str] = None,
-) -> tuple[BV_input_features, list[pt.Partial_Topology]]:
-    """
-    Load BV input features from a file.
-
-    Args:
-        feature_path: Path to the features file.
-        feature_top_path: Path to the topology features file.
-
-    Returns:
-        Tuple containing BV_input_features and list of Partial_Topology objects.
-    """
-    if feature_top_path is None:
-        feature_top_path = feature_path.replace(".npz", ".json").replace("features_", "topology_")
-    if not os.path.exists(feature_path):
-        raise FileNotFoundError(f"Features file not found: {feature_path}")
-    if not os.path.exists(feature_top_path):
-        raise FileNotFoundError(f"Topology features file not found: {feature_top_path}")
-
-    # Load features
-    jnp_features = np.load(feature_path, allow_pickle=True)
-
-    feat_top = pt.PTSerialiser.load_list_from_json(feature_top_path)
-
-    features = BV_input_features(
-        heavy_contacts=jnp_features["heavy_contacts"],
-        acceptor_contacts=jnp_features["acceptor_contacts"],
-        k_ints=jnp_features["k_ints"],
-    )
-
-    return (features, feat_top)
 
 
 def create_data_loaders(
@@ -280,7 +192,6 @@ def run_optimise_ISO_TRI_BI(
     feature_top: List[pt.Partial_Topology],
     convergence: List[float],
     loss_function: JaxEnt_Loss,
-    pairwise_similarity: jax.Array,
     n_steps: int = 10,
     name: str = "ISO_TRI_BI",
     output_dir: str = "_optimise",
@@ -300,9 +211,9 @@ def run_optimise_ISO_TRI_BI(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, 1.0]),  # Added weight for consistency loss
-        normalise_loss_functions=jnp.ones(2),  # Adjusted for 3 loss functions
-        forward_model_scaling=jnp.ones(2),  # Adjusted for 3 loss functions
+        forward_model_weights=jnp.array([1.0]),
+        normalise_loss_functions=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
     )
 
     # create initialised simulation
@@ -319,15 +230,12 @@ def run_optimise_ISO_TRI_BI(
     )
     _, optimizer = optimise_sweep(
         _simulation=sim,
-        data_to_fit=(data_to_fit, parameters),  # Added pairwise_similarity
+        data_to_fit=(data_to_fit,),
         n_steps=n_steps,
         tolerance=1e-10,
         convergence=convergence,
-        indexes=[0, 0],  # Adjusted for 3 loss functions
-        loss_functions=[
-            loss_function,
-            maxent_convexKL_loss,
-        ],  # Added consistency loss
+        indexes=[0],
+        loss_functions=[loss_function],
         opt_state=opt_state,
         optimizer=optimizer,
     )
@@ -339,12 +247,11 @@ def run_optimise_ISO_TRI_BI(
     save_optimization_history_to_file(filename=output_path, history=optimizer.history)
 
 
-def main():
+def main(split_types_arg=None, n_steps=10000, num_splits=3):
     # define parameters
     ensembles = ["ISO_TRI", "ISO_BI"]
     losses = {"mcMSE": hdx_uptake_mean_centred_MSE_loss, "MSE": hdx_uptake_MSE_loss}
-    n_steps = 10000  # Increased from 10 for proper optimization
-    num_splits = 3
+    # n_steps and num_splits now come from function arguments
 
     # Define convergence criteria from 1e-3 to 1e-10 as mentioned in docstring
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
@@ -365,7 +272,15 @@ def main():
         "ISO_BI": os.path.join(features_dir, "features_iso_bi.npz"),
     }
 
-    features = {key: load_BV_features(path) for key, path in feature_paths.items()}
+    features = {
+        key: (
+            BV_input_features.load(path),
+            pt.PTSerialiser.load_list_from_json(
+                path.replace("features_", "topology_").replace(".npz", ".json")
+            ),
+        )
+        for key, path in feature_paths.items()
+    }
 
     # Setup BV model configuration
     bv_config = BV_model_Config(num_timepoints=5)
@@ -375,7 +290,7 @@ def main():
     print(bv_model.config.key)  # Print the model key for debugging
 
     # Create base output directory
-    output_base_dir = "_optimise_cKL"
+    output_base_dir = "_optimise"
     output_base_dir = os.path.join(os.path.dirname(__file__), output_base_dir)
     os.makedirs(output_base_dir, exist_ok=True)
 
@@ -387,9 +302,18 @@ def main():
     if "full_dataset" in split_types:
         split_types.remove("full_dataset")  # Exclude the full_dataset directory from split types
     split_types.sort()  # Ensure consistent order
-    # split_types = ["sequence_cluster"] # Uncomment this line if you only want to run for a specific split type
 
-    # Run optimization for all combinations
+    # Filter split_types if argument provided
+    if split_types_arg is not None:
+        if split_types_arg == "all":
+            pass  # Use all discovered split types
+        else:
+            requested = [s.strip() for s in split_types_arg.split(",")]
+            split_types = [s for s in split_types if s in requested]
+            if not split_types:
+                raise ValueError(f"No valid split types selected from: {requested}")
+
+    # Run optimization for all combinationsj
     total_runs = len(ensembles) * len(losses) * num_splits * len(split_types)
     current_run = 0
 
@@ -404,29 +328,6 @@ def main():
 
     total_start_time = time.time()  # Start total timer
 
-    # Define trajectory and topology paths based on the featurise_ISO_TRI_BI.py script
-    # These paths are relative to the JAX-ENT project root or can be made absolute.
-    # For consistency, let's construct absolute paths based on the project structure.
-    base_traj_dir = os.path.join(
-        os.path.dirname(__file__), "../../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
-    )
-
-    topology_file = os.path.join(base_traj_dir, "TeaA_ref_closed_state.pdb")
-    topology_file = os.path.join(base_traj_dir, "TeaA_ref_closed_state.pdb")
-    tri_modal_traj_file = os.path.join(
-        base_traj_dir,
-        "sliced_trajectories/TeaA_filtered_sliced.xtc",
-    )
-    bi_modal_traj_file = os.path.join(
-        base_traj_dir, "sliced_trajectories/TeaA_initial_sliced.xtc"
-    )  # Check if the trajectory and topology files exist
-    if not os.path.exists(topology_file):
-        raise FileNotFoundError(f"Topology file not found: {topology_file}")
-    if not os.path.exists(tri_modal_traj_file):
-        raise FileNotFoundError(f"Tri-modal trajectory file not found: {tri_modal_traj_file}")
-    if not os.path.exists(bi_modal_traj_file):
-        raise FileNotFoundError(f"Bi-modal trajectory file not found: {bi_modal_traj_file}")
-
     for split_type in split_types:
         print(f"\n-- Processing split type: {split_type} --")
         split_type_dir = os.path.join(datasplit_dir, split_type)
@@ -438,8 +339,15 @@ def main():
         try:
             for split_idx in range(num_splits):
                 split_path = os.path.join(split_type_dir, f"split_{split_idx:03d}")
-                train_data = load_hdx_peptides(split_path, dataset_name="train")
-                val_data = load_hdx_peptides(split_path, dataset_name="val")
+
+                train_data = HDX_peptide.load_list_from_files(
+                    json_path=os.path.join(split_path, "train_topology.json"),
+                    csv_path=os.path.join(split_path, "train_dfrac.csv"),
+                )
+                val_data = HDX_peptide.load_list_from_files(
+                    json_path=os.path.join(split_path, "val_topology.json"),
+                    csv_path=os.path.join(split_path, "val_dfrac.csv"),
+                )
                 splits.append((train_data, val_data))
         except FileNotFoundError as e:
             print(f"Could not load splits for {split_type}. Skipping. Error: {e}")
@@ -448,29 +356,6 @@ def main():
         for ensemble in ensembles:
             print(f"\nProcessing ensemble: {ensemble}")
             ensemble_features, ensemble_feature_top = features[ensemble]
-
-            # Determine the correct trajectory path for the current ensemble
-            current_trajectory_path = ""
-            if ensemble == "ISO_TRI":
-                current_trajectory_path = tri_modal_traj_file
-            elif ensemble == "ISO_BI":
-                current_trajectory_path = bi_modal_traj_file
-            else:
-                raise ValueError(f"Unknown ensemble type: {ensemble}")
-
-            # Calculate pairwise similarity matrix for the current ensemble
-            print(f"Calculating pairwise similarity for {ensemble} using {current_trajectory_path}")
-            universe = Universe(topology_file, current_trajectory_path)
-            ca_atoms = universe.select_atoms("name CA")
-
-            ca_coords_by_frame = []
-            for ts in universe.trajectory:
-                ca_coords_by_frame.append(pdist(ca_atoms.positions).flatten())
-
-            ca_coords_matrix = np.vstack(ca_coords_by_frame)
-            cosine_distances = squareform(pdist(ca_coords_matrix, metric="cosine"))
-            pairwise_similarity = jnp.array(cosine_distances)
-            print(f"Pairwise similarity matrix shape for {ensemble}: {pairwise_similarity.shape}")
 
             for loss_name, loss_function in losses.items():
                 print(f"  Using loss function: {loss_name}")
@@ -496,7 +381,6 @@ def main():
                             feature_top=ensemble_feature_top,
                             convergence=convergence_rates,
                             loss_function=loss_function,
-                            pairwise_similarity=pairwise_similarity,
                             n_steps=n_steps,
                             name=run_name,
                             output_dir=output_dir,
@@ -523,4 +407,24 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Optimise ISO_TRI/BI splits.")
+    parser.add_argument(
+        "--split-types",
+        type=str,
+        default="all",
+        help="Comma-separated list of split types to run (e.g. 'random,sequence'). Use 'all' for all types.",
+    )
+    parser.add_argument(
+        "--n-steps",
+        type=int,
+        default=10000,
+        help="Number of optimization steps per run (default: 10000).",
+    )
+    parser.add_argument(
+        "--n-replicates",
+        type=int,
+        default=3,
+        help="Number of replicates (splits) per split type (default: 3).",
+    )
+    args = parser.parse_args()
+    main(split_types_arg=args.split_types, n_steps=args.n_steps, num_splits=args.n_replicates)

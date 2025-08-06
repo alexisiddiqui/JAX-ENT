@@ -121,23 +121,38 @@ def slice_trajectories(data_dir, interval=100):
     print(f"Slicing complete. Sliced trajectories are available in {sliced_dir}")
 
 
-def plot_trajectory_assignments(assignments, output_path):
+def plot_trajectory_assignments(assignments, output_path, rmsd_to_closed=None, rmsd_to_open=None):
     """
     Plot state assignments along the trajectory.
+    Optionally, also plot RMSD to closed and open reference for each frame.
 
     Parameters:
     assignments (list): List of state assignments for each frame
     output_path (str): Path to save the plot
+    rmsd_to_closed (array, optional): RMSD values to closed reference
+    rmsd_to_open (array, optional): RMSD values to open reference
     """
-    fig, ax = plt.subplots(1, 1, figsize=(12, 4))
+    # Determine if RMSD arrays are provided and valid
+    plot_rmsd = rmsd_to_closed is not None and rmsd_to_open is not None
+
+    if plot_rmsd:
+        fig, axes = plt.subplots(
+            3, 1, figsize=(12, 10), sharex=True, gridspec_kw={"height_ratios": [1, 1, 2]}
+        )
+        ax_assign = axes[0]
+        ax_rmsd_closed = axes[1]
+        ax_rmsd_open = axes[2]
+    else:
+        fig, ax_assign = plt.subplots(1, 1, figsize=(12, 4))
 
     frame_numbers = np.arange(len(assignments))
     colors = {"closed": "blue", "open": "red", "both": "purple", "unassigned": "gray"}
 
+    # Assignment plot
     for assignment in ["closed", "open", "both", "unassigned"]:
         mask = np.array(assignments) == assignment
         if np.any(mask):
-            ax.scatter(
+            ax_assign.scatter(
                 frame_numbers[mask],
                 np.ones(np.sum(mask)),
                 c=colors[assignment],
@@ -146,18 +161,37 @@ def plot_trajectory_assignments(assignments, output_path):
                 s=20,
             )
 
-    ax.set_xlabel("Frame Number")
-    ax.set_ylabel("State Assignment")
-    ax.set_title("State Assignment Along Trajectory")
-    ax.legend()
-    ax.set_ylim(0.5, 1.5)
-    ax.set_yticks([1])
-    ax.set_yticklabels(["Assignment"])
-    ax.grid(True, alpha=0.3)
+    ax_assign.set_ylabel("State Assignment")
+    ax_assign.set_title("State Assignment Along Trajectory")
+    ax_assign.legend()
+    ax_assign.set_ylim(0.5, 1.5)
+    ax_assign.set_yticks([1])
+    ax_assign.set_yticklabels(["Assignment"])
+    ax_assign.grid(True, alpha=0.3)
 
-    plt.tight_layout()
-    plt.savefig(output_path.replace(".png", "_assignments.png"), dpi=300, bbox_inches="tight")
-    plt.close()
+    # RMSD plots if data provided
+    if plot_rmsd:
+        ax_rmsd_closed.plot(frame_numbers, rmsd_to_closed, color="blue", label="RMSD to Closed")
+        ax_rmsd_closed.set_ylabel("RMSD to Closed (Å)")
+        ax_rmsd_closed.set_title("RMSD to Closed Reference")
+        ax_rmsd_closed.grid(True, alpha=0.3)
+        ax_rmsd_closed.legend()
+
+        ax_rmsd_open.plot(frame_numbers, rmsd_to_open, color="red", label="RMSD to Open")
+        ax_rmsd_open.set_ylabel("RMSD to Open (Å)")
+        ax_rmsd_open.set_title("RMSD to Open Reference")
+        ax_rmsd_open.grid(True, alpha=0.3)
+        ax_rmsd_open.legend()
+
+        ax_rmsd_open.set_xlabel("Frame Number")
+        plt.tight_layout()
+        plt.savefig(output_path.replace(".png", "_assignments.png"), dpi=300, bbox_inches="tight")
+        plt.close()
+    else:
+        ax_assign.set_xlabel("Frame Number")
+        plt.tight_layout()
+        plt.savefig(output_path.replace(".png", "_assignments.png"), dpi=300, bbox_inches="tight")
+        plt.close()
 
 
 def plot_rmsd_paired_distances(
@@ -300,10 +334,10 @@ def create_TeaA_filtered_trajectories(data_dir, interval=100):
 
     # Create plots
     print("  Creating analysis plots...")
-    plot_path = os.path.join(sliced_dir, "TeaA_RMSD_analysis.png")
-
-    # Create assignment plot
-    plot_trajectory_assignments(assignments, plot_path)
+    plot_path = os.path.join(os.path.dirname(__file__), "_output", "TeaA_RMSD_analysis.png")
+    os.makedirs(os.path.dirname(plot_path), exist_ok=True)
+    # Create assignment plot (now with RMSD arrays)
+    plot_trajectory_assignments(assignments, plot_path, rmsd_to_closed_array, rmsd_to_open_array)
     print(f"  Saved assignment plot to {plot_path.replace('.png', '_assignments.png')}")
 
     # Create paired distance plot
