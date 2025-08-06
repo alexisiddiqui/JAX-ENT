@@ -13,38 +13,10 @@ import numpy as np
 import pandas as pd
 
 import jaxent.src.interfaces.topology as pt
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.split import DataSplitter
-
-
-def save_split_data(data: list[HDX_peptide], split_dir: str, split_name: str) -> None:
-    """
-    Save split data (topology as JSON and dfrac as CSV)
-
-    Args:
-        data: list of HDX_peptide objects
-        split_dir: Directory to save the split data
-        split_name: Name prefix for the files (e.g., 'train', 'val')
-    """
-    # Extract topologies and dfrac data
-    topologies: list[pt.Partial_Topology] = [item.top for item in data]
-    dfrac_data: list[list[float]] = [item.dfrac for item in data]
-
-    # Stack dfrac data along 0th axis
-    dfrac_array: np.ndarray = np.array(dfrac_data)  # Shape: (n_peptides, n_timepoints)
-
-    # Save topology as JSON
-    topology_file = os.path.join(split_dir, f"{split_name}_topology.json")
-    pt.PTSerialiser.save_list_to_json(topologies, topology_file)
-
-    # Save dfrac data as CSV
-    dfrac_file = os.path.join(split_dir, f"{split_name}_dfrac.csv")
-    pd.DataFrame(dfrac_array).to_csv(dfrac_file, index=False, header=False)
-
-    print(f"  {split_name}: {len(data)} samples saved")
-    print(f"    Topology: {topology_file}")
-    print(f"    Dfrac: {dfrac_file} (shape: {dfrac_array.shape})")
 
 
 def run_data_splits(
@@ -84,7 +56,7 @@ def run_data_splits(
             common_residues=set(feature_topology),
             peptide_trim=1,
             centrality=False,
-            check_trim=False,
+            check_trim=True,
             random_seed=42 * split_idx,  # Different seed for each split
         )
 
@@ -112,11 +84,18 @@ def run_data_splits(
         print(f"Validation data size: {len(val_data)}")
 
         # Save training data
-        save_split_data(train_data, split_dir, "train")
-
+        # save_split_data(train_data, split_dir, "train")
+        ExpD_Datapoint.save_list_to_files(
+            train_data,
+            json_path=os.path.join(split_dir, "train_topology.json"),
+            csv_path=os.path.join(split_dir, "train_dfrac.csv"),
+        )
         # Save validation data
-        save_split_data(val_data, split_dir, "val")
-
+        ExpD_Datapoint.save_list_to_files(
+            val_data,
+            json_path=os.path.join(split_dir, "val_topology.json"),
+            csv_path=os.path.join(split_dir, "val_dfrac.csv"),
+        )
         print(f"Split {split_idx + 1} saved to {split_dir}")
 
 
@@ -163,7 +142,7 @@ def main() -> None:
     HDX_topology: list[pt.Partial_Topology] = [
         pt.TopologyFactory.from_range(
             chain=chain,
-            start=seg[1],
+            start=seg[0],
             end=seg[1],
             fragment_index=idx,
             peptide=True,
@@ -183,7 +162,11 @@ def main() -> None:
     # Save the full loaded dataset
     print(f"\nSaving full dataset to {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
-    save_split_data(HDX_data, output_dir, "full_dataset")
+    ExpD_Datapoint.save_list_to_files(
+        HDX_data,
+        json_path=os.path.join(output_dir, "full_dataset_topology.json"),
+        csv_path=os.path.join(output_dir, "full_dataset_dfrac.csv"),
+    )
 
     # Run multiple data splits for each split type
     split_types = ["random", "sequence", "sequence_cluster", "stratified", "spatial"]
