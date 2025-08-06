@@ -15,21 +15,32 @@ import seaborn as sns
 from matplotlib.colors import ListedColormap
 
 import jaxent.src.interfaces.topology as pt
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+from jaxent.src.custom_types.HDX import HDX_peptide
 
 
 def load_split_data(
     split_dir: str,
 ) -> tuple[list[pt.Partial_Topology], np.ndarray, list[pt.Partial_Topology], np.ndarray]:
-    """Load data for a single split."""
+    """Load data for a single split using ExpD_Datapoint loader."""
     train_top_file = os.path.join(split_dir, "train_topology.json")
     train_dfrac_file = os.path.join(split_dir, "train_dfrac.csv")
     val_top_file = os.path.join(split_dir, "val_topology.json")
     val_dfrac_file = os.path.join(split_dir, "val_dfrac.csv")
 
-    train_top = pt.PTSerialiser.load_list_from_json(train_top_file)
-    train_dfrac = pd.read_csv(train_dfrac_file, header=None).to_numpy()
-    val_top = pt.PTSerialiser.load_list_from_json(val_top_file)
-    val_dfrac = pd.read_csv(val_dfrac_file, header=None).to_numpy()
+    # Use ExpD_Datapoint loader to get HDX_peptide objects
+    train_datapoints = ExpD_Datapoint.load_list_from_files(
+        json_path=train_top_file, csv_path=train_dfrac_file, datapoint_class=HDX_peptide
+    )
+    val_datapoints = ExpD_Datapoint.load_list_from_files(
+        json_path=val_top_file, csv_path=val_dfrac_file, datapoint_class=HDX_peptide
+    )
+
+    # Extract topology and dfrac arrays
+    train_top = [dp.top for dp in train_datapoints]
+    train_dfrac = np.array([dp.extract_features() for dp in train_datapoints])
+    val_top = [dp.top for dp in val_datapoints]
+    val_dfrac = np.array([dp.extract_features() for dp in val_datapoints])
 
     return train_top, train_dfrac, val_top, val_dfrac
 
