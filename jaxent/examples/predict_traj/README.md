@@ -15,10 +15,12 @@ We provide methods to cluster the trajectories
 # Examples:
 
 ## Predict entire directory of trajectories
-
-./run_predict_dir.sh [dir_name]
+```
+./jaxent/examples/predict_traj/run_predict_dir.sh [dir_name]
+```
 - to change this to predict uptake, provide the time points in the bash scripts
 ## Predict on clustered trajectories
-
-./run_predict_dir_cluster.sh [dir_name] [num_clusters] [num_pca_components]
+```
+./jaxent/examples/predict_traj/run_predict_dir_cluster.sh [dir_name] [num_clusters] [num_pca_components]
+```
 - to change this to predict uptake, provide the time points in the bash scripts

@@ -11,6 +11,16 @@ total example dir ~1GB, required _Bradshaw folder within ~275MB
 ### All paths are relative to the scripts themselves - you are intended to run the scripts from the main repo dir: JAX-ENT/
 
 # Instructions
+```
+cd /path/to/installdir/
+rm -rf JAX-ENT/
+git clone https://github.com/alexisiddiqui/JAX-ENT.git
+cd JAX-ENT/
+uv venv
+source .venv/bin/activate
+uv pip install -e .  # you dont need extra flags for the examples to work
+
+​```
 
 [Optional]: Download the '_Bradshaw' folder from the latest 'ValDXer_500' directory in the google drive link above into the 'data' folder.
 
@@ -40,7 +50,7 @@ Note: Expected run time ~3-5 minutes
 - This will run the optimisation loop over convergence thresholds : 10e-3 - 10e-10 for both bi-modal and tri-modal ensembles over all split types (5) and replicates (3)
 
 Note: Expected run time ~40-50 minutes. This can be reduced by lowering n_steps and n_replicates or reducing the split_types run for using the script arguments for optimise_ISO_TRI_BI_splits.py. Setting:
-```python
+```
 python fitting/jaxENT/optimise_ISO_TRI_BI_splits.py --split-types random, sequence_cluster, spatial --n-steps 1000  --n-replicates 3
 ```
 This should take ~15-20 minutes.
@@ -50,3 +60,5 @@ This should take ~15-20 minutes.
 
 6. Run: analysis/ratio_recovery_ISO_TRI_BI.py
 - This will run analysis of the weights across convergence thresholds and plot the open state recovery% as well the KL divergence (Work Done) across split types and replicates.
+
+
