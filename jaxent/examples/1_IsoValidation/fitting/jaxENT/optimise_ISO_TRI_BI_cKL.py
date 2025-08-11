@@ -300,7 +300,7 @@ def run_optimise_ISO_TRI_BI(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, 1.0]),  # Added weight for consistency loss
+        forward_model_weights=jnp.array([1.0, 0.1]),  # Added weight for consistency loss
         normalise_loss_functions=jnp.ones(2),  # Adjusted for 3 loss functions
         forward_model_scaling=jnp.ones(2),  # Adjusted for 3 loss functions
     )
