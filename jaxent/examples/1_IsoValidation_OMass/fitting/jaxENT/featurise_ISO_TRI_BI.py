@@ -168,7 +168,9 @@ def main():
     top_path = os.path.join(traj_dir, topology)
     tri_path = os.path.join(traj_dir, tri_modal_trajectory)
     bi_path = os.path.join(traj_dir, bi_modal_trajectory)
-    # bi_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc"
+
+    bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
     # Featurise trajectories
     trajectories_to_process = [(tri_path, "iso_tri"), (bi_path, "iso_bi")]
 
