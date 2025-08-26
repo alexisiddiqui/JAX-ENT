@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import optax  # Import optax library for the convex_kl_divergence function
 from jax import Array
@@ -87,9 +88,13 @@ def hdx_pf_mae_loss(
 def max_entropy_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    simulation_weights = jnp.abs(model.params.frame_weights)
+    epsilon = 1e-8
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
-    prior_frame_weights = jnp.abs(dataset.frame_weights)
+
+    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -101,7 +106,7 @@ def max_entropy_loss(
 def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    epsilon = 1e-5
+    epsilon = 1e-10
 
     simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
 
@@ -110,11 +115,117 @@ def maxent_convexKL_loss(
     prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+    num_frames = prior_frame_weights.shape[0]
 
     loss = optax.losses.convex_kl_divergence(
         log_predictions=jnp.log(simulation_weights),
         targets=prior_frame_weights,
+    ) / (num_frames)
+    # loss = loss - jnp.log(num_frames)
+    return loss, loss
+
+
+def maxent_JSD_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    epsilon = 1e-10
+
+    simulation_weights = jnp.clip(jnp.abs(model.params.frame_weights), a_min=epsilon)
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    prior_frame_weights = jnp.abs(dataset.frame_weights)
+
+    prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+    num_frames = prior_frame_weights.shape[0]
+
+    # Calculate the midpoint distribution M
+    M = (simulation_weights + prior_frame_weights) / 2
+
+    # Compute KL divergences against M
+    kl_sim = optax.losses.convex_kl_divergence(
+        log_predictions=jnp.log(M), targets=simulation_weights
     )
+    kl_prior = optax.losses.convex_kl_divergence(
+        log_predictions=jnp.log(M), targets=prior_frame_weights
+    )
+
+    # JSD is the average of the two KL divergences
+    jsd = (kl_sim + kl_prior) / 2
+    loss = jsd / num_frames  # Normalize by number of frames
+
+    return loss, loss
+
+
+def maxent_W1_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    epsilon = 1e-10
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+
+    # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+
+    loss = jnp.mean(jnp.abs(simulation_weights - jnp.zeros_like(simulation_weights)))
+    # num_frames = prior_frame_weights.shape[0]
+    # loss = loss - jnp.log(num_frames)
+    return loss, loss
+
+
+def maxent_ESS_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    epsilon = 1e-8
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+
+    # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+
+    # Calculate the effective sample size (ESS)
+    ess = 1 / jnp.sum((simulation_weights) ** 2)
+    # scale the ESS by the number of frames
+    n_frames = simulation_weights.shape[0]
+    ess_scaled = ess / n_frames
+    # clip to epsilon and 1
+    ess_scaled = jnp.clip(ess_scaled, epsilon, 1.0)
+
+    # Calculate the loss as 1 - ESS
+    loss = 1 - ess_scaled
+
+    return loss, loss
+
+
+def minent_ESS_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    epsilon = 1e-8
+
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+
+    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
+
+    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+
+    # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
+
+    # Calculate the effective sample size (ESS)
+    ess = 1 / jnp.sum((simulation_weights) ** 2)
+    # scale the ESS by the number of frames
+    n_frames = simulation_weights.shape[0]
+    ess_scaled = ess / n_frames
+    # clip to epsilon and 1
+    ess_scaled = jnp.clip(ess_scaled, epsilon, 1.0)
+
+    # Calculate the loss as 1 - ESS
+    loss = ess_scaled
 
     return loss, loss
 
@@ -770,6 +881,125 @@ def hdx_uptake_mean_centred_MSE_loss(
     return train_loss, val_loss
 
 
+def hdxer_MSE_loss(
+    model: Simulation,
+    dataset: ExpD_Dataloader,
+    prediction_index: int,
+) -> tuple[Array, Array]:
+    """
+    Calculate the normalized weighted MSE loss (mean instead of sum).
+    This version normalizes by the total number of datapoints for comparison
+    with other MSE implementations.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+        gamma_weight: Weighting factor γ (default: 1.0)
+        eta_squared: Variance parameter η² (default: 1.0)
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true deuterated fractions for this timepoint
+            true_dfracs_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_dfracs_timepoint
+
+            # Calculate weighted MSE
+            squared_diff = (pred_mapped - true_mapped) ** 2
+
+            # Sum over residues/segments for this timepoint
+            timepoint_loss = jnp.sum(squared_diff) / 2
+
+            # Accumulate loss and count datapoints
+            total_loss += timepoint_loss
+        return 1 - (jnp.exp(-jnp.asarray(total_loss)))
+
+        # Return mean loss (normalized by total number of datapoints)
+        return -jnp.log(jnp.exp(-jnp.asarray(total_loss / y_true.shape[0])))
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+def hdxer_mcMSE_loss(
+    model: Simulation,
+    dataset: ExpD_Dataloader,
+    prediction_index: int,
+) -> tuple[Array, Array]:
+    """
+    Calculate the normalized weighted MSE loss (mean instead of sum).
+    This version normalizes by the total number of datapoints for comparison
+    with other MSE implementations.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+        gamma_weight: Weighting factor γ (default: 1.0)
+        eta_squared: Variance parameter η² (default: 1.0)
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    # Get the predicted uptake from the model
+    predictions = model.outputs[prediction_index]
+
+    def compute_loss(sparse_mapping, y_true):
+        # Initialize loss accumulator
+        total_loss = 0.0
+
+        # Iterate over timepoints
+        for timepoint_idx in range(y_true.shape[0]):
+            # Get the true deuterated fractions for this timepoint
+            true_dfracs_timepoint = y_true[timepoint_idx, :]
+
+            # Get the predicted uptake for this timepoint
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            # Apply sparse mapping to predicted uptake
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            true_mapped = true_dfracs_timepoint
+            pred_mean = jnp.mean(pred_mapped)
+            true_mean = jnp.mean(true_mapped)
+
+            pred_centered = pred_mapped - pred_mean
+            true_centered = true_mapped - true_mean
+            # Calculate weighted MSE
+            timepoint_loss = jnp.sum(jnp.abs(pred_centered - true_centered) ** 2)
+
+            # Accumulate loss and count datapoints
+            total_loss += timepoint_loss
+        return 1 - (jnp.exp(-jnp.asarray(total_loss)))
+
+        # Return mean loss (normalized by total number of datapoints)
+        return -jnp.log(jnp.exp(-jnp.asarray(total_loss / y_true.shape[0])))
+
+    # Compute train and validation losses
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
 def hdx_uptake_mean_centred_MAE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[Array, Array]:
@@ -989,6 +1219,86 @@ def hdx_uptake_MSE_loss(
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
 
     val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
+    return train_loss, val_loss
+
+
+# def hdx_uptake_MAE_loss_vectorized(
+#     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+# ) -> tuple[jnp.ndarray, jnp.ndarray]:
+#     """
+#     Memory-efficient vectorized MAE loss for HDX uptake.
+#     """
+#     predictions = model.outputs[prediction_index]
+
+#     def compute_loss_vectorized(sparse_mapping, y_true):
+#         pred_uptake_all = predictions.uptake
+
+#         # Vectorized sparse mapping application
+#         pred_mapped_all = jnp.array(
+#             [
+#                 apply_sparse_mapping(sparse_mapping, pred_uptake_all[t])
+#                 for t in range(pred_uptake_all.shape[0])
+#             ]
+#         )
+
+#         # Vectorized MAE computation
+#         absolute_errors = jnp.abs(pred_mapped_all - y_true)
+#         timepoint_losses = jnp.mean(absolute_errors, axis=1)
+#         total_loss = jnp.mean(timepoint_losses)
+
+#         return total_loss
+
+#     train_loss = compute_loss_vectorized(
+#         dataset.train.residue_feature_ouput_mapping, dataset.train.y_true
+#     )
+#     val_loss = compute_loss_vectorized(
+#         dataset.val.residue_feature_ouput_mapping, dataset.val.y_true
+#     )
+
+#     return train_loss, val_loss
+
+
+def hdx_uptake_MAE_loss_vectorized(
+    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    MAE version using jax.lax.fori_loop instead of Python loops.
+    """
+    predictions = model.outputs[prediction_index]
+
+    def compute_loss_original_style(sparse_mapping, y_true):
+        def loop_body(timepoint_idx, carry):
+            total_loss = carry
+
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+
+            if len(true_uptake_timepoint.shape) > 1:
+                true_uptake_timepoint = jnp.squeeze(true_uptake_timepoint)
+
+            min_len = min(pred_mapped.shape[0], true_uptake_timepoint.shape[0])
+            pred_mapped = pred_mapped[:min_len]
+            true_uptake_timepoint = true_uptake_timepoint[:min_len]
+
+            # MAE instead of MSE
+            timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_uptake_timepoint))
+
+            return total_loss + timepoint_loss
+
+        n_timepoints = min(predictions.uptake.shape[0], y_true.shape[0])
+        total_loss = jax.lax.fori_loop(0, n_timepoints, loop_body, 0.0)
+
+        return total_loss / n_timepoints
+
+    train_loss = compute_loss_original_style(
+        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true
+    )
+    val_loss = compute_loss_original_style(
+        dataset.val.residue_feature_ouput_mapping, dataset.val.y_true
+    )
 
     return train_loss, val_loss
 
