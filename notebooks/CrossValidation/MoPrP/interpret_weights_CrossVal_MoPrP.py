@@ -51,10 +51,15 @@ class BV_uptake_ForwardPass(
 """
 
 import itertools
-import json
 import os
 
+os.environ["JAX_PLATFORM_NAME"] = "cpu"
 import jax
+
+jax.config.update("jax_platform_name", "cpu")
+
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
 import jax.numpy as jnp
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -66,10 +71,14 @@ from MDAnalysis.analysis import align
 from scipy.spatial.distance import pdist
 from scipy.stats import entropy, wasserstein_distance
 
+# import tqdm
+from tqdm import tqdm
+
 from jaxent.src.custom_types.base import ForwardPass
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.interfaces.topology.serialise import PTSerialiser
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.HDX.BV.features import (
     BV_input_features,
@@ -276,9 +285,22 @@ def calculate_reweighted_ss_distribution(ss_data, weights_dict):
             histogram_data["histograms"][method][param] = {}
 
             # Process each seed
-            for seed_key, weights in seed_dict.items():
+            for seed_key, weights_data in seed_dict.items():
+                if weights_data is None:
+                    continue
+
+                # Extract weights, handling old format if necessary
+                weights = (
+                    weights_data.get("weights") if isinstance(weights_data, dict) else weights_data
+                )
+
                 if weights is None:
                     continue
+
+                # Ensure weights is a 1D array before processing
+                weights = np.asarray(weights)
+                if weights.ndim == 0:
+                    weights = np.array([weights])
 
                 # Ensure weights match the number of frames
                 if len(weights) > len(alpha_data):
@@ -1368,32 +1390,13 @@ def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
             )
         ]
 
-        # Load topology
-        with open(topology_path_json, "r") as f:
-            topology_dicts = json.load(f)
-
-        from jaxent.src.interfaces.topology import Partial_Topology
-
-        feature_topology = [
-            [
-                Partial_Topology(
-                    chain=top_dict["chain"],
-                    fragment_sequence=top_dict["fragment_sequence"],
-                    residue_start=top_dict["residue_start"],
-                    residue_end=top_dict["residue_end"],
-                    peptide_trim=top_dict["peptide_trim"],
-                    fragment_index=top_dict["fragment_index"],
-                )
-                for top_dict in topology_dicts
-            ]
-        ]
+        # Use the dedicated loader function
+        feature_topology = PTSerialiser.load_list_from_json(topology_path_json)
 
         print(f"Loaded features shape: {features[0].features_shape}")
-        print(f"Loaded topology count: {len(feature_topology[0])}")
+        print(f"Loaded topology count: {len(feature_topology)}")
     else:
         print("Computing features and topology...")
-        # Setup for featurization
-
         # Setup for featurization
         featuriser_settings = FeaturiserSettings(name="protection_factors", batch_size=None)
         times = [
@@ -1413,15 +1416,14 @@ def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
             750.00,
             1440.00,
         ]
-
         bv_config = BV_model_Config(num_timepoints=len(times))
-
         bv_config.timepoints = jnp.array(times, dtype=jnp.float32)
         models = [BV_model(bv_config)]
 
         # Create ensemble using the trajectory
         ensemble = Experiment_Builder([Universe(topology_path, trajectory_path)], models)
-        features, feature_topology = run_featurise(ensemble, featuriser_settings)
+        features, feature_topology_list = run_featurise(ensemble, featuriser_settings)
+        feature_topology = feature_topology_list[0]
 
         print(f"Computed features shape: {features[0].features_shape}")
 
@@ -1434,38 +1436,16 @@ def compute_protection_factors(topology_path, trajectory_path, output_dir=None):
             k_ints=features[0].k_ints,
         )
 
-        # Save topology
-        def topology_to_dict(topology):
-            return {
-                "chain": topology.chain,
-                "fragment_sequence": topology.fragment_sequence,
-                "residue_start": int(topology.residue_start),
-                "residue_end": int(topology.residue_end)
-                if topology.residue_end is not None
-                else None,
-                "peptide_trim": int(topology.peptide_trim),
-                "fragment_index": int(topology.fragment_index)
-                if topology.fragment_index is not None
-                else None,
-                "length": int(topology.length) if topology.length is not None else None,
-            }
-
-        topology_dicts = [topology_to_dict(top) for top in feature_topology[0]]
-
+        # Use the dedicated saver function
         print(f"Saving topology to {topology_path_json}")
-        with open(topology_path_json, "w") as f:
-            json.dump(topology_dicts, f, indent=2)
+        PTSerialiser.save_list_to_json(feature_topology, topology_path_json)
 
     # Compute protection factors using the BV_ForwardPass
     forward_pass = BV_ForwardPass()
-
     parameters = BV_Model_Parameters()
-
-    # Compute protection factors for each frame
     output_features = forward_pass(features[0], parameters)
 
-    # Return protection factors and topology
-    return output_features.log_Pf, feature_topology[0]
+    return output_features.log_Pf, feature_topology
 
 
 def load_experimental_uptake(segs_path, dfrac_path):
@@ -1760,7 +1740,7 @@ def compute_uptake_mse(
                     continue
 
                 # Make sure weights array length matches the number of frames
-                n_frames = features.features_shape[2]
+                n_frames = features.features_shape[-1]
                 if len(weights) > n_frames:
                     weights = weights[:n_frames]
                 elif len(weights) < n_frames:
@@ -2285,34 +2265,7 @@ def analyze_deuterium_uptake(
 ):
     """
     Analyze deuterium uptake by comparing predicted and experimental values.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Dictionary with weights for each method, parameter, and seed
-    reference_path : str
-        Path to reference PDB file
-    topology_path : str
-        Path to topology file
-    trajectory_path : str
-        Path to trajectory file
-    segs_path : str
-        Path to the residue segments file
-    dfrac_path : str
-        Path to the experimental deuterium fractions file
-    output_dir : str
-        Directory to save output files and plots
-    features : BV_input_features, optional
-        Pre-computed features, if available
-    feature_topology : list, optional
-        Pre-computed feature topology, if available
-
-    Returns:
-    --------
-    results : dict
-        Dictionary with analysis results
     """
-    import json
     import os
 
     import jax.numpy as jnp
@@ -2320,59 +2273,37 @@ def analyze_deuterium_uptake(
 
     from jaxent.src.custom_types.config import FeaturiserSettings
     from jaxent.src.interfaces.builder import Experiment_Builder
+    from jaxent.src.interfaces.topology.serialise import PTSerialiser
     from jaxent.src.models.config import BV_model_Config
     from jaxent.src.models.HDX.BV.features import BV_input_features
     from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    # Load experimental uptake data
     print("Loading experimental uptake data...")
     exp_residues, exp_uptake = load_experimental_uptake(segs_path, dfrac_path)
 
     if features is None or feature_topology is None:
-        # Set up paths for cached features
         features_path = os.path.join(output_dir, "features.jpz.npz")
         topology_path_json = os.path.join(output_dir, "topology.json")
 
-        # Check if cached files exist
         features_exist = os.path.exists(features_path)
         topology_exist = os.path.exists(topology_path_json)
 
-        # Load or compute features and topology
         if features_exist and topology_exist:
             print(f"Loading cached features and topology from {output_dir}")
-            # Load features
             loaded_features_dict = jnp.load(features_path)
             features = BV_input_features(
                 heavy_contacts=loaded_features_dict["heavy_contacts"],
                 acceptor_contacts=loaded_features_dict["acceptor_contacts"],
                 k_ints=loaded_features_dict["k_ints"],
             )
-            print(features)
-            # Load topology
-            with open(topology_path_json, "r") as f:
-                topology_dicts = json.load(f)
-
-            from jaxent.src.interfaces.topology import Partial_Topology
-
-            feature_topology = [
-                Partial_Topology(
-                    chain=top_dict["chain"],
-                    fragment_sequence=top_dict["fragment_sequence"],
-                    residue_start=top_dict["residue_start"],
-                    residue_end=top_dict["residue_end"],
-                    peptide_trim=top_dict["peptide_trim"],
-                    fragment_index=top_dict["fragment_index"],
-                )
-                for top_dict in topology_dicts
-            ]
+            # Use the dedicated loader function
+            feature_topology = PTSerialiser.load_list_from_json(topology_path_json)
 
             print(f"Loaded features shape: {features.features_shape}")
             print(f"Loaded topology count: {len(feature_topology)}")
         else:
             print("Computing features and topology...")
-            # Setup for featurization
             featuriser_settings = FeaturiserSettings(name="protection_factors", batch_size=None)
             times = [
                 0.08,
@@ -2391,21 +2322,15 @@ def analyze_deuterium_uptake(
                 750.00,
                 1440.00,
             ]
-
             bv_config = BV_model_Config(num_timepoints=len(times))
-
             bv_config.timepoints = jnp.array(times, dtype=jnp.float32)
             models = [BV_model(bv_config)]
-
-            # Create ensemble using the trajectory
             ensemble = Experiment_Builder([Universe(topology_path, trajectory_path)], models)
             features_list, feature_topology_list = run_featurise(ensemble, featuriser_settings)
             features = features_list[0]
             feature_topology = feature_topology_list[0]
 
             print(f"Computed features shape: {features.features_shape}")
-
-            # Save features
             print(f"Saving features to {features_path}")
             jnp.savez(
                 os.path.join(output_dir, "features.jpz"),
@@ -2413,33 +2338,10 @@ def analyze_deuterium_uptake(
                 acceptor_contacts=features.acceptor_contacts,
                 k_ints=features.k_ints,
             )
-
-            # Save topology
-            def topology_to_dict(topology):
-                return {
-                    "chain": topology.chain,
-                    "fragment_sequence": topology.fragment_sequence,
-                    "residue_start": int(topology.residue_start),
-                    "residue_end": int(topology.residue_end)
-                    if topology.residue_end is not None
-                    else None,
-                    "peptide_trim": int(topology.peptide_trim),
-                    "fragment_index": int(topology.fragment_index)
-                    if topology.fragment_index is not None
-                    else None,
-                    "length": int(topology.length)
-                    if hasattr(topology, "length") and topology.length is not None
-                    else None,
-                }
-
-            topology_dicts = [topology_to_dict(top) for top in feature_topology]
-
+            # Use the dedicated saver function
             print(f"Saving topology to {topology_path_json}")
-            with open(topology_path_json, "w") as f:
-                json.dump(topology_dicts, f, indent=2)
-    print(features)
+            PTSerialiser.save_list_to_json(feature_topology, topology_path_json)
 
-    # Compute MSE for deuterium uptake
     print("Computing MSE for deuterium uptake...")
     mse_results = compute_uptake_mse(
         weights_dict,
@@ -2448,7 +2350,6 @@ def analyze_deuterium_uptake(
         features,
         feature_topology,
     )
-
     # Create and save MSE visualization
     print("Creating deuterium uptake MSE plot...")
     fig_mse = plot_boxplots(
@@ -2710,7 +2611,7 @@ def create_comparison_scatter_plots(
 #                     continue
 
 #                 # Make sure weights array length matches the number of frames
-#                 n_frames = features.features_shape[2]
+#                 n_frames = features.features_shape[-1]
 #                 if len(weights) > n_frames:
 #                     weights = weights[:n_frames]
 #                 elif len(weights) < n_frames:
@@ -2810,7 +2711,7 @@ def compute_uptake_mae(weights_dict, features, parameters=None):
                     continue
 
                 # Make sure weights array length matches the number of frames
-                n_frames = features.features_shape[2]
+                n_frames = features.features_shape[-1]
                 if len(weights) > n_frames:
                     weights = weights[:n_frames]
                 elif len(weights) < n_frames:
@@ -3063,6 +2964,7 @@ def extract_weights_and_params_from_directory(base_dir, regularization_fn, n_see
     weights_dict : dict
         Dictionary with structure {regularization_fn: {alpha_value: {seed_key: {"weights": weights_array, "bv_bc": value, "bv_bh": value}}}}
     """
+
     reg_dir = os.path.join(base_dir, regularization_fn)
     weights_dict = {regularization_fn: {}}
 
@@ -3071,11 +2973,12 @@ def extract_weights_and_params_from_directory(base_dir, regularization_fn, n_see
         weights_dict[regularization_fn][alpha] = {}
 
     # Extract weights for each seed and replicate (which maps to an alpha value)
-    for seed_idx in range(1, n_seeds + 1):
+    for seed_idx in tqdm(range(1, n_seeds + 1), desc="Seeds"):
         seed_key = f"seed_{seed_idx - 1}"  # Using 0-indexed naming for consistency
 
         # Map alpha values to replicate indices (1-indexed)
-        for rep_idx, alpha in enumerate(alpha_values, 1):
+        inner_iter = tqdm(alpha_values, desc=f"seed_{seed_idx}_alphas", leave=False)
+        for rep_idx, alpha in enumerate(inner_iter, 1):
             try:
                 # Construct path to optimization history file
                 history_file = os.path.join(
@@ -3211,7 +3114,7 @@ def compute_pairwise_kl_divergences(weights_dict):
     -----------
     weights_dict : dict
         Nested dictionary with structure:
-        {method_name: {parameter_value: {seed_key: weights_array}}}
+        {method_name: {parameter_value: {seed_key: weights_array_or_dict}}}
 
     Returns:
     --------
@@ -3230,15 +3133,30 @@ def compute_pairwise_kl_divergences(weights_dict):
 
             # Skip if fewer than 2 seed keys (need at least 2 for pairwise comparison)
             if len(seed_keys) < 2:
-                print(f"Skipping {method}, param={param}: {len(seed_keys)}fewer than 2 valid seeds")
+                print(
+                    f"Skipping {method}, param={param}: {len(seed_keys)} fewer than 2 valid seeds"
+                )
                 kl_results[method][param] = []
                 continue
 
             # Compute all pairwise KL divergences
             kl_values = []
             for seed1, seed2 in itertools.combinations(seed_keys, 2):
-                weights1 = seed_dict[seed1]
-                weights2 = seed_dict[seed2]
+                seed_data1 = seed_dict[seed1]
+                seed_data2 = seed_dict[seed2]
+
+                # Extract weights from the data structure
+                if isinstance(seed_data1, dict) and "weights" in seed_data1:
+                    weights1 = seed_data1["weights"]
+                else:
+                    # For backward compatibility with old format
+                    weights1 = seed_data1
+
+                if isinstance(seed_data2, dict) and "weights" in seed_data2:
+                    weights2 = seed_data2["weights"]
+                else:
+                    # For backward compatibility with old format
+                    weights2 = seed_data2
 
                 # Check again for None (shouldn't happen due to filtering above)
                 if weights1 is None or weights2 is None:
@@ -3275,7 +3193,7 @@ def compute_uniform_kl_divergences(weights_dict):
     -----------
     weights_dict : dict
         Nested dictionary with structure:
-        {method_name: {parameter_value: {seed_key: weights_array}}}
+        {method_name: {parameter_value: {seed_key: weights_array_or_dict}}}
 
     Returns:
     --------
@@ -3301,7 +3219,14 @@ def compute_uniform_kl_divergences(weights_dict):
             # Compute KL divergences from uniform for each seed
             kl_values = []
             for seed_key in seed_keys:
-                weights = seed_dict[seed_key]
+                seed_data = seed_dict[seed_key]
+
+                # Extract weights from the data structure
+                if isinstance(seed_data, dict) and "weights" in seed_data:
+                    weights = seed_data["weights"]
+                else:
+                    # For backward compatibility with old format
+                    weights = seed_data
 
                 if weights is None:
                     continue
@@ -3388,7 +3313,14 @@ def compute_ensemble_w1_distances(weights_dict, reference_path, topology_path, t
             for param, seed_dict in param_dict.items():
                 w1_values = []
 
-                for seed_key, weights in seed_dict.items():
+                for seed_key, seed_data in seed_dict.items():
+                    # Extract weights from the data structure
+                    if isinstance(seed_data, dict) and "weights" in seed_data:
+                        weights = seed_data["weights"]
+                    else:
+                        # For backward compatibility with old format
+                        weights = seed_data
+
                     if weights is not None:
                         # Make sure weights array length matches the number of MD frames
                         if len(weights) > len(md_pairwise_distances):
@@ -3417,6 +3349,257 @@ def compute_ensemble_w1_distances(weights_dict, reference_path, topology_path, t
                 w1_results[method][param] = []
 
     return w1_results
+
+
+def compute_top_structures_w1_distances(
+    weights_dict, reference_path, topology_path, trajectory_path, n_top=20
+):
+    """
+    Compute W1 distances between reference structure and top N weighted structures.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Nested dictionary with weights for each method, parameter, and seed
+    reference_path : str
+        Path to reference PDB file
+    topology_path : str
+        Path to MD topology file
+    trajectory_path : str
+        Path to MD trajectory file
+    n_top : int
+        Number of top structures to consider
+
+    Returns:
+    --------
+    w1_results : dict
+        Dictionary with W1 distances for top structures grouped by method and parameter
+    """
+    w1_results = {}
+
+    try:
+        # Load reference NMR ensemble
+        ref_universe = mda.Universe(reference_path)
+        ref_ca = ref_universe.select_atoms("name CA")
+        n_ref_frames = ref_universe.trajectory.n_frames
+
+        # Extract pairwise distances from reference NMR ensemble
+        ref_pairwise_distances = []
+        for ts in ref_universe.trajectory:
+            coords = ref_ca.positions
+            pairwise_dists = pdist(coords)
+            ref_pairwise_distances.append(pairwise_dists)
+
+        # Convert to numpy array for easier manipulation
+        ref_pairwise_distances = np.array(ref_pairwise_distances)
+
+        # Reference weights (uniform)
+        ref_weights = np.ones(n_ref_frames) / n_ref_frames
+
+        # Compute average pairwise distances for reference
+        ref_avg_pairwise = np.average(ref_pairwise_distances, axis=0, weights=ref_weights)
+
+        # Load MD universe
+        md_universe = mda.Universe(topology_path, trajectory_path)
+        md_ca = md_universe.select_atoms("name CA")
+        n_md_frames = md_universe.trajectory.n_frames
+
+        # Extract pairwise distances from MD trajectory
+        md_pairwise_distances = []
+        for ts in md_universe.trajectory:
+            coords = md_ca.positions
+            pairwise_dists = pdist(coords)
+            md_pairwise_distances.append(pairwise_dists)
+
+        # Convert to numpy array for easier manipulation
+        md_pairwise_distances = np.array(md_pairwise_distances)
+
+        # Compute W1 distances for each method, parameter, and seed using only top N structures
+        for method, param_dict in weights_dict.items():
+            w1_results[method] = {}
+
+            for param, seed_dict in param_dict.items():
+                w1_values = []
+
+                for seed_key, seed_data in seed_dict.items():
+                    # Extract weights from the data structure
+                    if isinstance(seed_data, dict) and "weights" in seed_data:
+                        weights = seed_data["weights"]
+                    else:
+                        # For backward compatibility with old format
+                        weights = seed_data
+
+                    if weights is not None:
+                        # Make sure weights array length matches the number of MD frames
+                        if len(weights) > n_md_frames:
+                            weights = weights[:n_md_frames]
+                        elif len(weights) < n_md_frames:
+                            # Pad weights with zeros if needed
+                            padding = np.zeros(n_md_frames - len(weights))
+                            weights = np.concatenate([weights, padding])
+                            # Renormalize
+                            weights = weights / np.sum(weights)
+
+                        # Identify top N structures by weight
+                        top_indices = np.argsort(weights)[-n_top:]
+
+                        # Create binary weights: 1 for top structures, 0 for others
+                        top_weights = np.zeros_like(weights)
+                        top_weights[top_indices] = 1.0 / n_top  # Equal weights for top structures
+
+                        # Compute W1 distance using only the top structures
+                        w1_dist = compute_w1_distance(
+                            ref_avg_pairwise, md_pairwise_distances, top_weights
+                        )
+                        w1_values.append(w1_dist)
+
+                w1_results[method][param] = w1_values
+
+    except Exception as e:
+        print(f"Error computing W1 distances for top structures: {e}")
+        # Return empty dictionary in case of error
+        for method, param_dict in weights_dict.items():
+            w1_results[method] = {}
+            for param in param_dict.keys():
+                w1_results[method][param] = []
+
+    return w1_results
+
+
+def average_weights_and_write_top_structures(
+    weights_dict, topology_path, trajectory_path, output_dir, n_top=20
+):
+    """
+    Average weights across seeds for each method/parameter and write out a trajectory
+    containing the top N structures by weight.
+
+    Parameters:
+    -----------
+    weights_dict : dict
+        Nested dictionary with weights for each method, parameter, and seed
+    topology_path : str
+        Path to MD topology file
+    trajectory_path : str
+        Path to MD trajectory file
+    output_dir : str
+        Directory to save output trajectories
+    n_top : int
+        Number of top structures to include in the trajectory
+
+    Returns:
+    --------
+    avg_weights_dict : dict
+        Dictionary with averaged weights for each method and parameter
+    """
+    avg_weights_dict = {}
+
+    try:
+        # Load MD universe
+        md_universe = mda.Universe(topology_path, trajectory_path)
+        n_frames = md_universe.trajectory.n_frames
+
+        # Select CA atoms for alignment
+        ca_atoms = md_universe.select_atoms("name CA")
+
+        # Align trajectory to the first frame using CA atoms
+        print("Aligning trajectory by CA atoms...")
+
+        # Create a reference from the first frame
+        reference_coords = None
+        for ts in md_universe.trajectory[0:1]:
+            reference_coords = ca_atoms.positions.copy()
+
+        # Align all frames to the reference
+        align.AlignTraj(
+            md_universe, md_universe, select="name CA", in_memory=True, weights="mass", ref_frame=0
+        ).run()
+        print("Alignment complete.")
+
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Process each method
+        for method, param_dict in weights_dict.items():
+            avg_weights_dict[method] = {}
+
+            for param, seed_dict in param_dict.items():
+                # Skip if no valid seeds
+                valid_seeds = {}
+                for k, v in seed_dict.items():
+                    if v is not None:
+                        # Extract weights from the data structure
+                        if isinstance(v, dict) and "weights" in v:
+                            valid_seeds[k] = v["weights"]
+                        else:
+                            # For backward compatibility with old format
+                            valid_seeds[k] = v
+
+                if not valid_seeds:
+                    print(f"Skipping {method}, param={param}: no valid seeds")
+                    continue
+
+                # Prepare array for averaged weights
+                all_weights = []
+
+                # Collect weights from all seeds
+                for seed_key, weights in valid_seeds.items():
+                    # Make sure weights array length matches the number of frames
+                    if len(weights) > n_frames:
+                        weights = weights[:n_frames]
+                    elif len(weights) < n_frames:
+                        # Pad weights with zeros if needed
+                        padding = np.zeros(n_frames - len(weights))
+                        weights = np.concatenate([weights, padding])
+                        # Renormalize
+                        weights = weights / np.sum(weights)
+
+                    all_weights.append(weights)
+
+                # Convert to numpy array
+                all_weights = np.array(all_weights)
+
+                # Compute average weights across seeds
+                avg_weights = np.mean(all_weights, axis=0)
+
+                # Normalize averaged weights
+                avg_weights = avg_weights / np.sum(avg_weights)
+
+                # Store averaged weights
+                avg_weights_dict[method][param] = avg_weights
+                # Identify top N frames by average weight
+                top_indices = np.argsort(avg_weights)[-n_top:]
+
+                # Define output trajectory name based on method and parameter
+                if method == "ValDXer" and isinstance(param, tuple) and len(param) == 2:
+                    gamma, exponent = param
+                    output_name = f"{method}_gamma{gamma}_exp{exponent}_top{n_top}.pdb"
+                elif method == "ValDXer":
+                    output_name = f"{method}_gamma{param}_top{n_top}.pdb"
+                else:
+                    output_name = f"{method}_rep{param}_top{n_top}.pdb"
+
+                # Full path to output trajectory
+                output_traj_path = os.path.join(output_dir, output_name)
+
+                # Create new trajectory with top frames
+                try:
+                    # Create a PDB writer for the output trajectory
+                    with mda.coordinates.PDB.PDBWriter(output_traj_path, multiframe=True) as writer:
+                        # Write each frame in order of descending weight (most important first)
+                        for idx in sorted(top_indices, key=lambda x: avg_weights[x], reverse=True):
+                            md_universe.trajectory[idx]
+                            writer.write(md_universe.atoms)
+
+                    print(
+                        f"Wrote top {n_top} structures for {method}, param={param} to {output_traj_path}"
+                    )
+                except Exception as e:
+                    print(f"Error writing trajectory for {method}, param={param}: {e}")
+
+    except Exception as e:
+        print(f"Error in average_weights_and_write_top_structures: {e}")
+
+    return avg_weights_dict
 
 
 def plot_boxplots(results, metric_name, method_names=None, title=None, ylabel=None):
@@ -3690,7 +3873,7 @@ def plot_pca_contours(weights_dict, topology_path, trajectory_path, output_dir=N
             valid_params = [
                 param
                 for param, seed_dict in param_dict.items()
-                if any(weights is not None for weights in seed_dict.values())
+                if any(seed_data is not None for seed_data in seed_dict.values())
             ]
 
             if not valid_params:
@@ -3736,7 +3919,14 @@ def plot_pca_contours(weights_dict, topology_path, trajectory_path, output_dir=N
                 ax.set_title(title)
 
                 # Plot each seed as a contour
-                for j, (seed_key, weights) in enumerate(seed_dict.items()):
+                for j, (seed_key, seed_data) in enumerate(seed_dict.items()):
+                    # Extract weights from the data structure
+                    if isinstance(seed_data, dict) and "weights" in seed_data:
+                        weights = seed_data["weights"]
+                    else:
+                        # For backward compatibility with old format
+                        weights = seed_data
+
                     if weights is None or len(weights) == 0:
                         continue
 
@@ -3808,275 +3998,6 @@ def plot_pca_contours(weights_dict, topology_path, trajectory_path, output_dir=N
         print(f"Error in PCA contour plot generation: {e}")
 
     return fig_dict
-
-
-def compute_top_structures_w1_distances(
-    weights_dict, reference_path, topology_path, trajectory_path, n_top=20
-):
-    """
-    Compute W1 distances between reference structure and top N weighted structures.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Nested dictionary with weights for each method, parameter, and seed
-    reference_path : str
-        Path to reference PDB file
-    topology_path : str
-        Path to MD topology file
-    trajectory_path : str
-        Path to MD trajectory file
-    n_top : int
-        Number of top structures to consider
-
-    Returns:
-    --------
-    w1_results : dict
-        Dictionary with W1 distances for top structures grouped by method and parameter
-    """
-    w1_results = {}
-
-    try:
-        # Load reference NMR ensemble
-        ref_universe = mda.Universe(reference_path)
-        ref_ca = ref_universe.select_atoms("name CA")
-        n_ref_frames = ref_universe.trajectory.n_frames
-
-        # Extract pairwise distances from reference NMR ensemble
-        ref_pairwise_distances = []
-        for ts in ref_universe.trajectory:
-            coords = ref_ca.positions
-            pairwise_dists = pdist(coords)
-            ref_pairwise_distances.append(pairwise_dists)
-
-        # Convert to numpy array for easier manipulation
-        ref_pairwise_distances = np.array(ref_pairwise_distances)
-
-        # Reference weights (uniform)
-        ref_weights = np.ones(n_ref_frames) / n_ref_frames
-
-        # Compute average pairwise distances for reference
-        ref_avg_pairwise = np.average(ref_pairwise_distances, axis=0, weights=ref_weights)
-
-        # Load MD universe
-        md_universe = mda.Universe(topology_path, trajectory_path)
-        md_ca = md_universe.select_atoms("name CA")
-        n_md_frames = md_universe.trajectory.n_frames
-
-        # Extract pairwise distances from MD trajectory
-        md_pairwise_distances = []
-        for ts in md_universe.trajectory:
-            coords = md_ca.positions
-            pairwise_dists = pdist(coords)
-            md_pairwise_distances.append(pairwise_dists)
-
-        # Convert to numpy array for easier manipulation
-        md_pairwise_distances = np.array(md_pairwise_distances)
-
-        # Compute W1 distances for each method, parameter, and seed using only top N structures
-        for method, param_dict in weights_dict.items():
-            w1_results[method] = {}
-
-            for param, seed_dict in param_dict.items():
-                w1_values = []
-
-                for seed_key, weights in seed_dict.items():
-                    if weights is not None:
-                        # Make sure weights array length matches the number of MD frames
-                        if len(weights) > n_md_frames:
-                            weights = weights[:n_md_frames]
-                        elif len(weights) < n_md_frames:
-                            # Pad weights with zeros if needed
-                            padding = np.zeros(n_md_frames - len(weights))
-                            weights = np.concatenate([weights, padding])
-                            # Renormalize
-                            weights = weights / np.sum(weights)
-
-                        # Identify top N structures by weight
-                        top_indices = np.argsort(weights)[-n_top:]
-
-                        # Create binary weights: 1 for top structures, 0 for others
-                        top_weights = np.zeros_like(weights)
-                        top_weights[top_indices] = 1.0 / n_top  # Equal weights for top structures
-
-                        # Compute W1 distance using only the top structures
-                        w1_dist = compute_w1_distance(
-                            ref_avg_pairwise, md_pairwise_distances, top_weights
-                        )
-                        w1_values.append(w1_dist)
-
-                w1_results[method][param] = w1_values
-
-    except Exception as e:
-        print(f"Error computing W1 distances for top structures: {e}")
-        # Return empty dictionary in case of error
-        for method, param_dict in weights_dict.items():
-            w1_results[method] = {}
-            for param in param_dict.keys():
-                w1_results[method][param] = []
-
-    return w1_results
-
-
-def average_weights_and_write_top_structures(
-    weights_dict, topology_path, trajectory_path, output_dir, n_top=20
-):
-    """
-    Average weights across seeds for each method/parameter and write out a trajectory
-    containing the top N structures by weight.
-
-    Parameters:
-    -----------
-    weights_dict : dict
-        Nested dictionary with weights for each method, parameter, and seed
-    topology_path : str
-        Path to MD topology file
-    trajectory_path : str
-        Path to MD trajectory file
-    output_dir : str
-        Directory to save output trajectories
-    n_top : int
-        Number of top structures to include in the trajectory
-
-    Returns:
-    --------
-    avg_weights_dict : dict
-        Dictionary with averaged weights for each method and parameter
-    """
-    avg_weights_dict = {}
-
-    try:
-        # Load MD universe
-        md_universe = mda.Universe(topology_path, trajectory_path)
-        n_frames = md_universe.trajectory.n_frames
-
-        # Select CA atoms for alignment
-        ca_atoms = md_universe.select_atoms("name CA")
-
-        # Align trajectory to the first frame using CA atoms
-        print("Aligning trajectory by CA atoms...")
-
-        # Create a reference from the first frame
-        reference_coords = None
-        for ts in md_universe.trajectory[0:1]:
-            reference_coords = ca_atoms.positions.copy()
-
-        # Align all frames to the reference
-        align.AlignTraj(
-            md_universe, md_universe, select="name CA", in_memory=True, weights="mass", ref_frame=0
-        ).run()
-        print("Alignment complete.")
-
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Process each method
-        for method, param_dict in weights_dict.items():
-            avg_weights_dict[method] = {}
-
-            for param, seed_dict in param_dict.items():
-                # Skip if no valid seeds
-                valid_seeds = {k: v for k, v in seed_dict.items() if v is not None}
-                if not valid_seeds:
-                    print(f"Skipping {method}, param={param}: no valid seeds")
-                    continue
-
-                # Prepare array for averaged weights
-                all_weights = []
-
-                # Collect weights from all seeds
-                for seed_key, weights in valid_seeds.items():
-                    # Make sure weights array length matches the number of frames
-                    if len(weights) > n_frames:
-                        weights = weights[:n_frames]
-                    elif len(weights) < n_frames:
-                        # Pad weights with zeros if needed
-                        padding = np.zeros(n_frames - len(weights))
-                        weights = np.concatenate([weights, padding])
-                        # Renormalize
-                        weights = weights / np.sum(weights)
-
-                    all_weights.append(weights)
-
-                # Convert to numpy array
-                all_weights = np.array(all_weights)
-
-                # Compute average weights across seeds
-                avg_weights = np.mean(all_weights, axis=0)
-
-                # Normalize averaged weights
-                avg_weights = avg_weights / np.sum(avg_weights)
-
-                # Store averaged weights
-                avg_weights_dict[method][param] = avg_weights
-                # Identify top N frames by average weight
-                top_indices = np.argsort(avg_weights)[-n_top:]
-
-                # Define output trajectory name based on method and parameter
-                if method == "ValDXer" and isinstance(param, tuple) and len(param) == 2:
-                    gamma, exponent = param
-                    output_name = f"{method}_gamma{gamma}_exp{exponent}_top{n_top}.pdb"
-                elif method == "ValDXer":
-                    output_name = f"{method}_gamma{param}_top{n_top}.pdb"
-                else:
-                    output_name = f"{method}_rep{param}_top{n_top}.pdb"
-
-                # Full path to output trajectory
-                output_traj_path = os.path.join(output_dir, output_name)
-
-                # Create new trajectory with top frames
-                try:
-                    # Create a PDB writer for the output trajectory
-                    with mda.coordinates.PDB.PDBWriter(output_traj_path, multiframe=True) as writer:
-                        # Write each frame in order of descending weight (most important first)
-                        for idx in sorted(top_indices, key=lambda x: avg_weights[x], reverse=True):
-                            md_universe.trajectory[idx]
-                            writer.write(md_universe.atoms)
-
-                    print(
-                        f"Wrote top {n_top} structures for {method}, param={param} to {output_traj_path}"
-                    )
-                except Exception as e:
-                    print(f"Error writing trajectory for {method}, param={param}: {e}")
-
-    except Exception as e:
-        print(f"Error in average_weights_and_write_top_structures: {e}")
-
-    return avg_weights_dict
-
-
-def plot_top_structures_w1_boxplots(w1_results, method_names=None, n_top=20, title=None):
-    """
-    Create box plots of W1 distances between the top N structures and reference.
-
-    Parameters:
-    -----------
-    w1_results : dict
-        Dictionary with W1 distances grouped by method and parameter
-    method_names : list, optional
-        List of method names for the legend
-    n_top : int
-        Number of top structures used
-    title : str, optional
-        Plot title
-
-    Returns:
-    --------
-    fig : matplotlib.figure.Figure
-        The box plot figure
-    """
-    # Default title if none provided
-    if title is None:
-        title = f"Wasserstein-1 Distance to Reference using Top {n_top} Structures"
-
-    # Use the existing plot_boxplots function
-    return plot_boxplots(
-        w1_results,
-        metric_name=f"W1 Distance (Top {n_top})",
-        method_names=method_names,
-        title=title,
-        ylabel=f"Wasserstein-1 Distance (Top {n_top} Structures, Å)",
-    )
 
 
 def cluster_and_select_representative_structures(
@@ -4178,7 +4099,16 @@ def cluster_and_select_representative_structures(
 
             for param, seed_dict in param_dict.items():
                 # Skip if no valid seeds
-                valid_seeds = {k: v for k, v in seed_dict.items() if v is not None}
+                valid_seeds = {}
+                for k, v in seed_dict.items():
+                    if v is not None:
+                        # Extract weights from the data structure
+                        if isinstance(v, dict) and "weights" in v:
+                            valid_seeds[k] = v["weights"]
+                        else:
+                            # For backward compatibility with old format
+                            valid_seeds[k] = v
+
                 if not valid_seeds:
                     print(f"Skipping {method}, param={param}: no valid seeds")
                     continue
@@ -4288,6 +4218,40 @@ def cluster_and_select_representative_structures(
         print(f"Error in cluster_and_select_representative_structures: {e}")
 
     return cluster_results
+
+
+def plot_top_structures_w1_boxplots(w1_results, method_names=None, n_top=20, title=None):
+    """
+    Create box plots of W1 distances between the top N structures and reference.
+
+    Parameters:
+    -----------
+    w1_results : dict
+        Dictionary with W1 distances grouped by method and parameter
+    method_names : list, optional
+        List of method names for the legend
+    n_top : int
+        Number of top structures used
+    title : str, optional
+        Plot title
+
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+        The box plot figure
+    """
+    # Default title if none provided
+    if title is None:
+        title = f"Wasserstein-1 Distance to Reference using Top {n_top} Structures"
+
+    # Use the existing plot_boxplots function
+    return plot_boxplots(
+        w1_results,
+        metric_name=f"W1 Distance (Top {n_top})",
+        method_names=method_names,
+        title=title,
+        ylabel=f"Wasserstein-1 Distance (Top {n_top} Structures, Å)",
+    )
 
 
 def plot_clustered_dataset(cluster_results, output_dir=None):
@@ -4960,11 +4924,12 @@ def main():
     ]
     objective_fns = [
         "mCMSE20-RWBV",
-        "MSE20-RWBV",
-        "mCMSE10-RWBV",
-        "MSE10-RWBV",
+        # "MSE20-RWBV",
+        # "mCMSE10-RWBV",
+        # "MSE10-RWBV",
     ]
     constraint_fns = ["mABS", "MAD", "mcMAD"]
+    constraint_fns = ["MAD"]
 
     # regularization_fns = [
     #     "mCMSE10_MAD10",
@@ -5001,7 +4966,7 @@ def main():
 
     # HDXer gamma values and exponents
     gamma_values = list(range(1, 10, 2))  # 1-9
-    exponents = [0, 1]
+    exponents = [-1, 0, 1]
 
     # Output directory for saving plots
     output_dir = os.path.join(base_dir, "analysis")
@@ -5018,7 +4983,7 @@ def main():
     #     weights_dict = extract_weights_from_directory(base_dir, reg_fn, n_seeds, alpha_values)
 
     #     # Add to combined dictionary
-    #     combined_weights_dict.update(weights_dict)
+    #     combined_weights_dict.update(w eights_dict)
 
     # # Process HDXer weights with multiple exponents (unchanged)
     # print("Processing HDXer weights...")
