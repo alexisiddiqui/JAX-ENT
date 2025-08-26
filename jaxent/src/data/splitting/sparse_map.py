@@ -127,10 +127,11 @@ def create_sparse_map(
 
                 if overlap_residues:
                     feat_idx = feat_topology.fragment_index
-
+                    feat_active_residues = feat_topology._get_active_residues(check_trim=check_trim)
                     if feat_idx is None:
-                        print(f"Warning: Feature topology {feat_topology} has no fragment_index")
-                        continue
+                        raise ValueError(
+                            f"Feature topology {feat_topology} does not have a valid fragment index"
+                        )
 
                     overlap_count = len(overlap_residues)
                     contribution_weight = overlap_count / exp_residue_count
@@ -142,7 +143,9 @@ def create_sparse_map(
                     print(
                         f"  Mapping: exp_frag[{frag_idx}] <- feat[{feat_idx}] "
                         f"(overlap: {overlap_count}/{exp_residue_count} residues, "
-                        f"weight: {contribution_weight:.3f})"
+                        f"weight: {contribution_weight:.2f})",
+                        f"\n         - exp_res[{exp_active_residues}] <- feat_res[{feat_active_residues}] "
+                        f"(overlapping residues: {overlap_residues})",
                     )
 
     print("\nSparse matrix statistics:")

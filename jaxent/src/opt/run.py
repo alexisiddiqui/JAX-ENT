@@ -68,13 +68,14 @@ def _optimise(
             indexes=tuple(indexes),
             history=history,
         )
+        # _simulation.params = opt_state.params
         # if step % 100 == 0:
         jax.debug.print(
             fmt=" ".join(
                 [
                     "Step {step}/{n_steps}",  # type: ignore
-                    "Training Loss: {train_loss:.2f}",  # type: ignore
-                    "Validation Loss: {val_loss:.2f}",  # type: ignore
+                    "Training Loss: {train_loss:.2e}",  # type: ignore
+                    "Validation Loss: {val_loss:.2e}",  # type: ignore
                 ]
             ),
             step=step,

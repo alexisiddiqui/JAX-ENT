@@ -10,9 +10,10 @@ open state %recovery is calculated from the ratio of the open cluster against th
 
 
 This script also  analyzes the KL divergence of frame_weights against a uniform prior
+and the Effective Sample Size (ESS = 1/sum(weights²))
 from the optimization histories of the ISO TRI and BI models.
 It plots how the frame weight distributions deviate from uniform weighting
-across different convergence thresholds.
+and how the effective sample size changes across different convergence thresholds.
 """
 
 import os
@@ -151,8 +152,8 @@ def calculate_recovery_percentage(observed_ratios, ground_truth_ratios):
     open_observed = observed_ratios.get("cluster_0", 0.0)
     closed_observed = observed_ratios.get("cluster_1", 0.0)
 
-    open_truth = ground_truth_ratios.get("open", 0.6)
-    closed_truth = ground_truth_ratios.get("closed", 0.4)
+    open_truth = ground_truth_ratios.get("open", 0.4)
+    closed_truth = ground_truth_ratios.get("closed", 0.6)
 
     # Calculate recovery as percentage of truth recovered
     if open_truth > 0:
@@ -181,7 +182,7 @@ def analyze_conformational_recovery(trajectory_paths, topology_path, reference_p
     Returns:
         pd.DataFrame: Recovery analysis results
     """
-    ground_truth_ratios = {"open": 0.6, "closed": 0.4}
+    ground_truth_ratios = {"open": 0.4, "closed": 0.6}
     recovery_data = []
 
     for ensemble_name, traj_path in trajectory_paths.items():
@@ -487,6 +488,27 @@ def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
     return np.sum(p * np.log(p / q))
 
 
+def effective_sample_size(weights: np.ndarray) -> float:
+    """
+    Calculate Effective Sample Size (ESS) from frame weights.
+
+    ESS = 1 / sum(weights²) where weights are normalized.
+
+    Args:
+        weights: Frame weights array
+
+    Returns:
+        Effective sample size
+    """
+    # Normalize weights to sum to 1
+    normalized_weights = weights / np.sum(weights)
+
+    # Calculate ESS = 1 / sum(weights²)
+    ess = 1.0 / np.sum(normalized_weights**2)
+
+    return float(ess)
+
+
 def load_all_optimization_results(
     results_dir: str,
     ensembles: List[str] = ["ISO_TRI", "ISO_BI"],
@@ -546,13 +568,13 @@ def load_all_optimization_results(
 
 def extract_frame_weights_kl_divergences(results: Dict) -> pd.DataFrame:
     """
-    Extract frame weights and calculate KL divergence against uniform prior.
+    Extract frame weights and calculate KL divergence against uniform prior and ESS.
 
     Args:
         results: Dictionary containing optimization histories.
 
     Returns:
-        DataFrame containing KL divergence values for analysis.
+        DataFrame containing KL divergence and ESS values for analysis.
     """
     data_rows = []
 
@@ -573,6 +595,7 @@ def extract_frame_weights_kl_divergences(results: Dict) -> pd.DataFrame:
                                 uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
                                 try:
                                     kl_div = kl_divergence(frame_weights, uniform_prior)
+                                    ess = effective_sample_size(frame_weights)
                                     data_rows.append(
                                         {
                                             "split_type": split_type,
@@ -582,6 +605,7 @@ def extract_frame_weights_kl_divergences(results: Dict) -> pd.DataFrame:
                                             "step": step_idx,
                                             "convergence_threshold_step": step_idx,
                                             "kl_divergence": float(kl_div),
+                                            "ess": ess,
                                             "num_frames": len(frame_weights),
                                             "step_number": state.step
                                             if hasattr(state, "step")
@@ -590,7 +614,7 @@ def extract_frame_weights_kl_divergences(results: Dict) -> pd.DataFrame:
                                     )
                                 except Exception as e:
                                     print(
-                                        f"Failed to calculate KL for {split_type}/{ensemble}_{loss_name}_split{split_idx}, step {step_idx}: {e}"
+                                        f"Failed to calculate KL/ESS for {split_type}/{ensemble}_{loss_name}_split{split_idx}, step {step_idx}: {e}"
                                     )
                                     continue
     return pd.DataFrame(data_rows)
@@ -722,6 +746,128 @@ def plot_kl_divergence_distribution(df: pd.DataFrame, output_dir: str):
         plt.close(fig)
 
 
+def plot_ess_convergence(df: pd.DataFrame, convergence_rates: List[float], output_dir: str):
+    """
+    Plot ESS vs convergence threshold for each split type.
+
+    Args:
+        df: DataFrame containing ESS data.
+        convergence_rates: List of convergence rates used in optimization.
+        output_dir: Directory to save plots.
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    loss_markers = {"mcMSE": "o", "MSE": "s"}
+
+    split_types = df["split_type"].unique()
+
+    for split_type in split_types:
+        print(f"  Plotting ESS convergence for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        fig.suptitle(
+            f"Effective Sample Size vs Convergence ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        ensembles = sorted(split_df["ensemble"].unique())
+        loss_functions = sorted(split_df["loss_function"].unique())
+
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_df[
+                    (split_df["ensemble"] == ensemble)
+                    & (split_df["loss_function"] == loss_func)
+                    & (split_df["convergence_threshold_step"] > 0)
+                ]
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"ess": ["mean", "std"]})
+                        .reset_index()
+                    )
+                    stats.columns = ["step", "ess_mean", "ess_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
+
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+                        ax.errorbar(
+                            stats["convergence_rate"],
+                            stats["ess_mean"],
+                            yerr=stats["ess_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
+
+        ax.set_xscale("log")
+        ax.set_xlabel("Convergence Threshold")
+        ax.set_ylabel("Effective Sample Size")
+        ax.set_title("Frame Weights Effective Sample Size")
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "frame_weights_ess.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+
+def plot_ess_distribution(df: pd.DataFrame, output_dir: str):
+    """
+    Plot distribution of final ESS values for each split type.
+
+    Args:
+        df: DataFrame containing ESS data.
+        output_dir: Directory to save plots.
+    """
+    split_types = df["split_type"].unique()
+
+    for split_type in split_types:
+        print(f"  Plotting ESS distribution for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        final_data = split_df.groupby(["ensemble", "loss_function", "split"]).last().reset_index()
+
+        fig, ax = plt.subplots(1, 1, figsize=(12, 6))
+        fig.suptitle(
+            f"Final Effective Sample Size Distribution ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        sns.boxplot(data=final_data, x="ensemble", y="ess", hue="loss_function", ax=ax)
+        ax.set_title("Final Frame Weights Effective Sample Size")
+        ax.set_ylabel("Effective Sample Size")
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "final_ess_distribution.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+
 def plot_recovery_vs_kl(df: pd.DataFrame, output_dir: str):
     """
     Plot open state recovery vs KL divergence.
@@ -792,15 +938,84 @@ def plot_recovery_vs_kl(df: pd.DataFrame, output_dir: str):
         plt.close(fig)
 
 
+def plot_recovery_vs_ess(df: pd.DataFrame, output_dir: str):
+    """
+    Plot open state recovery vs ESS.
+
+    Args:
+        df (pd.DataFrame): Merged dataframe with recovery and ESS data.
+        output_dir (str): Output directory for plots.
+    """
+    plt.style.use("seaborn-v0_8-whitegrid")
+    ensemble_colors = {"ISO_TRI": "#1f77b4", "ISO_BI": "#ff7f0e"}
+    loss_markers = {"mcMSE": "o", "MSE": "s"}
+
+    split_types = df["split_type"].unique()
+
+    for split_type in split_types:
+        print(f"  Plotting recovery vs ESS for split type: {split_type}")
+        split_df = df[df["split_type"] == split_type]
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        fig.suptitle(
+            f"Open State Recovery vs. Effective Sample Size ({split_type} splits)",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        ensembles = sorted(split_df["ensemble"].unique())
+        loss_functions = sorted(split_df["loss_function"].unique())
+
+        ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_df[
+                    (split_df["ensemble"] == ensemble) & (split_df["loss_function"] == loss_func)
+                ]
+                if not subset.empty:
+                    color = ensemble_colors.get(ensemble, "#333333")
+                    marker = loss_markers.get(loss_func, "x")
+                    label = f"{ensemble} - {loss_func}"
+
+                    ax.scatter(
+                        subset["ess"],
+                        subset["open_recovery"],
+                        label=label,
+                        marker=marker,
+                        color=color,
+                        alpha=0.7,
+                    )
+
+        handles, labels = ax.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax.legend(by_label.values(), by_label.keys(), bbox_to_anchor=(1.05, 1), loc="upper left")
+
+        ax.set_xlabel("Effective Sample Size")
+        ax.set_ylabel("Open State Recovery (%)")
+        ax.set_title("Recovery vs. Effective Sample Size")
+        ax.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "recovery_vs_ess.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
+
+
 def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_rates, output_dir):
     """
     Create a combined plot with all analysis faceted across split_types.
-    Uses only the first panel (open state recovery) from conformational analysis.
+    Now includes ESS analysis as the 5th row.
 
     Args:
         recovery_df (pd.DataFrame): Recovery analysis results
-        kl_df (pd.DataFrame): KL divergence analysis results
-        merged_df (pd.DataFrame): Merged recovery and KL data
+        kl_df (pd.DataFrame): KL divergence and ESS analysis results
+        merged_df (pd.DataFrame): Merged recovery and KL/ESS data
         convergence_rates (List[float]): List of convergence rates
         output_dir (str): Output directory for plots
     """
@@ -816,8 +1031,8 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
         print("No split types found for combined plot")
         return
 
-    # Create figure with subplots: 4 plots x n_split_types
-    fig, axes = plt.subplots(4, n_splits, figsize=(6 * n_splits, 20))
+    # Create figure with subplots: 5 plots x n_split_types (added ESS row)
+    fig, axes = plt.subplots(5, n_splits, figsize=(6 * n_splits, 25))
 
     # Ensure axes is 2D even for single split type
     if n_splits == 1:
@@ -830,7 +1045,7 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
     for col_idx, split_type in enumerate(split_types):
         print(f"  Creating combined plots for split type: {split_type}")
 
-        # Row 1: Open State Recovery Bar Chart (first panel from conformational analysis)
+        # Row 1: Open State Recovery Bar Chart
         ax1 = axes[0, col_idx]
 
         # Get data for this split type
@@ -858,7 +1073,7 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
         ax1.set_title(f"Open State Recovery - {split_type}")
         ax1.set_ylabel("Recovery Percentage")
         ax1.set_ylim(0, 110)
-        if col_idx == 0:  # Only show legend on first column
+        if col_idx == 0:
             ax1.legend()
         else:
             ax1.get_legend().remove()
@@ -913,12 +1128,60 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
         ax2.set_xlabel("Convergence Threshold")
         ax2.set_ylabel("KL Divergence from Uniform Prior")
         ax2.set_title(f"KL Divergence vs Convergence - {split_type}")
-        if col_idx == 0:  # Only show legend on first column
+        if col_idx == 0:
             ax2.legend()
         ax2.grid(True, alpha=0.3)
 
-        # Row 3: KL Divergence Distribution
+        # Row 3: ESS vs Convergence
         ax3 = axes[2, col_idx]
+
+        for ensemble in ensembles:
+            for loss_func in loss_functions:
+                subset = split_kl_df[
+                    (split_kl_df["ensemble"] == ensemble)
+                    & (split_kl_df["loss_function"] == loss_func)
+                    & (split_kl_df["convergence_threshold_step"] > 0)
+                ]
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"ess": ["mean", "std"]})
+                        .reset_index()
+                    )
+                    stats.columns = ["step", "ess_mean", "ess_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
+
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+                        ax3.errorbar(
+                            stats["convergence_rate"],
+                            stats["ess_mean"],
+                            yerr=stats["ess_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
+
+        ax3.set_xscale("log")
+        ax3.set_xlabel("Convergence Threshold")
+        ax3.set_ylabel("Effective Sample Size")
+        ax3.set_title(f"ESS vs Convergence - {split_type}")
+        if col_idx == 0:
+            ax3.legend()
+        ax3.grid(True, alpha=0.3)
+
+        # Row 4: KL Divergence Distribution
+        ax4 = axes[3, col_idx]
 
         final_kl_data = (
             split_kl_df.groupby(["ensemble", "loss_function", "split"]).last().reset_index()
@@ -926,23 +1189,23 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
 
         if not final_kl_data.empty:
             sns.boxplot(
-                data=final_kl_data, x="ensemble", y="kl_divergence", hue="loss_function", ax=ax3
+                data=final_kl_data, x="ensemble", y="kl_divergence", hue="loss_function", ax=ax4
             )
-            ax3.set_yscale("log")
-            ax3.set_title(f"Final KL Divergence Distribution - {split_type}")
-            ax3.set_ylabel("KL Divergence (log scale)")
-            if col_idx == 0:  # Only show legend on first column
-                pass  # Keep legend for boxplot
+            ax4.set_yscale("log")
+            ax4.set_title(f"Final KL Divergence Distribution - {split_type}")
+            ax4.set_ylabel("KL Divergence (log scale)")
+            if col_idx == 0:
+                pass
             else:
-                ax3.get_legend().remove()
+                ax4.get_legend().remove()
         else:
-            ax3.text(
-                0.5, 0.5, "No data available", ha="center", va="center", transform=ax3.transAxes
+            ax4.text(
+                0.5, 0.5, "No data available", ha="center", va="center", transform=ax4.transAxes
             )
-            ax3.set_title(f"Final KL Divergence Distribution - {split_type}")
+            ax4.set_title(f"Final KL Divergence Distribution - {split_type}")
 
-        # Row 4: Recovery vs KL Divergence
-        ax4 = axes[3, col_idx]
+        # Row 5: Recovery vs ESS
+        ax5 = axes[4, col_idx]
 
         split_merged_df = (
             merged_df[merged_df["split_type"] == split_type]
@@ -950,8 +1213,8 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
             else pd.DataFrame()
         )
 
-        if not split_merged_df.empty:
-            ax4.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+        if not split_merged_df.empty and "ess" in split_merged_df.columns:
+            ax5.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
 
             ensembles = sorted(split_merged_df["ensemble"].unique())
             loss_functions = sorted(split_merged_df["loss_function"].unique())
@@ -967,8 +1230,8 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
                         marker = loss_markers.get(loss_func, "x")
                         label = f"{ensemble} - {loss_func}"
 
-                        ax4.scatter(
-                            subset["kl_divergence"],
+                        ax5.scatter(
+                            subset["ess"],
                             subset["open_recovery"],
                             label=label,
                             marker=marker,
@@ -976,26 +1239,25 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
                             alpha=0.7,
                         )
 
-            ax4.set_xscale("log")
-            ax4.set_xlabel("KL Divergence from Uniform Prior (log scale)")
-            ax4.set_ylabel("Open State Recovery (%)")
-            ax4.set_title(f"Recovery vs KL Divergence - {split_type}")
-            if col_idx == 0:  # Only show legend on first column
-                ax4.legend()
-            ax4.grid(True, alpha=0.3)
+            ax5.set_xlabel("Effective Sample Size")
+            ax5.set_ylabel("Open State Recovery (%)")
+            ax5.set_title(f"Recovery vs ESS - {split_type}")
+            if col_idx == 0:
+                ax5.legend()
+            ax5.grid(True, alpha=0.3)
         else:
-            ax4.text(
+            ax5.text(
                 0.5,
                 0.5,
-                "No merged data available",
+                "No ESS data available",
                 ha="center",
                 va="center",
-                transform=ax4.transAxes,
+                transform=ax5.transAxes,
             )
-            ax4.set_title(f"Recovery vs KL Divergence - {split_type}")
+            ax5.set_title(f"Recovery vs ESS - {split_type}")
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.95)  # Make room for suptitle
+    plt.subplots_adjust(top=0.95)
 
     # Save combined plot
     combined_plot_path = os.path.join(output_dir, "combined_analysis_faceted.png")
@@ -1007,13 +1269,12 @@ def plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_ra
 
 def main():
     """
-    Main function to run the complete analysis including both KL divergence and conformational recovery.
+    Main function to run the complete analysis including KL divergence, ESS, and conformational recovery.
     """
     # Define parameters (should match those used in the optimization script)
     ensembles = ["ISO_TRI", "ISO_BI"]
     loss_functions = ["mcMSE", "MSE"]
     num_splits = 3
-    # Remove the '0' convergence rate as it represents pre-optimization values
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
@@ -1027,10 +1288,12 @@ def main():
     traj_dir = "../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
     traj_dir = os.path.join(os.path.dirname(__file__), traj_dir)
 
+    bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
+    tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
+
     trajectory_paths = {
-        "ISO_TRI": os.path.join(traj_dir, "sliced_trajectories/TeaA_filtered_sliced.xtc"),
-        "ISO_BI": os.path.join(traj_dir, "sliced_trajectories/TeaA_initial_sliced.xtc"),
-        # "ISO_BI": "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories/TeaA_filtered.xtc",
+        "ISO_TRI": tri_path,
+        "ISO_BI": bi_path,
     }
 
     topology_path = os.path.join(traj_dir, "TeaA_ref_closed_state.pdb")
@@ -1068,20 +1331,21 @@ def main():
         num_splits=num_splits,
     )
 
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Part 1: KL Divergence Analysis
+    # Part 1: KL Divergence and ESS Analysis
     print("\n" + "=" * 60)
-    print("PART 1: KL DIVERGENCE ANALYSIS")
+    print("PART 1: KL DIVERGENCE AND ESS ANALYSIS")
     print("=" * 60)
 
-    # Extract KL divergences
-    print("Extracting frame weights and calculating KL divergences...")
+    # Extract KL divergences and ESS
+    print("Extracting frame weights and calculating KL divergences and ESS...")
     kl_df = extract_frame_weights_kl_divergences(results)
 
     if len(kl_df) > 0:
-        print(f"Extracted {len(kl_df)} KL divergence data points from optimization histories")
+        print(
+            f"Extracted {len(kl_df)} KL divergence and ESS data points from optimization histories"
+        )
 
         # Generate KL divergence plots
         print("Generating KL divergence vs convergence plots...")
@@ -1090,19 +1354,25 @@ def main():
         print("Generating KL divergence distribution plots...")
         plot_kl_divergence_distribution(kl_df, output_dir)
 
-        # Save the KL divergence dataset
-        kl_df_path = os.path.join(output_dir, "kl_divergence_analysis_data.csv")
-        kl_df.to_csv(kl_df_path, index=False)
-        print(f"KL divergence dataset saved to: {kl_df_path}")
+        # Generate ESS plots
+        print("Generating ESS vs convergence plots...")
+        plot_ess_convergence(kl_df, convergence_rates, output_dir)
+
+        print("Generating ESS distribution plots...")
+        plot_ess_distribution(kl_df, output_dir)
+
+        # Save the analysis dataset
+        analysis_df_path = os.path.join(output_dir, "kl_ess_analysis_data.csv")
+        kl_df.to_csv(analysis_df_path, index=False)
+        print(f"KL divergence and ESS dataset saved to: {analysis_df_path}")
     else:
-        print("No frame weights data found! Skipping KL divergence analysis.")
+        print("No frame weights data found! Skipping KL divergence and ESS analysis.")
 
     # Part 2: Conformational Recovery Analysis
     print("\n" + "=" * 60)
     print("PART 2: CONFORMATIONAL RECOVERY ANALYSIS")
     print("=" * 60)
 
-    # Check if trajectory files exist before proceeding
     missing_files = []
     for name, path in trajectory_paths.items():
         if not os.path.exists(path):
@@ -1124,16 +1394,13 @@ def main():
         if len(recovery_df) > 0:
             print(f"Extracted {len(recovery_df)} conformational recovery data points")
 
-            # Generate recovery plots
             print("Generating conformational recovery plots...")
             plot_conformational_recovery(recovery_df, convergence_rates, output_dir)
 
-            # Save the recovery dataset
             recovery_df_path = os.path.join(output_dir, "conformational_recovery_data.csv")
             recovery_df.to_csv(recovery_df_path, index=False)
             print(f"Conformational recovery dataset saved to: {recovery_df_path}")
 
-            # Print summary statistics
             print("\nConformational Recovery Summary:")
             print("-" * 40)
             final_recovery = (
@@ -1152,20 +1419,18 @@ def main():
         else:
             print("No conformational recovery data generated!")
 
-    # Part 3: KL Divergence vs Recovery Analysis
+    # Part 3: Combined Analysis (KL, ESS vs Recovery)
     print("\n" + "=" * 60)
-    print("PART 3: KL DIVERGENCE VS RECOVERY ANALYSIS")
+    print("PART 3: COMBINED ANALYSIS (KL, ESS VS RECOVERY)")
     print("=" * 60)
 
     if kl_df.empty or recovery_df.empty:
-        print("KL divergence or recovery data is missing. Skipping combined analysis.")
+        print("KL/ESS or recovery data is missing. Skipping combined analysis.")
         merged_df = pd.DataFrame()
     else:
-        print("Merging KL divergence and recovery data for combined analysis...")
-        # Rename column for merging
+        print("Merging KL/ESS and recovery data for combined analysis...")
         kl_df_renamed = kl_df.rename(columns={"convergence_threshold_step": "convergence_step"})
 
-        # Ensure correct types for merging
         recovery_df["convergence_step"] = pd.to_numeric(
             recovery_df["convergence_step"], errors="coerce"
         )
@@ -1175,14 +1440,11 @@ def main():
         )
         kl_df_renamed["split"] = pd.to_numeric(kl_df_renamed["split"], errors="coerce")
 
-        # Define merge keys
         merge_cols = ["split_type", "ensemble", "loss_function", "split", "convergence_step"]
 
-        # Drop rows with NaN in merge keys to ensure a clean merge
         recovery_df.dropna(subset=merge_cols, inplace=True)
         kl_df_renamed.dropna(subset=merge_cols, inplace=True)
 
-        # Perform the merge
         merged_df = pd.merge(recovery_df, kl_df_renamed, on=merge_cols, how="inner")
 
         if not merged_df.empty:
@@ -1190,22 +1452,24 @@ def main():
             print("Generating KL divergence vs recovery plots...")
             plot_recovery_vs_kl(merged_df, output_dir)
 
-            # Save merged data
-            merged_df_path = os.path.join(output_dir, "kl_vs_recovery_analysis_data.csv")
+            print("Generating ESS vs recovery plots...")
+            plot_recovery_vs_ess(merged_df, output_dir)
+
+            merged_df_path = os.path.join(output_dir, "merged_analysis_data.csv")
             merged_df.to_csv(merged_df_path, index=False)
-            print(f"KL vs recovery dataset saved to: {merged_df_path}")
+            print(f"Merged analysis dataset saved to: {merged_df_path}")
         else:
             print(
-                "Merged dataframe is empty. No common data points found between KL and recovery analysis. Skipping plot."
+                "Merged dataframe is empty. No common data points found. Skipping combined plots."
             )
 
-    # Part 4: Combined Faceted Analysis
+    # Part 4: Combined Faceted Analysis (now includes ESS)
     print("\n" + "=" * 60)
     print("PART 4: COMBINED FACETED ANALYSIS")
     print("=" * 60)
 
     if not recovery_df.empty and not kl_df.empty:
-        print("Generating combined faceted plot across all split types...")
+        print("Generating combined faceted plot across all split types (including ESS)...")
         plot_combined_analysis_faceted(recovery_df, kl_df, merged_df, convergence_rates, output_dir)
     else:
         print("Missing required data for combined plot. Skipping combined analysis.")

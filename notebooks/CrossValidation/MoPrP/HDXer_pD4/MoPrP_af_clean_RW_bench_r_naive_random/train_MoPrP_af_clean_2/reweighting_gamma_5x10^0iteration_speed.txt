@@ -1,0 +1,1 @@
+Average iteration speed: 1593.86 iterations/sec

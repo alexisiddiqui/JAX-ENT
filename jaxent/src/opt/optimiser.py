@@ -389,7 +389,7 @@ class OptaxOptimizer:
         # print("Updates:", updates)
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore
 
-        updated_params = optax.projections.projection_non_negative(updated_params)
+        updated_params = Simulation_Parameters.normalize_weights(updated_params)
         # print("Projected parameters:", updated_params)
         # Compute losses for reporting
         losses = compute_loss(simulation, updated_params, data_targets, indexes, loss_functions)
@@ -402,7 +402,7 @@ class OptaxOptimizer:
         # save_state = copy.deepcopy(new_state)
         # save_state.params = Simulation_Parameters.normalize_weights(save_state.params)
         save_state = new_state.update(
-            Simulation_Parameters.normalize_weights(new_state.params),
+            new_state.params,
             new_state.opt_state,
             losses,
         )
