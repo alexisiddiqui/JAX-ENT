@@ -229,6 +229,12 @@ class OptaxOptimizer:
 
         mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_masks else 0.0
 
+        if mask_mask == 1.0:
+            raise NotImplementedError(
+                "Frame mask optimization not fully implemented - while gradients can flow, "
+                "frame masking is not applied during weights normalisation before the forward step"
+            )
+
         print(parameter_masks)
         print(f"Masks: frame={frame_mask}, model={model_mask}, frame_mask={mask_mask}")
 

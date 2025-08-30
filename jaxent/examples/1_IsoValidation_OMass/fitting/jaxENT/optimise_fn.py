@@ -646,7 +646,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
 
         optimizer = OptaxOptimizer(
             learning_rate=1e-4,
-            optimizer="adamw",
+            optimizer="adam",
         )
         opt_state = optimizer.initialise(
             model=sim,
