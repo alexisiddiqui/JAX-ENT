@@ -106,7 +106,7 @@ def max_entropy_loss(
 def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    epsilon = 1e-10
+    epsilon = 1e-20
 
     simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
 
@@ -128,7 +128,7 @@ def maxent_convexKL_loss(
 def maxent_JSD_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    epsilon = 1e-10
+    epsilon = 1e-20
 
     simulation_weights = jnp.clip(jnp.abs(model.params.frame_weights), a_min=epsilon)
 
