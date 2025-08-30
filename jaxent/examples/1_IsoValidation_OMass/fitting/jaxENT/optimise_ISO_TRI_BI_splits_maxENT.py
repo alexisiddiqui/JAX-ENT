@@ -29,7 +29,7 @@ jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 # Import model components
-from optimise_fn import run_optimise_ISO_TRI_BI_MAE
+from optimise_fn import run_optimise_ISO_TRI_BI_maxENT
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
@@ -122,7 +122,10 @@ def run_maxent_sweep(
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
-    output_base_dir = os.path.join(os.path.dirname(__file__), "_optimise_maxent_MAEneps_adam")
+    output_base_dir = os.path.join(
+        os.path.dirname(__file__),
+        "_optimise_maxent_cKL_adam_realparams_graphfix_softmax2_adamw2-1e-4",
+    )
 
     if not os.path.exists(datasplit_dir):
         raise FileNotFoundError(f"Datasplit directory not found: {datasplit_dir}")
@@ -228,7 +231,7 @@ def run_maxent_sweep(
                 run_start_time = time.time()
 
                 try:
-                    run_optimise_ISO_TRI_BI_MAE(
+                    run_optimise_ISO_TRI_BI_maxENT(
                         train_data=train_data,
                         val_data=val_data,
                         prior_data=prior_dataset,

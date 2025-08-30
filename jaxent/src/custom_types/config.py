@@ -43,7 +43,6 @@ class Optimisable_Parameters(Enum):
     model_parameters = 1
     forward_model_weights = 2
     frame_mask = 3
-    forward_model_scaling = 4
 
 
 @dataclass

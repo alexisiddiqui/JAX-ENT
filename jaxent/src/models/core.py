@@ -59,7 +59,7 @@ class Simulation:
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
         self.params = Simulation_Parameters.normalize_weights(self.params)
-
+        self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
         # assert that the number of forward models is equal to the number of forward model weights
         assert len(self.forward_models) == len(self.params.model_parameters), (
             "Number of forward models must be equal to number of forward model parameters"
