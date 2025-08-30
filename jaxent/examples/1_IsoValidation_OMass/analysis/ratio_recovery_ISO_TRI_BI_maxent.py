@@ -3063,12 +3063,12 @@ def main():
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
-    results_dir = "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax2_adamw2"
+    results_dir = "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax3"
     # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_cKL_adam_realparams_graphfix_softmax2_adamw2"
+    output_dir = "_analysis_maxent_cKL_adam_realparams_graphfix_softmax3"
 
     # output_dir = "_analysis_maxent_HDXer"
 
