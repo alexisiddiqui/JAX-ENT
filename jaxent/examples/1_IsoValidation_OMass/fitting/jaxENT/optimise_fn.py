@@ -117,8 +117,7 @@ def optimise_sweep(
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
             )
-            _simulation.params = opt_state.params
-
+            save_state = history.states[-1]
             # Check for tolerance, nan, or inf conditions (early termination)
             if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
                 print(
@@ -126,10 +125,10 @@ def optimise_sweep(
                 )
                 break
             if step == 0:
-                _history.add_state(opt_state)
+                _history.add_state(save_state)
 
             # Check convergence for current threshold
-            if step > 10:
+            if step > 1:
                 previous_loss = optimizer.history.states[-2].losses.total_train_loss
                 loss_delta = abs(current_loss - previous_loss)
 
@@ -139,7 +138,7 @@ def optimise_sweep(
                         f"Threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
                     )
                     print(f"Loss delta: {loss_delta:.8f}, threshold: {current_threshold}")
-                    _history.add_state(opt_state)
+                    _history.add_state(save_state)
                     print(f"History updated with state at step {step}, loss: {current_loss:8f}")
 
                     # Move to next threshold
@@ -162,7 +161,10 @@ def optimise_sweep(
             "Simulation parameters at failure: ",
             _simulation.params,
             "\n" * 10,
-            "State parameters at failure: ",
+            "Latest history state at failure: ",
+            history.states[-1].params,
+            "\n" * 10,
+            "Opt State parameters at failure: ",
             opt_state.params,
             "\n" * 10,
         )
@@ -644,7 +646,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
 
         optimizer = OptaxOptimizer(
             learning_rate=1e-4,
-            optimizer="adam",
+            optimizer="adamw",
         )
         opt_state = optimizer.initialise(
             model=sim,
@@ -660,7 +662,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
             tolerance=1e-10,
             convergence=convergence,
             indexes=[0, 0],
-            loss_functions=[loss_function, maxent_JSD_loss],
+            loss_functions=[loss_function, maxent_convexKL_loss],
             opt_state=opt_state,
             optimizer=optimizer,
         )
