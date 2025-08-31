@@ -130,7 +130,7 @@ def maxent_JSD_loss(
 ) -> tuple[Array, Array]:
     epsilon = 1e-20
 
-    simulation_weights = jnp.clip(jnp.abs(model.params.frame_weights), a_min=epsilon)
+    simulation_weights = jnp.abs(model.params.frame_weights)
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
