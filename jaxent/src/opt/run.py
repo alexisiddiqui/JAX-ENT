@@ -59,14 +59,13 @@ def _optimise(
     for step in range(n_steps):
         history = optimizer.history
 
-        opt_state, current_loss, history = optimizer.step(
+        opt_state, current_loss, save_state, _simulation = optimizer.step(
             optimizer=optimizer,
             state=opt_state,
             simulation=_simulation,
             data_targets=tuple(data_to_fit),
             loss_functions=tuple(loss_functions),
             indexes=tuple(indexes),
-            history=history,
         )
         # _simulation.params = opt_state.params
         # if step % 100 == 0:
@@ -83,7 +82,7 @@ def _optimise(
             train_loss=opt_state.losses.total_train_loss,
             val_loss=opt_state.losses.total_val_loss,
         )
-
+        history.add_state(save_state)
         if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
             print(f"Reached convergence tolerance/nan vals at step {step}, loss: {current_loss}")
             break

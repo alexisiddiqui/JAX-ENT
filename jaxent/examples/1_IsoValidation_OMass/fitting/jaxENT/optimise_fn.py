@@ -90,16 +90,19 @@ def optimise_sweep(
     _history = copy.deepcopy(optimizer.history)  # Create a copy of the optimizer's history
     try:
         for step in range(n_steps):
-            history = optimizer.history
-            opt_state, current_loss, history = optimizer.step(
+            previous_loss = current_loss if step > 0 else jnp.inf
+
+            opt_state, current_loss, save_state, _simulation = optimizer.step(
                 optimizer=optimizer,
                 state=opt_state,
                 simulation=_simulation,
                 data_targets=tuple(data_to_fit),
                 loss_functions=tuple(loss_functions),
                 indexes=tuple(indexes),
-                history=history,
             )
+
+            loss_delta = jnp.abs(previous_loss - current_loss)
+
             jax.debug.print(
                 fmt=" ".join(
                     [
@@ -107,6 +110,7 @@ def optimise_sweep(
                         "Training Loss: {train_loss:.8e}",
                         "Validation Loss: {val_loss:.4e}",
                         "Threshold {threshold_idx}/{total_thresholds} ({current_threshold:.2e})",
+                        "Loss Delta: {loss_delta:.2e}",
                     ]
                 ),
                 step=step,
@@ -116,8 +120,8 @@ def optimise_sweep(
                 threshold_idx=current_threshold_idx + 1,
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
+                loss_delta=loss_delta,
             )
-            save_state = history.states[-1]
             # Check for tolerance, nan, or inf conditions (early termination)
             if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
                 print(
@@ -129,9 +133,6 @@ def optimise_sweep(
 
             # Check convergence for current threshold
             if step > 1:
-                previous_loss = optimizer.history.states[-2].losses.total_train_loss
-                loss_delta = abs(current_loss - previous_loss)
-
                 # Check if current threshold is met
                 if loss_delta < current_threshold:
                     print(
@@ -161,13 +162,26 @@ def optimise_sweep(
             "Simulation parameters at failure: ",
             _simulation.params,
             "\n" * 10,
-            "Latest history state at failure: ",
-            history.states[-1].params,
+            "Latest save state at failure: ",
+            save_state.params,
             "\n" * 10,
             "Opt State parameters at failure: ",
             opt_state.params,
             "\n" * 10,
         )
+
+    print(
+        "Optimization loop complete.",
+        "Simulation parameters: ",
+        _simulation.params,
+        "\n" * 10,
+        "Latest save state ",
+        save_state.params,
+        "\n" * 10,
+        "Opt State parameters ",
+        opt_state.params,
+        "\n" * 10,
+    )
 
     optimizer.history = _history  # Update the optimizer's history with the copied history
     # Get best state from recorded history
@@ -645,8 +659,9 @@ def run_optimise_ISO_TRI_BI_maxENT(
         sim.initialise()
 
         optimizer = OptaxOptimizer(
-            learning_rate=1e-4,
+            learning_rate=1e-3,
             optimizer="adam",
+            clip_value=None,
         )
         opt_state = optimizer.initialise(
             model=sim,

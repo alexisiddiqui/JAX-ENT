@@ -116,6 +116,7 @@ class Simulation:
         """
         This function applies the forward models to the input features
         """
+        params = Simulation_Parameters.normalize_weights(params)
         self.params = params
 
         # try:
@@ -295,7 +296,6 @@ class Simulation:
             Output features
         """
         # Normalize weights
-        params = Simulation_Parameters.normalize_weights(params)
 
         # Mask the frame weights
         # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
