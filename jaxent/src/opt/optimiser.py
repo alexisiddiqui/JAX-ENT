@@ -56,13 +56,13 @@ class OptaxOptimizer:
             optimizer_chain.append(optax.clip(clip_value))
 
         if optimizer.lower() == "adam":
-            optimizer_chain.append(optax.adam(learning_rate=learning_rate, eps=1e-8))
+            optimizer_chain.append(optax.adam(learning_rate=learning_rate, eps=1e-20))
         elif optimizer.lower() == "sgd":
             optimizer_chain.append(optax.sgd(learning_rate))
         elif optimizer.lower() == "adagrad":
             optimizer_chain.append(optax.adagrad(learning_rate))
         elif optimizer.lower() == "adamw":
-            optimizer_chain.append(optax.adamw(learning_rate=learning_rate, eps=1e-8))
+            optimizer_chain.append(optax.adamw(learning_rate=learning_rate, eps=1e-20))
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -342,9 +342,9 @@ class OptaxOptimizer:
         simulation: InitialisedSimulation,
         data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
         loss_functions: tuple[JaxEnt_Loss, ...],
-        history: OptimizationHistory,
+        # history: OptimizationHistory,
         indexes: tuple[int, ...],
-    ) -> Tuple[OptimizationState, Array, OptimizationHistory]:
+    ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
 
         # simulation.params = state.params
@@ -395,9 +395,9 @@ class OptaxOptimizer:
             losses,
         )
         # Add to history
-        history.add_state(save_state)
+        # history.add_state(save_state)
 
-        return new_state, loss_value, history
+        return new_state, loss_value, save_state, simulation
 
 
 @partial(

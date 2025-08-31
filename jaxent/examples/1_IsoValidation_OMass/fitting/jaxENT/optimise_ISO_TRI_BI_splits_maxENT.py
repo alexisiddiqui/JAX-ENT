@@ -124,7 +124,7 @@ def run_maxent_sweep(
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
     output_base_dir = os.path.join(
         os.path.dirname(__file__),
-        "_optimise_maxent_cKL_adam_realparams_graphfix_softmax3",
+        "_optimise_maxent_cKL_adam_realparams_graphfix_softmax_adam_neps",
     )
 
     if not os.path.exists(datasplit_dir):
