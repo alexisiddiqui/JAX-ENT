@@ -1583,12 +1583,12 @@ def main():
 
     # Define directories
     results_dir = (
-        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_adam_noclip"
+        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
     )
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_failure_analysis_maxent_weights_cKL_adam_realparams_graphfix_softmax_adam_noclip"
+    output_dir = "_failure_analysis_maxent_weights_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
 
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
 
@@ -1644,24 +1644,24 @@ def main():
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Part 1: KL Divergence Analysis with MaxEnt
-    print("\n" + "=" * 60)
-    print("PART 1: KL DIVERGENCE AND ESS ANALYSIS WITH MAXENT")
-    print("=" * 60)
+    # # Part 1: KL Divergence Analysis with MaxEnt
+    # print("\n" + "=" * 60)
+    # print("PART 1: KL DIVERGENCE AND ESS ANALYSIS WITH MAXENT")
+    # print("=" * 60)
 
     # Extract frame weights and calculate KL divergences
-    print("Extracting frame weights and calculating KL divergences and ESS...")
-    kl_ess_df = extract_frame_weights_kl_with_maxent(results)
+    # print("Extracting frame weights and calculating KL divergences and ESS...")
+    # kl_ess_df = extract_frame_weights_kl_with_maxent(results)
 
-    if len(kl_ess_df) > 0:
-        print(
-            f"Extracted {len(kl_ess_df)} KL divergence and ESS data points from optimization histories"
-        )
+    # if len(kl_ess_df) > 0:
+    #     print(
+    #         f"Extracted {len(kl_ess_df)} KL divergence and ESS data points from optimization histories"
+    #     )
 
-        # Save the KL divergence and ESS dataset
-        kl_ess_df_path = os.path.join(output_dir, "kl_divergence_ess_analysis_maxent_data.csv")
-        kl_ess_df.to_csv(kl_ess_df_path, index=False)
-        print(f"KL divergence and ESS dataset saved to: {kl_ess_df_path}")
+    #     # Save the KL divergence and ESS dataset
+    #     kl_ess_df_path = os.path.join(output_dir, "kl_divergence_ess_analysis_maxent_data.csv")
+    #     kl_ess_df.to_csv(kl_ess_df_path, index=False)
+    #     print(f"KL divergence and ESS dataset saved to: {kl_ess_df_path}")
 
     # Extract weights for failure analysis plotting
     print("\nExtracting weights for failure analysis...")

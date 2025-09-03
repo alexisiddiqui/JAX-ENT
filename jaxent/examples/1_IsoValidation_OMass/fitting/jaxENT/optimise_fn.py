@@ -64,34 +64,28 @@ def optimise_sweep(
     data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features],
     n_steps: int,
     tolerance: float,
-    convergence: list[float],  # List of convergence thresholds to iterate through
+    convergence: list[float],
     indexes: Sequence[int],
     loss_functions: Sequence[JaxEnt_Loss],
     opt_state: OptimizationState,
     optimizer: OptaxOptimizer,
+    ema_alpha: float = 0.1,  # EMA smoothing factor
+    min_steps_per_threshold: int = 2,  # Minimum steps before checking convergence
 ) -> Tuple[InitialisedSimulation, OptaxOptimizer]:
-    """
-    Optimisation method that sequentially iterates through convergence thresholds.
-    Only advances to the next threshold after the current one is met.
-    Stops only when all thresholds have been satisfied.
-
-    Args:
-        convergence: List of convergence thresholds to iterate through sequentially.
-    """
-    # Sort thresholds from largest to smallest (coarse to fine convergence)
+    """EMA-only approach - simpler and usually sufficient."""
     convergence_thresholds = sorted(convergence, reverse=True)
     current_threshold_idx = 0
     current_threshold = convergence_thresholds[current_threshold_idx]
 
-    print(
-        f"Starting optimization with {len(convergence_thresholds)} convergence thresholds: {convergence_thresholds}"
-    )
-    print(f"Current threshold: {current_threshold}")
-    _history = copy.deepcopy(optimizer.history)  # Create a copy of the optimizer's history
-    try:
-        for step in range(n_steps):
-            previous_loss = current_loss if step > 0 else jnp.inf
+    ema_loss_delta = None
+    steps_since_threshold_start = 0
 
+    _history = copy.deepcopy(optimizer.history)
+
+    try:
+        previous_loss = None
+
+        for step in range(n_steps):
             opt_state, current_loss, save_state, _simulation = optimizer.step(
                 optimizer=optimizer,
                 state=opt_state,
@@ -101,60 +95,76 @@ def optimise_sweep(
                 indexes=tuple(indexes),
             )
 
-            loss_delta = jnp.abs(previous_loss - current_loss)
+            # Calculate delta only after first step
+            if previous_loss is not None:
+                raw_loss_delta = jnp.abs(previous_loss - current_loss)
+
+                # Update EMA
+                if (
+                    ema_loss_delta is None
+                ):  # First real delta calculation - initialize with first value
+                    ema_loss_delta = raw_loss_delta
+                else:
+                    ema_loss_delta = ema_alpha * raw_loss_delta + (1 - ema_alpha) * ema_loss_delta
+            else:
+                raw_loss_delta = 0.0  # For logging purposes
+                # Keep ema_loss_delta as None until we have real data - don't set to 0.0!
+
+            # Store current loss for next iteration (BEFORE using it in calculations!)
+            previous_loss = current_loss
+
+            steps_since_threshold_start += 1
 
             jax.debug.print(
                 fmt=" ".join(
                     [
                         "Step {step}/{n_steps}",
-                        "Training Loss: {train_loss:.8e}",
-                        "Validation Loss: {val_loss:.4e}",
+                        "Loss: {current_loss:.6e}",
+                        "EMA Δ: {ema_delta:.4e}",
+                        "Raw Δ: {raw_delta:.4e}",
                         "Threshold {threshold_idx}/{total_thresholds} ({current_threshold:.2e})",
-                        "Loss Delta: {loss_delta:.2e}",
                     ]
                 ),
                 step=step,
                 n_steps=n_steps,
-                train_loss=opt_state.losses.total_train_loss,
-                val_loss=opt_state.losses.total_val_loss,
+                current_loss=current_loss,
+                ema_delta=ema_loss_delta if ema_loss_delta is not None else 0.0,
+                raw_delta=raw_loss_delta,
                 threshold_idx=current_threshold_idx + 1,
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
-                loss_delta=loss_delta,
             )
-            # Check for tolerance, nan, or inf conditions (early termination)
+
             if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
-                print(
-                    f"Reached convergence tolerance/nan vals at step {step}, loss: {current_loss}"
-                )
+                print(f"Reached convergence tolerance/nan vals at step {step}")
                 break
+
             if step == 0:
                 _history.add_state(save_state)
 
-            # Check convergence for current threshold
-            if step > 1:
-                # Check if current threshold is met
-                if loss_delta < current_threshold:
+            # Simple convergence check after minimum steps (and after we have a real EMA value)
+            if (
+                steps_since_threshold_start >= min_steps_per_threshold
+                and ema_loss_delta is not None
+                and ema_loss_delta < current_threshold
+            ):
+                print(
+                    f"Threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
+                )
+                print(f"EMA loss delta: {ema_loss_delta:.8f}, threshold: {current_threshold}")
+                _history.add_state(save_state)
+
+                current_threshold_idx += 1
+                steps_since_threshold_start = 0
+
+                if current_threshold_idx >= len(convergence_thresholds):
+                    print(f"All thresholds completed at step {step}")
+                    break
+                else:
+                    current_threshold = convergence_thresholds[current_threshold_idx]
                     print(
-                        f"Threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
+                        f"Moving to threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold}"
                     )
-                    print(f"Loss delta: {loss_delta:.8f}, threshold: {current_threshold}")
-                    _history.add_state(save_state)
-                    print(f"History updated with state at step {step}, loss: {current_loss:8f}")
-
-                    # Move to next threshold
-                    current_threshold_idx += 1
-
-                    # Check if all thresholds have been satisfied
-                    if current_threshold_idx >= len(convergence_thresholds):
-                        print(f"All convergence thresholds completed at step {step}")
-                        break
-                    else:
-                        # Update to next threshold
-                        current_threshold = convergence_thresholds[current_threshold_idx]
-                        print(
-                            f"Moving to threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold}"
-                        )
     except Exception as e:
         raise RuntimeError(
             f"Optimization failed due to an error: {e}. Returning best state from history.",
@@ -183,14 +193,12 @@ def optimise_sweep(
         "\n" * 10,
     )
 
-    optimizer.history = _history  # Update the optimizer's history with the copied history
-    # Get best state from recorded history
+    optimizer.history = _history
     best_state = optimizer.history.get_best_state()
     if best_state is not None:
         _simulation.params = optimizer.history.best_state.params
 
-    _simulation = cast(InitialisedSimulation, _simulation)
-    return _simulation, optimizer
+    return cast(InitialisedSimulation, _simulation), optimizer
 
 
 @jit_Guard.clear_caches_after()
@@ -660,7 +668,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
 
         optimizer = OptaxOptimizer(
             learning_rate=1e-3,
-            optimizer="adam",
+            optimizer="rmsprop",
             clip_value=None,
         )
         opt_state = optimizer.initialise(

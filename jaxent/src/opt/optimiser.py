@@ -44,6 +44,7 @@ class OptaxOptimizer:
             Optimisable_Parameters.frame_weights,
         },
         clip_value: Optional[float] = 1.0,
+        force_simplex: bool = False,
     ):
         self.learning_rate = learning_rate
         self.parameter_masks = parameter_masks
@@ -56,13 +57,23 @@ class OptaxOptimizer:
             optimizer_chain.append(optax.clip(clip_value))
 
         if optimizer.lower() == "adam":
-            optimizer_chain.append(optax.adam(learning_rate=learning_rate, eps=1e-20))
+            optimizer_chain.append(optax.adam(learning_rate=learning_rate))
+            force_simplex = False
         elif optimizer.lower() == "sgd":
             optimizer_chain.append(optax.sgd(learning_rate))
+            force_simplex = True
         elif optimizer.lower() == "adagrad":
             optimizer_chain.append(optax.adagrad(learning_rate))
         elif optimizer.lower() == "adamw":
-            optimizer_chain.append(optax.adamw(learning_rate=learning_rate, eps=1e-20))
+            optimizer_chain.append(optax.adamw(learning_rate=learning_rate))
+            force_simplex = False
+        elif optimizer.lower() == "rmsprop":
+            optimizer_chain.append(optax.rmsprop(learning_rate=learning_rate, decay=0.9))
+            force_simplex = False
+
+        elif optimizer.lower() == "lbfgs":
+            optimizer_chain.append(optax.lbfgs(learning_rate=1e0))
+            force_simplex = False
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -72,6 +83,8 @@ class OptaxOptimizer:
         # optimizer_chain.append(optax.keep_params_nonnegative())
 
         self.optimizer = optax.chain(*optimizer_chain)
+
+        self.force_simplex = force_simplex
 
     def tree_flatten(self):
         # Dynamic values (leaves of the pytree)
@@ -350,10 +363,14 @@ class OptaxOptimizer:
         # simulation.params = state.params
         # simulation.forward(state.params)
         # print("Forward pass done")
-        def loss_fn(params: Simulation_Parameters):
+
+        def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
             return losses.total_train_loss, losses
+
+        def scalar_loss_fn(params: Simulation_Parameters) -> Array:
+            return loss_fn(params)[0]
 
         # Compute gradients with value and grad to get both loss and gradients
         loss_val_losses, grads = jax.value_and_grad(loss_fn, allow_int=True, has_aux=True)(
@@ -370,14 +387,18 @@ class OptaxOptimizer:
 
         # Get optimizer updates
         updates, new_opt_state = optimizer.optimizer.update(
-            updates=masked_grads,  # type: ignore
-            state=state.opt_state,
-            params=state.params,  # type: ignore
+            masked_grads,  # type: ignore
+            state.opt_state,
+            state.params,  # type: ignore
+            value=loss_value,
+            grad=masked_grads,
+            value_fn=scalar_loss_fn,
         )
         # print("Updates:", updates)
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore
 
-        # updated_params = Simulation_Parameters.normalize_weights(updated_params)
+        if optimizer.force_simplex:
+            updated_params = Simulation_Parameters.normalize_weights(updated_params)
         # print("Projected parameters:", updated_params)
         # Compute losses for reporting
         # losses = compute_loss(simulation, updated_params, data_targets, indexes, loss_functions)
