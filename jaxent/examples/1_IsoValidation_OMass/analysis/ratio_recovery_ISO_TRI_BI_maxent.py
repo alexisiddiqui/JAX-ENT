@@ -3064,13 +3064,13 @@ def main():
 
     # Define directories
     results_dir = (
-        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_adamw_noclip1e-4"
+        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
     )
     # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_cKL_adam_realparams_graphfix_softmax_adamw_noclip1e-4"
+    output_dir = "_analysis_maxent_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
 
     # output_dir = "_analysis_maxent_HDXer"
 
