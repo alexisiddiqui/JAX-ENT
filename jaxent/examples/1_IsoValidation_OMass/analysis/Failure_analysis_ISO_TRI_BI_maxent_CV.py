@@ -2062,10 +2062,10 @@ def main():
 
     # Define directories
     results_dir = (
-        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_adam_noclip"
+        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
     )
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
-    output_dir = "_failure_analysis_maxent_CV_cKL_adam_realparams_graphfix_softmax_adam_noclip"
+    output_dir = "_failure_analysis_maxent_CV_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
 
     # Define trajectory and reference paths

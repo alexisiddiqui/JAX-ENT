@@ -106,8 +106,8 @@ def max_entropy_loss(
 def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    epsilon = 1e-20
-
+    num_frames = dataset.frame_weights.shape[0]
+    epsilon = 1e-3 / num_frames
     simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
@@ -115,7 +115,6 @@ def maxent_convexKL_loss(
     prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
-    num_frames = prior_frame_weights.shape[0]
 
     loss = optax.losses.convex_kl_divergence(
         log_predictions=jnp.log(simulation_weights),
@@ -128,16 +127,16 @@ def maxent_convexKL_loss(
 def maxent_JSD_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    epsilon = 1e-20
+    num_frames = dataset.frame_weights.shape[0]
+    epsilon = 1e-3 / num_frames
 
-    simulation_weights = jnp.abs(model.params.frame_weights)
+    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights)
+    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
-    num_frames = prior_frame_weights.shape[0]
 
     # Calculate the midpoint distribution M
     M = (simulation_weights + prior_frame_weights) / 2
