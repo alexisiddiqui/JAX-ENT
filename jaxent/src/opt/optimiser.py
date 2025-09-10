@@ -31,7 +31,7 @@ from jaxent.src.opt.base import (
 class OptaxOptimizer:
     learning_rate: float  # static/aux_data
     optimizer: optax.GradientTransformation  # static/aux_data
-    parameter_masks: set[Optimisable_Parameters]  # static/aux_data
+    parameter_partition_masks: set[Optimisable_Parameters]  # static/aux_data
     clip_value: Optional[float]  # static/aux_data
     history: OptimizationHistory  # is updated during optimization - child/dynamic
     step: Callable  # function is set during optimization - child/dynamic
@@ -40,14 +40,14 @@ class OptaxOptimizer:
         self,
         learning_rate: float = 1e-4,
         optimizer: str = "adam",
-        parameter_masks: set[Optimisable_Parameters] = {
+        parameter_partition_masks: set[Optimisable_Parameters] = {
             Optimisable_Parameters.frame_weights,
         },
         clip_value: Optional[float] = 1.0,
         force_simplex: bool = False,
     ):
         self.learning_rate = learning_rate
-        self.parameter_masks = parameter_masks
+        self.parameter_partition_masks = parameter_partition_masks
         self.clip_value = clip_value
         self.history = OptimizationHistory()
         self.step = self._step
@@ -94,7 +94,7 @@ class OptaxOptimizer:
         aux_data = {
             "learning_rate": self.learning_rate,
             "optimizer": self.optimizer,
-            "parameter_masks": self.parameter_masks,
+            "parameter_partition_masks": self.parameter_partition_masks,
             "clip_value": self.clip_value,
         }
         return children, aux_data
@@ -108,7 +108,7 @@ class OptaxOptimizer:
         self.history = children[0]
         self.learning_rate = aux_data["learning_rate"]
         self.optimizer = aux_data["optimizer"]
-        self.parameter_masks = aux_data["parameter_masks"]
+        self.parameter_partition_masks = aux_data["parameter_partition_masks"]
         self.clip_value = aux_data["clip_value"]
 
         return self
@@ -127,17 +127,17 @@ class OptaxOptimizer:
     ) -> OptimizationState:
         """Initialize the optimization state"""
         params = model.params
-        random_key = jax.random.PRNGKey(0)
-        random_inital_weights = jax.random.uniform(
-            random_key,
-            shape=params.frame_weights.shape,
-            minval=-1.0,
-            maxval=1.0,
-        )
+        # random_key = jax.random.PRNGKey(0)
+        # random_inital_weights = jax.random.uniform(
+        #     random_key,
+        #     shape=params.frame_weights.shape,
+        #     minval=-1.0,
+        #     maxval=1.0,
+        # )
         # multiply the weights by the length of the array
         params = Simulation_Parameters(
             frame_mask=params.frame_mask,
-            frame_weights=random_inital_weights * len(params.frame_weights),
+            frame_weights=params.frame_weights * len(params.frame_weights),
             model_parameters=params.model_parameters,
             normalise_loss_functions=params.normalise_loss_functions,
             forward_model_weights=params.forward_model_weights,
@@ -147,7 +147,7 @@ class OptaxOptimizer:
         if isinstance(optimisable_funcs, list):
             optimisable_funcs = jnp.array(optimisable_funcs, dtype=jnp.float32)
             optimisable_funcs = jnp.round(optimisable_funcs)
-        parameter_mask = self.parameter_masks
+        parameter_mask = self.parameter_partition_masks
         gradient_masks = self.create_gradient_masks(
             parameter_mask,
             params,
@@ -232,7 +232,7 @@ class OptaxOptimizer:
 
     @staticmethod
     def create_gradient_masks(
-        parameter_masks: set[Optimisable_Parameters],
+        parameter_partition_masks: set[Optimisable_Parameters],
         params: Simulation_Parameters,
         optimisable_funcs: Array | None,
     ) -> Simulation_Parameters:
@@ -253,10 +253,14 @@ class OptaxOptimizer:
             optimisable_funcs = jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32)
 
         # Create masks based on which parameters are enabled for optimization
-        frame_mask = 1.0 if Optimisable_Parameters.frame_weights in parameter_masks else 0.0
-        model_mask = 1.0 if Optimisable_Parameters.model_parameters in parameter_masks else 0.0
+        frame_mask = (
+            1.0 if Optimisable_Parameters.frame_weights in parameter_partition_masks else 0.0
+        )
+        model_mask = (
+            1.0 if Optimisable_Parameters.model_parameters in parameter_partition_masks else 0.0
+        )
 
-        mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_masks else 0.0
+        mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_partition_masks else 0.0
 
         if mask_mask == 1.0:
             raise NotImplementedError(
@@ -264,7 +268,7 @@ class OptaxOptimizer:
                 "frame masking is not applied during weights normalisation before the forward step"
             )
 
-        print(parameter_masks)
+        print(parameter_partition_masks)
         print(f"Masks: frame={frame_mask}, model={model_mask}, frame_mask={mask_mask}")
 
         # Create frame weights mask
@@ -287,7 +291,7 @@ class OptaxOptimizer:
             )
             model_parameters_mask.append(masked_model_param)
 
-        # In create_parameter_masks
+        # In create_parameter_partition_masks
         param_mask = Simulation_Parameters(
             frame_weights=frame_weights_mask,
             frame_mask=frame_mask_mask,
