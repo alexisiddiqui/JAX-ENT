@@ -124,7 +124,7 @@ def run_maxent_sweep(
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
     output_base_dir = os.path.join(
         os.path.dirname(__file__),
-        "_optimise_maxent_cKL_rmsprop_realparams_graphfix_softmax_EMA_VKLneps",
+        "_optimise_maxent_cKL_adagrad_realparams_graphfix_softmax_EMA_VKLneps_test",
     )
 
     if not os.path.exists(datasplit_dir):
@@ -408,7 +408,7 @@ def main():
     parser.add_argument(
         "--n-steps",
         type=int,
-        default=10000,
+        default=100,
         help="Number of optimization steps per run (default: 10000).",
     )
     parser.add_argument(
