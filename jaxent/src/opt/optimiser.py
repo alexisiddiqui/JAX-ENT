@@ -68,7 +68,7 @@ class OptaxOptimizer:
             optimizer_chain.append(optax.adamw(learning_rate=learning_rate))
             force_simplex = False
         elif optimizer.lower() == "rmsprop":
-            optimizer_chain.append(optax.rmsprop(learning_rate=learning_rate, decay=0.9))
+            optimizer_chain.append(optax.rmsprop(learning_rate=learning_rate))
             force_simplex = False
 
         elif optimizer.lower() == "lbfgs":
@@ -84,7 +84,7 @@ class OptaxOptimizer:
 
         self.optimizer = optax.chain(*optimizer_chain)
 
-        self.force_simplex = force_simplex
+        self.force_logit_simplex = force_simplex
 
     def tree_flatten(self):
         # Dynamic values (leaves of the pytree)
@@ -127,6 +127,22 @@ class OptaxOptimizer:
     ) -> OptimizationState:
         """Initialize the optimization state"""
         params = model.params
+        random_key = jax.random.PRNGKey(0)
+        random_inital_weights = jax.random.uniform(
+            random_key,
+            shape=params.frame_weights.shape,
+            minval=-1.0,
+            maxval=1.0,
+        )
+        # multiply the weights by the length of the array
+        params = Simulation_Parameters(
+            frame_mask=params.frame_mask,
+            frame_weights=random_inital_weights * len(params.frame_weights),
+            model_parameters=params.model_parameters,
+            normalise_loss_functions=params.normalise_loss_functions,
+            forward_model_weights=params.forward_model_weights,
+            forward_model_scaling=params.forward_model_scaling,
+        )
         print("Params structure:", jax.tree_util.tree_structure(params))
         if isinstance(optimisable_funcs, list):
             optimisable_funcs = jnp.array(optimisable_funcs, dtype=jnp.float32)
@@ -397,7 +413,7 @@ class OptaxOptimizer:
         # print("Updates:", updates)
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore
 
-        if optimizer.force_simplex:
+        if optimizer.force_logit_simplex:
             updated_params = Simulation_Parameters.normalize_weights(updated_params)
         # print("Projected parameters:", updated_params)
         # Compute losses for reporting
