@@ -84,7 +84,7 @@ def optimise_sweep(
 
     try:
         previous_loss = None
-
+        prev_opt_state = None
         for step in range(n_steps):
             opt_state, current_loss, save_state, _simulation = optimizer.step(
                 optimizer=optimizer,
@@ -114,6 +114,21 @@ def optimise_sweep(
             previous_loss = current_loss
 
             steps_since_threshold_start += 1
+            _opt_state = OptimizationState(
+                gradient_mask=opt_state.gradient_mask,
+                params=opt_state.params,
+                opt_state=opt_state.opt_state,
+                step=opt_state.step,
+            )
+
+            opt_state_param_frameweight_delta = (
+                jnp.linalg.norm(
+                    _opt_state.params.frame_weights - prev_opt_state.params.frame_weights
+                )
+                if prev_opt_state is not None
+                else 0.0
+            )
+            prev_opt_state = _opt_state
 
             jax.debug.print(
                 fmt=" ".join(
@@ -123,6 +138,9 @@ def optimise_sweep(
                         "EMA Δ: {ema_delta:.4e}",
                         "Raw Δ: {raw_delta:.4e}",
                         "Threshold {threshold_idx}/{total_thresholds} ({current_threshold:.2e})",
+                        # "Opt State logts: {params}",
+                        "Opt State Δ: {opt_state_delta:.4e}",
+                        # "Sim params: {sim_params}",
                     ]
                 ),
                 step=step,
@@ -130,6 +148,9 @@ def optimise_sweep(
                 current_loss=current_loss,
                 ema_delta=ema_loss_delta if ema_loss_delta is not None else 0.0,
                 raw_delta=raw_loss_delta,
+                # params=_opt_state.params.frame_weights,
+                opt_state_delta=opt_state_param_frameweight_delta,
+                # sim_params=_simulation.params,
                 threshold_idx=current_threshold_idx + 1,
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
@@ -668,7 +689,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
 
         optimizer = OptaxOptimizer(
             learning_rate=1e-3,
-            optimizer="rmsprop",
+            optimizer="adam",
             clip_value=None,
         )
         opt_state = optimizer.initialise(
