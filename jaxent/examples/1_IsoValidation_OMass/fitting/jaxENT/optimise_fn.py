@@ -1,4 +1,3 @@
-import copy
 import os
 from typing import List, Sequence, Tuple, cast
 
@@ -22,7 +21,7 @@ from jaxent.src.opt.losses import (
     maxent_W1_loss,
     minent_ESS_loss,
 )
-from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
+from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationHistory, OptimizationState
 from jaxent.src.utils.hdf import (
     save_optimization_history_to_file,
 )
@@ -69,23 +68,31 @@ def optimise_sweep(
     loss_functions: Sequence[JaxEnt_Loss],
     opt_state: OptimizationState,
     optimizer: OptaxOptimizer,
-    ema_alpha: float = 0.1,  # EMA smoothing factor
+    ema_alpha: float = 0.5,  # EMA smoothing factor
     min_steps_per_threshold: int = 2,  # Minimum steps before checking convergence
 ) -> Tuple[InitialisedSimulation, OptaxOptimizer]:
-    """EMA-only approach - simpler and usually sufficient."""
+    """EMA-only approach with relative convergence thresholds."""
     convergence_thresholds = sorted(convergence, reverse=True)
+    # divide convergence thresholds by optimiser.learning_rate
+    convergence_thresholds = [ct * optimizer.learning_rate for ct in convergence_thresholds]
     current_threshold_idx = 0
     current_threshold = convergence_thresholds[current_threshold_idx]
 
     ema_loss_delta = None
+    ema_params = None
     steps_since_threshold_start = 0
-
-    _history = copy.deepcopy(optimizer.history)
+    optimizer.history = OptimizationHistory()
 
     try:
         previous_loss = None
         prev_opt_state = None
         for step in range(n_steps):
+            prev_grads = (
+                opt_state.gradients
+                if opt_state.gradients is not None
+                else jax.tree_util.tree_map(lambda x: jnp.zeros_like(x), opt_state.params)
+            )  # type: ignore
+
             opt_state, current_loss, save_state, _simulation = optimizer.step(
                 optimizer=optimizer,
                 state=opt_state,
@@ -101,21 +108,31 @@ def optimise_sweep(
 
                 # Update EMA
                 if (
-                    ema_loss_delta is None
+                    ema_loss_delta is None or ema_params is None
                 ):  # First real delta calculation - initialize with first value
                     ema_loss_delta = raw_loss_delta
+                    ema_params = save_state.params
+
                 else:
                     ema_loss_delta = ema_alpha * raw_loss_delta + (1 - ema_alpha) * ema_loss_delta
+                    ema_params = ema_alpha * save_state.params + (1 - ema_alpha) * ema_params
+
             else:
                 raw_loss_delta = 0.0  # For logging purposes
                 # Keep ema_loss_delta as None until we have real data - don't set to 0.0!
+
+            # Calculate relative convergence
+            relative_convergence = (
+                ema_loss_delta / current_loss
+                if ema_loss_delta is not None and current_loss > 0
+                else 0.0
+            )
 
             # Store current loss for next iteration (BEFORE using it in calculations!)
             previous_loss = current_loss
 
             steps_since_threshold_start += 1
             _opt_state = OptimizationState(
-                gradient_mask=opt_state.gradient_mask,
                 params=opt_state.params,
                 opt_state=opt_state.opt_state,
                 step=opt_state.step,
@@ -128,6 +145,16 @@ def optimise_sweep(
                 if prev_opt_state is not None
                 else 0.0
             )
+            # compute the dot product between the previous and current gradients (Simulation_Parameters object) to check for oscillations
+            grad_dot_product = jax.tree_util.tree_reduce(
+                lambda x, y: x + y,
+                jax.tree_util.tree_map(
+                    lambda a, b: jnp.vdot(a, b),
+                    prev_grads,
+                    opt_state.gradients,  # type: ignore
+                ),
+            )
+
             prev_opt_state = _opt_state
 
             jax.debug.print(
@@ -137,8 +164,11 @@ def optimise_sweep(
                         "Loss: {current_loss:.6e}",
                         "EMA Δ: {ema_delta:.4e}",
                         "Raw Δ: {raw_delta:.4e}",
-                        "Threshold {threshold_idx}/{total_thresholds} ({current_threshold:.2e})",
+                        "Rel Conv: {rel_conv:.6e}",
+                        "Threshold {threshold_idx}/{total_thresholds} ({current_threshold:.6e})",
                         "Opt State Δ: {opt_state_delta:.4e}",
+                        "Grad Dot Prod: {grad_dot_product:.4e}",
+                        "LR: {learning_rate:.4e}",
                     ]
                 ),
                 step=step,
@@ -146,41 +176,74 @@ def optimise_sweep(
                 current_loss=current_loss,
                 ema_delta=ema_loss_delta if ema_loss_delta is not None else 0.0,
                 raw_delta=raw_loss_delta,
+                rel_conv=relative_convergence,
                 opt_state_delta=opt_state_param_frameweight_delta,
+                grad_dot_product=grad_dot_product,
+                learning_rate=optimizer.lr_schedule(),
                 threshold_idx=current_threshold_idx + 1,
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
             )
-
+            if grad_dot_product < 0:
+                print(
+                    f"Warning: Gradient dot product negative at step {step}, possible oscillation."
+                )
+                # rescale learning rate by plateau_denominator
+                # Get current learning rate from optimizer state
+                steps_since_threshold_start = 0
+                # _history.add_state(save_state)
+                # break
             if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
                 print(f"Reached convergence tolerance/nan vals at step {step}")
                 break
 
             if step == 0:
-                _history.add_state(save_state)
+                optimizer = optimizer.update_history_compute_ema_loss(
+                    optimizer=optimizer,
+                    simulation=_simulation,
+                    data_targets=tuple(data_to_fit),
+                    indexes=tuple(indexes),
+                    loss_functions=tuple(loss_functions),
+                    state=opt_state,
+                    ema_params=ema_params,
+                )
 
-            # Simple convergence check after minimum steps (and after we have a real EMA value)
+            # Relative convergence check after minimum steps (and after we have a real EMA value)
             if (
                 steps_since_threshold_start >= min_steps_per_threshold
                 and ema_loss_delta is not None
-                and ema_loss_delta < current_threshold
+                and relative_convergence < current_threshold
             ):
                 print(
-                    f"Threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
+                    f"Relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
                 )
-                print(f"EMA loss delta: {ema_loss_delta:.8f}, threshold: {current_threshold}")
-                _history.add_state(save_state)
-
+                print(
+                    f"Relative convergence: {relative_convergence:.8e}, threshold: {current_threshold:.2e}"
+                )
+                optimizer = optimizer.update_history_compute_ema_loss(
+                    optimizer=optimizer,
+                    simulation=_simulation,
+                    data_targets=tuple(data_to_fit),
+                    indexes=tuple(indexes),
+                    loss_functions=tuple(loss_functions),
+                    state=opt_state,
+                    ema_params=ema_params,
+                )
+                ema_loss = optimizer.ema_history.states[-1].losses.total_train_loss
+                print(
+                    f"Updated History and computed loss from EMA params. EMA param Loss: {ema_loss:.6e}"
+                )
+                print(f"EMA Params: {ema_params}")
                 current_threshold_idx += 1
                 steps_since_threshold_start = 0
 
                 if current_threshold_idx >= len(convergence_thresholds):
-                    print(f"All thresholds completed at step {step}")
+                    print(f"All relative thresholds completed at step {step}")
                     break
                 else:
                     current_threshold = convergence_thresholds[current_threshold_idx]
                     print(
-                        f"Moving to threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold}"
+                        f"Moving to relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold:.2e}"
                     )
     except Exception as e:
         raise RuntimeError(
@@ -192,25 +255,30 @@ def optimise_sweep(
             "Latest save state at failure: ",
             save_state.params,
             "\n" * 10,
+            "Latest EMA params state at failure: ",
+            ema_params,
+            "\n" * 10,
             "Opt State parameters at failure: ",
             opt_state.params,
             "\n" * 10,
         )
 
     print(
-        "Optimization loop complete.",
-        "Simulation parameters: ",
+        "\n" * 10,
+        "Simulation parameters at end: ",
         _simulation.params,
         "\n" * 10,
-        "Latest save state ",
+        "Latest save state at end: ",
         save_state.params,
         "\n" * 10,
-        "Opt State parameters ",
+        "Latest EMA params state at end: ",
+        ema_params,
+        "\n" * 10,
+        "Opt State parameters at end: ",
         opt_state.params,
         "\n" * 10,
     )
 
-    optimizer.history = _history
     best_state = optimizer.history.get_best_state()
     if best_state is not None:
         _simulation.params = optimizer.history.best_state.params
@@ -675,7 +743,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array([maxent_scaling, 1.0]),
         normalise_loss_functions=jnp.ones(2),
-        forward_model_scaling=jnp.ones(2),
+        forward_model_scaling=jnp.ones(2) * 100.0,
     )
 
     # create initialised simulation
@@ -684,13 +752,12 @@ def run_optimise_ISO_TRI_BI_maxENT(
         sim.initialise()
 
         optimizer = OptaxOptimizer(
-            learning_rate=1e-3,
+            learning_rate=1e-1,
             optimizer="adam",
             clip_value=None,
         )
         opt_state = optimizer.initialise(
             model=sim,
-            optimisable_funcs=None,
         )
         sim = guard
 
