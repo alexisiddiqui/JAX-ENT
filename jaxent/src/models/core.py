@@ -80,7 +80,7 @@ class Simulation:
         self._jit_forward_pure = self.forward_pure
         # initialise the jit function using the inputs provided
         try:
-            self.forward(self.params)
+            _ = self.forward(self, self.params)
             # if the forward pass is successful, try jit pass
         except Exception as e:
             raise ValueError(f"Failed to apply forward models without JIT: {e}")
@@ -112,18 +112,19 @@ class Simulation:
 
         return True
 
-    def forward(self, params: Simulation_Parameters) -> None:
+    @staticmethod
+    def forward(sim, params: Simulation_Parameters) -> "Simulation":
         """
         This function applies the forward models to the input features
         """
         params = Simulation_Parameters.normalize_weights(params)
-        self.params = params
+        sim.params = params
 
         # try:
-        outputs = self._jit_forward_pure(
+        outputs = sim._jit_forward_pure(
             params,
-            self._input_features,
-            self.forwardpass,
+            sim._input_features,
+            sim.forwardpass,
         )
         # except Exception as e:
         #     RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
@@ -137,7 +138,8 @@ class Simulation:
         # except Exception as e:
         #     raise ValueError(f"Failed to apply forward models: {e}")
 
-        self.outputs = outputs
+        sim.outputs = outputs
+        return sim
 
     def predict(
         self, params: Union[Simulation_Parameters, Sequence[Model_Parameters]]
