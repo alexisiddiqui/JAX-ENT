@@ -88,9 +88,9 @@ def run_forward(
             ic("Running forward prediction loop")
             all_outputs = []
             for params in tqdm(simulation_parameters, desc="Forward prediction"):
-                sim.forward(params)
+                sim.forward(sim, params)
                 all_outputs.append(sim.outputs)
-            
+
             ic(f"Forward prediction loop finished, got {len(all_outputs)} sets of output features")
             return all_outputs
 

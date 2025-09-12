@@ -194,7 +194,7 @@ def run_maxent_sweep(
     with jit_Guard(sim, cleanup_on_exit=True) as sim:
         sim.initialise()
 
-        sim.forward(params=parameters)
+        sim.forward(sim, params=parameters)
 
         output_features = sim.outputs[0].y_pred()
 

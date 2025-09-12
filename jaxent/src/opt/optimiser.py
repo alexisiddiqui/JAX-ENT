@@ -565,7 +565,7 @@ def compute_loss(
     loss_functions: tuple[JaxEnt_Loss, ...],
 ) -> LossComponents:
     """Compute training and validation losses"""
-    simulation.forward(params)
+    simulation = simulation.forward(simulation, params)
 
     # Calculate individual loss components more efficiently
     losses = [
