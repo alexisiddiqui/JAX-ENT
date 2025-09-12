@@ -779,3 +779,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         save_optimization_history_to_file(filename=output_path, history=optimizer.history)
+        output_path = os.path.join(output_dir, f"{name}_results_EMA.hdf5")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        save_optimization_history_to_file(filename=output_path, history=optimizer.ema_history)

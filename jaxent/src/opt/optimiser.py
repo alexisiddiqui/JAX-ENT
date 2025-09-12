@@ -470,10 +470,6 @@ class OptaxOptimizer:
     ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
 
-        # simulation.params = state.params
-        # simulation.forward(state.params)
-        # print("Forward pass done")
-
         def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
