@@ -69,27 +69,70 @@ class LossComponents(NamedTuple):
     total_val_loss: Array  # Total validation loss
 
 
-# @dataclass(frozen=True)
 class OptimizationState(NamedTuple):
+    """Represents the state of the optimization at a given step.
+    Basic math operations (addition, subtraction, multiplecation, division, etc.) are supported
+    between two OptimizationState instances, as all elements in this are jax pytrees and tree map can be used to apply the operations.
+    For all math operations the step and opt_state are taken from the right hand side instance.
+    """
+
     params: Simulation_Parameters
     opt_state: optax.OptState
-    gradient_mask: Simulation_Parameters
     step: int = 0
     losses: Optional[LossComponents] = None
+    gradients: Optional[Simulation_Parameters] = None
 
     def update(
         self,
         new_params: Simulation_Parameters,
         new_opt_state: optax.OptState,
         new_losses: LossComponents,
+        new_gradients: Optional[Simulation_Parameters] = None,
+        step: Optional[int] = None,
     ) -> "OptimizationState":
         return OptimizationState(
             params=new_params,
             opt_state=new_opt_state,
-            gradient_mask=self.gradient_mask,
-            step=self.step + 1,
-            losses=new_losses,
+            step=(self.step + 1) if step is None else step,
+            losses=new_losses if new_losses is not None else self.losses,
+            gradients=new_gradients if new_gradients is not None else self.gradients,
         )
+
+    def _apply_op(self, op, other: "OptimizationState") -> "OptimizationState":
+        raise NotImplementedError(
+            "Not implemented yet - please use the operations in the Simulation_Parameters class"
+        )
+        if not isinstance(other, OptimizationState):
+            raise TypeError("Operand must be an instance of OptimizationState")
+        new_params = jax.tree_util.tree_map(op, self.params, other.params)
+
+        new_losses = None
+        if self.losses is not None and other.losses is not None:
+            new_losses = jax.tree_util.tree_map(op, self.losses, other.losses)
+
+        new_gradients = None
+        if self.gradients is not None and other.gradients is not None:
+            new_gradients = jax.tree_util.tree_map(op, self.gradients, other.gradients)
+
+        return OptimizationState(
+            params=new_params,
+            opt_state=other.opt_state,
+            step=other.step,
+            losses=new_losses,
+            gradients=new_gradients,
+        )
+
+    def __add__(self, other) -> "OptimizationState":
+        return self._apply_op(jnp.add, other)
+
+    def __sub__(self, other) -> "OptimizationState":
+        return self._apply_op(jnp.subtract, other)
+
+    def __mul__(self, other) -> "OptimizationState":
+        return self._apply_op(jnp.multiply, other)
+
+    def __truediv__(self, other) -> "OptimizationState":
+        return self._apply_op(jnp.divide, other)
 
 
 @partial(

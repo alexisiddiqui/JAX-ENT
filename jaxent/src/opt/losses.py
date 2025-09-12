@@ -107,7 +107,7 @@ def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
     num_frames = dataset.frame_weights.shape[0]
-    epsilon = 1e-3 / num_frames
+    epsilon = 1e-10 / num_frames
     simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)

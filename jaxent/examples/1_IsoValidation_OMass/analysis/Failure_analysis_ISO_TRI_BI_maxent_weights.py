@@ -1582,16 +1582,16 @@ def main():
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
-    results_dir = (
-        "../fitting/jaxENT/_optimise_maxent_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
-    )
+    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_1000scaling"
+    # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_failure_analysis_maxent_weights_cKL_adam_realparams_graphfix_softmax_EMA_VKLneps"
+    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_1000scaling"
+
+    # output_dir = "_analysis_maxent_HDXer"
 
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
-
     # Define trajectory and reference paths
     traj_dir = "../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
     traj_dir = os.path.join(os.path.dirname(__file__), traj_dir)
