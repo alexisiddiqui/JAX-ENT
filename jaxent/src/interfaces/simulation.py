@@ -89,6 +89,42 @@ class Simulation_Parameters:
             forward_model_scaling=params.forward_model_scaling,
         )
 
+    @staticmethod
+    def _apply_op(current, op, other: "Simulation_Parameters|float") -> "Simulation_Parameters":
+        if not isinstance(other, (Simulation_Parameters, float)):
+            raise TypeError("Unsupported type for operation")
+
+        if isinstance(other, float):
+            # Apply operation with scalar to all leaf nodes of the pytree
+            new_params = jax.tree_util.tree_map(lambda x: op(x, other), current)
+        else:
+            # Apply operation between two pytrees element-wise
+            new_params = jax.tree_util.tree_map(op, current, other)
+
+        return new_params
+
+    def __add__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(self, jnp.add, other)
+
+    def __sub__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(self, jnp.subtract, other)
+
+    def __mul__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(self, jnp.multiply, other)
+
+    def __truediv__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(self, jnp.divide, other)
+
+    __radd__ = __add__  # a + b = b + a
+    __rmul__ = __mul__  # a * b = b * a
+
+    # For non-commutative operations, we need separate implementations
+    def __rsub__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(other, jnp.subtract, self)
+
+    def __rtruediv__(self, other) -> "Simulation_Parameters":
+        return self._apply_op(other, jnp.divide, self)
+
     ########################################################################\
     def tree_flatten(self):
         # Flatten into (arrays to differentiate, static metadata)

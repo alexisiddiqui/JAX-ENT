@@ -117,14 +117,14 @@ def run_maxent_sweep(
     print(f"Maxent values: {maxent_values}")
 
     # Define convergence criteria
-    convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
+    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
     output_base_dir = os.path.join(
         os.path.dirname(__file__),
-        "_optimise_partition_test",
+        "_optimise_partition_test_gdplateau_test2",
     )
 
     if not os.path.exists(datasplit_dir):
@@ -408,7 +408,7 @@ def main():
     parser.add_argument(
         "--n-steps",
         type=int,
-        default=100,
+        default=500,
         help="Number of optimization steps per run (default: 10000).",
     )
     parser.add_argument(
