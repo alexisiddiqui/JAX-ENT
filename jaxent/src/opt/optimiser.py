@@ -64,6 +64,8 @@ class OptaxOptimizer:
     force_logit_simplex: bool  # New: static - aux_data
     save_ema_history: bool  # New: static - aux_data
     step: Callable  # function is set during optimization - child/dynamic
+    initial_learning_rate: float  # static/aux_data
+    initial_steps: int
 
     def __init__(
         self,
@@ -76,6 +78,8 @@ class OptaxOptimizer:
         force_simplex: Optional[bool] = None,
         plateau_denominator: float = 1.005,
         save_ema_history: bool = True,
+        initial_learning_rate: float = 1e0,
+        initial_steps: int = 2,
     ):
         self.parameter_partition_masks = parameter_partition_masks
         self.clip_value = clip_value
@@ -88,12 +92,15 @@ class OptaxOptimizer:
         self.step = self._step
         self.plateau_denominator = plateau_denominator
         self.gradient_mask = None  # type: ignore
-
+        self.initial_learning_rate = initial_learning_rate
         optimizer_chain = []
         if clip_value is not None:
             optimizer_chain.append(optax.clip(clip_value))
-        self.lr_schedule = MutableLearningRate(learning_rate)
+
+        # Initialize lr_schedule with initial_learning_rate instead of learning_rate
+        self.lr_schedule = MutableLearningRate(initial_learning_rate)
         self.learning_rate = learning_rate
+        self.initial_steps = initial_steps
 
         # Use inject_hyperparams to allow dynamic learning rate changes
         if optimizer.lower() == "adam":
@@ -143,6 +150,9 @@ class OptaxOptimizer:
             "save_ema_history": self.save_ema_history,
             "plateau_denominator": self.plateau_denominator,
             "force_logit_simplex": self.force_logit_simplex,
+            "initial_learning_rate": self.initial_learning_rate,
+            "step": self.step,
+            "initial_steps": self.initial_steps,
         }
         return children, aux_data
 
@@ -164,7 +174,9 @@ class OptaxOptimizer:
         self.save_ema_history = aux_data["save_ema_history"]
         self.plateau_denominator = aux_data["plateau_denominator"]
         self.force_logit_simplex = aux_data["force_logit_simplex"]
-        self.step = self.step  # Default value, will be overwritten by initialise
+        self.step = aux_data.get("step", self._step)
+        self.initial_learning_rate = aux_data.get("initial_learning_rate", 1.0)
+        self.initial_steps = aux_data.get("initial_steps", 2)
 
         return self
 
@@ -214,6 +226,9 @@ class OptaxOptimizer:
         self.history = OptimizationHistory()  # reset history
         if self.save_ema_history is True:
             self.ema_history = OptimizationHistory()  # reset ema history
+
+        # Reset learning rate to initial value when initializing
+        self.lr_schedule.update(self.initial_learning_rate)
 
         # Okay here we setup the jit step function - to do this we require the additional inputs for run_optimise...
 
@@ -447,12 +462,12 @@ class OptaxOptimizer:
 
             losses = loss_fn(params)
 
-            ema_state = state.update(
-                params,
-                state.opt_state,
-                losses,
-                state.gradients,
-                state.step,
+            ema_state = OptimizationState(
+                params=params,
+                opt_state=state.opt_state,
+                step=state.step,
+                losses=losses,
+                gradients=state.gradients,
             )
             optimizer.ema_history.add_state(ema_state)
 
@@ -469,6 +484,10 @@ class OptaxOptimizer:
         indexes: tuple[int, ...],
     ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
+
+        # Switch to regular learning rate after the first step
+        if state.step == optimizer.initial_steps:
+            optimizer.lr_schedule.update(optimizer.learning_rate)
 
         def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
@@ -499,7 +518,7 @@ class OptaxOptimizer:
                 masked_grads,  # type: ignore
             ),
         )
-        if grad_dot_product < 0:
+        if grad_dot_product < 0 and state.step > 1:
             current_lr = optimizer.lr_schedule()
             new_lr = current_lr / optimizer.plateau_denominator
 

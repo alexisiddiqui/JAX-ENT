@@ -18,6 +18,7 @@ python optimise_maxent_sweep_serial.py --maxent-range 1,5  # Only test maxent va
 import argparse
 import os
 import time
+from datetime import datetime  # NEW: used to append timestamp when no output dir provided
 from typing import List
 
 import jax
@@ -97,6 +98,12 @@ def run_maxent_sweep(
     maxent_values: List[float],
     n_steps: int = 10000,
     num_splits: int = 3,
+    learning_rate: float = 1e-1,
+    initial_learning_rate: float = 1e0,
+    initial_steps: int = 2,
+    ema_alpha: float = 0.5,
+    forward_model_scaling: float = 100.0,
+    output_base_dir: str = None,  # NEW: allow caller to select output dir
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -108,7 +115,7 @@ def run_maxent_sweep(
         maxent_values: List of maxent scaling values to test
         n_steps: Number of optimization steps
         num_splits: Number of replicates per split type
-
+        output_base_dir: Base directory to write outputs (if None, uses previous default)
     Returns:
         dict: Results summary
     """
@@ -122,23 +129,25 @@ def run_maxent_sweep(
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
-    output_base_dir = os.path.join(
-        os.path.dirname(__file__),
-        "_optimise_partition_test_gdplateau_test2",
-    )
+
+    # Use provided output directory or default to previous behavior (now with timestamp)
+    if output_base_dir is None:
+        default_base = os.path.join(os.path.dirname(__file__), "_optimise_quick_test")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_base_dir = f"{default_base}_{timestamp}"
+    os.makedirs(output_base_dir, exist_ok=True)
 
     if not os.path.exists(datasplit_dir):
         raise FileNotFoundError(f"Datasplit directory not found: {datasplit_dir}")
     if not os.path.exists(features_dir):
         raise FileNotFoundError(f"Features directory not found: {features_dir}")
 
-    os.makedirs(output_base_dir, exist_ok=True)
-
     # Load features for this ensemble
     feature_path = os.path.join(features_dir, f"features_{ensemble.lower()}.npz")
     topology_path = feature_path.replace("features_", "topology_").replace(".npz", ".json")
 
     features = BV_input_features.load(feature_path)
+    topology_path = feature_path.replace("features_", "topology_").replace(".npz", ".json")
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
 
     # Get loss function
@@ -245,6 +254,11 @@ def run_maxent_sweep(
                         n_steps=n_steps,
                         name=run_name,
                         output_dir=output_dir,
+                        learning_rate=learning_rate,
+                        initial_learning_rate=initial_learning_rate,
+                        initial_steps=initial_steps,
+                        ema_alpha=ema_alpha,
+                        forward_model_scaling=forward_model_scaling,
                     )
 
                     run_elapsed = time.time() - run_start_time
@@ -284,6 +298,7 @@ def run_maxent_sweep(
 
     total_elapsed = time.time() - start_time
     results["total_elapsed"] = total_elapsed
+    results["output_base_dir"] = output_base_dir  # NEW: record the actual directory used
 
     print(f"\n{'=' * 60}")
     print("Maxent sweep completed!")
@@ -312,7 +327,13 @@ def run_all_combinations(
     maxent_values: List[float],
     n_steps: int,
     num_splits: int,
-) -> None:
+    learning_rate: float = 1e-1,
+    initial_learning_rate: float = 1e0,
+    initial_steps: int = 2,
+    ema_alpha: float = 0.5,
+    forward_model_scaling: float = 100.0,
+    output_base_dir: str = None,  # NEW: propagate chosen output dir
+) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["ISO_TRI", "ISO_BI"]
 
@@ -342,6 +363,12 @@ def run_all_combinations(
                 maxent_values=maxent_values,
                 n_steps=n_steps,
                 num_splits=num_splits,
+                learning_rate=learning_rate,
+                initial_learning_rate=initial_learning_rate,
+                initial_steps=initial_steps,
+                ema_alpha=ema_alpha,
+                forward_model_scaling=forward_model_scaling,
+                output_base_dir=output_base_dir,  # pass through
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -376,6 +403,7 @@ def run_all_combinations(
         print(
             f"  {result['ensemble']}-{result['loss_name']}: {result['completed_runs']}/{result['total_runs']} runs ({success_rate:.1f}%) in {result['total_elapsed']:.1f}s"
         )
+    return all_results  # NEW: return collected results
 
 
 def main():
@@ -417,6 +445,51 @@ def main():
         default=3,
         help="Number of replicates (splits) per split type (default: 3).",
     )
+    #     learning_rate=learning_rate,
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=1e-1,
+        help="Learning rate for optimizer (default: 1e-1).",
+    )
+
+    # initial_learning_rate=initial_learning_rate,
+    parser.add_argument(
+        "--initial-learning-rate",
+        type=float,
+        default=1e0,
+        help="Initial learning rate for optimizer (default: 1e0).",
+    )
+
+    # initial_steps=initial_steps,
+    parser.add_argument(
+        "--initial-steps",
+        type=int,
+        default=2,
+        help="Number of initial steps with higher learning rate (default: 2).",
+    )
+    # ema_alpha=ema_alpha,
+    parser.add_argument(
+        "--ema-alpha",
+        type=float,
+        default=0.5,
+        help="EMA alpha for optimizer (default: 0.5).",
+    )
+    # forward_model_scaling=forward_model_scaling,
+    parser.add_argument(
+        "--forward-model-scaling",
+        type=float,
+        default=100.0,
+        help="Forward model scaling factor (default: 100.0).",
+    )
+
+    # NEW: add output directory option (default None -> will trigger timestamping)
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Base output directory for runs (default: <script>/_optimise_quick_test_<timestamp> when not provided).",
+    )
 
     args = parser.parse_args()
 
@@ -427,16 +500,22 @@ def main():
     except ValueError:
         raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
 
+    print(f"  Split types: {args.split_types}")
+    print(f"  Maxent values: {maxent_values}")
+    print(f"  Steps per run: {args.n_steps}")
+    print(f"  Replicates per split: {args.n_replicates}")
+    print(f"  Learning rate: {args.learning_rate}")
+    print(f"  Initial learning rate: {args.initial_learning_rate}")
+    print(f"  Initial steps: {args.initial_steps}")
+    print(f"  EMA alpha: {args.ema_alpha}")
+    print(f"  Forward model scaling: {args.forward_model_scaling}")
     # Check if specific combination is requested
     if args.ensemble is not None and args.loss_function is not None:
         # Single combination mode
         print("Running maxent sweep for specific combination:")
         print(f"  Ensemble: {args.ensemble}")
         print(f"  Loss function: {args.loss_function}")
-        print(f"  Split types: {args.split_types}")
-        print(f"  Maxent values: {maxent_values}")
-        print(f"  Steps per run: {args.n_steps}")
-        print(f"  Replicates per split: {args.n_replicates}")
+
         print("-" * 60)
 
         # Run the sweep for single combination
@@ -447,30 +526,41 @@ def main():
             maxent_values=maxent_values,
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
+            learning_rate=args.learning_rate,
+            initial_learning_rate=args.initial_learning_rate,
+            initial_steps=args.initial_steps,
+            ema_alpha=args.ema_alpha,
+            forward_model_scaling=args.forward_model_scaling,
+            output_base_dir=args.output_dir,  # pass through (None -> run_maxent_sweep will timestamp)
         )
 
     elif args.ensemble is None and args.loss_function is None:
         # All combinations mode
-        run_all_combinations(
+        all_results = run_all_combinations(
             split_types_arg=args.split_types,
             maxent_values=maxent_values,
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
+            learning_rate=args.learning_rate,
+            initial_learning_rate=args.initial_learning_rate,
+            initial_steps=args.initial_steps,
+            ema_alpha=args.ema_alpha,
+            forward_model_scaling=args.forward_model_scaling,
+            output_base_dir=args.output_dir,  # pass through
         )
 
+    # Report where results were written
+    if args.output_dir:
+        print(f"\nResults saved in: {args.output_dir}")
     else:
-        # Invalid - only one of ensemble/loss-function specified
-        print(
-            "Error: Either specify both --ensemble and --loss-function, or neither (to run all combinations)."
-        )
-        print("Examples:")
-        print("  python optimise_maxent_sweep_serial.py  # Run all combinations")
-        print(
-            "  python optimise_maxent_sweep_serial.py --ensemble ISO_TRI --loss-function mcMSE  # Single combination"
-        )
-        return
-
-    print(f"\nResults saved in: {os.path.join(os.path.dirname(__file__), '_optimise_maxent')}")
+        # if single combination, use results; if multiple, aggregate unique dirs
+        if "results" in locals():
+            print(f"\nResults saved in: {results.get('output_base_dir')}")
+        elif "all_results" in locals():
+            unique_dirs = sorted({r.get("output_base_dir") for r in all_results if r})
+            print("\nResults saved in the following directories:")
+            for d in unique_dirs:
+                print(f"  {d}")
 
 
 if __name__ == "__main__":
