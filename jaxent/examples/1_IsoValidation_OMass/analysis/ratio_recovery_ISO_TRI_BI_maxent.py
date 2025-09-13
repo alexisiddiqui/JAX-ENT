@@ -225,7 +225,7 @@ def load_all_optimization_results_with_maxent(
                 files = [
                     f
                     for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith(".hdf5")
+                    if f.startswith(pattern) and f.endswith("results.hdf5")
                 ]
 
                 for filename in files:
@@ -3063,12 +3063,12 @@ def main():
     convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
     # Define directories
-    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_test2"
+    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_test3"
     # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_test2"
+    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_test3"
 
     # output_dir = "_analysis_maxent_HDXer"
 
