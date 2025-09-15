@@ -239,7 +239,7 @@ def load_all_optimization_results_with_maxent(
                 files = [
                     f
                     for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith(".hdf5")
+                    if f.startswith(pattern) and f.endswith("results.hdf5")
                 ]
 
                 for filename in files:
@@ -2060,12 +2060,12 @@ def main():
     ]
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
-    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_1000scaling"
+    results_dir = "../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135"
     # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_1000scaling"
+    output_dir = "_analysis_maxent_complete" + "_optimise_quick_test_splits__20250915_125135"
 
     # output_dir = "_analysis_maxent_HDXer"
 
@@ -2076,6 +2076,12 @@ def main():
 
     bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
     tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
+
+    bi_path = "sliced_trajectories/TeaA_filtered_sliced.xtc"
+    tri_path = "sliced_trajectories/TeaA_initial_sliced.xtc"
+
+    bi_path = os.path.join(traj_dir, bi_path)
+    tri_path = os.path.join(traj_dir, tri_path)
 
     trajectory_paths = {
         "ISO_TRI": tri_path,

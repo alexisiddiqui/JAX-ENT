@@ -6,17 +6,18 @@ cd "$(dirname "$0")" || exit
 rm -rf logs
 mkdir -p logs
 ENSEMBLES=("ISO_TRI" "ISO_BI")
-ENSEMBLES=("ISO_TRI")
+# ENSEMBLES=("ISO_TRI")
 # 
 
 SPLIT_TYPES=("random" "sequence" "sequence_cluster" "stratified" "spatial")
-SPLIT_TYPES=("random")
+SPLIT_TYPES=("random" "sequence" "sequence_cluster" "spatial")
 LOSSES=("mcMSE" "MSE")
-# LOSSES=("mcMSE" )
+# LOSSES=("MSE" )
 
 MAXENT_VALUES=(1000 1000000 1000000000 1000000000000 1000000000000000)
 MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000)
 MAXENT_VALUES=(1 10 100  1000 10000)
+# MAXENT_VALUES=(1 2 5 7 9 10)
 
 
 
@@ -24,8 +25,8 @@ MAXENT_VALUES=(1 10 100  1000 10000)
 # MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000 1000000 1000000000)
 time_data="_$(date +'%Y%m%d_%H%M%S')"
 
-OUTPUT_DIR="_optimise_quick_test_${time_data}"
-
+OUTPUT_DIR="_optimise_quick_test_splits_${time_data}"
+echo "Output directory: $OUTPUT_DIR"
 mkdir -p "${OUTPUT_DIR}/logs"
 for ENSEMBLE in "${ENSEMBLES[@]}"; do
   for LOSS in "${LOSSES[@]}"; do
@@ -39,17 +40,17 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
           --loss-function "$LOSS" \
           --maxent-range "$MAXENT,$MAXENT" \
           --split-types "$SPLIT" \
-          --n-steps 50 \
+          --n-steps 500 \
           --initial-steps 2 \
           --initial-learning-rate 1.0 \
-          --learning-rate 0.1 \
+          --learning-rate 1.0 \
           --ema-alpha 0.5 \
           --forward-model-scaling 100.0 \
           --output-dir "$OUTPUT_DIR" \
-          > "${OUTPUT_DIR}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}.log" 2>&1 &
+          > "${OUTPUT_DIR}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_split${SPLIT}.log" 2>&1 &
       done
-      wait
-      echo "Completed $ENSEMBLE-$LOSS"
+      wait  # Wait for all background jobs for this SPLIT to finish
+      echo "Completed $ENSEMBLE-$LOSS with $SPLIT"
     done
   done
 done
