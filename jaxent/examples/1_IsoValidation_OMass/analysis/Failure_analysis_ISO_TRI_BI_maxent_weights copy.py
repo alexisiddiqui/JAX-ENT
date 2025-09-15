@@ -216,7 +216,7 @@ def load_all_optimization_results_with_maxent(
                 files = [
                     f
                     for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith("results.hdf5")
+                    if f.startswith(pattern) and f.endswith(".hdf5")
                 ]
 
                 for filename in files:
@@ -557,20 +557,19 @@ def plot_weight_distribution_lines(weights_data, output_dir):
         if not split_types:
             continue
 
-        # Create figure with subplots
-        n_plots = min(len(split_types), 4)  # Max 4 subplots
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        axes = axes.flatten()
+        # Iterate over each split type to create separate plots
+        for split_type in split_types:
+            split_output_dir = os.path.join(output_dir, split_type)
+            os.makedirs(split_output_dir, exist_ok=True)
 
-        for idx, split_type in enumerate(split_types[:4]):  # Max 4 subplots
-            ax = axes[idx]
             split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
 
             if split_data.empty:
-                ax.set_visible(False)
                 continue
 
             print(f"      Split {split_type}: {len(split_data)} data points")
+
+            fig, ax = plt.subplots(figsize=(8, 6))
 
             # Group by maxent and compute average histogram across splits
             maxent_groups = {}
@@ -631,25 +630,20 @@ def plot_weight_distribution_lines(weights_data, output_dir):
             ax.set_yscale("log")
             ax.set_xlabel("Weight Value")
             ax.set_ylabel("Density")
-            ax.set_title(f"{split_name_mapping.get(split_type, split_type)}")
+            ax.set_title(
+                f"Weight Distributions - {ensemble_loss} - {split_name_mapping.get(split_type, split_type)}"
+            )
             ax.legend(fontsize=8)
             ax.grid(True, alpha=0.3)
 
-        # Hide unused subplots
-        for idx in range(len(split_types), len(axes)):
-            axes[idx].set_visible(False)
+            plt.tight_layout()
 
-        plt.suptitle(f"Weight Distributions - {ensemble_loss}", fontsize=16, y=0.98)
-        plt.tight_layout()
-
-        # Save figure
-        filename = (
-            f"weight_distributions_lines_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
-        )
-        filepath = os.path.join(output_dir, filename)
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        print(f"  Saved: {filename}")
-        plt.close()
+            # Save figure
+            filename = f"weight_distributions_lines_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
+            filepath = os.path.join(split_output_dir, filename)
+            plt.savefig(filepath, dpi=300, bbox_inches="tight")
+            print(f"  Saved: {filename}")
+            plt.close(fig)
 
 
 def plot_weight_recovery_scatter(recovery_df, output_dir):
@@ -683,23 +677,25 @@ def plot_weight_recovery_scatter(recovery_df, output_dir):
 
         print(f"  Creating recovery plot for ensemble-loss: {ensemble_loss}")
 
-        # Create figure
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        # Plot for each split type
+        # Get unique split types for this ensemble-loss combination
         available_split_types = ensemble_loss_data["split_type"].unique()
 
-        # Create a color map for split types
-        n_split_types = len(available_split_types)
-        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
-        split_color_map = dict(zip(available_split_types, colors))
+        for split_type in available_split_types:
+            split_output_dir = os.path.join(output_dir, split_type)
+            os.makedirs(split_output_dir, exist_ok=True)
 
-        for i, split_type in enumerate(available_split_types):
             split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
-            color = split_color_map[split_type]
-            label = split_name_mapping.get(split_type, split_type)
+
+            if split_data.empty:
+                continue
 
             print(f"    Split {split_type}: {len(split_data)} points")
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # Create a color map for split types (though only one split type per plot now)
+            color = split_type_colours.get(split_type, "gray")
+            label = split_name_mapping.get(split_type, split_type)
 
             # Plot scatter
             ax.scatter(
@@ -725,23 +721,23 @@ def plot_weight_recovery_scatter(recovery_df, output_dir):
                         linewidth=1,
                     )
 
-        ax.set_xscale("log")
-        ax.set_xlabel("MaxEnt Value")
-        ax.set_ylabel("Open State Recovery (%)")
-        ax.set_title(f"Open State Recovery vs MaxEnt - {ensemble_loss}")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+            ax.set_xscale("log")
+            ax.set_xlabel("MaxEnt Value")
+            ax.set_ylabel("Open State Recovery (%)")
+            ax.set_title(
+                f"Open State Recovery vs MaxEnt - {ensemble_loss} - {split_name_mapping.get(split_type, split_type)}"
+            )
+            ax.legend()
+            ax.grid(True, alpha=0.3)
 
-        plt.tight_layout()
+            plt.tight_layout()
 
-        # Save figure
-        filename = (
-            f"open_state_recovery_scatter_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
-        )
-        filepath = os.path.join(output_dir, filename)
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        print(f"  Saved: {filename}")
-        plt.close()
+            # Save figure
+            filename = f"open_state_recovery_scatter_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
+            filepath = os.path.join(split_output_dir, filename)
+            plt.savefig(filepath, dpi=300, bbox_inches="tight")
+            print(f"  Saved: {filename}")
+            plt.close(fig)
 
 
 def plot_kld_between_splits(kld_df, output_dir):
@@ -764,55 +760,58 @@ def plot_kld_between_splits(kld_df, output_dir):
     print(f"  Unique ensemble-loss combinations: {kld_df['ensemble_loss'].unique()}")
     print(f"  Unique split types: {kld_df['split_type'].unique()}")
 
-    # Get unique ensemble-loss combinations from actual data
-    available_ensemble_loss = kld_df["ensemble_loss"].unique()
+    # Get unique split types from actual data
+    available_split_types = kld_df["split_type"].unique()
 
-    # Create figure with subplots for each ensemble-loss combination
-    n_combinations = len(available_ensemble_loss)
-    n_cols = min(n_combinations, 2)
-    n_rows = (n_combinations + n_cols - 1) // n_cols
+    for split_type in available_split_types:
+        print(f"  Creating KLD plot for split type: {split_type}")
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows))
-    if n_combinations == 1:
-        axes = [axes]
-    elif n_rows == 1:
-        axes = axes.flatten()
-    else:
-        axes = axes.flatten()
+        split_data = kld_df[kld_df["split_type"] == split_type]
 
-    for idx, ensemble_loss in enumerate(available_ensemble_loss):
-        if idx >= len(axes):
-            break
-
-        ax = axes[idx]
-        ensemble_loss_data = kld_df[kld_df["ensemble_loss"] == ensemble_loss]
-
-        if ensemble_loss_data.empty:
-            ax.set_visible(False)
+        if split_data.empty:
             continue
 
-        print(f"  Creating KLD plot for ensemble-loss: {ensemble_loss}")
+        # Get unique ensemble-loss combinations for this split type
+        available_ensemble_loss = split_data["ensemble_loss"].unique()
 
-        # Get available split types
-        available_split_types = ensemble_loss_data["split_type"].unique()
-        n_split_types = len(available_split_types)
-        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
-        split_color_map = dict(zip(available_split_types, colors))
+        # Create figure with subplots for each ensemble-loss combination
+        n_combinations = len(available_ensemble_loss)
+        n_cols = min(n_combinations, 2)
+        n_rows = (n_combinations + n_cols - 1) // n_cols
 
-        # Plot each split type
-        for split_type in available_split_types:
-            split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
-            color = split_color_map[split_type]
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows))
+        if n_combinations == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.flatten()
+        else:
+            axes = axes.flatten()
+
+        for idx, ensemble_loss in enumerate(available_ensemble_loss):
+            if idx >= len(axes):
+                break
+
+            ax = axes[idx]
+            ensemble_loss_data = split_data[split_data["ensemble_loss"] == ensemble_loss]
+
+            if ensemble_loss_data.empty:
+                ax.set_visible(False)
+                continue
+
+            print(f"    Creating KLD plot for ensemble-loss: {ensemble_loss} within {split_type}")
+
+            # Create a color map for split types (though only one split type per plot now)
+            color = split_type_colours.get(split_type, "gray")
             label = split_name_mapping.get(split_type, split_type)
 
-            print(f"    Split {split_type}: {len(split_data)} points")
-
             # Sort by maxent for proper line plotting
-            split_data = split_data.sort_values("maxent_value")
+            ensemble_loss_data = ensemble_loss_data.sort_values("maxent_value")
 
-            x_vals = split_data["maxent_value"].values
-            y_vals = split_data["mean_kld_between_splits"].values
-            y_err = split_data["sem_kld_between_splits"].values
+            x_vals = ensemble_loss_data["maxent_value"].values
+            y_vals = ensemble_loss_data["mean_kld_between_splits"].values
+            y_err = ensemble_loss_data["sem_kld_between_splits"].values
 
             # Plot line with error bars
             ax.errorbar(
@@ -828,26 +827,29 @@ def plot_kld_between_splits(kld_df, output_dir):
                 capsize=3,
             )
 
-        ax.set_xscale("log")
-        ax.set_xlabel("MaxEnt Value")
-        ax.set_ylabel("Mean KLD Between Splits")
-        ax.set_title(ensemble_loss)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+            ax.set_xscale("log")
+            ax.set_xlabel("MaxEnt Value")
+            ax.set_ylabel("Mean KLD Between Splits")
+            ax.set_title(ensemble_loss)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
 
-    # Hide unused subplots
-    for idx in range(len(available_ensemble_loss), len(axes)):
-        axes[idx].set_visible(False)
+        # Hide unused subplots
+        for idx in range(len(available_ensemble_loss), len(axes)):
+            axes[idx].set_visible(False)
 
-    plt.suptitle("KL Divergence Between Splits Across MaxEnt Values", fontsize=16)
-    plt.tight_layout()
+        plt.suptitle(
+            f"KL Divergence Between Splits Across MaxEnt Values - {split_name_mapping.get(split_type, split_type)}",
+            fontsize=16,
+        )
+        plt.tight_layout()
 
-    # Save figure
-    filename = "kld_between_splits_vs_maxent.png"
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=300, bbox_inches="tight")
-    print(f"  Saved: {filename}")
-    plt.close()
+        # Save figure
+        filename = f"kld_between_splits_vs_maxent_{split_type}.png"
+        filepath = os.path.join(split_output_dir, filename)
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        print(f"  Saved: {filename}")
+        plt.close(fig)
 
 
 def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
@@ -870,54 +872,59 @@ def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
     print(f"  Unique ensemble-loss combinations: {sequential_kld_df['ensemble_loss'].unique()}")
     print(f"  Unique split types: {sequential_kld_df['split_type'].unique()}")
 
-    # Get unique ensemble-loss combinations from actual data
-    available_ensemble_loss = sequential_kld_df["ensemble_loss"].unique()
+    # Get unique split types from actual data
+    available_split_types = sequential_kld_df["split_type"].unique()
 
-    # Create figure with subplots for each ensemble-loss combination
-    n_combinations = len(available_ensemble_loss)
-    n_cols = min(n_combinations, 2)
-    n_rows = (n_combinations + n_cols - 1) // n_cols
+    for split_type in available_split_types:
+        print(f"  Creating sequential KLD plot for split type: {split_type}")
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
 
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 6 * n_rows))
-    if n_combinations == 1:
-        axes = [axes]
-    elif n_rows == 1:
-        axes = axes.flatten()
-    else:
-        axes = axes.flatten()
+        split_data = sequential_kld_df[sequential_kld_df["split_type"] == split_type]
 
-    for idx, ensemble_loss in enumerate(available_ensemble_loss):
-        if idx >= len(axes):
-            break
-
-        ax = axes[idx]
-        ensemble_loss_data = sequential_kld_df[sequential_kld_df["ensemble_loss"] == ensemble_loss]
-
-        if ensemble_loss_data.empty:
-            ax.set_visible(False)
+        if split_data.empty:
             continue
 
-        print(f"  Creating sequential KLD plot for ensemble-loss: {ensemble_loss}")
+        # Get unique ensemble-loss combinations for this split type
+        available_ensemble_loss = split_data["ensemble_loss"].unique()
 
-        # Get available split types
-        available_split_types = ensemble_loss_data["split_type"].unique()
-        n_split_types = len(available_split_types)
-        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
-        split_color_map = dict(zip(available_split_types, colors))
+        # Create figure with subplots for each ensemble-loss combination
+        n_combinations = len(available_ensemble_loss)
+        n_cols = min(n_combinations, 2)
+        n_rows = (n_combinations + n_cols - 1) // n_cols
 
-        # Plot each split type
-        for split_type in available_split_types:
-            split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
-            color = split_color_map[split_type]
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 6 * n_rows))
+        if n_combinations == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.flatten()
+        else:
+            axes = axes.flatten()
+
+        for idx, ensemble_loss in enumerate(available_ensemble_loss):
+            if idx >= len(axes):
+                break
+
+            ax = axes[idx]
+            ensemble_loss_data = split_data[split_data["ensemble_loss"] == ensemble_loss]
+
+            if ensemble_loss_data.empty:
+                ax.set_visible(False)
+                continue
+
+            print(
+                f"    Creating sequential KLD plot for ensemble-loss: {ensemble_loss} within {split_type}"
+            )
+
+            # Create a color map for split types (though only one split type per plot now)
+            color = split_type_colours.get(split_type, "gray")
             label = split_name_mapping.get(split_type, split_type)
 
-            print(f"    Split {split_type}: {len(split_data)} points")
-
             # Plot individual splits as light lines
-            for split_idx in split_data["split_idx"].unique():
-                split_idx_data = split_data[split_data["split_idx"] == split_idx].sort_values(
-                    "current_maxent"
-                )
+            for split_idx in ensemble_loss_data["split_idx"].unique():
+                split_idx_data = ensemble_loss_data[
+                    ensemble_loss_data["split_idx"] == split_idx
+                ].sort_values("current_maxent")
 
                 if len(split_idx_data) > 0:
                     x_vals = split_idx_data["current_maxent"].values
@@ -935,7 +942,7 @@ def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
 
             # Compute and plot mean with error bars
             maxent_stats = (
-                split_data.groupby("current_maxent")["kld_to_previous"]
+                ensemble_loss_data.groupby("current_maxent")["kld_to_previous"]
                 .agg(["mean", "std", "count"])
                 .reset_index()
             )
@@ -958,26 +965,29 @@ def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
                     capsize=3,
                 )
 
-        ax.set_xscale("log")
-        ax.set_xlabel("Current MaxEnt")
-        ax.set_ylabel("KLD to Previous MaxEnt (or Uniform)")
-        ax.set_title(ensemble_loss)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+            ax.set_xscale("log")
+            ax.set_xlabel("Current MaxEnt")
+            ax.set_ylabel("KLD to Previous MaxEnt (or Uniform)")
+            ax.set_title(ensemble_loss)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
 
-    # Hide unused subplots
-    for idx in range(len(available_ensemble_loss), len(axes)):
-        axes[idx].set_visible(False)
+        # Hide unused subplots
+        for idx in range(len(available_ensemble_loss), len(axes)):
+            axes[idx].set_visible(False)
 
-    plt.suptitle("KL Divergence Between Sequential MaxEnt Values", fontsize=16)
-    plt.tight_layout()
+        plt.suptitle(
+            f"KL Divergence Between Sequential MaxEnt Values - {split_name_mapping.get(split_type, split_type)}",
+            fontsize=16,
+        )
+        plt.tight_layout()
 
-    # Save figure
-    filename = "sequential_maxent_kld_vs_maxent.png"
-    filepath = os.path.join(output_dir, filename)
-    plt.savefig(filepath, dpi=300, bbox_inches="tight")
-    print(f"  Saved: {filename}")
-    plt.close()
+        # Save figure
+        filename = f"sequential_maxent_kld_vs_maxent_{split_type}.png"
+        filepath = os.path.join(split_output_dir, filename)
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        print(f"  Saved: {filename}")
+        plt.close(fig)
 
 
 def compute_pairwise_kld_between_splits(weights_data):
@@ -1261,6 +1271,8 @@ def plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
                 continue
 
             print(f"    Processing split type: {split_type}")
+            split_output_dir = os.path.join(output_dir, split_type)
+            os.makedirs(split_output_dir, exist_ok=True)
 
             # Get unique maxent values for this combination
             maxent_values = sorted(split_data["maxent_value"].unique())
@@ -1379,7 +1391,7 @@ def plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
                 ).replace(" ", "_")
                 + ".png"
             )
-            filepath = os.path.join(output_dir, filename)
+            filepath = os.path.join(split_output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"  Saved: {filename}")
             plt.close()
@@ -1423,6 +1435,8 @@ def plot_weight_distribution_convergence_panels(convergence_weights_data, output
                 continue
 
             print(f"    Processing split type: {split_type}")
+            split_output_dir = os.path.join(output_dir, split_type)
+            os.makedirs(split_output_dir, exist_ok=True)
 
             # Get unique convergence fractions
             conv_fractions = sorted(split_data["convergence_fraction"].unique())
@@ -1525,7 +1539,7 @@ def plot_weight_distribution_convergence_panels(convergence_weights_data, output
                 ).replace(" ", "_")
                 + ".png"
             )
-            filepath = os.path.join(output_dir, filename)
+            filepath = os.path.join(split_output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"  Saved: {filename}")
             plt.close()
@@ -1582,12 +1596,12 @@ def main():
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
-    results_dir = "../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135"
+    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_1000scaling"
     # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
 
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_complete" + "_optimise_quick_test_splits__20250915_125135"
+    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_1000scaling"
 
     # output_dir = "_analysis_maxent_HDXer"
 
