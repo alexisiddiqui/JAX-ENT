@@ -1598,7 +1598,16 @@ def main():
 
     bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
     tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
+    bi_path = "sliced_trajectories/TeaA_filtered_sliced.xtc"
+    tri_path = "sliced_trajectories/TeaA_initial_sliced.xtc"
 
+    bi_path = os.path.join(traj_dir, bi_path)
+    tri_path = os.path.join(traj_dir, tri_path)
+
+    trajectory_paths = {
+        "ISO_TRI": tri_path,
+        "ISO_BI": bi_path,
+    }
     trajectory_paths = {
         "ISO_TRI": tri_path,
         "ISO_BI": bi_path,

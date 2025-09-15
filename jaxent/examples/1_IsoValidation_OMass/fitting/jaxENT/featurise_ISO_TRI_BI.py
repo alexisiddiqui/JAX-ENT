@@ -172,6 +172,12 @@ def main():
     bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
     tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
     # Featurise trajectories
+    bi_path = "sliced_trajectories/TeaA_filtered_sliced.xtc"
+    tri_path = "sliced_trajectories/TeaA_initial_sliced.xtc"
+
+    bi_path = os.path.join(traj_dir, bi_path)
+    tri_path = os.path.join(traj_dir, tri_path)
+
     trajectories_to_process = [(tri_path, "iso_tri"), (bi_path, "iso_bi")]
 
     for traj_path, output_name in trajectories_to_process:
