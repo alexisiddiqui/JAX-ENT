@@ -1,7 +1,9 @@
 #!/bin/bash
 # set working directory to the script's location
 cd "$(dirname "$0")" || exit
+DIR_WD=$(pwd)
 
+echo "Working directory: $DIR_WD"
 
 rm -rf logs
 mkdir -p logs
@@ -10,14 +12,14 @@ ENSEMBLES=("ISO_TRI" "ISO_BI")
 # 
 
 SPLIT_TYPES=("random" "sequence" "sequence_cluster" "stratified" "spatial")
-SPLIT_TYPES=("random" "sequence" "sequence_cluster" "spatial")
+SPLIT_TYPES=("random")
 LOSSES=("mcMSE" "MSE")
-# LOSSES=("MSE" )
+LOSSES=("MSE" )
 
 MAXENT_VALUES=(1000 1000000 1000000000 1000000000000 1000000000000000)
 MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000)
 MAXENT_VALUES=(1 10 100  1000 10000)
-# MAXENT_VALUES=(1 2 5 7 9 10)
+MAXENT_VALUES=(1 10)
 
 
 
@@ -26,6 +28,7 @@ MAXENT_VALUES=(1 10 100  1000 10000)
 time_data="_$(date +'%Y%m%d_%H%M%S')"
 
 OUTPUT_DIR="_optimise_quick_test_splits_${time_data}"
+OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
 echo "Output directory: $OUTPUT_DIR"
 mkdir -p "${OUTPUT_DIR}/logs"
 for ENSEMBLE in "${ENSEMBLES[@]}"; do
