@@ -18,7 +18,7 @@ class Simulation:
     This is the core object that is used during optimisation
     """
 
-    outputs: Sequence[Output_Features]
+    outputs: tuple[Output_Features]
     _jit_forward_pure: Callable
 
     def __init__(
@@ -138,7 +138,7 @@ class Simulation:
         # except Exception as e:
         #     raise ValueError(f"Failed to apply forward models: {e}")
 
-        sim.outputs = outputs
+        sim.outputs = tuple(outputs)
         return sim
 
     def predict(
