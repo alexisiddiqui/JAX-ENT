@@ -278,11 +278,10 @@ def maxent_L1_loss(
 def sparse_max_entropy_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
 ) -> tuple[Array, Array]:
-    mask_indices = jnp.where(model.params.frame_mask > 0.5)
-    simulation_weights = jnp.abs(model.params.frame_weights[mask_indices])
+    active_mask = model.params.frame_mask > 0.5
+    simulation_weights = jnp.abs(model.params.frame_weights) * active_mask
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
-    prior_frame_weights = jnp.abs(dataset.frame_weights[mask_indices])
-
+    prior_frame_weights = jnp.abs(dataset.frame_weights) * active_mask
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
     loss = jnp.asarray(safe_softmax_cross_entropy(jnp.log(simulation_weights), prior_frame_weights))
@@ -554,7 +553,7 @@ def hdx_uptake_monotonicity_loss(model: Simulation, dataset: None, prediction_in
     # If there are no elements, return 0
     loss = jnp.where(time_diffs.size > 0, jnp.mean(violations**2), jnp.array(0.0))
 
-    return loss
+    return loss, loss
 
 
 def jax_pairwise_cosine_similarity(array: Array) -> Array:
