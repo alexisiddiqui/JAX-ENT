@@ -15,6 +15,7 @@ from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_Model_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.losses import (
+    hdx_uptake_MAE_loss_vectorized,
     maxent_convexKL_loss,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationHistory, OptimizationState
@@ -288,140 +289,140 @@ def optimise_sweep(
     return cast(InitialisedSimulation, _simulation), optimizer
 
 
-# @jit_Guard.clear_caches_after()
-# def run_optimise_ISO_TRI_BI(
-#     train_data: List[HDX_peptide],
-#     val_data: List[HDX_peptide],
-#     features: BV_input_features,
-#     forward_model: BV_model,
-#     model_parameters: BV_Model_Parameters,
-#     feature_top: List[pt.Partial_Topology],
-#     convergence: List[float],
-#     loss_function: JaxEnt_Loss,
-#     n_steps: int = 10,
-#     name: str = "ISO_TRI_BI",
-#     output_dir: str = "_optimise",
-# ) -> None:
-#     # create dataloader
-#     data_to_fit = create_data_loaders(
-#         hdx_data=train_data + val_data,
-#         train_data=train_data,
-#         val_data=val_data,
-#         features=features,
-#         feature_top=feature_top,
-#     )
+@jit_Guard.clear_caches_after()
+def run_optimise_ISO_TRI_BI(
+    train_data: List[HDX_peptide],
+    val_data: List[HDX_peptide],
+    features: BV_input_features,
+    forward_model: BV_model,
+    model_parameters: BV_Model_Parameters,
+    feature_top: List[pt.Partial_Topology],
+    convergence: List[float],
+    loss_function: JaxEnt_Loss,
+    n_steps: int = 10,
+    name: str = "ISO_TRI_BI",
+    output_dir: str = "_optimise",
+) -> None:
+    # create dataloader
+    data_to_fit = create_data_loaders(
+        hdx_data=train_data + val_data,
+        train_data=train_data,
+        val_data=val_data,
+        features=features,
+        feature_top=feature_top,
+    )
 
-#     n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
+    n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
 
-#     parameters = Simulation_Parameters(
-#         frame_weights=jnp.ones(n_frames) / n_frames,
-#         frame_mask=jnp.ones(n_frames),
-#         model_parameters=(model_parameters,),
-#         forward_model_weights=jnp.array([1.0]),
-#         normalise_loss_functions=jnp.ones(1),
-#         forward_model_scaling=jnp.ones(1),
-#     )
+    parameters = Simulation_Parameters(
+        frame_weights=jnp.ones(n_frames) / n_frames,
+        frame_mask=jnp.ones(n_frames),
+        model_parameters=(model_parameters,),
+        forward_model_weights=jnp.array([1.0]),
+        normalise_loss_functions=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
+    )
 
-#     # create initialised simulation
-#     sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
-#     sim.initialise()
+    # create initialised simulation
+    sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
+    sim.initialise()
 
-#     optimizer = OptaxOptimizer(
-#         learning_rate=1e-4,
-#         optimizer="adam",
-#     )
-#     opt_state = optimizer.initialise(
-#         model=sim,
-#         optimisable_funcs=None,
-#     )
-#     _, optimizer = optimise_sweep(
-#         _simulation=sim,
-#         data_to_fit=(data_to_fit,),
-#         n_steps=n_steps,
-#         tolerance=1e-10,
-#         convergence=convergence,
-#         indexes=[0],
-#         loss_functions=[loss_function],
-#         opt_state=opt_state,
-#         optimizer=optimizer,
-#     )
+    optimizer = OptaxOptimizer(
+        learning_rate=1e-4,
+        optimizer="adam",
+    )
+    opt_state = optimizer.initialise(
+        model=sim,
+        optimisable_funcs=None,
+    )
+    _, optimizer = optimise_sweep(
+        _simulation=sim,
+        data_to_fit=(data_to_fit,),
+        n_steps=n_steps,
+        tolerance=1e-10,
+        convergence=convergence,
+        indexes=[0],
+        loss_functions=[loss_function],
+        opt_state=opt_state,
+        optimizer=optimizer,
+    )
 
-#     # Save the results
-#     output_path = os.path.join(output_dir, f"{name}_results.hdf5")
-#     if not os.path.exists(output_dir):
-#         os.makedirs(output_dir)
-#     save_optimization_history_to_file(filename=output_path, history=optimizer.history)
+    # Save the results
+    output_path = os.path.join(output_dir, f"{name}_results.hdf5")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    save_optimization_history_to_file(filename=output_path, history=optimizer.history)
 
 
-# @jit_Guard.test_isolation()
-# def run_optimise_ISO_TRI_BI_MAE(
-#     train_data: List[HDX_peptide],
-#     val_data: List[HDX_peptide],
-#     prior_data: ExpD_Dataloader,
-#     features: BV_input_features,
-#     forward_model: BV_model,
-#     model_parameters: BV_Model_Parameters,
-#     feature_top: List[pt.Partial_Topology],
-#     convergence: List[float],
-#     loss_function: JaxEnt_Loss,
-#     maxent_scaling: float = 1.0,
-#     n_steps: int = 10,
-#     name: str = "ISO_TRI_BI",
-#     output_dir: str = "_optimise",
-# ) -> None:
-#     # create dataloader
-#     data_to_fit = create_data_loaders(
-#         hdx_data=train_data + val_data,
-#         train_data=train_data,
-#         val_data=val_data,
-#         features=features,
-#         feature_top=feature_top,
-#     )
+@jit_Guard.test_isolation()
+def run_optimise_ISO_TRI_BI_MAE(
+    train_data: List[HDX_peptide],
+    val_data: List[HDX_peptide],
+    prior_data: ExpD_Dataloader,
+    features: BV_input_features,
+    forward_model: BV_model,
+    model_parameters: BV_Model_Parameters,
+    feature_top: List[pt.Partial_Topology],
+    convergence: List[float],
+    loss_function: JaxEnt_Loss,
+    maxent_scaling: float = 1.0,
+    n_steps: int = 10,
+    name: str = "ISO_TRI_BI",
+    output_dir: str = "_optimise",
+) -> None:
+    # create dataloader
+    data_to_fit = create_data_loaders(
+        hdx_data=train_data + val_data,
+        train_data=train_data,
+        val_data=val_data,
+        features=features,
+        feature_top=feature_top,
+    )
 
-#     n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
+    n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
 
-#     parameters = Simulation_Parameters(
-#         frame_weights=jnp.ones(n_frames) / n_frames,
-#         frame_mask=jnp.ones(n_frames),
-#         model_parameters=(model_parameters,),
-#         forward_model_weights=jnp.array([maxent_scaling, 1.0]),
-#         normalise_loss_functions=jnp.ones(2),
-#         forward_model_scaling=jnp.ones(2),
-#     )
+    parameters = Simulation_Parameters(
+        frame_weights=jnp.ones(n_frames) / n_frames,
+        frame_mask=jnp.ones(n_frames),
+        model_parameters=(model_parameters,),
+        forward_model_weights=jnp.array([maxent_scaling, 1.0]),
+        normalise_loss_functions=jnp.ones(2),
+        forward_model_scaling=jnp.ones(2),
+    )
 
-#     # create initialised simulation
-#     sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
-#     with jit_Guard(sim, cleanup_on_exit=True) as guard:
-#         sim.initialise()
+    # create initialised simulation
+    sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
+    with jit_Guard(sim, cleanup_on_exit=True) as guard:
+        sim.initialise()
 
-#         optimizer = OptaxOptimizer(
-#             learning_rate=1e-4,
-#             optimizer="adam",
-#         )
-#         opt_state = optimizer.initialise(
-#             model=sim,
-#             optimisable_funcs=None,
-#         )
-#         sim = guard
+        optimizer = OptaxOptimizer(
+            learning_rate=1e-4,
+            optimizer="adam",
+        )
+        opt_state = optimizer.initialise(
+            model=sim,
+            optimisable_funcs=None,
+        )
+        sim = guard
 
-#         # Run the optimisation sweep
-#         sim, optimizer = optimise_sweep(
-#             _simulation=sim,
-#             data_to_fit=(data_to_fit, prior_data),
-#             n_steps=n_steps,
-#             tolerance=1e-10,
-#             convergence=convergence,
-#             indexes=[0, 0],
-#             loss_functions=[loss_function, hdx_uptake_MAE_loss_vectorized],
-#             opt_state=opt_state,
-#             optimizer=optimizer,
-#         )
+        # Run the optimisation sweep
+        sim, optimizer = optimise_sweep(
+            _simulation=sim,
+            data_to_fit=(data_to_fit, prior_data),
+            n_steps=n_steps,
+            tolerance=1e-10,
+            convergence=convergence,
+            indexes=[0, 0],
+            loss_functions=[loss_function, hdx_uptake_MAE_loss_vectorized],
+            opt_state=opt_state,
+            optimizer=optimizer,
+        )
 
-#         # Save the results
-#         output_path = os.path.join(output_dir, f"{name}_results.hdf5")
-#         if not os.path.exists(output_dir):
-#             os.makedirs(output_dir)
-#         save_optimization_history_to_file(filename=output_path, history=optimizer.history)
+        # Save the results
+        output_path = os.path.join(output_dir, f"{name}_results.hdf5")
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        save_optimization_history_to_file(filename=output_path, history=optimizer.history)
 
 
 @jit_Guard.test_isolation()
@@ -437,7 +438,7 @@ def run_optimise_ISO_TRI_BI_maxENT(
     loss_function: JaxEnt_Loss,
     maxent_scaling: float = 1.0,
     n_steps: int = 10,
-    name: str = "CrossVal_MSAss_Filtered",
+    name: str = "ISO_TRI_BI",
     output_dir: str = "_optimise",
     learning_rate: float = 1e-1,
     initial_learning_rate: float = 1e0,
