@@ -19,8 +19,6 @@ This script analyzes the features distributions relevant for clustering the traj
 Features analyzed:
 - Internal dihedral angles change from reference (ensure periodic angle handling)
 - COM displacement from reference structure
-- Region-specific dihedral angle changes for helices and strands
-- Pairwise signed COM RMSD differences between regions
 
 # Regions analyzed:
 - α1, α2, α3 helices
@@ -30,8 +28,16 @@ Each per frame feature is saved in a separate .npy file.
 
 python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures_PUFs.py --topology_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb --trajectory_paths /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc --n_clusters 4 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_Globalfeatures_clusters4 --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json --region_features --save_pdbs --rmsd --secondary_structure
 
+python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures_PUFs.py --topology_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb --trajectory_paths /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc --n_clusters 4 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_Globalfeatures_clusters4 --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json --save_pdbs --secondary_structure
+
+
+python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures_PUFs.py --topology_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb --trajectory_paths /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc --n_clusters 4 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_Globalfeatures_clusters4 --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json --save_pdbs --region_features
+
+####
 
 python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures_PUFs.py --topology_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb --trajectory_paths /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc --n_clusters 4 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_Globalfeatures_clusters4_MSAss --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json --region_features --save_pdbs --rmsd --secondary_structure
+
+python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures_PUFs.py --topology_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb --trajectory_paths /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc --n_clusters 4 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_Globalfeatures_clusters4_MSAss --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json --save_pdbs --secondary_structure
 
 """
 
@@ -141,345 +147,12 @@ def parse_arguments():
     feature_group.add_argument(
         "--secondary_structure", action="store_true", help="Calculate secondary structure content"
     )
-    feature_group.add_argument(
-        "--region_features",
-        action="store_true",
-        help="Calculate region-specific dihedral and COM features (requires JSON file)",
-    )
+
 
     return parser.parse_args()
 
 
-def load_structural_regions(json_path):
-    """Load structural region definitions from JSON file"""
-    if not json_path or not os.path.exists(json_path):
-        return None
 
-    with open(json_path, "r") as f:
-        data = json.load(f)
-
-    return data.get("moPrP_data", {})
-
-
-def parse_residue_range(residue_string):
-    """Parse residue range string like '144-153' into start, end integers"""
-    if not residue_string or residue_string == "null":
-        return None, None
-
-    # Handle cases like "1-2 (partial)" or "Cys178-Cys213"
-    if "(" in residue_string:
-        residue_string = residue_string.split("(")[0].strip()
-
-    if residue_string.startswith("Cys"):
-        # Handle disulfide bonds like "Cys178-Cys213"
-        parts = residue_string.split("-")
-        start = int(parts[0][3:])  # Remove 'Cys' prefix
-        end = int(parts[1][3:])  # Remove 'Cys' prefix
-        return start, end
-
-    try:
-        start, end = map(int, residue_string.split("-"))
-        return start, end
-    except ValueError:
-        return None, None
-
-
-def get_structural_regions(json_data):
-    """Extract helix and strand regions from JSON data"""
-    if not json_data:
-        return {}
-
-    regions = {}
-    structural_elements = json_data.get("structural_elements", [])
-    mapping_offset = json_data.get("sequence_info", {}).get("mapping_offset", 130)
-
-    for element in structural_elements:
-        name = element["name"]
-
-        # Focus on helices and strands
-        if "helix" in name or "strand" in name:
-            original_range = element.get("original_residues")
-            pdb_range = element.get("pdb_residues")
-
-            # Parse original numbering
-            orig_start, orig_end = parse_residue_range(original_range)
-
-            # Convert to PDB numbering if needed
-            if orig_start is not None and orig_end is not None:
-                # Convert from original to PDB numbering
-                pdb_start = orig_start - mapping_offset
-                pdb_end = orig_end - mapping_offset
-
-                # Ensure PDB residues are within valid range (1-101 based on structure)
-                if pdb_start >= 1 and pdb_end <= 101:
-                    regions[name] = {
-                        "original_range": (orig_start, orig_end),
-                        "pdb_range": (pdb_start, pdb_end),
-                        "type": "helix" if "helix" in name else "strand",
-                    }
-
-    return regions
-
-
-def circular_distance_degrees(angle1, angle2):
-    """Calculate the minimum angular distance between two angles in degrees.
-
-    Handles the periodicity of angles correctly, assuming angles are in [-180, 180].
-    Returns the absolute minimum angular distance.
-    """
-    diff = angle1 - angle2
-    # Normalize to [-180, 180] range
-    while diff > 180:
-        diff -= 360
-    while diff < -180:
-        diff += 360
-    return abs(diff)
-
-
-def calculate_dihedral_angle(pos1, pos2, pos3, pos4):
-    """Calculate dihedral angle between four points"""
-    # Vectors
-    v1 = pos2 - pos1
-    v2 = pos3 - pos2
-    v3 = pos4 - pos3
-
-    # Normal vectors to planes
-    n1 = np.cross(v1, v2)
-    n2 = np.cross(v2, v3)
-
-    # Normalize
-    n1 = n1 / np.linalg.norm(n1)
-    n2 = n2 / np.linalg.norm(n2)
-
-    # Calculate angle
-    cos_angle = np.dot(n1, n2)
-    cos_angle = np.clip(cos_angle, -1, 1)
-
-    # Check sign using scalar triple product
-    sign = np.sign(np.dot(np.cross(n1, n2), v2))
-
-    angle = sign * np.arccos(cos_angle)
-    return np.degrees(angle)
-
-
-def calculate_region_dihedral_features(universe, ref_universe, regions):
-    """Calculate mean absolute dihedral angle changes for each region"""
-    logger.info("Calculating region-specific dihedral angle features...")
-
-    features = {}
-    n_frames = len(universe.trajectory)
-
-    for region_name, region_info in regions.items():
-        pdb_start, pdb_end = region_info["pdb_range"]
-
-        # Select residues in this region
-        selection = f"resid {pdb_start}:{pdb_end} and protein"
-
-        try:
-            region_atoms = universe.select_atoms(selection)
-            ref_region_atoms = ref_universe.select_atoms(selection)
-
-            if len(region_atoms) == 0:
-                logger.warning(
-                    f"No atoms found for region {region_name} with selection: {selection}"
-                )
-                continue
-
-            # Get residues in region
-            residues = region_atoms.residues
-            ref_residues = ref_region_atoms.residues
-
-            if len(residues) != len(ref_residues):
-                logger.warning(f"Residue count mismatch for region {region_name}")
-                continue
-
-            region_dihedral_changes = []
-
-            for ts in tqdm(universe.trajectory, desc=f"Calculating dihedrals for {region_name}"):
-                frame_dihedral_changes = []
-
-                for i, (res, ref_res) in enumerate(zip(residues, ref_residues)):
-                    try:
-                        # Get backbone atoms for phi and psi calculation
-                        if i > 0:  # phi angle (need previous residue)
-                            prev_res = residues[i - 1]
-                            ref_prev_res = ref_residues[i - 1]
-
-                            # Current frame phi
-                            phi_atoms = [
-                                prev_res.atoms.select_atoms("name C")[0].position,
-                                res.atoms.select_atoms("name N")[0].position,
-                                res.atoms.select_atoms("name CA")[0].position,
-                                res.atoms.select_atoms("name C")[0].position,
-                            ]
-                            phi_current = calculate_dihedral_angle(*phi_atoms)
-
-                            # Reference frame phi
-                            phi_ref_atoms = [
-                                ref_prev_res.atoms.select_atoms("name C")[0].position,
-                                ref_res.atoms.select_atoms("name N")[0].position,
-                                ref_res.atoms.select_atoms("name CA")[0].position,
-                                ref_res.atoms.select_atoms("name C")[0].position,
-                            ]
-                            phi_ref = calculate_dihedral_angle(*phi_ref_atoms)
-
-                            # Calculate circular distance for phi angle
-                            phi_diff = circular_distance_degrees(phi_current, phi_ref)
-                            frame_dihedral_changes.append(phi_diff)
-
-                        if i < len(residues) - 1:  # psi angle (need next residue)
-                            next_res = residues[i + 1]
-                            ref_next_res = ref_residues[i + 1]
-
-                            # Current frame psi
-                            psi_atoms = [
-                                res.atoms.select_atoms("name N")[0].position,
-                                res.atoms.select_atoms("name CA")[0].position,
-                                res.atoms.select_atoms("name C")[0].position,
-                                next_res.atoms.select_atoms("name N")[0].position,
-                            ]
-                            psi_current = calculate_dihedral_angle(*psi_atoms)
-
-                            # Reference frame psi
-                            psi_ref_atoms = [
-                                ref_res.atoms.select_atoms("name N")[0].position,
-                                ref_res.atoms.select_atoms("name CA")[0].position,
-                                ref_res.atoms.select_atoms("name C")[0].position,
-                                ref_next_res.atoms.select_atoms("name N")[0].position,
-                            ]
-                            psi_ref = calculate_dihedral_angle(*psi_ref_atoms)
-
-                            # Calculate circular distance for psi angle
-                            psi_diff = circular_distance_degrees(psi_current, psi_ref)
-                            frame_dihedral_changes.append(psi_diff)
-
-                    except (IndexError, AttributeError):
-                        # Skip if backbone atoms are missing
-                        continue
-
-                # Calculate mean dihedral change for this frame
-                if frame_dihedral_changes:
-                    region_dihedral_changes.append(np.mean(frame_dihedral_changes))
-                else:
-                    region_dihedral_changes.append(0.0)
-
-            features[f"{region_name}_dihedral_change"] = np.array(region_dihedral_changes)
-            logger.info(
-                f"Calculated dihedral features for {region_name}: mean = {np.mean(region_dihedral_changes):.2f}°"
-            )
-
-        except Exception as e:
-            logger.warning(f"Failed to calculate dihedral features for {region_name}: {e}")
-            continue
-
-    return features
-
-
-def calculate_region_com_features(universe, ref_universe, regions):
-    """Calculate pairwise signed COM RMSD differences between regions"""
-    logger.info("Calculating region-specific COM RMSD features...")
-
-    features = {}
-    region_names = list(regions.keys())
-    n_regions = len(region_names)
-
-    if n_regions < 2:
-        logger.warning("Need at least 2 regions for pairwise COM calculations")
-        return features
-
-    # Calculate COM positions for all regions and frames
-    region_com_data = {}
-    ref_region_com_data = {}
-
-    for region_name, region_info in regions.items():
-        pdb_start, pdb_end = region_info["pdb_range"]
-        selection = f"resid {pdb_start}:{pdb_end} and protein and name CA"
-
-        try:
-            region_atoms = universe.select_atoms(selection)
-            ref_region_atoms = ref_universe.select_atoms(selection)
-
-            if len(region_atoms) == 0:
-                continue
-
-            # Calculate COM for reference
-            ref_region_com_data[region_name] = ref_region_atoms.center_of_mass()
-
-            # Calculate COM for each frame
-            com_positions = []
-            for ts in universe.trajectory:
-                com_positions.append(region_atoms.center_of_mass())
-            region_com_data[region_name] = np.array(com_positions)
-
-        except Exception as e:
-            logger.warning(f"Failed to calculate COM for region {region_name}: {e}")
-            continue
-
-    # Calculate pairwise COM RMSD differences
-    valid_regions = list(region_com_data.keys())
-
-    for i, region1 in enumerate(valid_regions):
-        for j, region2 in enumerate(valid_regions):
-            if i >= j:  # Only calculate upper triangle to avoid duplicates
-                continue
-
-            # Reference distance
-            ref_distance = np.linalg.norm(
-                ref_region_com_data[region1] - ref_region_com_data[region2]
-            )
-
-            # Frame-by-frame distances
-            frame_distances = []
-            for frame_idx in range(len(universe.trajectory)):
-                current_distance = np.linalg.norm(
-                    region_com_data[region1][frame_idx] - region_com_data[region2][frame_idx]
-                )
-                # Signed difference (current - reference)
-                frame_distances.append(current_distance - ref_distance)
-
-            feature_name = f"COM_diff_{region1}_vs_{region2}"
-            features[feature_name] = np.array(frame_distances)
-
-            logger.info(
-                f"Calculated COM difference for {region1} vs {region2}: mean = {np.mean(frame_distances):.2f} Å"
-            )
-
-    return features
-
-
-def calculate_region_specific_features(universe, ref_universe, json_data):
-    """Calculate all region-specific features"""
-    if not json_data:
-        logger.warning("No JSON data provided for region-specific features")
-        return {}, []
-
-    # Get structural regions
-    regions = get_structural_regions(json_data)
-
-    if not regions:
-        logger.warning("No valid regions found in JSON data")
-        return {}, []
-
-    logger.info(f"Found {len(regions)} structural regions: {list(regions.keys())}")
-
-    # Calculate features
-    all_features = {}
-
-    # Dihedral angle features
-    dihedral_features = calculate_region_dihedral_features(universe, ref_universe, regions)
-    all_features.update(dihedral_features)
-
-    # COM RMSD features
-    com_features = calculate_region_com_features(universe, ref_universe, regions)
-    all_features.update(com_features)
-
-    # Prepare feature data and names
-    if all_features:
-        feature_names = list(all_features.keys())
-        feature_data_list = [all_features[name] for name in feature_names]
-        return feature_data_list, feature_names
-    else:
-        return [], []
 
 
 def calculate_rmsd(universe, ref_universe, selection="name CA"):
@@ -1077,6 +750,75 @@ def create_publication_plots(pca_coords, cluster_labels, cluster_centers, pca, o
     }
 
 
+def create_pca_pairwise_hue_by_feature_plots(
+    pca_coords, features_data, feature_names, pca_pairwise, output_dir
+):
+    """
+    Create PCA plots of pairwise coordinates, hueing by each individual feature.
+    Save these PCAs in a subfolder and plot them individually for each feature selected.
+    """
+    plots_dir = os.path.join(output_dir, "plots")
+    hue_plots_dir = os.path.join(plots_dir, "pca_hue_by_features")
+    os.makedirs(hue_plots_dir, exist_ok=True)
+    logger.info("Creating PCA pairwise plots, hueing by individual features...")
+
+    # Set style for publication-quality plots
+    plt.style.use("default")
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
+    plt.rcParams["font.size"] = 12
+    plt.rcParams["axes.linewidth"] = 1.5
+    plt.rcParams["axes.edgecolor"] = "black"
+
+    x, y = pca_coords[:, 0], pca_coords[:, 1]
+    variance_pc1 = pca_pairwise.explained_variance_ratio_[0] * 100
+    variance_pc2 = pca_pairwise.explained_variance_ratio_[1] * 100
+
+    for i, feature_name in enumerate(feature_names):
+        plt.figure(figsize=(12, 10))
+        ax = plt.gca()
+
+        # Handle NaN values in feature data for hueing
+        current_feature_data = features_data[:, i]
+        # Replace NaN with a value that stands out or is handled by cmap (e.g., mean or a specific color)
+        # For simplicity, we'll just skip if all are NaN, or use nan_to_num for plotting
+        if np.all(np.isnan(current_feature_data)):
+            logger.warning(f"Skipping hue plot for feature '{feature_name}' as all values are NaN.")
+            plt.close()
+            continue
+
+        # Calculate point density for contour plot
+        sns.kdeplot(x=x, y=y, ax=ax, levels=20, cmap="Blues", fill=True, alpha=0.5, zorder=0)
+
+        scatter = ax.scatter(
+            x,
+            y,
+            c=current_feature_data,
+            cmap="viridis",  # Or a more suitable colormap for continuous data
+            s=20,
+            alpha=0.7,
+            zorder=10,
+            edgecolor="none",
+        )
+
+        ax.set_xlabel(f"PC1 ({variance_pc1:.1f}% variance)", fontsize=14)
+        ax.set_ylabel(f"PC2 ({variance_pc2:.1f}% variance)", fontsize=14)
+        ax.set_title(f"PCA of Pairwise Coordinates (Hued by {feature_name})", fontsize=16, pad=20)
+
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label(feature_name, fontsize=14, labelpad=15)
+
+        plt.tight_layout()
+        plot_filename = (
+            f"pca_pairwise_hue_by_{feature_name.replace(' ', '_').replace('/', '_')}.png"
+        )
+        plt.savefig(os.path.join(hue_plots_dir, plot_filename), dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"Created PCA pairwise plot hued by '{feature_name}'.")
+
+    logger.info("Finished creating PCA pairwise plots hued by individual features.")
+
+
 def create_cluster_ratio_plot(cluster_labels, output_dir):
     """Create a plot showing the distribution ratio of frames across clusters."""
     plots_dir = os.path.join(output_dir, "plots")
@@ -1312,12 +1054,7 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Arguments: {vars(args)}")
 
-    # Load structural data from JSON if provided
-    json_data = load_structural_regions(args.json_data_path) if args.json_data_path else None
-    if json_data:
-        logger.info(f"Loaded structural data from {args.json_data_path}")
-    else:
-        logger.info("No JSON data provided - region-specific features will be disabled")
+
 
     # Load universe
     logger.info(f"Loading topology from {args.topology_path}")
@@ -1344,7 +1081,6 @@ def main():
         "sasa": args.sasa,
         "native_contacts": args.native_contacts,
         "secondary_structure": args.secondary_structure,
-        "region_features": args.region_features,
     }
 
     # If no specific features are selected or --all_features is specified, calculate all features
@@ -1400,13 +1136,7 @@ def main():
         feature_names.append("Alpha Helix Content")
         feature_names.append("Beta Sheet Content")
 
-    if feature_flags["region_features"]:
-        logger.info("Calculating region-specific features")
-        region_feature_data, region_feature_names = calculate_region_specific_features(
-            universe, ref_universe, json_data
-        )
-        features_data_list.extend(region_feature_data)
-        feature_names.extend(region_feature_names)
+
 
     # Check if we have any features to analyze
     if not features_data_list:
@@ -1433,6 +1163,14 @@ def main():
     plot_paths_pairwise = create_publication_plots(
         pca_coords, cluster_labels, None, pca_pairwise, args.output_dir
     )
+
+    # Create PCA pairwise plots, hueing by individual features
+    if len(features_data_list) >= 1:
+        create_pca_pairwise_hue_by_feature_plots(
+            pca_coords, features_data, feature_names, pca_pairwise, args.output_dir
+        )
+    else:
+        logger.info("Skipping PCA pairwise plots hued by features - no features to hue by.")
 
     # Create cluster ratio visualization
     cluster_ratio_plots = create_cluster_ratio_plot(cluster_labels, args.output_dir)

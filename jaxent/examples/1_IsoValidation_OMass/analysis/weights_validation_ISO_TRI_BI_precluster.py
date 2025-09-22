@@ -1,14 +1,17 @@
-""" """
+"""
+Main Analysis Script - Part 2
+Loads clustering results from CSV files and performs the complete analysis.
+"""
 
 import os
 import re
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-import MDAnalysis as mda
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from MDAnalysis.analysis import rms
+import seaborn as sns
 
 # Add the base directory to the path to import the HDF5 utilities
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,119 +22,83 @@ sys.path.insert(0, base_dir)
 from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 
-def extract_maxent_value_from_filename(filename: str) -> Optional[float]:
+def load_clustering_results(clustering_dir):
     """
-    Extract maxent value from filename.
+    Load clustering results from CSV files created by clustering_analysis.py.
 
     Args:
-        filename: HDF5 filename containing maxent value
+        clustering_dir (str): Directory containing clustering CSV files
 
     Returns:
-        Maxent value or None if not found
+        dict: Dictionary containing clustering results by ensemble
     """
-    match = re.search(r"maxent(\d+(?:\.\d+)?)", filename)
-    if match:
-        return float(match.group(1))
-    return None
+    if not os.path.exists(clustering_dir):
+        raise FileNotFoundError(f"Clustering directory not found: {clustering_dir}")
 
+    clustering_results = {}
 
-def compute_rmsd_to_references(trajectory_path, topology_path, reference_paths):
-    """
-    Compute RMSD of trajectory frames to reference structures.
+    # Load metadata first
+    metadata_path = os.path.join(clustering_dir, "clustering_metadata.csv")
+    if os.path.exists(metadata_path):
+        metadata_df = pd.read_csv(metadata_path)
+        metadata = metadata_df.iloc[0].to_dict()
+        print(
+            f"Loaded clustering metadata: RMSD threshold = {metadata.get('rmsd_threshold', 'Unknown')}"
+        )
+    else:
+        print("Warning: clustering_metadata.csv not found")
+        metadata = {}
 
-    Args:
-        trajectory_path (str): Path to trajectory file
-        topology_path (str): Path to topology file
-        reference_paths (list): List of paths to reference structures
-
-    Returns:
-        np.ndarray: RMSD values (n_frames, n_refs)
-    """
-    # Load trajectory
-    traj = mda.Universe(topology_path, trajectory_path)
-
-    # Initialize RMSD arrays
-    n_frames = len(traj.trajectory)
-    n_refs = len(reference_paths)
-    rmsd_values = np.zeros((n_frames, n_refs))
-
-    # Compute RMSD for each reference structure
-    for j, ref_path in enumerate(reference_paths):
-        # Create a new Universe with the trajectory and reference selection
-        mobile = mda.Universe(topology_path, trajectory_path)
-        reference = mda.Universe(ref_path)
-
-        # Select CA atoms
-        mobile_ca = mobile.select_atoms("name CA")
-        ref_ca = reference.select_atoms("name CA")
-
-        # Ensure selecting same atoms from both
-        if len(ref_ca) != len(mobile_ca):
+    # Load summary statistics
+    summary_path = os.path.join(clustering_dir, "clustering_summary.csv")
+    if os.path.exists(summary_path):
+        summary_df = pd.read_csv(summary_path)
+        print("Clustering Summary:")
+        for _, row in summary_df.iterrows():
+            ensemble = row["ensemble"]
             print(
-                f"Warning: CA atom count mismatch - Trajectory: {len(mobile_ca)}, Reference {j}: {len(ref_ca)}"
+                f"  {ensemble}: {row['clustered_frames']}/{row['total_frames']} frames clustered "
+                f"({row['clustering_efficiency'] * 100:.1f}%)"
             )
+    else:
+        print("Warning: clustering_summary.csv not found")
 
-        # Calculate RMSD
-        R = rms.RMSD(mobile, reference, select="name CA", ref_frame=0)
-        R.run()
+    # Find all cluster assignment files
+    cluster_files = [
+        f
+        for f in os.listdir(clustering_dir)
+        if f.startswith("cluster_assignments_") and f.endswith(".csv")
+    ]
 
-        # Store RMSD values (column 2 has the RMSD after rotation)
-        rmsd_values[:, j] = R.rmsd[:, 2]
+    for cluster_file in cluster_files:
+        # Extract ensemble name from filename
+        ensemble_name = cluster_file.replace("cluster_assignments_", "").replace(".csv", "")
 
-    return rmsd_values
+        # Load cluster assignments
+        cluster_path = os.path.join(clustering_dir, cluster_file)
+        cluster_df = pd.read_csv(cluster_path)
 
+        # Load corresponding RMSD values
+        rmsd_file = f"rmsd_values_{ensemble_name}.csv"
+        rmsd_path = os.path.join(clustering_dir, rmsd_file)
+        if os.path.exists(rmsd_path):
+            rmsd_df = pd.read_csv(rmsd_path)
+        else:
+            print(f"Warning: RMSD file not found for {ensemble_name}")
+            rmsd_df = pd.DataFrame()
 
-def cluster_by_rmsd(rmsd_values, rmsd_threshold=1.0):
-    """
-    Cluster frames based on RMSD to reference structures.
+        # Store results in the same format as original clustering function
+        clustering_results[ensemble_name] = {
+            "cluster_assignments": cluster_df["cluster_assignment"].values,
+            "rmsd_values": cluster_df[["rmsd_open", "rmsd_closed"]].values,
+            "frame_data": cluster_df,
+            "rmsd_data": rmsd_df,
+            "metadata": metadata,
+        }
 
-    Args:
-        rmsd_values (np.ndarray): RMSD values to reference structures (n_frames, n_refs)
-        rmsd_threshold (float): RMSD threshold for clustering
+        print(f"Loaded clustering results for {ensemble_name}: {len(cluster_df)} frames")
 
-    Returns:
-        np.ndarray: Cluster assignments (0 = open-like, 1 = closed-like)
-    """
-    # Simple clustering: assign to closest reference if within threshold
-    cluster_assignments = np.argmin(rmsd_values, axis=1)
-
-    # Check if frames are within threshold of any reference
-    min_rmsd = np.min(rmsd_values, axis=1)
-    valid_clusters = min_rmsd <= rmsd_threshold
-
-    # Set invalid clusters to -1
-    cluster_assignments[~valid_clusters] = -1
-
-    return cluster_assignments
-
-
-def calculate_cluster_ratios(cluster_assignments, frame_weights=None):
-    """
-    Calculate ratios of clusters based on assignments and optional frame weights.
-
-    Args:
-        cluster_assignments (np.ndarray): Cluster assignments
-        frame_weights (np.ndarray, optional): Frame weights from optimization
-
-    Returns:
-        dict: Cluster ratios
-    """
-    if frame_weights is None:
-        frame_weights = np.ones(len(cluster_assignments))
-
-    # Normalize frame weights
-    frame_weights = frame_weights / np.sum(frame_weights)
-
-    # Calculate weighted ratios
-    ratios = {}
-    unique_clusters = np.unique(cluster_assignments)
-
-    for cluster in unique_clusters:
-        if cluster >= 0:  # Skip invalid clusters (-1)
-            mask = cluster_assignments == cluster
-            ratios[f"cluster_{cluster}"] = np.sum(frame_weights[mask])
-
-    return ratios
+    return clustering_results
 
 
 def calculate_recovery_percentage(observed_ratios, ground_truth_ratios):
@@ -156,16 +123,12 @@ def calculate_recovery_percentage(observed_ratios, ground_truth_ratios):
 
     # Calculate recovery as percentage of truth recovered
     if open_truth > 0:
-        # recovery["open_recovery"] = min(100.0, (open_observed / open_truth) * 100.0)
         recovery["open_recovery"] = min(200.0, (open_observed / open_truth) * 100.0)
-
     else:
         recovery["open_recovery"] = 0.0
 
     if closed_truth > 0:
-        # recovery["closed_recovery"] = min(100.0, (closed_observed / closed_truth) * 100.0)
         recovery["closed_recovery"] = min(200.0, (closed_observed / closed_truth) * 100.0)
-
     else:
         recovery["closed_recovery"] = 0.0
 
@@ -178,6 +141,7 @@ def load_all_optimization_results_with_maxent(
     loss_functions: List[str] = ["mcMSE", "MSE"],
     num_splits: int = 3,
     maxent_values: List[float] = None,
+    EMA: bool = False,
 ) -> Dict:
     """
     Load all optimization results from HDF5 files, including maxent values.
@@ -201,6 +165,11 @@ def load_all_optimization_results_with_maxent(
         d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
     ]
 
+    if EMA:
+        hdf_pattern = "results_EMA.hdf5"
+    else:
+        hdf_pattern = "results.hdf5"
+
     for split_type in split_types:
         results[split_type] = {}
         split_type_dir = os.path.join(results_dir, split_type)
@@ -216,9 +185,8 @@ def load_all_optimization_results_with_maxent(
                 files = [
                     f
                     for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith(".hdf5")
+                    if f.startswith(pattern) and f.endswith(hdf_pattern)
                 ]
-
                 for filename in files:
                     # Extract split index and maxent value
                     match = re.search(r"split(\d{3})_maxent(\d+(?:\.\d+)?)", filename)
@@ -266,112 +234,6 @@ def load_all_optimization_results_with_maxent(
                                 )
 
     return results
-
-
-def analyze_conformational_recovery_with_maxent(
-    trajectory_paths, topology_path, reference_paths, results_dict
-):
-    """
-    Analyze conformational ratio recovery for trajectories with maxent values.
-
-    Args:
-        trajectory_paths (dict): Dictionary of trajectory paths by ensemble name
-        topology_path (str): Path to topology file
-        reference_paths (list): Paths to reference structures [open, closed]
-        results_dict (dict): Optimization results containing frame weights
-
-    Returns:
-        pd.DataFrame: Recovery analysis results
-    """
-    ground_truth_ratios = {"open": 0.4, "closed": 0.6}
-    recovery_data = []
-
-    for ensemble_name, traj_path in trajectory_paths.items():
-        print(f"Analyzing conformational recovery for {ensemble_name}...")
-
-        # Compute RMSD to references
-        rmsd_values = compute_rmsd_to_references(traj_path, topology_path, reference_paths)
-
-        # Cluster by RMSD
-        cluster_assignments = cluster_by_rmsd(rmsd_values, rmsd_threshold=1.0)
-
-        # Calculate unweighted (original) ratios
-        original_ratios = calculate_cluster_ratios(cluster_assignments)
-        original_recovery = calculate_recovery_percentage(original_ratios, ground_truth_ratios)
-
-        recovery_data.append(
-            {
-                "ensemble": ensemble_name,
-                "loss_function": "Original",
-                "split_type": "N/A",
-                "split": "N/A",
-                "maxent_value": 0.0,
-                "convergence_step": "N/A",
-                "open_ratio": original_ratios.get("cluster_0", 0.0),
-                "closed_ratio": original_ratios.get("cluster_1", 0.0),
-                "open_recovery": original_recovery["open_recovery"],
-                "closed_recovery": original_recovery["closed_recovery"],
-                "total_frames": len(cluster_assignments),
-                "clustered_frames": np.sum(cluster_assignments >= 0),
-            }
-        )
-
-        # Analyze with optimized frame weights including maxent
-        for split_type in results_dict:
-            if ensemble_name in results_dict[split_type]:
-                for loss_name in results_dict[split_type][ensemble_name]:
-                    for maxent_val in results_dict[split_type][ensemble_name][loss_name]:
-                        for split_idx, history in results_dict[split_type][ensemble_name][
-                            loss_name
-                        ][maxent_val].items():
-                            if history is not None and history.states:
-                                for step_idx, state in enumerate(history.states):
-                                    if (
-                                        hasattr(state.params, "frame_weights")
-                                        and state.params.frame_weights is not None
-                                    ):
-                                        frame_weights = np.array(state.params.frame_weights)
-
-                                        if (
-                                            len(frame_weights) == len(cluster_assignments)
-                                            and np.sum(frame_weights) > 0
-                                        ):
-                                            # Calculate weighted ratios
-                                            weighted_ratios = calculate_cluster_ratios(
-                                                cluster_assignments, frame_weights
-                                            )
-                                            weighted_recovery = calculate_recovery_percentage(
-                                                weighted_ratios, ground_truth_ratios
-                                            )
-
-                                            recovery_data.append(
-                                                {
-                                                    "ensemble": ensemble_name,
-                                                    "loss_function": loss_name,
-                                                    "split_type": split_type,
-                                                    "split": split_idx,
-                                                    "maxent_value": maxent_val,
-                                                    "convergence_step": step_idx,
-                                                    "open_ratio": weighted_ratios.get(
-                                                        "cluster_0", 0.0
-                                                    ),
-                                                    "closed_ratio": weighted_ratios.get(
-                                                        "cluster_1", 0.0
-                                                    ),
-                                                    "open_recovery": weighted_recovery[
-                                                        "open_recovery"
-                                                    ],
-                                                    "closed_recovery": weighted_recovery[
-                                                        "closed_recovery"
-                                                    ],
-                                                    "total_frames": len(cluster_assignments),
-                                                    "clustered_frames": np.sum(
-                                                        cluster_assignments >= 0
-                                                    ),
-                                                }
-                                            )
-
-    return pd.DataFrame(recovery_data)
 
 
 def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
@@ -476,11 +338,6 @@ def extract_frame_weights_kl_with_maxent(results: Dict) -> pd.DataFrame:
     return pd.DataFrame(data_rows)
 
 
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-import seaborn as sns
-
 # Set publication-ready style
 sns.set_style("ticks")
 sns.set_context(
@@ -557,19 +414,20 @@ def plot_weight_distribution_lines(weights_data, output_dir):
         if not split_types:
             continue
 
-        # Iterate over each split type to create separate plots
-        for split_type in split_types:
-            split_output_dir = os.path.join(output_dir, split_type)
-            os.makedirs(split_output_dir, exist_ok=True)
+        # Create figure with subplots
+        n_plots = min(len(split_types), 4)  # Max 4 subplots
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        axes = axes.flatten()
 
+        for idx, split_type in enumerate(split_types[:4]):  # Max 4 subplots
+            ax = axes[idx]
             split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
 
             if split_data.empty:
+                ax.set_visible(False)
                 continue
 
             print(f"      Split {split_type}: {len(split_data)} data points")
-
-            fig, ax = plt.subplots(figsize=(8, 6))
 
             # Group by maxent and compute average histogram across splits
             maxent_groups = {}
@@ -630,20 +488,25 @@ def plot_weight_distribution_lines(weights_data, output_dir):
             ax.set_yscale("log")
             ax.set_xlabel("Weight Value")
             ax.set_ylabel("Density")
-            ax.set_title(
-                f"Weight Distributions - {ensemble_loss} - {split_name_mapping.get(split_type, split_type)}"
-            )
+            ax.set_title(f"{split_name_mapping.get(split_type, split_type)}")
             ax.legend(fontsize=8)
             ax.grid(True, alpha=0.3)
 
-            plt.tight_layout()
+        # Hide unused subplots
+        for idx in range(len(split_types), len(axes)):
+            axes[idx].set_visible(False)
 
-            # Save figure
-            filename = f"weight_distributions_lines_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
-            filepath = os.path.join(split_output_dir, filename)
-            plt.savefig(filepath, dpi=300, bbox_inches="tight")
-            print(f"  Saved: {filename}")
-            plt.close(fig)
+        plt.suptitle(f"Weight Distributions - {ensemble_loss}", fontsize=16, y=0.98)
+        plt.tight_layout()
+
+        # Save figure
+        filename = (
+            f"weight_distributions_lines_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
+        )
+        filepath = os.path.join(output_dir, filename)
+        plt.savefig(filepath, dpi=300, bbox_inches="tight")
+        print(f"  Saved: {filename}")
+        plt.close()
 
 
 def plot_weight_recovery_scatter(recovery_df, output_dir):
@@ -677,25 +540,23 @@ def plot_weight_recovery_scatter(recovery_df, output_dir):
 
         print(f"  Creating recovery plot for ensemble-loss: {ensemble_loss}")
 
-        # Get unique split types for this ensemble-loss combination
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Plot for each split type
         available_split_types = ensemble_loss_data["split_type"].unique()
 
-        for split_type in available_split_types:
-            split_output_dir = os.path.join(output_dir, split_type)
-            os.makedirs(split_output_dir, exist_ok=True)
+        # Create a color map for split types
+        n_split_types = len(available_split_types)
+        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
+        split_color_map = dict(zip(available_split_types, colors))
 
+        for i, split_type in enumerate(available_split_types):
             split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
-
-            if split_data.empty:
-                continue
+            color = split_color_map[split_type]
+            label = split_name_mapping.get(split_type, split_type)
 
             print(f"    Split {split_type}: {len(split_data)} points")
-
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            # Create a color map for split types (though only one split type per plot now)
-            color = split_type_colours.get(split_type, "gray")
-            label = split_name_mapping.get(split_type, split_type)
 
             # Plot scatter
             ax.scatter(
@@ -721,273 +582,46 @@ def plot_weight_recovery_scatter(recovery_df, output_dir):
                         linewidth=1,
                     )
 
-            ax.set_xscale("log")
-            ax.set_xlabel("MaxEnt Value")
-            ax.set_ylabel("Open State Recovery (%)")
-            ax.set_title(
-                f"Open State Recovery vs MaxEnt - {ensemble_loss} - {split_name_mapping.get(split_type, split_type)}"
-            )
-            ax.legend()
-            ax.grid(True, alpha=0.3)
+        ax.set_xscale("log")
+        ax.set_xlabel("MaxEnt Value")
+        ax.set_ylabel("Open State Recovery (%)")
+        ax.set_title(f"Open State Recovery vs MaxEnt - {ensemble_loss}")
+        ax.legend()
+        ax.grid(True, alpha=0.3)
 
-            plt.tight_layout()
-
-            # Save figure
-            filename = f"open_state_recovery_scatter_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
-            filepath = os.path.join(split_output_dir, filename)
-            plt.savefig(filepath, dpi=300, bbox_inches="tight")
-            print(f"  Saved: {filename}")
-            plt.close(fig)
-
-
-def plot_kld_between_splits(kld_df, output_dir):
-    """
-    Plot mean KLD between splits across maxent values.
-    Modified to handle ensemble-loss combinations.
-    """
-    print("Creating KLD between splits plot...")
-
-    if kld_df.empty:
-        print("  No KLD data available for plotting.")
-        return
-
-    # Create ensemble-loss combinations
-    kld_df["ensemble_loss"] = kld_df.apply(
-        lambda row: create_ensemble_loss_key(row["ensemble"], row["loss_function"]), axis=1
-    )
-
-    print(f"  Available KLD data: {len(kld_df)} points")
-    print(f"  Unique ensemble-loss combinations: {kld_df['ensemble_loss'].unique()}")
-    print(f"  Unique split types: {kld_df['split_type'].unique()}")
-
-    # Get unique split types from actual data
-    available_split_types = kld_df["split_type"].unique()
-
-    for split_type in available_split_types:
-        print(f"  Creating KLD plot for split type: {split_type}")
-        split_output_dir = os.path.join(output_dir, split_type)
-        os.makedirs(split_output_dir, exist_ok=True)
-
-        split_data = kld_df[kld_df["split_type"] == split_type]
-
-        if split_data.empty:
-            continue
-
-        # Get unique ensemble-loss combinations for this split type
-        available_ensemble_loss = split_data["ensemble_loss"].unique()
-
-        # Create figure with subplots for each ensemble-loss combination
-        n_combinations = len(available_ensemble_loss)
-        n_cols = min(n_combinations, 2)
-        n_rows = (n_combinations + n_cols - 1) // n_cols
-
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows))
-        if n_combinations == 1:
-            axes = [axes]
-        elif n_rows == 1:
-            axes = axes.flatten()
-        else:
-            axes = axes.flatten()
-
-        for idx, ensemble_loss in enumerate(available_ensemble_loss):
-            if idx >= len(axes):
-                break
-
-            ax = axes[idx]
-            ensemble_loss_data = split_data[split_data["ensemble_loss"] == ensemble_loss]
-
-            if ensemble_loss_data.empty:
-                ax.set_visible(False)
-                continue
-
-            print(f"    Creating KLD plot for ensemble-loss: {ensemble_loss} within {split_type}")
-
-            # Create a color map for split types (though only one split type per plot now)
-            color = split_type_colours.get(split_type, "gray")
-            label = split_name_mapping.get(split_type, split_type)
-
-            # Sort by maxent for proper line plotting
-            ensemble_loss_data = ensemble_loss_data.sort_values("maxent_value")
-
-            x_vals = ensemble_loss_data["maxent_value"].values
-            y_vals = ensemble_loss_data["mean_kld_between_splits"].values
-            y_err = ensemble_loss_data["sem_kld_between_splits"].values
-
-            # Plot line with error bars
-            ax.errorbar(
-                x_vals,
-                y_vals,
-                yerr=y_err,
-                color=color,
-                alpha=0.8,
-                label=label,
-                linewidth=2,
-                marker="o",
-                markersize=4,
-                capsize=3,
-            )
-
-            ax.set_xscale("log")
-            ax.set_xlabel("MaxEnt Value")
-            ax.set_ylabel("Mean KLD Between Splits")
-            ax.set_title(ensemble_loss)
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-
-        # Hide unused subplots
-        for idx in range(len(available_ensemble_loss), len(axes)):
-            axes[idx].set_visible(False)
-
-        plt.suptitle(
-            f"KL Divergence Between Splits Across MaxEnt Values - {split_name_mapping.get(split_type, split_type)}",
-            fontsize=16,
-        )
         plt.tight_layout()
 
         # Save figure
-        filename = f"kld_between_splits_vs_maxent_{split_type}.png"
-        filepath = os.path.join(split_output_dir, filename)
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        print(f"  Saved: {filename}")
-        plt.close(fig)
-
-
-def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
-    """
-    Plot KLD between sequential maxent values.
-    Modified to handle ensemble-loss combinations.
-    """
-    print("Creating sequential maxent KLD plot...")
-
-    if sequential_kld_df.empty:
-        print("  No sequential KLD data available for plotting.")
-        return
-
-    # Create ensemble-loss combinations
-    sequential_kld_df["ensemble_loss"] = sequential_kld_df.apply(
-        lambda row: create_ensemble_loss_key(row["ensemble"], row["loss_function"]), axis=1
-    )
-
-    print(f"  Available sequential KLD data: {len(sequential_kld_df)} points")
-    print(f"  Unique ensemble-loss combinations: {sequential_kld_df['ensemble_loss'].unique()}")
-    print(f"  Unique split types: {sequential_kld_df['split_type'].unique()}")
-
-    # Get unique split types from actual data
-    available_split_types = sequential_kld_df["split_type"].unique()
-
-    for split_type in available_split_types:
-        print(f"  Creating sequential KLD plot for split type: {split_type}")
-        split_output_dir = os.path.join(output_dir, split_type)
-        os.makedirs(split_output_dir, exist_ok=True)
-
-        split_data = sequential_kld_df[sequential_kld_df["split_type"] == split_type]
-
-        if split_data.empty:
-            continue
-
-        # Get unique ensemble-loss combinations for this split type
-        available_ensemble_loss = split_data["ensemble_loss"].unique()
-
-        # Create figure with subplots for each ensemble-loss combination
-        n_combinations = len(available_ensemble_loss)
-        n_cols = min(n_combinations, 2)
-        n_rows = (n_combinations + n_cols - 1) // n_cols
-
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 6 * n_rows))
-        if n_combinations == 1:
-            axes = [axes]
-        elif n_rows == 1:
-            axes = axes.flatten()
-        else:
-            axes = axes.flatten()
-
-        for idx, ensemble_loss in enumerate(available_ensemble_loss):
-            if idx >= len(axes):
-                break
-
-            ax = axes[idx]
-            ensemble_loss_data = split_data[split_data["ensemble_loss"] == ensemble_loss]
-
-            if ensemble_loss_data.empty:
-                ax.set_visible(False)
-                continue
-
-            print(
-                f"    Creating sequential KLD plot for ensemble-loss: {ensemble_loss} within {split_type}"
-            )
-
-            # Create a color map for split types (though only one split type per plot now)
-            color = split_type_colours.get(split_type, "gray")
-            label = split_name_mapping.get(split_type, split_type)
-
-            # Plot individual splits as light lines
-            for split_idx in ensemble_loss_data["split_idx"].unique():
-                split_idx_data = ensemble_loss_data[
-                    ensemble_loss_data["split_idx"] == split_idx
-                ].sort_values("current_maxent")
-
-                if len(split_idx_data) > 0:
-                    x_vals = split_idx_data["current_maxent"].values
-                    y_vals = split_idx_data["kld_to_previous"].values
-
-                    ax.plot(
-                        x_vals,
-                        y_vals,
-                        color=color,
-                        alpha=0.3,
-                        linewidth=1,
-                        marker=".",
-                        markersize=2,
-                    )
-
-            # Compute and plot mean with error bars
-            maxent_stats = (
-                ensemble_loss_data.groupby("current_maxent")["kld_to_previous"]
-                .agg(["mean", "std", "count"])
-                .reset_index()
-            )
-
-            if len(maxent_stats) > 0:
-                x_vals = maxent_stats["current_maxent"].values
-                y_vals = maxent_stats["mean"].values
-                y_err = maxent_stats["std"].values / np.sqrt(maxent_stats["count"].values)
-
-                ax.errorbar(
-                    x_vals,
-                    y_vals,
-                    yerr=y_err,
-                    color=color,
-                    alpha=0.8,
-                    label=label,
-                    linewidth=2,
-                    marker="o",
-                    markersize=4,
-                    capsize=3,
-                )
-
-            ax.set_xscale("log")
-            ax.set_xlabel("Current MaxEnt")
-            ax.set_ylabel("KLD to Previous MaxEnt (or Uniform)")
-            ax.set_title(ensemble_loss)
-            ax.legend()
-            ax.grid(True, alpha=0.3)
-
-        # Hide unused subplots
-        for idx in range(len(available_ensemble_loss), len(axes)):
-            axes[idx].set_visible(False)
-
-        plt.suptitle(
-            f"KL Divergence Between Sequential MaxEnt Values - {split_name_mapping.get(split_type, split_type)}",
-            fontsize=16,
+        filename = (
+            f"open_state_recovery_scatter_{ensemble_loss.replace('/', '_').replace(' ', '_')}.png"
         )
-        plt.tight_layout()
-
-        # Save figure
-        filename = f"sequential_maxent_kld_vs_maxent_{split_type}.png"
-        filepath = os.path.join(split_output_dir, filename)
+        filepath = os.path.join(output_dir, filename)
         plt.savefig(filepath, dpi=300, bbox_inches="tight")
         print(f"  Saved: {filename}")
-        plt.close(fig)
+        plt.close()
+
+
+def compute_kl_divergence_between_distributions(p, q, epsilon=1e-10):
+    """
+    Compute KL divergence between two probability distributions.
+    """
+    if np.sum(p) > 0:
+        p = p / np.sum(p)
+    else:
+        return np.nan
+
+    if np.sum(q) > 0:
+        q = q / np.sum(q)
+    else:
+        return np.nan
+
+    p_safe = p + epsilon
+    q_safe = q + epsilon
+    p_safe = p_safe / np.sum(p_safe)
+    q_safe = q_safe / np.sum(q_safe)
+
+    kl_div = np.sum(p_safe * np.log(p_safe / q_safe))
+    return kl_div
 
 
 def compute_pairwise_kld_between_splits(weights_data):
@@ -1124,108 +758,240 @@ def compute_sequential_maxent_kld(weights_data):
     return pd.DataFrame(sequential_kld_data)
 
 
-def compute_kl_divergence_between_distributions(p, q, epsilon=1e-10):
+def plot_kld_between_splits(kld_df, output_dir):
     """
-    Compute KL divergence between two probability distributions.
+    Plot mean KLD between splits across maxent values.
+    Modified to handle ensemble-loss combinations.
     """
-    if np.sum(p) > 0:
-        p = p / np.sum(p)
-    else:
-        return np.nan
+    print("Creating KLD between splits plot...")
 
-    if np.sum(q) > 0:
-        q = q / np.sum(q)
-    else:
-        return np.nan
+    if kld_df.empty:
+        print("  No KLD data available for plotting.")
+        return
 
-    p_safe = p + epsilon
-    q_safe = q + epsilon
-    p_safe = p_safe / np.sum(p_safe)
-    q_safe = q_safe / np.sum(q_safe)
-
-    kl_div = np.sum(p_safe * np.log(p_safe / q_safe))
-    return kl_div
-
-
-def extract_weights_over_convergence_steps(results):
-    """
-    Extract frame weights at different convergence steps for plotting.
-    This creates a dataset with weights at multiple steps in the optimization process.
-    """
-    print("Extracting weights over convergence steps...")
-    convergence_weights_data = []
-
-    for split_type in results:
-        for ensemble in results[split_type]:
-            for loss_name in results[split_type][ensemble]:
-                for maxent_val in results[split_type][ensemble][loss_name]:
-                    for split_idx, history in results[split_type][ensemble][loss_name][
-                        maxent_val
-                    ].items():
-                        if history is not None and history.states:
-                            # Extract weights from multiple steps (not just final)
-                            n_states = len(history.states)
-
-                            # Sample steps across the optimization trajectory
-                            if n_states >= 10:
-                                # Take steps at different fractions of completion
-                                step_fractions = [
-                                    0.1,
-                                    0.3,
-                                    0.5,
-                                    0.7,
-                                    0.9,
-                                    1.0,
-                                ]  # 10%, 30%, 50%, 70%, 90%, 100%
-                                step_indices = [int(f * (n_states - 1)) for f in step_fractions]
-                            else:
-                                # If few states, take all available
-                                step_indices = list(range(n_states))
-
-                            for step_idx in step_indices:
-                                state = history.states[step_idx]
-                                if (
-                                    hasattr(state, "params")
-                                    and hasattr(state.params, "frame_weights")
-                                    and state.params.frame_weights is not None
-                                ):
-                                    frame_weights = np.array(state.params.frame_weights)
-
-                                    # Handle NaN/inf values
-                                    if np.any(np.isnan(frame_weights)) or np.any(
-                                        np.isinf(frame_weights)
-                                    ):
-                                        frame_weights = np.nan_to_num(
-                                            frame_weights, nan=0.0, posinf=0.0, neginf=0.0
-                                        )
-
-                                    # Normalize weights
-                                    if np.sum(frame_weights) > 0:
-                                        frame_weights = frame_weights / np.sum(frame_weights)
-
-                                        # Calculate convergence fraction
-                                        convergence_fraction = (
-                                            step_idx / (n_states - 1) if n_states > 1 else 1.0
-                                        )
-
-                                        convergence_weights_data.append(
-                                            {
-                                                "ensemble": ensemble,
-                                                "split_type": split_type,
-                                                "split": split_idx,
-                                                "loss_function": loss_name,
-                                                "maxent_value": maxent_val,
-                                                "weights": frame_weights,
-                                                "convergence_step": step_idx,
-                                                "convergence_fraction": convergence_fraction,
-                                                "total_steps": n_states,
-                                            }
-                                        )
-
-    print(
-        f"Extracted {len(convergence_weights_data)} weight distributions across convergence steps"
+    # Create ensemble-loss combinations
+    kld_df["ensemble_loss"] = kld_df.apply(
+        lambda row: create_ensemble_loss_key(row["ensemble"], row["loss_function"]), axis=1
     )
-    return convergence_weights_data
+
+    print(f"  Available KLD data: {len(kld_df)} points")
+    print(f"  Unique ensemble-loss combinations: {kld_df['ensemble_loss'].unique()}")
+    print(f"  Unique split types: {kld_df['split_type'].unique()}")
+
+    # Get unique ensemble-loss combinations from actual data
+    available_ensemble_loss = kld_df["ensemble_loss"].unique()
+
+    # Create figure with subplots for each ensemble-loss combination
+    n_combinations = len(available_ensemble_loss)
+    n_cols = min(n_combinations, 2)
+    n_rows = (n_combinations + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows))
+    if n_combinations == 1:
+        axes = [axes]
+    elif n_rows == 1:
+        axes = axes.flatten()
+    else:
+        axes = axes.flatten()
+
+    for idx, ensemble_loss in enumerate(available_ensemble_loss):
+        if idx >= len(axes):
+            break
+
+        ax = axes[idx]
+        ensemble_loss_data = kld_df[kld_df["ensemble_loss"] == ensemble_loss]
+
+        if ensemble_loss_data.empty:
+            ax.set_visible(False)
+            continue
+
+        print(f"  Creating KLD plot for ensemble-loss: {ensemble_loss}")
+
+        # Get available split types
+        available_split_types = ensemble_loss_data["split_type"].unique()
+        n_split_types = len(available_split_types)
+        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
+        split_color_map = dict(zip(available_split_types, colors))
+
+        # Plot each split type
+        for split_type in available_split_types:
+            split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
+            color = split_color_map[split_type]
+            label = split_name_mapping.get(split_type, split_type)
+
+            print(f"    Split {split_type}: {len(split_data)} points")
+
+            # Sort by maxent for proper line plotting
+            split_data = split_data.sort_values("maxent_value")
+
+            x_vals = split_data["maxent_value"].values
+            y_vals = split_data["mean_kld_between_splits"].values
+            y_err = split_data["sem_kld_between_splits"].values
+
+            # Plot line with error bars
+            ax.errorbar(
+                x_vals,
+                y_vals,
+                yerr=y_err,
+                color=color,
+                alpha=0.8,
+                label=label,
+                linewidth=2,
+                marker="o",
+                markersize=4,
+                capsize=3,
+            )
+
+        ax.set_xscale("log")
+        ax.set_xlabel("MaxEnt Value")
+        ax.set_ylabel("Mean KLD Between Splits")
+        ax.set_title(ensemble_loss)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    # Hide unused subplots
+    for idx in range(len(available_ensemble_loss), len(axes)):
+        axes[idx].set_visible(False)
+
+    plt.suptitle("KL Divergence Between Splits Across MaxEnt Values", fontsize=16)
+    plt.tight_layout()
+
+    # Save figure
+    filename = "kld_between_splits_vs_maxent.png"
+    filepath = os.path.join(output_dir, filename)
+    plt.savefig(filepath, dpi=300, bbox_inches="tight")
+    print(f"  Saved: {filename}")
+    plt.close()
+
+
+def plot_sequential_maxent_kld(sequential_kld_df, output_dir):
+    """
+    Plot KLD between sequential maxent values.
+    Modified to handle ensemble-loss combinations.
+    """
+    print("Creating sequential maxent KLD plot...")
+
+    if sequential_kld_df.empty:
+        print("  No sequential KLD data available for plotting.")
+        return
+
+    # Create ensemble-loss combinations
+    sequential_kld_df["ensemble_loss"] = sequential_kld_df.apply(
+        lambda row: create_ensemble_loss_key(row["ensemble"], row["loss_function"]), axis=1
+    )
+
+    print(f"  Available sequential KLD data: {len(sequential_kld_df)} points")
+    print(f"  Unique ensemble-loss combinations: {sequential_kld_df['ensemble_loss'].unique()}")
+    print(f"  Unique split types: {sequential_kld_df['split_type'].unique()}")
+
+    # Get unique ensemble-loss combinations from actual data
+    available_ensemble_loss = sequential_kld_df["ensemble_loss"].unique()
+
+    # Create figure with subplots for each ensemble-loss combination
+    n_combinations = len(available_ensemble_loss)
+    n_cols = min(n_combinations, 2)
+    n_rows = (n_combinations + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 6 * n_rows))
+    if n_combinations == 1:
+        axes = [axes]
+    elif n_rows == 1:
+        axes = axes.flatten()
+    else:
+        axes = axes.flatten()
+
+    for idx, ensemble_loss in enumerate(available_ensemble_loss):
+        if idx >= len(axes):
+            break
+
+        ax = axes[idx]
+        ensemble_loss_data = sequential_kld_df[sequential_kld_df["ensemble_loss"] == ensemble_loss]
+
+        if ensemble_loss_data.empty:
+            ax.set_visible(False)
+            continue
+
+        print(f"  Creating sequential KLD plot for ensemble-loss: {ensemble_loss}")
+
+        # Get available split types
+        available_split_types = ensemble_loss_data["split_type"].unique()
+        n_split_types = len(available_split_types)
+        colors = plt.cm.Set1(np.linspace(0, 1, n_split_types))
+        split_color_map = dict(zip(available_split_types, colors))
+
+        # Plot each split type
+        for split_type in available_split_types:
+            split_data = ensemble_loss_data[ensemble_loss_data["split_type"] == split_type]
+            color = split_color_map[split_type]
+            label = split_name_mapping.get(split_type, split_type)
+
+            print(f"    Split {split_type}: {len(split_data)} points")
+
+            # Plot individual splits as light lines
+            for split_idx in split_data["split_idx"].unique():
+                split_idx_data = split_data[split_data["split_idx"] == split_idx].sort_values(
+                    "current_maxent"
+                )
+
+                if len(split_idx_data) > 0:
+                    x_vals = split_idx_data["current_maxent"].values
+                    y_vals = split_idx_data["kld_to_previous"].values
+
+                    ax.plot(
+                        x_vals,
+                        y_vals,
+                        color=color,
+                        alpha=0.3,
+                        linewidth=1,
+                        marker=".",
+                        markersize=2,
+                    )
+
+            # Compute and plot mean with error bars
+            maxent_stats = (
+                split_data.groupby("current_maxent")["kld_to_previous"]
+                .agg(["mean", "std", "count"])
+                .reset_index()
+            )
+
+            if len(maxent_stats) > 0:
+                x_vals = maxent_stats["current_maxent"].values
+                y_vals = maxent_stats["mean"].values
+                y_err = maxent_stats["std"].values / np.sqrt(maxent_stats["count"].values)
+
+                ax.errorbar(
+                    x_vals,
+                    y_vals,
+                    yerr=y_err,
+                    color=color,
+                    alpha=0.8,
+                    label=label,
+                    linewidth=2,
+                    marker="o",
+                    markersize=4,
+                    capsize=3,
+                )
+
+        ax.set_xscale("log")
+        ax.set_xlabel("Current MaxEnt")
+        ax.set_ylabel("KLD to Previous MaxEnt (or Uniform)")
+        ax.set_title(ensemble_loss)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    # Hide unused subplots
+    for idx in range(len(available_ensemble_loss), len(axes)):
+        axes[idx].set_visible(False)
+
+    plt.suptitle("KL Divergence Between Sequential MaxEnt Values", fontsize=16)
+    plt.tight_layout()
+
+    # Save figure
+    filename = "sequential_maxent_kld_vs_maxent.png"
+    filepath = os.path.join(output_dir, filename)
+    plt.savefig(filepath, dpi=300, bbox_inches="tight")
+    print(f"  Saved: {filename}")
+    plt.close()
 
 
 def plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir):
@@ -1271,8 +1037,6 @@ def plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
                 continue
 
             print(f"    Processing split type: {split_type}")
-            split_output_dir = os.path.join(output_dir, split_type)
-            os.makedirs(split_output_dir, exist_ok=True)
 
             # Get unique maxent values for this combination
             maxent_values = sorted(split_data["maxent_value"].unique())
@@ -1391,7 +1155,7 @@ def plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
                 ).replace(" ", "_")
                 + ".png"
             )
-            filepath = os.path.join(split_output_dir, filename)
+            filepath = os.path.join(output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"  Saved: {filename}")
             plt.close()
@@ -1435,8 +1199,6 @@ def plot_weight_distribution_convergence_panels(convergence_weights_data, output
                 continue
 
             print(f"    Processing split type: {split_type}")
-            split_output_dir = os.path.join(output_dir, split_type)
-            os.makedirs(split_output_dir, exist_ok=True)
 
             # Get unique convergence fractions
             conv_fractions = sorted(split_data["convergence_fraction"].unique())
@@ -1539,33 +1301,105 @@ def plot_weight_distribution_convergence_panels(convergence_weights_data, output
                 ).replace(" ", "_")
                 + ".png"
             )
-            filepath = os.path.join(split_output_dir, filename)
+            filepath = os.path.join(output_dir, filename)
             plt.savefig(filepath, dpi=300, bbox_inches="tight")
             print(f"  Saved: {filename}")
             plt.close()
 
 
-# Add this to the main() function after the existing weight extraction:
-def update_main_function_with_convergence_plots():
+def extract_weights_over_convergence_steps(results):
     """
-    Code snippet to add to main() function after the existing weight extraction section.
-    Insert this after the line: print(f"Extracted {len(weights_data)} weight distributions for plotting")
+    Extract frame weights at different convergence steps for plotting.
+    This creates a dataset with weights at multiple steps in the optimization process.
     """
+    print("Extracting weights over convergence steps...")
+    convergence_weights_data = []
+
+    for split_type in results:
+        for ensemble in results[split_type]:
+            for loss_name in results[split_type][ensemble]:
+                for maxent_val in results[split_type][ensemble][loss_name]:
+                    for split_idx, history in results[split_type][ensemble][loss_name][
+                        maxent_val
+                    ].items():
+                        if history is not None and history.states:
+                            # Extract weights from multiple steps (not just final)
+                            n_states = len(history.states)
+
+                            # Sample steps across the optimization trajectory
+                            if n_states >= 10:
+                                # Take steps at different fractions of completion
+                                step_fractions = [
+                                    0.1,
+                                    0.3,
+                                    0.5,
+                                    0.7,
+                                    0.9,
+                                    1.0,
+                                ]  # 10%, 30%, 50%, 70%, 90%, 100%
+                                step_indices = [int(f * (n_states - 1)) for f in step_fractions]
+                            else:
+                                # If few states, take all available
+                                step_indices = list(range(n_states))
+
+                            for step_idx in step_indices:
+                                state = history.states[step_idx]
+                                if (
+                                    hasattr(state, "params")
+                                    and hasattr(state.params, "frame_weights")
+                                    and state.params.frame_weights is not None
+                                ):
+                                    frame_weights = np.array(state.params.frame_weights)
+
+                                    # Handle NaN/inf values
+                                    if np.any(np.isnan(frame_weights)) or np.any(
+                                        np.isinf(frame_weights)
+                                    ):
+                                        frame_weights = np.nan_to_num(
+                                            frame_weights, nan=0.0, posinf=0.0, neginf=0.0
+                                        )
+
+                                    # Normalize weights
+                                    if np.sum(frame_weights) > 0:
+                                        frame_weights = frame_weights / np.sum(frame_weights)
+
+                                        # Calculate convergence fraction
+                                        convergence_fraction = (
+                                            step_idx / (n_states - 1) if n_states > 1 else 1.0
+                                        )
+
+                                        convergence_weights_data.append(
+                                            {
+                                                "ensemble": ensemble,
+                                                "split_type": split_type,
+                                                "split": split_idx,
+                                                "loss_function": loss_name,
+                                                "maxent_value": maxent_val,
+                                                "weights": frame_weights,
+                                                "convergence_step": step_idx,
+                                                "convergence_fraction": convergence_fraction,
+                                                "total_steps": n_states,
+                                            }
+                                        )
+
+    print(
+        f"Extracted {len(convergence_weights_data)} weight distributions across convergence steps"
+    )
+    return convergence_weights_data
+
+
+# [Additional plotting functions would go here - copying from original script]
+# For now, I'll include the main function which ties everything together
 
 
 def main():
     """
-    Main function to run the complete analysis including maxent values.
+    Main function to run the complete analysis using pre-computed clustering results.
     """
     # Define parameters
     ensembles = ["ISO_TRI", "ISO_BI"]
     loss_functions = ["mcMSE", "MSE"]
     num_splits = 3
-    # MAXENT_VALUES=(0.1 0.01 0.001 0.0001 1.0)
-    maxent_values = [0.1, 0.01, 0.001, 0.0001, 1.0]
-    # 1 2 5 10 50 100 500 1000
-    maxent_values = [1, 2, 5, 10, 50, 100, 500, 1000]
-    # 1 2 5 10 50 100 500 1000 10000 100000 1000000 10000000 100000000 1000000000
     maxent_values = [
         1,
         2,
@@ -1582,62 +1416,28 @@ def main():
         100000000,
         1000000000,
     ]
-    # maxent_values = [
-    #     1,
-    #     2,
-    #     5,
-    #     10,
-    #     50,
-    #     100,
-    #     500,
-    #     1000,
-    #     10000,
-    # ]
-    convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
     # Define directories
-    results_dir = "../fitting/jaxENT/_optimise_partition_test_gdplateau_1000scaling"
-    # results_dir = "../fitting/jaxENT/_optimise_maxent_HDXer"
-
+    results_dir = "../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135"
     results_dir = os.path.join(os.path.dirname(__file__), results_dir)
 
-    output_dir = "_analysis_maxent_complete" + "_optimise_partition_test_gdplateau_1000scaling"
-
-    # output_dir = "_analysis_maxent_HDXer"
-
+    clustering_dir = os.path.join(os.path.dirname(__file__), "../data/_clustering_results")
+    output_dir = "_analysis_maxent_complete" + "_optimise_quick_test_splits__20250915_125135"
     output_dir = os.path.join(os.path.dirname(__file__), output_dir)
-    # Define trajectory and reference paths
-    traj_dir = "../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
-    traj_dir = os.path.join(os.path.dirname(__file__), traj_dir)
 
-    bi_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_filtered.xtc"
-    tri_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_autovalidation/_TeaA/trajectories/TeaA_initial_sliced.xtc"
-
-    trajectory_paths = {
-        "ISO_TRI": tri_path,
-        "ISO_BI": bi_path,
-    }
-
-    topology_path = os.path.join(traj_dir, "TeaA_ref_closed_state.pdb")
-    reference_paths = [
-        os.path.join(traj_dir, "TeaA_ref_open_state.pdb"),  # Index 0: Open
-        os.path.join(traj_dir, "TeaA_ref_closed_state.pdb"),  # Index 1: Closed
-    ]
-
-    # Check if required directories and files exist
+    # Check if required directories exist
     if not os.path.exists(results_dir):
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
 
-    if not os.path.exists(traj_dir):
-        raise FileNotFoundError(f"Trajectory directory not found: {traj_dir}")
-
-    for path in [topology_path] + list(trajectory_paths.values()) + reference_paths:
-        if not os.path.exists(path):
-            print(f"Warning: File not found: {path}")
+    if not os.path.exists(clustering_dir):
+        raise FileNotFoundError(
+            f"Clustering directory not found: {clustering_dir}. "
+            "Please run clustering_analysis.py first."
+        )
 
     print("Starting Complete IsoValidation Analysis with MaxEnt Values...")
     print(f"Results directory: {results_dir}")
-    print(f"Trajectory directory: {traj_dir}")
+    print(f"Clustering directory: {clustering_dir}")
     print(f"Output directory: {output_dir}")
     print(f"Ensembles: {ensembles}")
     print(f"Loss functions: {loss_functions}")
@@ -1658,29 +1458,27 @@ def main():
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # # Part 1: KL Divergence Analysis with MaxEnt
-    # print("\n" + "=" * 60)
-    # print("PART 1: KL DIVERGENCE AND ESS ANALYSIS WITH MAXENT")
-    # print("=" * 60)
+    # Part 1: KL Divergence Analysis with MaxEnt
+    print("\n" + "=" * 60)
+    print("PART 1: KL DIVERGENCE AND ESS ANALYSIS WITH MAXENT")
+    print("=" * 60)
 
     # Extract frame weights and calculate KL divergences
-    # print("Extracting frame weights and calculating KL divergences and ESS...")
-    # kl_ess_df = extract_frame_weights_kl_with_maxent(results)
+    print("Extracting frame weights and calculating KL divergences and ESS...")
+    kl_ess_df = extract_frame_weights_kl_with_maxent(results)
 
-    # if len(kl_ess_df) > 0:
-    #     print(
-    #         f"Extracted {len(kl_ess_df)} KL divergence and ESS data points from optimization histories"
-    #     )
+    if len(kl_ess_df) > 0:
+        print(
+            f"Extracted {len(kl_ess_df)} KL divergence and ESS data points from optimization histories"
+        )
 
-    #     # Save the KL divergence and ESS dataset
-    #     kl_ess_df_path = os.path.join(output_dir, "kl_divergence_ess_analysis_maxent_data.csv")
-    #     kl_ess_df.to_csv(kl_ess_df_path, index=False)
-    #     print(f"KL divergence and ESS dataset saved to: {kl_ess_df_path}")
+        # Save the KL divergence and ESS dataset
+        kl_ess_df_path = os.path.join(output_dir, "kl_divergence_ess_analysis_maxent_data.csv")
+        kl_ess_df.to_csv(kl_ess_df_path, index=False)
+        print(f"KL divergence and ESS dataset saved to: {kl_ess_df_path}")
 
     # Extract weights for failure analysis plotting
     print("\nExtracting weights for failure analysis...")
-
-    # Convert kl_ess_df to weights_data format for plotting
     weights_data = []
 
     for split_type in results:
@@ -1726,50 +1524,15 @@ def main():
                                     )
 
     print(f"Extracted {len(weights_data)} weight distributions for plotting")
+
     # Extract weights over convergence steps for additional plots
     print("\nExtracting weights over convergence steps for additional analysis...")
     convergence_weights_data = extract_weights_over_convergence_steps(results)
 
-    # Additional plotting section (add this in the plotting section after existing plots)
-    print("\nCreating additional weight distribution plots...")
-
-    # Weight distribution plots with maxent as panels
-    if len(convergence_weights_data) > 0:
-        plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
-        plot_weight_distribution_convergence_panels(convergence_weights_data, output_dir)
-    else:
-        print("No convergence weights data available for additional distribution plots")
     # Conformational Recovery Analysis
     print("\n" + "=" * 60)
-    print("CONFORMATIONAL RECOVERY ANALYSIS WITH MAXENT")
-    print("=" * 60)
-
-    # Check if trajectory files exist
-    missing_files = []
-    for name, path in trajectory_paths.items():
-        if not os.path.exists(path):
-            missing_files.append(f"{name}: {path}")
-
-    if missing_files:
-        print("Warning: The following trajectory files are missing:")
-        for missing in missing_files:
-            print(f"  - {missing}")
-        print("Skipping conformational recovery analysis.")
-        recovery_df = pd.DataFrame()
-    else:
-        print("Analyzing conformational recovery with maxent values...")
-        recovery_df = analyze_conformational_recovery_with_maxent(
-            trajectory_paths, topology_path, reference_paths, results
-        )
-
-        if len(recovery_df) > 0:
-            # Save the recovery dataset
-            recovery_df_path = os.path.join(output_dir, "conformational_recovery_maxent_data.csv")
-            recovery_df.to_csv(recovery_df_path, index=False)
-            print(f"Conformational recovery dataset saved to: {recovery_df_path}")
-
     # Compute additional analysis for plotting
-    print("\nComputing additional analysis for failure plots...")
+    print("\nComputing analysis for failure plots...")
 
     # Compute pairwise KLD between splits
     kld_df = pd.DataFrame()
@@ -1800,12 +1563,6 @@ def main():
     else:
         print("No weights data available for distribution plots")
 
-    # Recovery scatter plots
-    if not recovery_df.empty:
-        plot_weight_recovery_scatter(recovery_df, output_dir)
-    else:
-        print("No recovery data available for scatter plots")
-
     # KLD plots
     if not kld_df.empty:
         plot_kld_between_splits(kld_df, output_dir)
@@ -1817,6 +1574,16 @@ def main():
         plot_sequential_maxent_kld(sequential_kld_df, output_dir)
     else:
         print("No sequential KLD data available for sequential plots")
+
+    # Additional plotting section - weight distribution plots with convergence analysis
+    print("\nCreating additional weight distribution plots...")
+
+    # Weight distribution plots with maxent as panels
+    if len(convergence_weights_data) > 0:
+        plot_weight_distribution_maxent_panels(convergence_weights_data, output_dir)
+        plot_weight_distribution_convergence_panels(convergence_weights_data, output_dir)
+    else:
+        print("No convergence weights data available for additional distribution plots")
 
     print("\n" + "=" * 60)
     print("ANALYSIS WITH MAXENT VALUES AND FAILURE PLOTS COMPLETED SUCCESSFULLY!")
