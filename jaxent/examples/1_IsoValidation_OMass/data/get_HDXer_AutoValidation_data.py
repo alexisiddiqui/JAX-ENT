@@ -249,7 +249,7 @@ def plot_rmsd_paired_distances(
     plt.close()
 
 
-def create_TeaA_filtered_trajectories(data_dir, interval=100):
+def create_TeaA_filtered_trajectories(data_dir):
     """
     Create TeaA_filtered_sliced.xtc by filtering the initial sliced trajectory based on RMSD
     to reference structures. Only frames with RMSD ≤ 1.0 Å to either open or closed
@@ -443,7 +443,7 @@ if __name__ == "__main__":
         description="Download, extract, and slice HDXer AutoValidation data."
     )
     parser.add_argument(
-        "--interval", type=int, default=100, help="Slicing interval for trajectories (default: 100)"
+        "--interval", type=int, default=20, help="Slicing interval for trajectories (default: 20)"
     )
     args = parser.parse_args()
 
@@ -451,7 +451,7 @@ if __name__ == "__main__":
     print(f"Processing trajectory files in: {traj_dir}")
     try:
         slice_trajectories(traj_dir, interval=args.interval)
-        create_TeaA_filtered_trajectories(traj_dir, interval=args.interval)
+        create_TeaA_filtered_trajectories(traj_dir)
 
     except urllib.error.URLError as e:
         print(f"Error downloading file: {e}")
