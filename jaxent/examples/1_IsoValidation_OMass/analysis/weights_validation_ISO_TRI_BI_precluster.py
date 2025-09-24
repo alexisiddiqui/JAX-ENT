@@ -3,6 +3,7 @@ Main Analysis Script - Part 2
 Loads clustering results from CSV files and performs the complete analysis.
 """
 
+import argparse
 import os
 import re
 import sys
@@ -1396,6 +1397,34 @@ def main():
     """
     Main function to run the complete analysis using pre-computed clustering results.
     """
+    # Parse command-line arguments for configurable paths and EMA flag
+    parser = argparse.ArgumentParser(
+        description="Weights validation analysis: set results/output dirs and EMA flag. Paths are interpreted relative to the script unless --absolute-paths is given."
+    )
+    parser.add_argument(
+        "--results-dir",
+        default="../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135",
+        help="Results directory (relative to script dir by default)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory (relative to script dir by default). If omitted, derived from results-dir basename prefixed with '_analysis'.",
+    )
+    parser.add_argument(
+        "--ema",
+        action="store_true",
+        default=False,
+        help="Use EMA results (results_EMA.hdf5). Default: False",
+    )
+    parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        default=False,
+        help="Interpret provided results/output directories as absolute paths",
+    )
+    args = parser.parse_args()
+
     # Define parameters
     ensembles = ["ISO_TRI", "ISO_BI"]
     loss_functions = ["mcMSE", "MSE"]
@@ -1417,13 +1446,43 @@ def main():
         1000000000,
     ]
 
-    # Define directories
-    results_dir = "../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135"
-    results_dir = os.path.join(os.path.dirname(__file__), results_dir)
+    # Resolve provided directories (relative by default to the script location)
+    script_dir = os.path.dirname(__file__)
+    if args.absolute_paths:
+        # results_dir provided as absolute path
+        results_dir = args.results_dir
+        print("Using absolute paths for results/output.")
+    else:
+        results_dir = os.path.join(script_dir, args.results_dir)
+        print("Using paths relative to script directory.")
 
-    clustering_dir = os.path.join(os.path.dirname(__file__), "../data/_clustering_results")
-    output_dir = "_analysis_maxent_complete" + "_optimise_quick_test_splits__20250915_125135"
-    output_dir = os.path.join(os.path.dirname(__file__), output_dir)
+    # clustering_dir stays as before (relative to script)
+    clustering_dir = os.path.join(script_dir, "../data/_clustering_results")
+    ema_flag = args.ema
+
+    # Determine output_dir:
+    if args.output_dir:
+        if args.absolute_paths:
+            output_dir = args.output_dir
+        else:
+            output_dir = os.path.join(script_dir, args.output_dir)
+    else:
+        # Derive from results_dir basename, prefix with "_analysis"
+        base_name = os.path.basename(os.path.normpath(results_dir))
+        out_name = "_analysis" + base_name
+        if args.absolute_paths:
+            # Place output next to results_dir (same parent)
+            parent = os.path.dirname(os.path.normpath(results_dir))
+            output_dir = os.path.join(parent, out_name)
+        else:
+            # Place output inside script directory for relative mode
+            output_dir = os.path.join(script_dir, out_name)
+
+    # Show resolved paths and EMA flag
+    print(f"Resolved results_dir: {results_dir}")
+    print(f"Resolved clustering_dir: {clustering_dir}")
+    print(f"Resolved output_dir: {output_dir}")
+    print(f"EMA flag: {ema_flag}")
 
     # Check if required directories exist
     if not os.path.exists(results_dir):
@@ -1453,6 +1512,7 @@ def main():
         loss_functions=loss_functions,
         num_splits=num_splits,
         maxent_values=maxent_values,
+        EMA=ema_flag,
     )
 
     # Create output directory
