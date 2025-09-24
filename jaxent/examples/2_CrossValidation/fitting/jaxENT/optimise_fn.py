@@ -216,6 +216,7 @@ def optimise_sweep(
                 steps_since_threshold_start >= min_steps_per_threshold
                 and ema_loss_delta is not None
                 and relative_convergence < current_threshold
+                and step > optimizer.initial_steps
             ):
                 print(
                     f"Relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
