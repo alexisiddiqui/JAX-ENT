@@ -12,3 +12,4 @@ jaxent-kCluster --topology_path /home/alexi/Documents/xFold_Sampling/af_sample/M
 --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered \
 --number_of_clusters 500 \
 --num_components 10 
+
