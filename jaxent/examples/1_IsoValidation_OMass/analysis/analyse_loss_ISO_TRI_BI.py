@@ -8,6 +8,7 @@ It also plots the standard deviation across splits
 Updated to handle multiple split types like the ratio recovery script.
 """
 
+import argparse
 import os
 import sys
 from typing import Dict, List
@@ -31,6 +32,7 @@ def load_all_optimization_results(
     ensembles: List[str] = ["ISO_TRI", "ISO_BI"],
     loss_functions: List[str] = ["mcMSE", "MSE"],
     num_splits: int = 3,
+    EMA: bool = False,
 ) -> Dict:
     """
     Load all optimization results from HDF5 files for a specific split type.
@@ -41,6 +43,7 @@ def load_all_optimization_results(
         ensembles: List of ensemble names
         loss_functions: List of loss function names
         num_splits: Number of data splits
+        EMA: Use EMA results (results_EMA.hdf5) if True
 
     Returns:
         Dictionary containing loaded optimization histories organized by ensemble, loss, and split
@@ -57,6 +60,12 @@ def load_all_optimization_results(
         print(f"Directory not found: {load_dir}")
         return results
 
+    # Determine file pattern based on EMA flag
+    if EMA:
+        hdf_pattern = "results_EMA.hdf5"
+    else:
+        hdf_pattern = "results.hdf5"
+
     for ensemble in ensembles:
         results[ensemble] = {}
 
@@ -66,10 +75,10 @@ def load_all_optimization_results(
             for split_idx in range(num_splits):
                 if split_type:
                     filename = (
-                        f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_results.hdf5"
+                        f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_{hdf_pattern}"
                     )
                 else:
-                    filename = f"{ensemble}_{loss_name}_split{split_idx:03d}_results.hdf5"
+                    filename = f"{ensemble}_{loss_name}_split{split_idx:03d}_{hdf_pattern}"
                 filepath = os.path.join(load_dir, filename)
 
                 if os.path.exists(filepath):
@@ -641,6 +650,34 @@ def main():
     """
     Main function to run the complete analysis with multiple split types.
     """
+    # Parse command-line arguments for configurable paths and EMA flag
+    parser = argparse.ArgumentParser(
+        description="ISO model loss analysis: set results/output dirs and EMA flag. Paths are interpreted relative to the script unless --absolute-paths is given."
+    )
+    parser.add_argument(
+        "--results-dir",
+        default="../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135",
+        help="Results directory (relative to script dir by default)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory (relative to script dir by default). If omitted, derived from results-dir basename prefixed with '_analysis'.",
+    )
+    parser.add_argument(
+        "--ema",
+        action="store_true",
+        default=False,
+        help="Use EMA results (results_EMA.hdf5). Default: False",
+    )
+    parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        default=False,
+        help="Interpret provided results/output directories as absolute paths",
+    )
+    args = parser.parse_args()
+
     # Define parameters (should match those used in the optimization script)
     ensembles = ["ISO_TRI", "ISO_BI"]
     loss_functions = ["mcMSE", "MSE"]
@@ -648,12 +685,40 @@ def main():
     # Remove the '0' convergence rate as it represents pre-optimization values
     convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
 
-    # Define directories
-    base_results_dir = "../fitting/jaxENT/_optimise"
-    base_results_dir = os.path.join(os.path.dirname(__file__), base_results_dir)
+    # Resolve provided directories (relative by default to the script location)
+    script_dir = os.path.dirname(__file__)
+    if args.absolute_paths:
+        # results_dir provided as absolute path
+        base_results_dir = args.results_dir
+        print("Using absolute paths for results/output.")
+    else:
+        base_results_dir = os.path.join(script_dir, args.results_dir)
+        print("Using paths relative to script directory.")
 
-    output_base_dir = "_analysis"
-    output_base_dir = os.path.join(os.path.dirname(__file__), output_base_dir)
+    ema_flag = args.ema
+
+    # Determine output_dir:
+    if args.output_dir:
+        if args.absolute_paths:
+            output_base_dir = args.output_dir
+        else:
+            output_base_dir = os.path.join(script_dir, args.output_dir)
+    else:
+        # Derive from results_dir basename, prefix with "_analysis"
+        base_name = os.path.basename(os.path.normpath(base_results_dir))
+        out_name = "_analysis" + base_name
+        if args.absolute_paths:
+            # Place output next to results_dir (same parent)
+            parent = os.path.dirname(os.path.normpath(base_results_dir))
+            output_base_dir = os.path.join(parent, out_name)
+        else:
+            # Place output inside script directory for relative mode
+            output_base_dir = os.path.join(script_dir, out_name)
+
+    # Show resolved paths and EMA flag
+    print(f"Resolved results_dir: {base_results_dir}")
+    print(f"Resolved output_dir: {output_base_dir}")
+    print(f"EMA flag: {ema_flag}")
 
     # Check if results directory exists
     if not os.path.exists(base_results_dir):
@@ -703,6 +768,7 @@ def main():
             ensembles=ensembles,
             loss_functions=loss_functions,
             num_splits=num_splits,
+            EMA=ema_flag,
         )
 
         # Extract loss trajectories
