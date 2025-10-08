@@ -155,7 +155,7 @@ def main() -> None:
 
     # Create HDX data objects
     HDX_data: list[HDX_peptide] = [
-        HDX_peptide(dfrac=dfrac[idx], top=HDX_topology[idx]) for idx in range(len(segs) - 2)
+        HDX_peptide(dfrac=dfrac[idx], top=HDX_topology[idx]) for idx in range(len(segs))
     ]
     print(f"Created {len(HDX_data)} HDX_peptide objects.")
 
