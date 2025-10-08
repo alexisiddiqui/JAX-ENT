@@ -223,7 +223,7 @@ def main():
             bv_bc=jnp.array(args.bv_bc),
             bv_bh=jnp.array(args.bv_bh),
             temperature=args.temperature,
-            num_timepoints=args.num_timepoints,
+            timepoints=jnp.array(args.timepoints),
         )
     elif args.model_type == "nethdx":
         config = NetHDXConfig(
