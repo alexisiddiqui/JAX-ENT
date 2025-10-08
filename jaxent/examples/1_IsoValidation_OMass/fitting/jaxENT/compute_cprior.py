@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
+import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LogNorm
 from MDAnalysis.analysis.align import AlignTraj
@@ -49,7 +50,6 @@ def plot_heatmap(
     plt.close()
 
 
-# New helper: plot diagonal as bar chart (same style as compute_sigma)
 def plot_diagonal_bar(matrix, title, filename, output_dir, log_scale=False, eps=1e-12):
     diag = np.diag(matrix).astype(float)
     indices = np.arange(len(diag))
@@ -121,7 +121,7 @@ def main():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="_covariance_matrices",
+        default=os.path.join(script_dir, "_covariance_matrices"),
         help="Output directory for results. Defaults to '_covariance_matrices'.",
     )
 
@@ -162,6 +162,9 @@ def main():
     bv_model = BV_model(config=bv_config)
     model_parameters = bv_model.params  # Default model parameters
 
+    # Store all diagonals for correlation analysis
+    all_diagonals = {}
+
     # --- Compute C_prior for each ensemble ---
     for ensemble_name, data in ensembles.items():
         print(f"\n--- Computing C_prior for {ensemble_name} ---")
@@ -182,56 +185,38 @@ def main():
             args.closed_pdb, trajectory_path
         )  # Use a common topology for universe
 
-        # Calculate RMSF for each residue
-        # Assuming 'protein' selection for RMSF, adjust if specific atoms are needed
-        protein_selection = universe.select_atoms("protein")
+        # Calculate RMSF for each residue using only CA positions
+        # Select CA atoms (only these will be used for alignment and RMSF)
+        protein_ca = universe.select_atoms("name CA and protein")
 
-        # Check if protein_selection is empty
-        if not protein_selection:
+        # Check if any CA atoms were found
+        if len(protein_ca) == 0:
             print(
-                f"  Warning: No protein atoms found in {ensemble_name} trajectory. Skipping RMSF calculation."
+                f"  Warning: No CA atoms found in {ensemble_name} trajectory. Skipping RMSF calculation."
             )
             C_prior_structural = np.zeros((len(topology), len(topology)))
         else:
-            # Align trajectory to the first frame to remove global motion for RMSF calculation
-            # This is a common practice for meaningful RMSF values
-            # Select "protein and name CA" for alignment
-            aligner = AlignTraj(
-                universe, universe, select="protein and name CA", in_memory=True
-            ).run()
+            # Align trajectory to the reference PDB using CA atoms to remove global motion
+            ref = mda.Universe(args.closed_pdb)
+            AlignTraj(universe, ref, select="name CA and protein", in_memory=True).run()
 
-            # Calculate RMSF for all protein alpha carbons (CA)
-            protein_ca = universe.select_atoms("protein and name CA")
-
-            # Create a dictionary to store RMSF per residue ID, mapped to the MDAnalysis residue object
-            # This ensures correct mapping even if residue IDs are not contiguous in the PDB
-            rmsf_per_mda_resid = {}
             rmsf_analysis = RMSF(protein_ca).run()
-            for atom, rmsf_val in zip(protein_ca, rmsf_analysis.rmsf):
-                rmsf_per_mda_resid[atom.resid] = rmsf_val
+            rmsf_per_mda_resid = {
+                atom.resid: val for atom, val in zip(protein_ca, rmsf_analysis.rmsf)
+            }
 
-            # Aggregate RMSF values for each peptide (Partial_Topology fragment)
             peptide_rmsf_values = []
             for peptide_fragment in topology:
-                # Get residue IDs covered by this peptide fragment from Partial_Topology
-                # Use peptide_fragment.residues for the actual list of residues
                 fragment_resids = peptide_fragment.residues
-
-                # Collect RMSF values for residues within this fragment
                 rmsf_in_fragment = [rmsf_per_mda_resid.get(resid, 0.0) for resid in fragment_resids]
-
-                # Aggregate (e.g., average) RMSF for the peptide
                 if rmsf_in_fragment:
                     peptide_rmsf_values.append(np.mean(rmsf_in_fragment))
                 else:
-                    # If no RMSF data for any residue in fragment, assign a small default value
                     peptide_rmsf_values.append(1e-9)
 
-            # Convert to numpy array and add a small epsilon to avoid zero variance
             peptide_rmsf_values = np.array(peptide_rmsf_values)
-            # Ensure no zero values before squaring, as it represents variance
             peptide_rmsf_values[peptide_rmsf_values == 0] = 1e-9
-            C_prior_structural = np.diag(peptide_rmsf_values**2)  # Variance is RMSF squared
+            C_prior_structural = np.diag(peptide_rmsf_values**2)
 
             print(f"  C_prior_structural shape: {C_prior_structural.shape}")
             plot_heatmap(
@@ -248,6 +233,14 @@ def main():
                 cmap="magma",
                 log_scale=True,
             )
+            plot_diagonal_bar(
+                C_prior_structural,
+                f"{ensemble_name} Structural Covariance Diagonal",
+                f"{ensemble_name}_C_prior_structural_diagonal_bar.png",
+                args.output_dir,
+                log_scale=False,
+            )
+            all_diagonals[f"{ensemble_name}_structural"] = np.diag(C_prior_structural)
             np.savez(
                 os.path.join(args.output_dir, f"{ensemble_name}_C_prior_structural.npz"),
                 C_prior_structural=C_prior_structural,
@@ -255,14 +248,76 @@ def main():
             )
             print(f"  Structural Covariance for {ensemble_name} computed and saved.")
 
-        # Plot diagonal for structural covariance (always present: zero or real)
-        plot_diagonal_bar(
-            C_prior_structural,
-            f"{ensemble_name} Structural Covariance diagonal",
-            f"{ensemble_name}_C_prior_structural_diagonal_bar.png",
-            args.output_dir,
-            log_scale=False,
-        )
+            # --- New: Pairwise residue covariance**2 from CA motions (aligned to PDB) ---
+            print(
+                f"  Computing residue pairwise covariance^2 for CA motions for {ensemble_name}..."
+            )
+            # Gather CA positions for all frames: shape (n_frames, n_residues, 3)
+            ca_atoms = protein_ca  # already CA protein selection
+            n_residues = len(ca_atoms)
+            # iterate frames and collect positions
+            positions = []
+            for ts in universe.trajectory:
+                positions.append(ca_atoms.positions.copy())  # (n_residues, 3)
+            positions = np.array(positions)  # (n_frames, n_residues, 3)
+
+            n_frames = positions.shape[0]
+
+            if n_frames < 2 or n_residues == 0:
+                print(
+                    f"  Warning: Not enough frames or CA atoms for residue covariance for {ensemble_name}. Skipping."
+                )
+                residue_covariance = np.zeros((n_residues, n_residues))
+            else:
+                # mean position per residue
+                mean_pos = np.mean(positions, axis=0)  # (n_residues, 3)
+                # compute per-frame scalar deviations (distance from mean) per residue
+                deviations = np.linalg.norm(
+                    positions - mean_pos[None, :, :], axis=2
+                )  # (n_frames, n_residues)
+                # cov_ij = sum_t (deviation_i(t) * deviation_j(t)) / (n_frames - 1)
+                # deviations has shape (n_frames, n_residues) so use matrix multiplication
+                cov_matrix = deviations.T.dot(deviations) / (n_frames - 1)
+
+                # square element-wise as requested
+                residue_covariance = cov_matrix**2
+
+            print(f"  residue_covariance shape: {residue_covariance.shape}")
+            plot_heatmap(
+                residue_covariance,
+                f"{ensemble_name} Residue Pairwise Covariance^2 (CA motions)",
+                f"{ensemble_name}_residue_covariance_heatmap.png",
+                args.output_dir,
+                cmap="viridis",
+            )
+            # For inverse plotting, add tiny jitter to diagonal to avoid singularity
+            jitter = np.eye(residue_covariance.shape[0]) * 1e-12
+            try:
+                residue_covariance_inv = np.linalg.inv(residue_covariance + jitter)
+            except np.linalg.LinAlgError:
+                residue_covariance_inv = np.linalg.pinv(residue_covariance + jitter)
+            plot_heatmap(
+                np.abs(residue_covariance_inv),
+                f"Inverse {ensemble_name} Residue Covariance^2 (abs, log)",
+                f"{ensemble_name}_residue_covariance_inv_heatmap.png",
+                args.output_dir,
+                cmap="magma",
+                log_scale=True,
+            )
+            plot_diagonal_bar(
+                residue_covariance,
+                f"{ensemble_name} Residue Covariance^2 Diagonal",
+                f"{ensemble_name}_residue_covariance_diagonal_bar.png",
+                args.output_dir,
+                log_scale=False,
+            )
+            all_diagonals[f"{ensemble_name}_residue"] = np.diag(residue_covariance)
+            np.savez(
+                os.path.join(args.output_dir, f"{ensemble_name}_residue_covariance.npz"),
+                residue_covariance=residue_covariance,
+                residue_covariance_inv=residue_covariance_inv,
+            )
+            print(f"  Residue covariance^2 for {ensemble_name} computed and saved.")
 
         # --- Ensemble Covariance (from model predictions) ---
         print(f"  Computing Ensemble Covariance (from model predictions) for {ensemble_name}...")
@@ -294,13 +349,11 @@ def main():
             input_features=[features],
             forward_models=[bv_model],
             model_parameters=dummy_sim_params,
-            validate=False,  # Skip validation as we are constructing dummy params
+            validate=False,
         )
 
-        # Extract y_pred from the first (and only) Output_Features object
-        # predictions_output_features[0].y_pred will have shape (num_timepoints, num_peptides, num_frames)
         y_pred_all_frames = predictions_output_features[0].y_pred()
-        print(f"  Shape of y_pred_all_frames: {y_pred_all_frames.shape}")  # Debug print
+        print(f"  Shape of y_pred_all_frames: {y_pred_all_frames.shape}")
 
         # --- New: compute and save residue-wise mean uptake curves (averaged across frames) ---
         # y_pred_all_frames: (num_timepoints, num_peptides, num_frames)
@@ -332,14 +385,11 @@ def main():
         plt.close()
         # --- End new code ---
 
-        # Average y_pred over timepoints for each peptide and frame
-        # Shape becomes (num_peptides, num_frames)
-        y_pred_avg_timepoints = np.mean(y_pred_all_frames, axis=0)
-
+        # Average across timepoints to get (num_peptides, num_frames)
+        _y_pred_all_frame = np.array(np.mean(y_pred_all_frames, axis=0))
         # Calculate variance for each peptide across frames
         # Shape becomes (num_peptides,)
-        peptide_prediction_variances = np.var(y_pred_avg_timepoints, axis=1) + 1e-9
-
+        peptide_prediction_variances = np.var(_y_pred_all_frame, axis=1) + 1e-9
         C_prior_ensemble = np.diag(peptide_prediction_variances)
 
         print(f"  C_prior_ensemble shape: {C_prior_ensemble.shape}")
@@ -357,6 +407,14 @@ def main():
             cmap="magma",
             log_scale=True,
         )
+        plot_diagonal_bar(
+            C_prior_ensemble,
+            f"{ensemble_name} Ensemble Covariance Diagonal",
+            f"{ensemble_name}_C_prior_ensemble_diagonal_bar.png",
+            args.output_dir,
+            log_scale=False,
+        )
+        all_diagonals[f"{ensemble_name}_ensemble"] = np.diag(C_prior_ensemble)
         np.savez(
             os.path.join(args.output_dir, f"{ensemble_name}_C_prior_ensemble.npz"),
             C_prior_ensemble=C_prior_ensemble,
@@ -364,16 +422,7 @@ def main():
         )
         print(f"  Ensemble Covariance for {ensemble_name} computed and saved.")
 
-        # Plot diagonal for ensemble covariance
-        plot_diagonal_bar(
-            C_prior_ensemble,
-            f"{ensemble_name} Ensemble Covariance diagonal",
-            f"{ensemble_name}_C_prior_ensemble_diagonal_bar.png",
-            args.output_dir,
-            log_scale=False,
-        )
-
-        # --- Empirical Covariance (from model predictions) ---
+        # --- Empirical Covariance (from residue-wise ensemble average of model predictions) ---
         print(f"  Computing Empirical Covariance (from model predictions) for {ensemble_name}...")
         # This implies a dense covariance matrix between peptides based on their predicted uptake.
         # y_pred_avg_timepoints has shape (num_peptides, num_frames)
@@ -382,9 +431,8 @@ def main():
         # np.cov expects rows as variables and columns as observations.
         # So, y_pred_avg_timepoints is already in the correct format.
         y_pred_avg_frames = np.mean(y_pred_all_frames, axis=0)  # Shape:  num_peptides, num_frames)
-        # Transpose to get (num_peptides, num_timepoints) for covariance calculation
-        # y_pred_avg_frames_T = y_pred_avg_frames.T
-        # y_pred_avg_frames_T_mean = np.mean(y_pred_avg_frames_T, axis=1)
+
+        #
 
         C_prior_empirical = np.cov(y_pred_avg_frames) + np.diag(
             np.full(y_pred_avg_frames.shape[0], 1e-9)
@@ -406,69 +454,73 @@ def main():
             cmap="magma",
             log_scale=True,
         )
+        plot_diagonal_bar(
+            C_prior_empirical,
+            f"{ensemble_name} Empirical Covariance Diagonal",
+            f"{ensemble_name}_C_prior_empirical_diagonal_bar.png",
+            args.output_dir,
+            log_scale=False,
+        )
+        all_diagonals[f"{ensemble_name}_empirical"] = np.diag(C_prior_empirical)
         np.savez(
             os.path.join(args.output_dir, f"{ensemble_name}_C_prior_empirical.npz"),
             C_prior_empirical=C_prior_empirical,
             C_prior_empirical_inv=np.linalg.inv(C_prior_empirical),
         )
-        print(f"  Empirical Covariance for {ensemble_name} computed and saved.")
-
-        # Plot diagonal for empirical covariance
-        plot_diagonal_bar(
-            C_prior_empirical,
-            f"{ensemble_name} Empirical Covariance diagonal",
-            f"{ensemble_name}_C_prior_empirical_diagonal_bar.png",
-            args.output_dir,
-            log_scale=False,
+        print(
+            f"  Empirical Covariance for {ensemble_name} computed and saved to {args.output_dir}."
         )
 
-        # --- New: correlation between diagonals of the three covariance matrices ---
-        # Collect diagonals (shape: 3 x num_peptides)
-        diag_struct = np.diag(C_prior_structural).astype(float)
-        diag_ens = np.diag(C_prior_ensemble).astype(float)
-        diag_emp = np.diag(C_prior_empirical).astype(float)
+    # --- Compute and Plot Correlation Matrix Between Diagonals ---
+    if all_diagonals:
+        print("\n--- Computing Correlation Matrix Between Diagonals ---")
+        diagonal_names = list(all_diagonals.keys())
 
-        # Stack and handle any constant vectors (which would produce NaNs in corrcoef)
-        diags = np.vstack([diag_struct, diag_ens, diag_emp])
-        # Replace any NaN/inf with small value
-        diags = np.nan_to_num(diags, nan=0.0, posinf=0.0, neginf=0.0)
+        # Find the maximum length among all diagonal arrays
+        max_len = max(len(arr) for arr in all_diagonals.values())
 
-        # If any row is constant, add tiny jitter to avoid zero-variance in corrcoef
-        row_std = diags.std(axis=1)
-        for i, s in enumerate(row_std):
-            if s == 0:
-                diags[i] = diags[i] + (np.random.RandomState(0).randn(diags.shape[1]) * 1e-12)
+        # Pad shorter diagonal arrays with NaN to match the maximum length
+        padded_diagonals = []
+        for name in diagonal_names:
+            arr = all_diagonals[name]
+            padded_arr = np.pad(arr.astype(float), (0, max_len - len(arr)), constant_values=np.nan)
+            padded_diagonals.append(padded_arr)
 
-        corr_matrix = np.corrcoef(diags)  # shape (3,3)
-        labels = [f"{ensemble_name}_struct", f"{ensemble_name}_ens", f"{ensemble_name}_emp"]
+        # Convert the padded diagonals into a NumPy array
+        diagonal_values_padded = np.array(padded_diagonals)
 
-        # Plot correlation heatmap with annotations and labels
-        plt.figure(figsize=(6, 5))
+        # Use pandas to compute correlation matrix, which handles NaNs with min_periods
+        df_diagonals = pd.DataFrame(diagonal_values_padded.T, columns=diagonal_names)
+        correlation_matrix = df_diagonals.corr(
+            min_periods=1
+        )  # min_periods=1 to allow correlation even with one common non-NaN value
+
+        # Plot correlation matrix
+        plt.figure(figsize=(10, 8))
         sns.heatmap(
-            corr_matrix,
-            xticklabels=labels,
-            yticklabels=labels,
+            correlation_matrix,
             annot=True,
             fmt=".2f",
+            cmap="coolwarm",
+            xticklabels=diagonal_names,
+            yticklabels=diagonal_names,
             vmin=-1,
             vmax=1,
-            cmap="vlag",
-            cbar_kws={"label": "Pearson r"},
             center=0,
+            cbar_kws={"label": "Correlation"},
         )
-        plt.title(f"{ensemble_name} Diagonals Correlation")
+        plt.title("Correlation Matrix Between Covariance Diagonals")
         plt.tight_layout()
-        plt.savefig(
-            os.path.join(args.output_dir, f"{ensemble_name}_diagonals_correlation_heatmap.png")
-        )
+        plt.savefig(os.path.join(args.output_dir, "diagonal_correlation_matrix.png"))
         plt.close()
 
         # Save correlation matrix
         np.savez(
-            os.path.join(args.output_dir, f"{ensemble_name}_diagonals_correlation.npz"),
-            corr_matrix=corr_matrix,
-            labels=labels,
+            os.path.join(args.output_dir, "diagonal_correlation_matrix.npz"),
+            correlation_matrix=correlation_matrix.values,  # Save the underlying numpy array
+            diagonal_names=diagonal_names,
         )
+        print("  Diagonal correlation matrix computed and saved.")
 
     print("\n--- Covariance Matrix Generation Complete ---")
 
