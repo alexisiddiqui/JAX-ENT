@@ -9,10 +9,10 @@ Updated to handle multiple split types like the ratio recovery script.
 """
 
 import argparse
+import glob
 import os
 import sys
 from typing import Dict, List
-import glob
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -81,22 +81,22 @@ def load_all_optimization_results(
                     pattern = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent*_{hdf_suffix}"
                 else:
                     pattern = f"{ensemble}_{loss_name}_split{split_idx:03d}_maxent*_{hdf_suffix}"
-                
+
                 search_path = os.path.join(load_dir, pattern)
                 matching_files = glob.glob(search_path)
-                
+
                 if matching_files:
                     # Store all maxent results for this split
                     results[ensemble][loss_name][split_idx] = {}
-                    
+
                     for filepath in matching_files:
                         # Extract maxent value from filename
                         filename = os.path.basename(filepath)
                         try:
                             # Parse maxent value from filename
-                            maxent_str = filename.split('_maxent')[1].split('_')[0]
+                            maxent_str = filename.split("_maxent")[1].split("_")[0]
                             maxent_val = float(maxent_str)
-                            
+
                             history = load_optimization_history_from_file(filepath)
                             results[ensemble][loss_name][split_idx][maxent_val] = history
                             print(f"Loaded: {filename}")
@@ -126,10 +126,10 @@ def extract_loss_trajectories(results: Dict, split_type: str = None) -> pd.DataF
         for loss_name in results[ensemble]:
             for split_idx in results[ensemble][loss_name]:
                 split_results = results[ensemble][loss_name][split_idx]
-                
+
                 if split_results is None:
                     continue
-                
+
                 # Handle both old format (direct history) and new format (dict of maxent histories)
                 if isinstance(split_results, dict):
                     # New format with maxent values
@@ -207,12 +207,9 @@ def plot_loss_convergence(
     for ensemble in ensembles:
         for loss_func in loss_functions:
             # Filter data for this combination
-            if 'maxent_value' in df.columns:
+            if "maxent_value" in df.columns:
                 # New format with maxent values
-                subset = df[
-                    (df["ensemble"] == ensemble)
-                    & (df["loss_function"] == loss_func)
-                ]
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
                 if len(subset) > 0:
                     # Calculate mean and std across splits for each maxent value
@@ -257,7 +254,9 @@ def plot_loss_convergence(
 
                     stats.columns = ["step", "train_mean", "train_std"]
                     stats["convergence_rate"] = stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
                     )
                     stats = stats.dropna(subset=["convergence_rate"])
 
@@ -290,11 +289,8 @@ def plot_loss_convergence(
     ax = ax2
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            if 'maxent_value' in df.columns:
-                subset = df[
-                    (df["ensemble"] == ensemble)
-                    & (df["loss_function"] == loss_func)
-                ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
                 if len(subset) > 0:
                     stats = (
@@ -336,7 +332,9 @@ def plot_loss_convergence(
 
                     stats.columns = ["step", "val_mean", "val_std"]
                     stats["convergence_rate"] = stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
                     )
                     stats = stats.dropna(subset=["convergence_rate"])
 
@@ -406,17 +404,12 @@ def plot_split_variability(
     ax = ax1
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            if 'maxent_value' in df.columns:
-                subset = df[
-                    (df["ensemble"] == ensemble)
-                    & (df["loss_function"] == loss_func)
-                ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
                 if len(subset) > 0:
                     std_stats = (
-                        subset.groupby("maxent_value")
-                        .agg({"train_loss": "std"})
-                        .reset_index()
+                        subset.groupby("maxent_value").agg({"train_loss": "std"}).reset_index()
                     )
 
                     std_stats.columns = ["convergence_rate", "train_std"]
@@ -450,7 +443,9 @@ def plot_split_variability(
 
                     std_stats.columns = ["step", "train_std"]
                     std_stats["convergence_rate"] = std_stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
                     )
                     std_stats = std_stats.dropna(subset=["convergence_rate"])
 
@@ -481,17 +476,12 @@ def plot_split_variability(
     ax = ax2
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            if 'maxent_value' in df.columns:
-                subset = df[
-                    (df["ensemble"] == ensemble)
-                    & (df["loss_function"] == loss_func)
-                ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
                 if len(subset) > 0:
                     std_stats = (
-                        subset.groupby("maxent_value")
-                        .agg({"val_loss": "std"})
-                        .reset_index()
+                        subset.groupby("maxent_value").agg({"val_loss": "std"}).reset_index()
                     )
 
                     std_stats.columns = ["convergence_rate", "val_std"]
@@ -525,7 +515,9 @@ def plot_split_variability(
 
                     std_stats.columns = ["step", "val_std"]
                     std_stats["convergence_rate"] = std_stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
                     )
                     std_stats = std_stats.dropna(subset=["convergence_rate"])
 
@@ -809,6 +801,12 @@ def main():
         default=False,
         help="Interpret provided results/output directories as absolute paths",
     )
+    parser.add_argument(
+        "--maxent",
+        type=float,
+        default=None,
+        help="Maximum entropy weight value to analyze. If not specified, uses highest available maxent value or old naming convention.",
+    )
     args = parser.parse_args()
 
     # Define parameters (should match those used in the optimization script)
@@ -829,6 +827,7 @@ def main():
         print("Using paths relative to script directory.")
 
     ema_flag = args.ema
+    maxent_value = args.maxent
 
     # Determine output_dir:
     if args.output_dir:
@@ -852,6 +851,9 @@ def main():
     print(f"Resolved results_dir: {base_results_dir}")
     print(f"Resolved output_dir: {output_base_dir}")
     print(f"EMA flag: {ema_flag}")
+    print(
+        f"MaxEnt value: {maxent_value if maxent_value is not None else 'Auto (highest available)'}"
+    )
 
     # Check if results directory exists
     if not os.path.exists(base_results_dir):
@@ -902,6 +904,7 @@ def main():
             loss_functions=loss_functions,
             num_splits=num_splits,
             EMA=ema_flag,
+            maxent=maxent_value,
         )
 
         # Extract loss trajectories
