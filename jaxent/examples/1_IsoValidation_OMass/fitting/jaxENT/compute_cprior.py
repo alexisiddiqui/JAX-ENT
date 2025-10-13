@@ -195,6 +195,7 @@ def main():
                 f"  Warning: No CA atoms found in {ensemble_name} trajectory. Skipping RMSF calculation."
             )
             C_prior_structural = np.zeros((len(topology), len(topology)))
+            peptide_rmsf_covariance = np.zeros((len(topology), len(topology)))
         else:
             # Align trajectory to the reference PDB using CA atoms to remove global motion
             ref = mda.Universe(args.closed_pdb)
@@ -218,7 +219,38 @@ def main():
             peptide_rmsf_values[peptide_rmsf_values == 0] = 1e-9
             C_prior_structural = np.diag(peptide_rmsf_values**2)
 
+            # Compute peptide-level RMSF covariance matrix
+            # Create a mapping from residue index to CA atom index
+            resid_to_ca_idx = {atom.resid: i for i, atom in enumerate(protein_ca)}
+
+            # Get RMSF values as array
+            rmsf_values = rmsf_analysis.rmsf  # (n_ca_atoms,)
+
+            # Compute peptide-level RMSF covariance by averaging RMSF products
+            num_peptides = len(topology)
+            peptide_rmsf_covariance = np.zeros((num_peptides, num_peptides))
+
+            for i, peptide_i in enumerate(topology):
+                ca_indices_i = [
+                    resid_to_ca_idx[resid]
+                    for resid in peptide_i.residues
+                    if resid in resid_to_ca_idx
+                ]
+                for j, peptide_j in enumerate(topology):
+                    ca_indices_j = [
+                        resid_to_ca_idx[resid]
+                        for resid in peptide_j.residues
+                        if resid in resid_to_ca_idx
+                    ]
+                    if ca_indices_i and ca_indices_j:
+                        # Compute outer product of RMSF values and average
+                        rmsf_i = rmsf_values[ca_indices_i]
+                        rmsf_j = rmsf_values[ca_indices_j]
+                        outer_product = np.outer(rmsf_i, rmsf_j)
+                        peptide_rmsf_covariance[i, j] = np.mean(outer_product)
+
             print(f"  C_prior_structural shape: {C_prior_structural.shape}")
+            print(f"  peptide_rmsf_covariance shape: {peptide_rmsf_covariance.shape}")
             plot_heatmap(
                 C_prior_structural,
                 f"{ensemble_name} Structural Covariance (RMSF)",
@@ -240,11 +272,21 @@ def main():
                 args.output_dir,
                 log_scale=False,
             )
+
+            # Plot peptide RMSF covariance
+            plot_heatmap(
+                peptide_rmsf_covariance,
+                f"{ensemble_name} Peptide RMSF Covariance",
+                f"{ensemble_name}_peptide_rmsf_covariance_heatmap.png",
+                args.output_dir,
+            )
+
             all_diagonals[f"{ensemble_name}_structural"] = np.diag(C_prior_structural)
             np.savez(
                 os.path.join(args.output_dir, f"{ensemble_name}_C_prior_structural.npz"),
                 C_prior_structural=C_prior_structural,
                 C_prior_structural_inv=np.linalg.inv(C_prior_structural),
+                peptide_rmsf_covariance=peptide_rmsf_covariance,
             )
             print(f"  Structural Covariance for {ensemble_name} computed and saved.")
 
@@ -283,6 +325,34 @@ def main():
                 residue_covariance = cov_matrix**2
 
             print(f"  residue_covariance shape: {residue_covariance.shape}")
+
+            # Map residue covariance to peptide covariance
+            # Create a mapping from residue index to CA atom index
+            resid_to_ca_idx = {atom.resid: i for i, atom in enumerate(protein_ca)}
+
+            # Compute peptide-level covariance by averaging over residues in each peptide
+            num_peptides = len(topology)
+            peptide_residue_covariance = np.zeros((num_peptides, num_peptides))
+
+            for i, peptide_i in enumerate(topology):
+                ca_indices_i = [
+                    resid_to_ca_idx[resid]
+                    for resid in peptide_i.residues
+                    if resid in resid_to_ca_idx
+                ]
+                for j, peptide_j in enumerate(topology):
+                    ca_indices_j = [
+                        resid_to_ca_idx[resid]
+                        for resid in peptide_j.residues
+                        if resid in resid_to_ca_idx
+                    ]
+                    if ca_indices_i and ca_indices_j:
+                        # Average the covariance over all residue pairs between the two peptides
+                        submatrix = residue_covariance[np.ix_(ca_indices_i, ca_indices_j)]
+                        peptide_residue_covariance[i, j] = np.mean(submatrix)
+
+            print(f"  peptide_residue_covariance shape: {peptide_residue_covariance.shape}")
+
             plot_heatmap(
                 residue_covariance,
                 f"{ensemble_name} Residue Pairwise Covariance^2 (CA motions)",
@@ -316,6 +386,7 @@ def main():
                 os.path.join(args.output_dir, f"{ensemble_name}_residue_covariance.npz"),
                 residue_covariance=residue_covariance,
                 residue_covariance_inv=residue_covariance_inv,
+                peptide_residue_covariance=peptide_residue_covariance,
             )
             print(f"  Residue covariance^2 for {ensemble_name} computed and saved.")
 
@@ -389,8 +460,10 @@ def main():
         _y_pred_all_frame = np.array(np.mean(y_pred_all_frames, axis=0))
         # Calculate variance for each peptide across frames
         # Shape becomes (num_peptides,)
-        peptide_prediction_variances = np.var(_y_pred_all_frame, axis=1) + 1e-9
-        C_prior_ensemble = np.diag(peptide_prediction_variances)
+
+        C_prior_ensemble = np.cov(_y_pred_all_frame) + np.diag(
+            np.full(_y_pred_all_frame.shape[0], 1e-6)
+        )  # Add small diagonal for numerical stability
 
         print(f"  C_prior_ensemble shape: {C_prior_ensemble.shape}")
         plot_heatmap(
@@ -432,17 +505,92 @@ def main():
         # So, y_pred_avg_timepoints is already in the correct format.
         y_pred_avg_frames = np.mean(y_pred_all_frames, axis=0)  # Shape:  num_peptides, num_frames)
 
-        #
+        # Compute pairwise 1/R^2 matrix from ensemble mean CA coordinates
+        print(
+            f"  Computing pairwise 1/R^2 matrix from ensemble mean coordinates for {ensemble_name}..."
+        )
 
-        C_prior_empirical = np.cov(y_pred_avg_frames) + np.diag(
-            np.full(y_pred_avg_frames.shape[0], 1e-9)
+        # Get CA positions for all frames from the universe (already loaded and aligned)
+        ca_atoms_for_distance = protein_ca  # Use the same CA selection from RMSF
+
+        # Collect CA positions for all frames
+        ca_positions_all_frames = []
+        for ts in universe.trajectory:
+            ca_positions_all_frames.append(ca_atoms_for_distance.positions.copy())
+        ca_positions_all_frames = np.array(ca_positions_all_frames)  # (n_frames, n_ca_atoms, 3)
+
+        # Compute ensemble mean positions
+        mean_ca_positions = np.mean(ca_positions_all_frames, axis=0)  # (n_ca_atoms, 3)
+
+        # Map CA atoms to peptides - compute mean position for each peptide
+        peptide_mean_positions = []
+        for peptide_fragment in topology:
+            fragment_resids = peptide_fragment.residues
+            # Find CA atoms corresponding to this peptide's residues
+            fragment_ca_indices = [
+                i for i, atom in enumerate(ca_atoms_for_distance) if atom.resid in fragment_resids
+            ]
+            if fragment_ca_indices:
+                peptide_mean_pos = np.mean(mean_ca_positions[fragment_ca_indices], axis=0)
+                peptide_mean_positions.append(peptide_mean_pos)
+            else:
+                # If no CA found, use a dummy position (shouldn't happen)
+                peptide_mean_positions.append(np.array([0.0, 0.0, 0.0]))
+
+        peptide_mean_positions = np.array(peptide_mean_positions)  # (num_peptides, 3)
+
+        # Compute pairwise distances between peptides
+        num_peptides = len(peptide_mean_positions)
+        pairwise_distances = np.zeros((num_peptides, num_peptides))
+        for i in range(num_peptides):
+            for j in range(num_peptides):
+                pairwise_distances[i, j] = np.linalg.norm(
+                    peptide_mean_positions[i] - peptide_mean_positions[j]
+                )
+
+        # Create 1/R^2 matrix, avoiding division by zero on diagonal
+        epsilon = 1e-6  # Small value to avoid division by zero
+        pairwise_inv_r2 = np.zeros_like(pairwise_distances)
+        mask = pairwise_distances > epsilon
+        pairwise_inv_r2[mask] = 1.0 / (pairwise_distances[mask] ** 2)
+        # Set diagonal to 1.0 (self-interaction)
+        np.fill_diagonal(pairwise_inv_r2, 1.0)
+
+        # Compute empirical covariance and multiply by 1/R^2 matrix
+        C_prior_empirical_base = np.cov(y_pred_avg_frames)
+        normalised_peptide_rmsf_values = peptide_rmsf_values / np.mean(peptide_rmsf_values)
+
+        C_prior_empirical = C_prior_empirical_base + np.diag(
+            np.full(y_pred_avg_frames.shape[0], 1e-6)
         )  # Add small diagonal for numerical stability
-        # C_prior_empirical = np.cov(y_pred_avg_frames)
 
         print(f"  C_prior_empirical shape: {C_prior_empirical.shape}")
+
+        # Save the pairwise 1/R^2 matrix as well
+        np.savez(
+            os.path.join(args.output_dir, f"{ensemble_name}_pairwise_inv_r2.npz"),
+            pairwise_inv_r2=pairwise_inv_r2,
+            pairwise_distances=pairwise_distances,
+        )
+        plot_heatmap(
+            pairwise_inv_r2,
+            f"{ensemble_name} Pairwise 1/R^2 Matrix",
+            f"{ensemble_name}_pairwise_inv_r2_heatmap.png",
+            args.output_dir,
+            cmap="viridis",
+            log_scale=True,
+        )
+        plot_diagonal_bar(
+            pairwise_inv_r2,
+            f"{ensemble_name} Pairwise 1/R^2 Diagonal",
+            f"{ensemble_name}_pairwise_r2_diagonal_bar.png",
+            args.output_dir,
+            log_scale=False,
+        )
+
         plot_heatmap(
             C_prior_empirical,
-            f"{ensemble_name} Empirical Covariance (Predictions)",
+            f"{ensemble_name} Empirical Covariance (Predctions x RMSF)",
             f"{ensemble_name}_C_prior_empirical_heatmap.png",
             args.output_dir,
         )
@@ -461,6 +609,7 @@ def main():
             args.output_dir,
             log_scale=False,
         )
+
         all_diagonals[f"{ensemble_name}_empirical"] = np.diag(C_prior_empirical)
         np.savez(
             os.path.join(args.output_dir, f"{ensemble_name}_C_prior_empirical.npz"),
