@@ -8,6 +8,8 @@ It also plots the standard deviation across splits
 Updated to handle multiple split types like the ratio recovery script.
 """
 
+import argparse
+import glob
 import os
 import sys
 from typing import Dict, List
@@ -31,6 +33,8 @@ def load_all_optimization_results(
     ensembles: List[str] = ["ISO_TRI", "ISO_BI"],
     loss_functions: List[str] = ["mcMSE", "MSE"],
     num_splits: int = 3,
+    EMA: bool = False,
+    maxent_values: List[float] = None,
 ) -> Dict:
     """
     Load all optimization results from HDF5 files for a specific split type.
@@ -41,9 +45,11 @@ def load_all_optimization_results(
         ensembles: List of ensemble names
         loss_functions: List of loss function names
         num_splits: Number of data splits
+        EMA: Use EMA results (results_EMA.hdf5) if True
+        maxent_values: List of maxent values to look for (if None, auto-detect)
 
     Returns:
-        Dictionary containing loaded optimization histories organized by ensemble, loss, and split
+        Dictionary containing loaded optimization histories organized by ensemble, loss, split, and maxent
     """
     results = {}
 
@@ -57,6 +63,12 @@ def load_all_optimization_results(
         print(f"Directory not found: {load_dir}")
         return results
 
+    # Determine file suffix based on EMA flag
+    if EMA:
+        hdf_suffix = "results_EMA.hdf5"
+    else:
+        hdf_suffix = "results.hdf5"
+
     for ensemble in ensembles:
         results[ensemble] = {}
 
@@ -64,24 +76,34 @@ def load_all_optimization_results(
             results[ensemble][loss_name] = {}
 
             for split_idx in range(num_splits):
+                # Pattern to match files with maxent values
                 if split_type:
-                    filename = (
-                        f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_results.hdf5"
-                    )
+                    pattern = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent*_{hdf_suffix}"
                 else:
-                    filename = f"{ensemble}_{loss_name}_split{split_idx:03d}_results.hdf5"
-                filepath = os.path.join(load_dir, filename)
+                    pattern = f"{ensemble}_{loss_name}_split{split_idx:03d}_maxent*_{hdf_suffix}"
 
-                if os.path.exists(filepath):
-                    try:
-                        history = load_optimization_history_from_file(filepath)
-                        results[ensemble][loss_name][split_idx] = history
-                        print(f"Loaded: {filename}")
-                    except Exception as e:
-                        print(f"Failed to load {filename}: {e}")
-                        results[ensemble][loss_name][split_idx] = None
+                search_path = os.path.join(load_dir, pattern)
+                matching_files = glob.glob(search_path)
+
+                if matching_files:
+                    # Store all maxent results for this split
+                    results[ensemble][loss_name][split_idx] = {}
+
+                    for filepath in matching_files:
+                        # Extract maxent value from filename
+                        filename = os.path.basename(filepath)
+                        try:
+                            # Parse maxent value from filename
+                            maxent_str = filename.split("_maxent")[1].split("_")[0]
+                            maxent_val = float(maxent_str)
+
+                            history = load_optimization_history_from_file(filepath)
+                            results[ensemble][loss_name][split_idx][maxent_val] = history
+                            print(f"Loaded: {filename}")
+                        except Exception as e:
+                            print(f"Failed to load {filename}: {e}")
                 else:
-                    print(f"File not found: {filename}")
+                    print(f"No files found matching pattern: {pattern}")
                     results[ensemble][loss_name][split_idx] = None
 
     return results
@@ -103,24 +125,51 @@ def extract_loss_trajectories(results: Dict, split_type: str = None) -> pd.DataF
     for ensemble in results:
         for loss_name in results[ensemble]:
             for split_idx in results[ensemble][loss_name]:
-                history = results[ensemble][loss_name][split_idx]
+                split_results = results[ensemble][loss_name][split_idx]
 
-                if history is not None and history.states:
-                    for step_idx, state in enumerate(history.states):
-                        if state.losses is not None:
-                            data_rows.append(
-                                {
-                                    "ensemble": ensemble,
-                                    "loss_function": loss_name,
-                                    "split": split_idx,
-                                    "split_type": split_type,
-                                    "step": step_idx,
-                                    "convergence_threshold_step": step_idx,  # Each saved state represents a convergence threshold
-                                    "train_loss": float(state.losses.total_train_loss),
-                                    "val_loss": float(state.losses.total_val_loss),
-                                    "step_number": state.step,
-                                }
-                            )
+                if split_results is None:
+                    continue
+
+                # Handle both old format (direct history) and new format (dict of maxent histories)
+                if isinstance(split_results, dict):
+                    # New format with maxent values
+                    for maxent_val, history in split_results.items():
+                        if history is not None and history.states:
+                            # Only use the final state for each maxent value
+                            state = history.states[-1]
+                            if state.losses is not None:
+                                data_rows.append(
+                                    {
+                                        "ensemble": ensemble,
+                                        "loss_function": loss_name,
+                                        "split": split_idx,
+                                        "split_type": split_type,
+                                        "maxent_value": maxent_val,
+                                        "convergence_threshold_step": maxent_val,  # Use maxent as threshold
+                                        "train_loss": float(state.losses.total_train_loss),
+                                        "val_loss": float(state.losses.total_val_loss),
+                                        "step_number": state.step,
+                                    }
+                                )
+                else:
+                    # Old format - single history with multiple states
+                    history = split_results
+                    if history is not None and history.states:
+                        for step_idx, state in enumerate(history.states):
+                            if state.losses is not None:
+                                data_rows.append(
+                                    {
+                                        "ensemble": ensemble,
+                                        "loss_function": loss_name,
+                                        "split": split_idx,
+                                        "split_type": split_type,
+                                        "step": step_idx,
+                                        "convergence_threshold_step": step_idx,
+                                        "train_loss": float(state.losses.total_train_loss),
+                                        "val_loss": float(state.losses.total_val_loss),
+                                        "step_number": state.step,
+                                    }
+                                )
 
     return pd.DataFrame(data_rows)
 
@@ -134,7 +183,7 @@ def plot_loss_convergence(
 
     Args:
         df: DataFrame containing loss data
-        convergence_rates: List of convergence rates used in optimization
+        convergence_rates: List of convergence rates used in optimization (can be maxent values)
         output_dir: Directory to save plots
         split_type: Name of the split type (for titles)
     """
@@ -157,33 +206,21 @@ def plot_loss_convergence(
     ax = ax1
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            # Filter data for this combination and exclude step 0 (pre-optimization)
-            subset = df[
-                (df["ensemble"] == ensemble)
-                & (df["loss_function"] == loss_func)
-                & (df["convergence_threshold_step"] > 0)  # Skip pre-optimization step
-            ]
+            # Filter data for this combination
+            if "maxent_value" in df.columns:
+                # New format with maxent values
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
-            if len(subset) > 0:
-                # Calculate mean and std across splits for each convergence step
-                stats = (
-                    subset.groupby("convergence_threshold_step")
-                    .agg({"train_loss": ["mean", "std"]})
-                    .reset_index()
-                )
+                if len(subset) > 0:
+                    # Calculate mean and std across splits for each maxent value
+                    stats = (
+                        subset.groupby("maxent_value")
+                        .agg({"train_loss": ["mean", "std"]})
+                        .reset_index()
+                    )
 
-                # Flatten column names
-                stats.columns = ["step", "train_mean", "train_std"]
+                    stats.columns = ["convergence_rate", "train_mean", "train_std"]
 
-                # Map steps to convergence rates (step 1 -> convergence_rates[0], step 2 -> convergence_rates[1], etc.)
-                stats["convergence_rate"] = stats["step"].apply(
-                    lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                )
-
-                # Remove rows where convergence rate mapping failed
-                stats = stats.dropna(subset=["convergence_rate"])
-
-                if len(stats) > 0:
                     # Plot training loss
                     color = ensemble_colors[ensemble]
                     marker = loss_markers[loss_func]
@@ -200,6 +237,45 @@ def plot_loss_convergence(
                         capsize=3,
                         markersize=6,
                     )
+            else:
+                # Old format - skip step 0
+                subset = df[
+                    (df["ensemble"] == ensemble)
+                    & (df["loss_function"] == loss_func)
+                    & (df["convergence_threshold_step"] > 0)
+                ]
+
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"train_loss": ["mean", "std"]})
+                        .reset_index()
+                    )
+
+                    stats.columns = ["step", "train_mean", "train_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
+
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+
+                        ax.errorbar(
+                            stats["convergence_rate"],
+                            stats["train_mean"],
+                            yerr=stats["train_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -213,34 +289,18 @@ def plot_loss_convergence(
     ax = ax2
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            # Filter data for this combination and exclude step 0 (pre-optimization)
-            subset = df[
-                (df["ensemble"] == ensemble)
-                & (df["loss_function"] == loss_func)
-                & (df["convergence_threshold_step"] > 0)  # Skip pre-optimization step
-            ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
-            if len(subset) > 0:
-                # Calculate mean and std across splits for each convergence step
-                stats = (
-                    subset.groupby("convergence_threshold_step")
-                    .agg({"val_loss": ["mean", "std"]})
-                    .reset_index()
-                )
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("maxent_value")
+                        .agg({"val_loss": ["mean", "std"]})
+                        .reset_index()
+                    )
 
-                # Flatten column names
-                stats.columns = ["step", "val_mean", "val_std"]
+                    stats.columns = ["convergence_rate", "val_mean", "val_std"]
 
-                # Map steps to convergence rates (step 1 -> convergence_rates[0], step 2 -> convergence_rates[1], etc.)
-                stats["convergence_rate"] = stats["step"].apply(
-                    lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                )
-
-                # Remove rows where convergence rate mapping failed
-                stats = stats.dropna(subset=["convergence_rate"])
-
-                if len(stats) > 0:
-                    # Plot validation loss
                     color = ensemble_colors[ensemble]
                     marker = loss_markers[loss_func]
                     label = f"{ensemble} - {loss_func}"
@@ -256,6 +316,44 @@ def plot_loss_convergence(
                         capsize=3,
                         markersize=6,
                     )
+            else:
+                subset = df[
+                    (df["ensemble"] == ensemble)
+                    & (df["loss_function"] == loss_func)
+                    & (df["convergence_threshold_step"] > 0)
+                ]
+
+                if len(subset) > 0:
+                    stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"val_loss": ["mean", "std"]})
+                        .reset_index()
+                    )
+
+                    stats.columns = ["step", "val_mean", "val_std"]
+                    stats["convergence_rate"] = stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    stats = stats.dropna(subset=["convergence_rate"])
+
+                    if len(stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+
+                        ax.errorbar(
+                            stats["convergence_rate"],
+                            stats["val_mean"],
+                            yerr=stats["val_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            capsize=3,
+                            markersize=6,
+                        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -306,34 +404,16 @@ def plot_split_variability(
     ax = ax1
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            # Filter data for this combination and exclude step 0 (pre-optimization)
-            subset = df[
-                (df["ensemble"] == ensemble)
-                & (df["loss_function"] == loss_func)
-                & (df["convergence_threshold_step"] > 0)  # Skip pre-optimization step
-            ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
-            if len(subset) > 0:
-                # Calculate std across splits for each convergence step
-                std_stats = (
-                    subset.groupby("convergence_threshold_step")
-                    .agg({"train_loss": "std"})
-                    .reset_index()
-                )
+                if len(subset) > 0:
+                    std_stats = (
+                        subset.groupby("maxent_value").agg({"train_loss": "std"}).reset_index()
+                    )
 
-                # Flatten column names
-                std_stats.columns = ["step", "train_std"]
+                    std_stats.columns = ["convergence_rate", "train_std"]
 
-                # Map steps to convergence rates (step 1 -> convergence_rates[0], step 2 -> convergence_rates[1], etc.)
-                std_stats["convergence_rate"] = std_stats["step"].apply(
-                    lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                )
-
-                # Remove rows where convergence rate mapping failed
-                std_stats = std_stats.dropna(subset=["convergence_rate"])
-
-                if len(std_stats) > 0:
-                    # Plot training loss standard deviation
                     color = ensemble_colors[ensemble]
                     marker = loss_markers[loss_func]
                     label = f"{ensemble} - {loss_func}"
@@ -347,6 +427,42 @@ def plot_split_variability(
                         linewidth=2,
                         markersize=6,
                     )
+            else:
+                subset = df[
+                    (df["ensemble"] == ensemble)
+                    & (df["loss_function"] == loss_func)
+                    & (df["convergence_threshold_step"] > 0)
+                ]
+
+                if len(subset) > 0:
+                    std_stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"train_loss": "std"})
+                        .reset_index()
+                    )
+
+                    std_stats.columns = ["step", "train_std"]
+                    std_stats["convergence_rate"] = std_stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    std_stats = std_stats.dropna(subset=["convergence_rate"])
+
+                    if len(std_stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+
+                        ax.plot(
+                            std_stats["convergence_rate"],
+                            std_stats["train_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            markersize=6,
+                        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -360,34 +476,16 @@ def plot_split_variability(
     ax = ax2
     for ensemble in ensembles:
         for loss_func in loss_functions:
-            # Filter data for this combination and exclude step 0 (pre-optimization)
-            subset = df[
-                (df["ensemble"] == ensemble)
-                & (df["loss_function"] == loss_func)
-                & (df["convergence_threshold_step"] > 0)  # Skip pre-optimization step
-            ]
+            if "maxent_value" in df.columns:
+                subset = df[(df["ensemble"] == ensemble) & (df["loss_function"] == loss_func)]
 
-            if len(subset) > 0:
-                # Calculate std across splits for each convergence step
-                std_stats = (
-                    subset.groupby("convergence_threshold_step")
-                    .agg({"val_loss": "std"})
-                    .reset_index()
-                )
+                if len(subset) > 0:
+                    std_stats = (
+                        subset.groupby("maxent_value").agg({"val_loss": "std"}).reset_index()
+                    )
 
-                # Flatten column names
-                std_stats.columns = ["step", "val_std"]
+                    std_stats.columns = ["convergence_rate", "val_std"]
 
-                # Map steps to convergence rates (step 1 -> convergence_rates[0], step 2 -> convergence_rates[1], etc.)
-                std_stats["convergence_rate"] = std_stats["step"].apply(
-                    lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                )
-
-                # Remove rows where convergence rate mapping failed
-                std_stats = std_stats.dropna(subset=["convergence_rate"])
-
-                if len(std_stats) > 0:
-                    # Plot validation loss standard deviation
                     color = ensemble_colors[ensemble]
                     marker = loss_markers[loss_func]
                     label = f"{ensemble} - {loss_func}"
@@ -401,6 +499,42 @@ def plot_split_variability(
                         linewidth=2,
                         markersize=6,
                     )
+            else:
+                subset = df[
+                    (df["ensemble"] == ensemble)
+                    & (df["loss_function"] == loss_func)
+                    & (df["convergence_threshold_step"] > 0)
+                ]
+
+                if len(subset) > 0:
+                    std_stats = (
+                        subset.groupby("convergence_threshold_step")
+                        .agg({"val_loss": "std"})
+                        .reset_index()
+                    )
+
+                    std_stats.columns = ["step", "val_std"]
+                    std_stats["convergence_rate"] = std_stats["step"].apply(
+                        lambda x: convergence_rates[x - 1]
+                        if x - 1 < len(convergence_rates)
+                        else None
+                    )
+                    std_stats = std_stats.dropna(subset=["convergence_rate"])
+
+                    if len(std_stats) > 0:
+                        color = ensemble_colors[ensemble]
+                        marker = loss_markers[loss_func]
+                        label = f"{ensemble} - {loss_func}"
+
+                        ax.plot(
+                            std_stats["convergence_rate"],
+                            std_stats["val_std"],
+                            label=label,
+                            marker=marker,
+                            color=color,
+                            linewidth=2,
+                            markersize=6,
+                        )
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -641,19 +775,85 @@ def main():
     """
     Main function to run the complete analysis with multiple split types.
     """
+    # Parse command-line arguments for configurable paths and EMA flag
+    parser = argparse.ArgumentParser(
+        description="ISO model loss analysis: set results/output dirs and EMA flag. Paths are interpreted relative to the script unless --absolute-paths is given."
+    )
+    parser.add_argument(
+        "--results-dir",
+        default="../fitting/jaxENT/_optimise",
+        help="Results directory (relative to script dir by default)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory (relative to script dir by default). If omitted, derived from results-dir basename prefixed with '_analysis' ",
+    )
+    parser.add_argument(
+        "--ema",
+        action="store_true",
+        default=False,
+        help="Use EMA results (results_EMA.hdf5). Default: False",
+    )
+    parser.add_argument(
+        "--absolute-paths",
+        action="store_true",
+        default=False,
+        help="Interpret provided results/output directories as absolute paths",
+    )
+    parser.add_argument(
+        "--maxent",
+        type=float,
+        default=None,
+        help="Maximum entropy weight value to analyze. If not specified, uses highest available maxent value or old naming convention.",
+    )
+    args = parser.parse_args()
+
     # Define parameters (should match those used in the optimization script)
     ensembles = ["ISO_TRI", "ISO_BI"]
     loss_functions = ["mcMSE", "MSE"]
     num_splits = 3
-    # Remove the '0' convergence rate as it represents pre-optimization values
-    convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
+    # Maxent values used (these will be auto-detected from filenames)
+    convergence_rates = [1.0, 10.0, 100.0, 1000.0, 10000.0]
 
-    # Define directories
-    base_results_dir = "../fitting/jaxENT/_optimise"
-    base_results_dir = os.path.join(os.path.dirname(__file__), base_results_dir)
+    # Resolve provided directories (relative by default to the script location)
+    script_dir = os.path.dirname(__file__)
+    if args.absolute_paths:
+        # results_dir provided as absolute path
+        base_results_dir = args.results_dir
+        print("Using absolute paths for results/output.")
+    else:
+        base_results_dir = os.path.join(script_dir, args.results_dir)
+        print("Using paths relative to script directory.")
 
-    output_base_dir = "_analysis"
-    output_base_dir = os.path.join(os.path.dirname(__file__), output_base_dir)
+    ema_flag = args.ema
+    maxent_value = args.maxent
+
+    # Determine output_dir:
+    if args.output_dir:
+        if args.absolute_paths:
+            output_base_dir = args.output_dir
+        else:
+            output_base_dir = os.path.join(script_dir, args.output_dir)
+    else:
+        # Derive from results_dir basename, prefix with "_analysis"
+        base_name = os.path.basename(os.path.normpath(base_results_dir))
+        out_name = "_analysis" + base_name
+        if args.absolute_paths:
+            # Place output next to results_dir (same parent)
+            parent = os.path.dirname(os.path.normpath(base_results_dir))
+            output_base_dir = os.path.join(parent, out_name)
+        else:
+            # Place output inside script directory for relative mode
+            output_base_dir = os.path.join(script_dir, out_name)
+
+    # Show resolved paths and EMA flag
+    print(f"Resolved results_dir: {base_results_dir}")
+    print(f"Resolved output_dir: {output_base_dir}")
+    print(f"EMA flag: {ema_flag}")
+    print(
+        f"MaxEnt value: {maxent_value if maxent_value is not None else 'Auto (highest available)'}"
+    )
 
     # Check if results directory exists
     if not os.path.exists(base_results_dir):
@@ -703,6 +903,8 @@ def main():
             ensembles=ensembles,
             loss_functions=loss_functions,
             num_splits=num_splits,
+            EMA=ema_flag,
+            maxent=maxent_value,
         )
 
         # Extract loss trajectories
