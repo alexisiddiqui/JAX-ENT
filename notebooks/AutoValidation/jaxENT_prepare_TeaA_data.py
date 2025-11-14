@@ -41,7 +41,7 @@ full_dataset_colours = {
 }
 
 # Paths defined in the script
-output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/trajectories"
+output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_TeaA/_trajectories"
 open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
 closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
 topology_path = open_path
