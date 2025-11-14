@@ -1,0 +1,421 @@
+================================================================================
+PROJECTION FUNCTIONS EXPERIMENT REPORT
+Number of runs per experiment: 25
+Vector size: 100
+================================================================================
+
+
+============================================================
+Experiment: SIMPLEX
+============================================================
+
+Original Vector Statistics (averaged over runs):
+  Min:  1.067961e-04 ± 8.012618e-05
+  Max:  5.235565e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 4.181628e-10
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 2.676242e-08
+
+
+optax_l2_ball Projection:
+----------------------------------------
+  Min:  1.067961e-04 ± 8.012618e-05
+  Max:  5.235565e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 4.181628e-10
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 2.676242e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 4.588857e-09 ± 7.389456e-09
+  Correlation with Original: 9.999999e-01 ± 7.088694e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+optax_L1_ball Projection:
+----------------------------------------
+  Min:  1.067961e-04 ± 8.012618e-05
+  Max:  5.235565e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 4.181628e-10
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 2.676242e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 4.588857e-09 ± 7.389456e-09
+  Correlation with Original: 9.999999e-01 ± 7.088694e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+optax_safe_simplex Projection:
+----------------------------------------
+  Min:  1.067964e-04 ± 8.012621e-05
+  Max:  5.235565e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 1.062851e-09
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 9.518845e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 1.010528e-08 ± 5.143640e-09
+  Correlation with Original: 1.000000e+00 ± 7.348554e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+optax_simplex Projection:
+----------------------------------------
+  Min:  1.067964e-04 ± 8.012621e-05
+  Max:  5.235565e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 1.062851e-09
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 9.518845e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 1.010528e-08 ± 5.143640e-09
+  Correlation with Original: 1.000000e+00 ± 7.348554e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+rescale Projection:
+----------------------------------------
+  Min:  1.067961e-04 ± 8.012618e-05
+  Max:  5.235566e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 3.026440e-10
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 3.873843e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 0.000000e+00 ± 0.000000e+00
+  Correlation with Original: 9.999999e-01 ± 7.410178e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+softmax Projection:
+----------------------------------------
+  Min:  9.901041e-03 ± 8.510522e-07
+  Max:  1.043306e-02 ± 1.414771e-04
+  Mean: 1.000000e-02 ± 4.148308e-10
+  Std:  1.020357e-04 ± 1.198555e-05
+  Sum:  1.000000e+00 ± 4.460403e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 9.998765e-02 ± 1.130391e-02
+  Correlation with Original: 9.999640e-01 ± 2.668551e-05
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+l1_norm Projection:
+----------------------------------------
+  Min:  1.067961e-04 ± 8.012618e-05
+  Max:  5.235566e-02 ± 1.345530e-02
+  Mean: 1.000000e-02 ± 3.026440e-10
+  Std:  1.010080e-02 ± 1.142372e-03
+  Sum:  1.000000e+00 ± 3.873843e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 0.000000e+00 ± 0.000000e+00
+  Correlation with Original: 9.999999e-01 ± 7.410178e-08
+  KL Divergence from Original: -6.545130e-09 ± 4.125396e-09
+
+============================================================
+Experiment: NATURAL
+============================================================
+
+Original Vector Statistics (averaged over runs):
+  Min:  1.680000e+00 ± 7.858753e-01
+  Max:  9.940000e+01 ± 1.095445e+00
+  Mean: 5.009840e+01 ± 2.777921e+00
+  Std:  2.842223e+01 ± 8.893361e-01
+  Sum:  5.009840e+03 ± 2.777921e+02
+
+
+optax_l2_ball Projection:
+----------------------------------------
+  Min:  2.916939e-03 ± 1.356973e-03
+  Max:  1.728485e-01 ± 7.466773e-03
+  Mean: 8.691596e-02 ± 1.144812e-03
+  Std:  4.939823e-02 ± 2.029974e-03
+  Sum:  8.691596e+00 ± 1.144812e-01
+  Simplex Validity Rate: 0.00e+00%
+  L2 Distance from Original: 8.849264e-01 ± 1.511832e-03
+  Correlation with Original: 1.000000e+00 ± 3.814697e-08
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+optax_L1_ball Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  7.500000e-01 ± 2.645751e-01
+  Mean: 1.000000e-02 ± 0.000000e+00
+  Std:  8.449894e-02 ± 1.612233e-02
+  Sum:  1.000000e+00 ± 0.000000e+00
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 8.348109e-01 ± 1.629087e-01
+  Correlation with Original: 2.126024e-01 ± 4.097465e-02
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+optax_safe_simplex Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  7.500000e-01 ± 2.645751e-01
+  Mean: 1.000000e-02 ± 0.000000e+00
+  Std:  8.449894e-02 ± 1.612233e-02
+  Sum:  1.000000e+00 ± 0.000000e+00
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 8.348109e-01 ± 1.629087e-01
+  Correlation with Original: 2.126024e-01 ± 4.097465e-02
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+optax_simplex Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  7.500000e-01 ± 2.645751e-01
+  Mean: 1.000000e-02 ± 0.000000e+00
+  Std:  8.449894e-02 ± 1.612233e-02
+  Sum:  1.000000e+00 ± 0.000000e+00
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 8.348109e-01 ± 1.629087e-01
+  Correlation with Original: 2.126024e-01 ± 4.097465e-02
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+rescale Projection:
+----------------------------------------
+  Min:  3.354688e-04 ± 1.557468e-04
+  Max:  1.989785e-02 ± 1.047502e-03
+  Mean: 1.000000e-02 ± 3.977522e-10
+  Std:  5.687497e-03 ± 3.074540e-04
+  Sum:  1.000000e+00 ± 3.162980e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 0.000000e+00 ± 0.000000e+00
+  Correlation with Original: 1.000000e+00 ± 4.978326e-08
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+softmax Projection:
+----------------------------------------
+  Min:  7.087207e-43 ± 2.489322e-42
+  Max:  5.213071e-01 ± 1.910401e-01
+  Mean: 1.000000e-02 ± 6.452392e-10
+  Std:  6.226384e-02 ± 1.289989e-02
+  Sum:  1.000000e+00 ± 6.743496e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 6.088957e-01 ± 1.311275e-01
+  Correlation with Original: 2.859805e-01 ± 4.965720e-02
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+l1_norm Projection:
+----------------------------------------
+  Min:  3.354688e-04 ± 1.557468e-04
+  Max:  1.989785e-02 ± 1.047502e-03
+  Mean: 1.000000e-02 ± 3.977522e-10
+  Std:  5.687497e-03 ± 3.074540e-04
+  Sum:  1.000000e+00 ± 3.162980e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 0.000000e+00 ± 0.000000e+00
+  Correlation with Original: 1.000000e+00 ± 4.978326e-08
+  KL Divergence from Original: -7.007039e-10 ± 2.709295e-08
+
+============================================================
+Experiment: RANDOM
+============================================================
+
+Original Vector Statistics (averaged over runs):
+  Min:  -2.610569e+01 ± 4.522806e+00
+  Max:  2.387648e+01 ± 4.199643e+00
+  Mean: -1.194100e-01 ± 1.344042e+00
+  Std:  9.868208e+00 ± 6.974066e-01
+  Sum:  -1.194100e+01 ± 1.344042e+02
+
+
+optax_l2_ball Projection:
+----------------------------------------
+  Min:  1.261169e-03 ± 1.105936e-03
+  Max:  2.778338e-01 ± 3.802796e-02
+  Mean: 8.005170e-02 ± 2.514727e-03
+  Std:  5.978481e-02 ± 3.343238e-03
+  Sum:  8.005171e+00 ± 2.514727e-01
+  Simplex Validity Rate: 0.00e+00%
+  L2 Distance from Original: 8.749563e-01 ± 3.964959e-03
+  Correlation with Original: 1.000000e+00 ± 4.978326e-08
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+optax_L1_ball Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  9.293412e-01 ± 1.484500e-01
+  Mean: 9.999997e-03 ± 1.271323e-08
+  Std:  9.380874e-02 ± 1.162423e-02
+  Sum:  9.999997e-01 ± 1.285728e-06
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 9.143729e-01 ± 1.161300e-01
+  Correlation with Original: 3.517100e-01 ± 4.528216e-02
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+optax_safe_simplex Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  9.293412e-01 ± 1.484500e-01
+  Mean: 9.999997e-03 ± 1.271323e-08
+  Std:  9.380874e-02 ± 1.162423e-02
+  Sum:  9.999997e-01 ± 1.285728e-06
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 9.143729e-01 ± 1.161300e-01
+  Correlation with Original: 3.517100e-01 ± 4.528216e-02
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+optax_simplex Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  8.933546e-01 ± 1.729877e-01
+  Mean: 9.999994e-03 ± 1.648777e-08
+  Std:  9.161073e-02 ± 1.229637e-02
+  Sum:  9.999995e-01 ± 1.649688e-06
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 8.972525e-01 ± 1.223464e-01
+  Correlation with Original: 2.908799e-01 ± 5.455470e-02
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+rescale Projection:
+----------------------------------------
+  Min:  0.000000e+00 ± 0.000000e+00
+  Max:  6.201867e-02 ± 1.142342e-02
+  Mean: 1.000000e-02 ± 4.799701e-10
+  Std:  1.476481e-02 ± 1.417064e-03
+  Sum:  1.000000e+00 ± 5.509481e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 1.277275e-01 ± 2.049585e-02
+  Correlation with Original: 4.941171e-01 ± 1.365169e-01
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+softmax Projection:
+----------------------------------------
+  Min:  2.162229e-18 ± 7.322595e-18
+  Max:  7.696520e-01 ± 2.303337e-01
+  Mean: 1.000000e-02 ± 6.622221e-10
+  Std:  8.101981e-02 ± 1.745007e-02
+  Sum:  1.000000e+00 ± 7.136645e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 7.891453e-01 ± 1.743377e-01
+  Correlation with Original: 3.263738e-01 ± 5.829795e-02
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+l1_norm Projection:
+----------------------------------------
+  Min:  1.566712e-04 ± 1.339433e-04
+  Max:  3.483751e-02 ± 5.586923e-03
+  Mean: 1.000000e-02 ± 4.312335e-10
+  Std:  7.488933e-03 ± 6.576411e-04
+  Sum:  1.000000e+00 ± 3.504023e-08
+  Simplex Validity Rate: 1.00e+02%
+  L2 Distance from Original: 0.000000e+00 ± 0.000000e+00
+  Correlation with Original: 1.000000e+00 ± 5.299118e-08
+  KL Divergence from Original: -6.142836e-09 ± 4.344688e-09
+
+================================================================================
+SUMMARY
+================================================================================
+
+Simplex Validity Rates:
+----------------------------------------
+
+simplex:
+  optax_l2_ball  : 1.00e+02%
+  optax_L1_ball  : 1.00e+02%
+  optax_safe_simplex: 1.00e+02%
+  optax_simplex  : 1.00e+02%
+  rescale        : 1.00e+02%
+  softmax        : 1.00e+02%
+  l1_norm        : 1.00e+02%
+
+natural:
+  optax_l2_ball  : 0.00e+00%
+  optax_L1_ball  : 1.00e+02%
+  optax_safe_simplex: 1.00e+02%
+  optax_simplex  : 1.00e+02%
+  rescale        : 1.00e+02%
+  softmax        : 1.00e+02%
+  l1_norm        : 1.00e+02%
+
+random:
+  optax_l2_ball  : 0.00e+00%
+  optax_L1_ball  : 1.00e+02%
+  optax_safe_simplex: 1.00e+02%
+  optax_simplex  : 1.00e+02%
+  rescale        : 1.00e+02%
+  softmax        : 1.00e+02%
+  l1_norm        : 1.00e+02%
+
+
+Mean L2 Distances from Original:
+----------------------------------------
+
+simplex:
+  optax_l2_ball  : 4.588857e-09
+  optax_L1_ball  : 4.588857e-09
+  optax_safe_simplex: 1.010528e-08
+  optax_simplex  : 1.010528e-08
+  rescale        : 0.000000e+00
+  softmax        : 9.998765e-02
+  l1_norm        : 0.000000e+00
+
+natural:
+  optax_l2_ball  : 8.849264e-01
+  optax_L1_ball  : 8.348109e-01
+  optax_safe_simplex: 8.348109e-01
+  optax_simplex  : 8.348109e-01
+  rescale        : 0.000000e+00
+  softmax        : 6.088957e-01
+  l1_norm        : 0.000000e+00
+
+random:
+  optax_l2_ball  : 8.749563e-01
+  optax_L1_ball  : 9.143729e-01
+  optax_safe_simplex: 9.143729e-01
+  optax_simplex  : 8.972525e-01
+  rescale        : 1.277275e-01
+  softmax        : 7.891453e-01
+  l1_norm        : 0.000000e+00
+
+
+Mean Correlations with Original:
+----------------------------------------
+
+simplex:
+  optax_l2_ball  : 9.999999e-01
+  optax_L1_ball  : 9.999999e-01
+  optax_safe_simplex: 1.000000e+00
+  optax_simplex  : 1.000000e+00
+  rescale        : 9.999999e-01
+  softmax        : 9.999640e-01
+  l1_norm        : 9.999999e-01
+
+natural:
+  optax_l2_ball  : 1.000000e+00
+  optax_L1_ball  : 2.126024e-01
+  optax_safe_simplex: 2.126024e-01
+  optax_simplex  : 2.126024e-01
+  rescale        : 1.000000e+00
+  softmax        : 2.859805e-01
+  l1_norm        : 1.000000e+00
+
+random:
+  optax_l2_ball  : 1.000000e+00
+  optax_L1_ball  : 3.517100e-01
+  optax_safe_simplex: 3.517100e-01
+  optax_simplex  : 2.908799e-01
+  rescale        : 4.941171e-01
+  softmax        : 3.263738e-01
+  l1_norm        : 1.000000e+00
+
+
+Mean KL Divergences from Original:
+----------------------------------------
+
+simplex:
+  optax_l2_ball  : -6.545130e-09
+  optax_L1_ball  : -6.545130e-09
+  optax_safe_simplex: -6.545130e-09
+  optax_simplex  : -6.545130e-09
+  rescale        : -6.545130e-09
+  softmax        : -6.545130e-09
+  l1_norm        : -6.545130e-09
+
+natural:
+  optax_l2_ball  : -7.007039e-10
+  optax_L1_ball  : -7.007039e-10
+  optax_safe_simplex: -7.007039e-10
+  optax_simplex  : -7.007039e-10
+  rescale        : -7.007039e-10
+  softmax        : -7.007039e-10
+  l1_norm        : -7.007039e-10
+
+random:
+  optax_l2_ball  : -6.142836e-09
+  optax_L1_ball  : -6.142836e-09
+  optax_safe_simplex: -6.142836e-09
+  optax_simplex  : -6.142836e-09
+  rescale        : -6.142836e-09
+  softmax        : -6.142836e-09
+  l1_norm        : -6.142836e-09

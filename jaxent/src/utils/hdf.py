@@ -271,8 +271,14 @@ def save_optimization_state_to_hdf5(h5file, path: str, state: OptimizationState,
     # Save params
     save_simulation_parameters_to_hdf5(group, "params", state.params, **kwargs)
 
-    # Save gradient_mask
-    save_simulation_parameters_to_hdf5(group, "gradient_mask", state.gradient_mask, **kwargs)
+    # save gradients if present (not required)
+    if state.opt_state is not None and state.gradients is not None:
+        save_simulation_parameters_to_hdf5(
+            group,
+            "gradients",
+            state.gradients,
+            **kwargs,  # type: ignore
+        )
 
     # Save step
     group.attrs["step"] = state.step
@@ -304,11 +310,6 @@ def load_optimization_state_from_hdf5(
     # Load params
     params = load_simulation_parameters_from_hdf5(group, "params", default_model_params_cls)
 
-    # Load gradient_mask
-    gradient_mask = load_simulation_parameters_from_hdf5(
-        group, "gradient_mask", default_model_params_cls
-    )
-
     # Load step
     step = group.attrs["step"]
 
@@ -320,7 +321,6 @@ def load_optimization_state_from_hdf5(
     return OptimizationState(
         params=params,
         opt_state=None,  # As per requirement, opt_state doesn't need to be saved
-        gradient_mask=gradient_mask,
         step=step,
         losses=losses,
     )
