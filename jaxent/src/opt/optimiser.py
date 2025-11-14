@@ -28,41 +28,99 @@ from jaxent.src.opt.base import (
 
 
 @register_pytree_node_class
+class MutableLearningRate:
+    current_lr: float
+
+    def __init__(self, initial_lr: float):
+        self.current_lr = initial_lr
+
+    def __call__(self, step=None):
+        return self.current_lr
+
+    def update(self, new_lr: float):
+        self.current_lr = new_lr
+
+    def tree_flatten(self):
+        children = (self.current_lr,)
+        aux_data = {}
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(children[0])
+
+
+@register_pytree_node_class
 class OptaxOptimizer:
     learning_rate: float  # static/aux_data
     optimizer: optax.GradientTransformation  # static/aux_data
-    parameter_masks: set[Optimisable_Parameters]  # static/aux_data
+    parameter_partition_masks: set[Optimisable_Parameters]  # static/aux_data
     clip_value: Optional[float]  # static/aux_data
+    gradient_mask: Simulation_Parameters  # static/aux_data
     history: OptimizationHistory  # is updated during optimization - child/dynamic
+    ema_history: OptimizationHistory  # New: conditionally updated - child/dynamic
+    lr_schedule: MutableLearningRate  # New: dynamic - child/dynamic
+    plateau_denominator: float  # New: static - aux_data
+    force_logit_simplex: bool  # New: static - aux_data
+    save_ema_history: bool  # New: static - aux_data
     step: Callable  # function is set during optimization - child/dynamic
+    initial_learning_rate: float  # static/aux_data
+    initial_steps: int
 
     def __init__(
         self,
         learning_rate: float = 1e-4,
         optimizer: str = "adam",
-        parameter_masks: set[Optimisable_Parameters] = {
+        parameter_partition_masks: set[Optimisable_Parameters] = {
             Optimisable_Parameters.frame_weights,
         },
         clip_value: Optional[float] = 1.0,
+        force_simplex: Optional[bool] = None,
+        plateau_denominator: float = 1.005,
+        save_ema_history: bool = True,
+        initial_learning_rate: float = 1e0,
+        initial_steps: int = 2,
     ):
-        self.learning_rate = learning_rate
-        self.parameter_masks = parameter_masks
+        self.parameter_partition_masks = parameter_partition_masks
         self.clip_value = clip_value
         self.history = OptimizationHistory()
+        self.save_ema_history = save_ema_history
+        if save_ema_history is True:
+            self.ema_history = OptimizationHistory()
+        else:
+            self.ema_history = None  # Initialize to None if not saving EMA history
         self.step = self._step
-
+        self.plateau_denominator = plateau_denominator
+        self.gradient_mask = None  # type: ignore
+        self.initial_learning_rate = initial_learning_rate
         optimizer_chain = []
         if clip_value is not None:
             optimizer_chain.append(optax.clip(clip_value))
 
+        # Initialize lr_schedule with initial_learning_rate instead of learning_rate
+        self.lr_schedule = MutableLearningRate(initial_learning_rate)
+        self.learning_rate = learning_rate
+        self.initial_steps = initial_steps
+
+        # Use inject_hyperparams to allow dynamic learning rate changes
         if optimizer.lower() == "adam":
-            optimizer_chain.append(optax.adam(learning_rate))
+            base_optimizer = optax.inject_hyperparams(optax.adam)(learning_rate=self.lr_schedule)
+            _force_simplex = False
         elif optimizer.lower() == "sgd":
-            optimizer_chain.append(optax.sgd(learning_rate))
+            base_optimizer = optax.inject_hyperparams(optax.sgd)(learning_rate=self.lr_schedule)
+            _force_simplex = True
         elif optimizer.lower() == "adagrad":
-            optimizer_chain.append(optax.adagrad(learning_rate))
+            base_optimizer = optax.inject_hyperparams(optax.adagrad)(learning_rate=self.lr_schedule)
+            _force_simplex = False
         elif optimizer.lower() == "adamw":
-            optimizer_chain.append(optax.adamw(learning_rate=learning_rate))
+            base_optimizer = optax.inject_hyperparams(optax.adamw)(learning_rate=self.lr_schedule)
+            _force_simplex = False
+        elif optimizer.lower() == "rmsprop":
+            base_optimizer = optax.inject_hyperparams(optax.rmsprop)(learning_rate=self.lr_schedule)
+            _force_simplex = False
+        elif optimizer.lower() == "lbfgs":
+            base_optimizer = optax.inject_hyperparams(optax.lbfgs)(learning_rate=self.lr_schedule)
+            _force_simplex = False
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -71,18 +129,30 @@ class OptaxOptimizer:
 
         # optimizer_chain.append(optax.keep_params_nonnegative())
 
+        optimizer_chain.append(base_optimizer)
         self.optimizer = optax.chain(*optimizer_chain)
+
+        if force_simplex is None:
+            self.force_logit_simplex = _force_simplex
+        else:
+            self.force_logit_simplex = force_simplex
 
     def tree_flatten(self):
         # Dynamic values (leaves of the pytree)
-        children = (self.history,)
+        children = (self.history, self.gradient_mask, self.ema_history, self.lr_schedule)
 
         # Static values (auxiliary data)
         aux_data = {
             "learning_rate": self.learning_rate,
             "optimizer": self.optimizer,
-            "parameter_masks": self.parameter_masks,
+            "parameter_partition_masks": self.parameter_partition_masks,
             "clip_value": self.clip_value,
+            "save_ema_history": self.save_ema_history,
+            "plateau_denominator": self.plateau_denominator,
+            "force_logit_simplex": self.force_logit_simplex,
+            "initial_learning_rate": self.initial_learning_rate,
+            "step": self.step,
+            "initial_steps": self.initial_steps,
         }
         return children, aux_data
 
@@ -93,17 +163,27 @@ class OptaxOptimizer:
 
         # Set all attributes
         self.history = children[0]
+        self.gradient_mask = children[1]
+        self.ema_history = children[2]
+        self.lr_schedule = children[3]
+
         self.learning_rate = aux_data["learning_rate"]
         self.optimizer = aux_data["optimizer"]
-        self.parameter_masks = aux_data["parameter_masks"]
+        self.parameter_partition_masks = aux_data["parameter_partition_masks"]
         self.clip_value = aux_data["clip_value"]
+        self.save_ema_history = aux_data["save_ema_history"]
+        self.plateau_denominator = aux_data["plateau_denominator"]
+        self.force_logit_simplex = aux_data["force_logit_simplex"]
+        self.step = aux_data.get("step", self._step)
+        self.initial_learning_rate = aux_data.get("initial_learning_rate", 1.0)
+        self.initial_steps = aux_data.get("initial_steps", 2)
 
         return self
 
     def initialise(
         self,
         model: InitialisedSimulation,
-        optimisable_funcs: list[bool] | Array | None,
+        optimisable_funcs: Optional[list[bool] | Array] = None,
         _jit_test_args: Optional[
             tuple[
                 Sequence[ExpD_Dataloader[Any] | Model_Parameters | Output_Features],
@@ -114,12 +194,28 @@ class OptaxOptimizer:
     ) -> OptimizationState:
         """Initialize the optimization state"""
         params = model.params
+        # random_key = jax.random.PRNGKey(0)
+        # random_inital_weights = jax.random.uniform(
+        #     random_key,
+        #     shape=params.frame_weights.shape,
+        #     minval=-1.0,
+        #     maxval=1.0,
+        # )
+        # multiply the weights by the length of the array
+        params = Simulation_Parameters(
+            frame_mask=params.frame_mask,
+            frame_weights=params.frame_weights * len(params.frame_weights),
+            model_parameters=params.model_parameters,
+            normalise_loss_functions=params.normalise_loss_functions,
+            forward_model_weights=params.forward_model_weights,
+            forward_model_scaling=params.forward_model_scaling,
+        )
         print("Params structure:", jax.tree_util.tree_structure(params))
         if isinstance(optimisable_funcs, list):
             optimisable_funcs = jnp.array(optimisable_funcs, dtype=jnp.float32)
             optimisable_funcs = jnp.round(optimisable_funcs)
-        parameter_mask = self.parameter_masks
-        gradient_masks = self.create_gradient_masks(
+        parameter_mask = self.parameter_partition_masks
+        self.gradient_mask = self.create_gradient_masks(
             parameter_mask,
             params,
             optimisable_funcs,
@@ -127,6 +223,13 @@ class OptaxOptimizer:
 
         # init seems to be an optax function, hope this isnt confusing
         opt_state = self.optimizer.init(params)  # type: ignore
+        self.history = OptimizationHistory()  # reset history
+        if self.save_ema_history is True:
+            self.ema_history = OptimizationHistory()  # reset ema history
+
+        # Reset learning rate to initial value when initializing
+        self.lr_schedule.update(self.initial_learning_rate)
+
         # Okay here we setup the jit step function - to do this we require the additional inputs for run_optimise...
 
         # test that the _step function works
@@ -140,7 +243,6 @@ class OptaxOptimizer:
                     OptimizationState(
                         params=params,
                         opt_state=opt_state,
-                        gradient_mask=gradient_masks,
                     ),
                     model,
                     tuple(data_targets),
@@ -176,7 +278,6 @@ class OptaxOptimizer:
                     OptimizationState(
                         params=params,
                         opt_state=opt_state,
-                        gradient_mask=gradient_masks,
                     ),
                     model,
                     tuple(data_targets),
@@ -198,12 +299,11 @@ class OptaxOptimizer:
         return OptimizationState(
             params=params,
             opt_state=opt_state,
-            gradient_mask=gradient_masks,
         )
 
     @staticmethod
     def create_gradient_masks(
-        parameter_masks: set[Optimisable_Parameters],
+        parameter_partition_masks: set[Optimisable_Parameters],
         params: Simulation_Parameters,
         optimisable_funcs: Array | None,
     ) -> Simulation_Parameters:
@@ -216,23 +316,31 @@ class OptaxOptimizer:
             A Simulation_Parameters instance containing integer masks (0 or 1) for each parameter
         """
         if optimisable_funcs is None:
-            optimisable_funcs = jnp.ones_like(params.forward_model_weights, dtype=jnp.float32)
+            print(
+                DeprecationWarning(
+                    "The optimisable_funcs argument is deprecated and will be removed in future versions"
+                )
+            )
+            optimisable_funcs = jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32)
 
         # Create masks based on which parameters are enabled for optimization
-        frame_mask = 1.0 if Optimisable_Parameters.frame_weights in parameter_masks else 0.0
-        model_mask = 1.0 if Optimisable_Parameters.model_parameters in parameter_masks else 0.0
-        forward_mask = (
-            1.0 if Optimisable_Parameters.forward_model_weights in parameter_masks else 0.0
+        frame_mask = (
+            1.0 if Optimisable_Parameters.frame_weights in parameter_partition_masks else 0.0
         )
-        mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_masks else 0.0
-        scaling_mask = (
-            1.0 if Optimisable_Parameters.forward_model_scaling in parameter_masks else 0.0
+        model_mask = (
+            1.0 if Optimisable_Parameters.model_parameters in parameter_partition_masks else 0.0
         )
 
-        print(parameter_masks)
-        print(
-            f"Masks: frame={frame_mask}, model={model_mask}, forward={forward_mask}, frame_mask={mask_mask}, scaling={scaling_mask}"
-        )
+        mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_partition_masks else 0.0
+
+        if mask_mask == 1.0:
+            raise NotImplementedError(
+                "Frame mask optimization not fully implemented - while gradients can flow, "
+                "frame masking is not applied during weights normalisation before the forward step"
+            )
+
+        print(parameter_partition_masks)
+        print(f"Masks: frame={frame_mask}, model={model_mask}, frame_mask={mask_mask}")
 
         # Create frame weights mask
         frame_weights_mask = jax.tree_map(
@@ -254,36 +362,16 @@ class OptaxOptimizer:
             )
             model_parameters_mask.append(masked_model_param)
 
-        # Create forward model weights mask
-        forward_model_weights_mask = jax.tree_map(
-            lambda x: jnp.full_like(x, forward_mask, dtype=jnp.float32),
-            params.forward_model_weights,
-        )
-
-        # mask by optimisable functions
-        forward_model_weights_mask = jax.tree_map(
-            lambda x, y: x * y, forward_model_weights_mask, optimisable_funcs
-        )
-
-        # Create forward model scaling mask
-        forward_model_scaling_mask = jax.tree_map(
-            lambda x: jnp.full_like(x, scaling_mask, dtype=jnp.float32),
-            params.forward_model_scaling,
-        )
-        # create an empty mask for nomalisation loss
-        normalise_loss_mask = jax.tree_map(
-            lambda x: jnp.full_like(x, 0.0, dtype=jnp.float32),
-            params.forward_model_scaling,
-        )
-
-        # In create_parameter_masks
+        # In create_parameter_partition_masks
         param_mask = Simulation_Parameters(
             frame_weights=frame_weights_mask,
             frame_mask=frame_mask_mask,
             model_parameters=model_parameters_mask,
-            normalise_loss_functions=normalise_loss_mask,
-            forward_model_weights=forward_model_weights_mask,
-            forward_model_scaling=forward_model_scaling_mask,
+            normalise_loss_functions=jnp.zeros_like(
+                params.normalise_loss_functions, dtype=jnp.float32
+            ),
+            forward_model_weights=jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32),
+            forward_model_scaling=jnp.zeros_like(params.forward_model_scaling, dtype=jnp.float32),
         )
         print("Original params structure:", jax.tree_util.tree_structure(params))
 
@@ -322,19 +410,19 @@ class OptaxOptimizer:
             masked_param = jax.tree_map(lambda g, m: g * m, grad_param, mask_param)
             masked_model_parameters.append(masked_param)
 
-        # Mask forward model weights
-        masked_forward_weights = jax.tree_map(
-            lambda g, m: g * m,
-            grads.forward_model_weights,
-            masks.forward_model_weights,
-        )
+        # # Mask forward model weights
+        # masked_forward_weights = jax.tree_map(
+        #     lambda g, m: g * m,
+        #     grads.forward_model_weights,
+        #     masks.forward_model_weights,
+        # )
 
-        # Mask forward model scaling
-        masked_forward_scaling = jax.tree_map(
-            lambda g, m: g * m,
-            grads.forward_model_scaling,
-            masks.forward_model_scaling,
-        )
+        # # Mask forward model scaling
+        # masked_forward_scaling = jax.tree_map(
+        #     lambda g, m: g * m,
+        #     grads.forward_model_scaling,
+        #     masks.forward_model_scaling,
+        # )
 
         # # In apply_masks
         # print("Grads structure:", jax.tree_util.tree_structure(grads))
@@ -345,11 +433,45 @@ class OptaxOptimizer:
             frame_mask=masked_frame_mask,
             model_parameters=masked_model_parameters,
             normalise_loss_functions=masks.normalise_loss_functions,
-            forward_model_weights=masked_forward_weights,
-            forward_model_scaling=masked_forward_scaling,
+            forward_model_weights=masks.forward_model_weights,
+            forward_model_scaling=masks.forward_model_scaling,
         )
         # print("Masked grads structure:", jax.tree_util.tree_structure(masked_grads))
         return masked_grads
+
+    @staticmethod
+    def update_history_compute_ema_loss(
+        optimizer: "OptaxOptimizer",
+        simulation: InitialisedSimulation,
+        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+        loss_functions: tuple[JaxEnt_Loss, ...],
+        indexes: tuple[int, ...],
+        state: OptimizationState,
+        ema_params: Optional[Simulation_Parameters] = None,
+    ) -> "OptaxOptimizer":
+        """Update the optimization history and compute the EMA loss if enabled"""
+
+        optimizer.history.add_state(state)
+        if optimizer.save_ema_history is True and ema_params is not None:
+            params = ema_params
+
+            def loss_fn(params: Simulation_Parameters) -> LossComponents:
+                # Update simulation parameters for gradient computation
+                losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
+                return losses
+
+            losses = loss_fn(params)
+
+            ema_state = OptimizationState(
+                params=params,
+                opt_state=state.opt_state,
+                step=state.step,
+                losses=losses,
+                gradients=state.gradients,
+            )
+            optimizer.ema_history.add_state(ema_state)
+
+        return optimizer
 
     @staticmethod
     def _step(
@@ -358,44 +480,71 @@ class OptaxOptimizer:
         simulation: InitialisedSimulation,
         data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
         loss_functions: tuple[JaxEnt_Loss, ...],
-        history: OptimizationHistory,
+        # history: OptimizationHistory,
         indexes: tuple[int, ...],
-    ) -> Tuple[OptimizationState, Array, OptimizationHistory]:
+    ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
 
-        # simulation.params = state.params
-        # simulation.forward(state.params)
-        # print("Forward pass done")
-        def loss_fn(params: Simulation_Parameters):
+        # Switch to regular learning rate after the first step
+        if state.step == optimizer.initial_steps:
+            optimizer.lr_schedule.update(optimizer.learning_rate)
+
+        def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
-            return losses.total_train_loss
+            return losses.total_train_loss, losses
+
+        def scalar_loss_fn(params: Simulation_Parameters) -> Array:
+            return loss_fn(params)[0]
 
         # Compute gradients with value and grad to get both loss and gradients
-        loss_value, grads = jax.value_and_grad(loss_fn, allow_int=True)(state.params)
+        loss_val_losses, grads = jax.value_and_grad(loss_fn, allow_int=True, has_aux=True)(
+            state.params
+        )
+        loss_value, losses = loss_val_losses
+
         # print("Loss value:", loss_value)
         # print("Raw gradients:", grads)
         # print("Frame model scaling", state.params.forward_model_scaling)
         # Apply masks to gradients
-        masked_grads = optimizer.mask_gradients(grads, state.gradient_mask)
+        masked_grads = optimizer.mask_gradients(grads, optimizer.gradient_mask)
         # print("Masked gradients:", masked_grads)
+        # Compute the dot product of current masked_grads and previous gradients for oscillation detection
+        grad_dot_product = jax.tree_util.tree_reduce(
+            lambda x, y: x + y,
+            jax.tree_util.tree_map(
+                lambda a, b: jnp.vdot(a, b),
+                state.gradients if state.gradients is not None else masked_grads,
+                masked_grads,  # type: ignore
+            ),
+        )
+        if grad_dot_product < 0 and state.step > 1:
+            current_lr = optimizer.lr_schedule()
+            new_lr = current_lr / optimizer.plateau_denominator
+
+            # Update the optimizer state with new hyperparameters
+            optimizer.lr_schedule.update(new_lr)
 
         # Get optimizer updates
         updates, new_opt_state = optimizer.optimizer.update(
-            updates=masked_grads,  # type: ignore
-            state=state.opt_state,
-            params=state.params,  # type: ignore
+            masked_grads,  # type: ignore
+            state.opt_state,
+            state.params,  # type: ignore
+            value=loss_value,
+            grad=masked_grads,
+            value_fn=scalar_loss_fn,
         )
         # print("Updates:", updates)
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore
 
-        updated_params = optax.projections.projection_non_negative(updated_params)
+        if optimizer.force_logit_simplex:
+            updated_params = Simulation_Parameters.normalize_weights(updated_params)
         # print("Projected parameters:", updated_params)
         # Compute losses for reporting
-        losses = compute_loss(simulation, updated_params, data_targets, indexes, loss_functions)
+        # losses = compute_loss(simulation, updated_params, data_targets, indexes, loss_functions)
 
         # Create new state
-        new_state = state.update(updated_params, new_opt_state, losses)
+        new_state = state.update(updated_params, new_opt_state, losses, masked_grads)
 
         # switch parameters to simulation.params
 
@@ -405,11 +554,13 @@ class OptaxOptimizer:
             Simulation_Parameters.normalize_weights(new_state.params),
             new_state.opt_state,
             losses,
+            masked_grads,
+            step=new_state.step,
         )
         # Add to history
-        history.add_state(save_state)
+        # history.add_state(save_state)
 
-        return new_state, losses.total_train_loss, history
+        return new_state, loss_value, save_state, simulation
 
 
 @partial(
@@ -429,7 +580,7 @@ def compute_loss(
     loss_functions: tuple[JaxEnt_Loss, ...],
 ) -> LossComponents:
     """Compute training and validation losses"""
-    simulation.forward(params)
+    simulation = simulation.forward(simulation, params)
 
     # Calculate individual loss components more efficiently
     losses = [

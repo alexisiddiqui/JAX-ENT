@@ -18,7 +18,7 @@ class Simulation:
     This is the core object that is used during optimisation
     """
 
-    outputs: Sequence[Output_Features]
+    outputs: tuple[Output_Features]
     _jit_forward_pure: Callable
 
     def __init__(
@@ -58,7 +58,8 @@ class Simulation:
 
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
-
+        self.params = Simulation_Parameters.normalize_weights(self.params)
+        self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
         # assert that the number of forward models is equal to the number of forward model weights
         assert len(self.forward_models) == len(self.params.model_parameters), (
             "Number of forward models must be equal to number of forward model parameters"
@@ -79,7 +80,7 @@ class Simulation:
         self._jit_forward_pure = self.forward_pure
         # initialise the jit function using the inputs provided
         try:
-            self.forward(self.params)
+            _ = self.forward(self, self.params)
             # if the forward pass is successful, try jit pass
         except Exception as e:
             raise ValueError(f"Failed to apply forward models without JIT: {e}")
@@ -111,17 +112,19 @@ class Simulation:
 
         return True
 
-    def forward(self, params: Simulation_Parameters) -> None:
+    @staticmethod
+    def forward(sim, params: Simulation_Parameters) -> "Simulation":
         """
         This function applies the forward models to the input features
         """
-        self.params = params
+        params = Simulation_Parameters.normalize_weights(params)
+        sim.params = params
 
         # try:
-        outputs = self._jit_forward_pure(
+        outputs = sim._jit_forward_pure(
             params,
-            self._input_features,
-            self.forwardpass,
+            sim._input_features,
+            sim.forwardpass,
         )
         # except Exception as e:
         #     RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
@@ -135,7 +138,8 @@ class Simulation:
         # except Exception as e:
         #     raise ValueError(f"Failed to apply forward models: {e}")
 
-        self.outputs = outputs
+        sim.outputs = tuple(outputs)
+        return sim
 
     def predict(
         self, params: Union[Simulation_Parameters, Sequence[Model_Parameters]]
@@ -294,7 +298,6 @@ class Simulation:
             Output features
         """
         # Normalize weights
-        params = Simulation_Parameters.normalize_weights(params)
 
         # Mask the frame weights
         # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)

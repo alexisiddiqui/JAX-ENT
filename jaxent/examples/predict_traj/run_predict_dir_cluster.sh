@@ -46,7 +46,7 @@ if ! command -v jaxent-kCluster &> /dev/null; then
 fi
 
 # Define proteins to process
-TARGET_PROTEINS=("BPTI" "BRD4" "HOIP" "LXR" "MBP" "P00974" "LXRa200")
+TARGET_PROTEINS=("BPTI" "LXR"  "P00974" "LXRa200")
 
 # Function to extract protein identifier from filename
 extract_protein_name() {
