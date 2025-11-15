@@ -504,7 +504,7 @@ def plot_recovery_heatmap(recovery_df, convergence_rates, output_dir):
                             pivot_data,
                             annot=True,
                             fmt=".1f",
-                            cmap="RdYlGn",
+                            cmap="PiYG",
                             vmin=0,
                             vmax=100,
                             cbar_kws={"label": "Recovery (%)"},
@@ -2336,7 +2336,7 @@ def main():
 
     # Define parameters
     ensembles = ["ISO_TRI", "ISO_BI"]
-    loss_functions = ["mcMSE", "MSE"]
+    loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     num_splits = 3
     maxent_values = [
         1,
