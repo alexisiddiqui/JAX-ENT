@@ -30,218 +30,144 @@ jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 # Import model components
-from jax import Array
-from optimise_fn import run_optimise_ISO_TRI_BI_maxENT
+from optimise_fn import run_optimise_ISO_TRI_BI_maxENT, run_optimise_ISO_TRI_BI_maxENT_MAE
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.data.loader import ExpD_Dataloader
-from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
+from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
+from jax import Array
 
 
-def hdx_uptake_sigma_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
-) -> tuple[Array, Array]:
-    """
-    Calculate the weighted L2 loss between predicted and experimental data for HDX uptake.
-    Uses inverse covariance matrix (precision matrix) for weighting.
-    """
-    predictions = model.outputs[prediction_index]
+# def hdx_uptake_mean_centred_MSE_loss(
+#     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+# ) -> tuple[Array, Array]:
+#     """
+#     Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
+#     This loss centers both predictions and targets around their means before computing the L1 norm.
 
-    def compute_loss(sparse_mapping, y_true, cov_matrix):
-        """
-        Args:
-            y_true: shape (n_fragments, n_timepoints, 1)
-            cov_matrix: shape (n_fragments, n_fragments) - inverse covariance
-        """
-        # Initialize loss accumulator
-        total_loss = 0.0
+#     Args:
+#         model: Simulation object containing model outputs
+#         dataset: Experimental dataset containing true uptake values
+#         prediction_index: Index of the prediction to use
 
-        # Iterate over timepoints
-        for timepoint_idx in range(y_true.shape[1]):  # Iterate over 2nd dimension (timepoints)
-            # Get the true uptake for this timepoint
-            true_uptake_timepoint = y_true[:, timepoint_idx, 0]  # shape: (n_fragments,)
+#     Returns:
+#         Tuple of train and validation losses
+#     """
+#     # Get the predicted uptake from the model
+#     predictions = model.outputs[prediction_index]
 
-            # Get the predicted uptake for this timepoint
-            pred_uptake_timepoint = predictions.uptake[timepoint_idx]  # shape: (n_residues,)
+#     # Compute train and validation losses
+#     def compute_loss(sparse_mapping, y_true):
+#         # Initialize loss accumulator
+#         total_loss = 0.0
 
-            # Apply sparse mapping to predicted uptake
-            pred_mapped = apply_sparse_mapping(
-                sparse_mapping, pred_uptake_timepoint
-            )  # shape: (n_fragments,)
+#         # Iterate over timepoints
+#         for timepoint_idx in range(y_true.shape[0]):
+#             # Get the true uptake for this timepoint
+#             true_uptake_timepoint = y_true[timepoint_idx, :]
 
-            # Compute residual vector
-            residual = pred_mapped - true_uptake_timepoint  # shape: (n_fragments,)
+#             # Get the predicted uptake for this timepoint
+#             pred_uptake_timepoint = predictions.uptake[timepoint_idx]
 
-            # Compute weighted loss using inverse covariance matrix
-            weighted_residual = jnp.dot(cov_matrix, residual)  # Sigma^{-1} @ residual
-            timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
+#             # Apply sparse mapping to predicted uptake
+#             pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+#             true_mapped = true_uptake_timepoint
 
-            # Accumulate loss
-            total_loss += timepoint_loss
+#             # Center predictions and targets around their means
+#             pred_mean = jnp.mean(pred_mapped)
+#             true_mean = jnp.mean(true_mapped)
 
-        # Average loss across timepoints
-        return jnp.asarray(total_loss) / y_true.shape[1]
+#             pred_centered = pred_mapped - pred_mean
+#             true_centered = true_mapped - true_mean
 
-    # Compute train and validation losses
-    train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping,
-        dataset.train.y_true,
-        dataset.train.covariance_matrix,
-    )
-    val_loss = compute_loss(
-        dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, dataset.val.covariance_matrix
-    )
+#             # Compute L1 loss for this timepoint
+#             timepoint_loss = jnp.mean(jnp.abs(pred_centered - true_centered) ** 2)
 
-    return train_loss, val_loss
+#             # Accumulate loss
+#             total_loss += timepoint_loss
 
+#         # Average loss across timepoints
+#         return jnp.asarray(total_loss) / (y_true.shape[0])
 
-def hdx_uptake_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
-) -> tuple[Array, Array]:
-    """
-    Calculate the weighted L2 loss between predicted and experimental data for HDX uptake.
-    Uses inverse covariance matrix (precision matrix) for weighting.
-    """
-    predictions = model.outputs[prediction_index]
+#     # Compute train and validation losses
+#     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+#     val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
 
-    def compute_loss(sparse_mapping, y_true, cov_matrix):
-        """
-        Args:
-            y_true: shape (n_fragments, n_timepoints, 1)
-            cov_matrix: shape (n_fragments, n_fragments) - inverse covariance
-        """
-        # Initialize loss accumulator
-        total_loss = 0.0
-
-        # Iterate over timepoints
-        for timepoint_idx in range(y_true.shape[1]):  # Iterate over 2nd dimension (timepoints)
-            # Get the true uptake for this timepoint
-            true_uptake_timepoint = y_true[:, timepoint_idx, 0]  # shape: (n_fragments,)
-
-            # Get the predicted uptake for this timepoint
-            pred_uptake_timepoint = predictions.uptake[timepoint_idx]  # shape: (n_residues,)
-
-            # Apply sparse mapping to predicted uptake
-            pred_mapped = apply_sparse_mapping(
-                sparse_mapping, pred_uptake_timepoint
-            )  # shape: (n_fragments,)
-
-            # Compute residual vector
-            residual = pred_mapped - true_uptake_timepoint  # shape: (n_fragments,)
-
-            # Compute weighted loss using inverse covariance matrix
-            weighted_residual = jnp.dot(cov_matrix, residual)  # Sigma^{-1} @ residual
-            timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
-
-            # Accumulate loss
-            total_loss += timepoint_loss
-
-        # Average loss across timepoints
-        return jnp.asarray(total_loss) / y_true.shape[1]
-
-    eye_mat = jnp.eye(dataset.train.covariance_matrix.shape[0])
-
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
-
-    # Compute train and validation losses
-    train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
-    )
-
-    eye_mat = jnp.eye(dataset.val.covariance_matrix.shape[0])
-
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
-
-    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat)
-
-    return train_loss, val_loss
+#     return train_loss, val_loss
 
 
-def hdx_uptake_mean_centred_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
-) -> tuple[Array, Array]:
-    """
-    Calculate the weighted L2 loss between predicted and experimental data for HDX uptake.
-    Uses inverse covariance matrix (precision matrix) for weighting.
-    """
-    predictions = model.outputs[prediction_index]
+# def hdx_uptake_MSE_loss(
+#     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+# ) -> tuple[Array, Array]:
+#     """
+#     Calculate the L2 loss between the predicted and experimental data for HDX uptake.
 
-    def compute_loss(sparse_mapping, y_true, cov_matrix):
-        """
-        Args:
-            y_true: shape (n_fragments, n_timepoints, 1)
-            cov_matrix: shape (n_fragments, n_fragments) - inverse covariance
-        """
-        # Initialize loss accumulator
-        total_loss = 0.0
+#     Args:
+#         model: Simulation object containing model outputs
+#         dataset: Experimental dataset containing true uptake values
 
-        # Iterate over timepoints
-        for timepoint_idx in range(y_true.shape[1]):  # Iterate over 2nd dimension (timepoints)
-            # Get the true uptake for this timepoint
-            true_uptake_timepoint = y_true[:, timepoint_idx, 0]  # shape: (n_fragments,)
+#     Returns:
+#         Tuple of train and validation losses
+#     """
 
-            true_uptake_timepoint -= jnp.mean(true_uptake_timepoint)  # Mean centering
+#     # Get the predicted uptake from the model
+#     predictions = model.outputs[prediction_index]
 
-            # Get the predicted uptake for this timepoint
-            pred_uptake_timepoint = predictions.uptake[timepoint_idx]  # shape: (n_residues,)
+#     # Get the true uptake data
+#     # true_uptake = dataset.y_true
 
-            # Apply sparse mapping to predicted uptake
-            pred_mapped = apply_sparse_mapping(
-                sparse_mapping, pred_uptake_timepoint
-            )  # shape: (n_fragments,)
-            pred_mapped -= jnp.mean(pred_mapped)  # Mean centering
+#     # Compute train and validation losses
+#     def compute_loss(sparse_mapping, y_true):
+#         # Initialize loss accumulator
+#         total_loss = 0.0
 
-            # Compute residual vector
-            residual = pred_mapped - true_uptake_timepoint  # shape: (n_fragments,)
+#         # Iterate over timepoints
+#         for timepoint_idx in range(y_true.shape[0]):
+#             # Get the true uptake for this timepoint
+#             true_uptake_timepoint = y_true[timepoint_idx, :]
 
-            # Compute weighted loss using inverse covariance matrix
-            weighted_residual = jnp.dot(cov_matrix, residual)  # Sigma^{-1} @ residual
-            timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
+#             # Get the predicted uptake for this timepoint
+#             pred_uptake_timepoint = predictions.uptake[timepoint_idx]
 
-            # Accumulate loss
-            total_loss += timepoint_loss
+#             # Apply sparse mapping to predicted uptake
+#             # This handles cases where not all residues are measured
+#             pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+#             true_mapped = true_uptake_timepoint
 
-        # Average loss across timepoints
-        return jnp.asarray(total_loss) / y_true.shape[1]
+#             # Compute L2 loss for this timepoint
+#             timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped) ** 2)
 
-    eye_mat = jnp.eye(dataset.train.covariance_matrix.shape[0])
+#             # Accumulate loss - normalize by the number of residues
+#             total_loss += timepoint_loss
 
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+#         # Average loss across timepoints
+#         return jnp.asarray(total_loss) / (y_true.shape[0])
 
-    # Compute train and validation losses
-    train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
-    )
+#     # Compute train and validation losses
+#     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
 
-    eye_mat = jnp.eye(dataset.val.covariance_matrix.shape[0])
+#     val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
 
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+#     return train_loss, val_loss
 
-    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat)
-
-    return train_loss, val_loss
 
 
 def get_loss_function(loss_name: str):
     """Get loss function by name."""
     # Import inside function to avoid CUDA context issues
-    # from jaxent.src.opt.losses import (
-    #     hdx_uptake_mean_centred_MSE_loss,
-    #     hdx_uptake_MSE_loss,
-    # )
+    from jaxent.src.opt.losses import (
+        hdx_uptake_mean_centred_MSE_loss,
+        hdx_uptake_MSE_loss,
+    )
 
-    losses = {
-        "mcMSE": hdx_uptake_mean_centred_MSE_loss,
-        "MSE": hdx_uptake_MSE_loss,
-        "Sigma_MSE": hdx_uptake_sigma_MSE_loss,
-    }
+    losses = {"mcMSE": hdx_uptake_mean_centred_MSE_loss, "MSE": hdx_uptake_MSE_loss}
     if loss_name not in losses:
         raise ValueError(f"Unknown loss function: {loss_name}. Available: {list(losses.keys())}")
     return losses[loss_name]
@@ -333,7 +259,7 @@ def run_maxent_sweep(
         raise FileNotFoundError(f"Features directory not found: {features_dir}")
 
     # Load features for this ensemble
-    feature_path = os.path.join(features_dir, f"features_{ensemble}.npz")
+    feature_path = os.path.join(features_dir, f"features_{ensemble.lower()}.npz")
     topology_path = feature_path.replace("features_", "topology_").replace(".npz", ".json")
 
     features = BV_input_features.load(feature_path)
@@ -403,12 +329,6 @@ def run_maxent_sweep(
             HDX_peptide._create_from_features(topology=top, features=output_features[idx])
         )
 
-    cov_matrix_path = "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices/Sigma.npz"
-
-    cov_matrix_data = jnp.load(os.path.join(os.path.dirname(__file__), cov_matrix_path))[
-        "Sigma_inv"
-    ]  # Scale down for numerical stability
-    cov_matrix_data = cov_matrix_data / jnp.linalg.norm(cov_matrix_data)
     prior_dataset = ExpD_Dataloader(data=prior_HDX)
     prior_dataset.create_datasets(features=features, feature_topology=feature_top)
 
@@ -436,7 +356,7 @@ def run_maxent_sweep(
                 run_start_time = time.time()
 
                 try:
-                    run_optimise_ISO_TRI_BI_maxENT(
+                    run_optimise_ISO_TRI_BI_maxENT_MAE(
                         train_data=train_data,
                         val_data=val_data,
                         prior_data=prior_dataset,
@@ -455,7 +375,6 @@ def run_maxent_sweep(
                         initial_steps=initial_steps,
                         ema_alpha=ema_alpha,
                         forward_model_scaling=forward_model_scaling,
-                        cov_matrix=cov_matrix_data,
                     )
 
                     run_elapsed = time.time() - run_start_time
@@ -532,7 +451,7 @@ def run_all_combinations(
     output_base_dir: str = None,  # NEW: propagate chosen output dir
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
-    ensembles = ["AF2_filtered", "AF2_MSAss"]
+    ensembles = ["ISO_TRI", "ISO_BI"]
 
     loss_names = ["mcMSE", "MSE"]
 
@@ -609,13 +528,13 @@ def main():
     parser.add_argument(
         "--ensemble",
         type=str,
-        choices=["AF2_filtered", "AF2_MSAss"],
+        choices=["ISO_TRI", "ISO_BI"],
         help="Specific ensemble type to run (optional - if not provided, runs all combinations).",
     )
     parser.add_argument(
         "--loss-function",
         type=str,
-        choices=["mcMSE", "MSE", "Sigma_MSE"],
+        choices=["mcMSE", "MSE"],
         help="Specific loss function to use (optional - if not provided, runs all combinations).",
     )
     parser.add_argument(

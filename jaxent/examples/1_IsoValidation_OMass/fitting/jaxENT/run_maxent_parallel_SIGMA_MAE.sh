@@ -17,8 +17,8 @@ echo "Working directory: $DIR_WD"
 PARALLEL_JOBS=16
 DEFAULT_MAXENT_VALUES_STR="1,2,5,10,20,50,100,1000"
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test"
-N_STEPS=5
+DIR_NAME="_optimise_quick_SIGMA__MAE_test"
+N_STEPS=500
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -170,7 +170,7 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
         echo "    Maxent: $MAXENT"
         # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
         wait_for_slot
-        python optimise_ISO_TRI_BI_splits_maxENT.py \
+        python optimise_ISO_TRI_BI_splits_Sigma_MAE.py \
           --ensemble "$ENSEMBLE" \
           --loss-function "$LOSS" \
           --maxent-range "$MAXENT,$MAXENT" \

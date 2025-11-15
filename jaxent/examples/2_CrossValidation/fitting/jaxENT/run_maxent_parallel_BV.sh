@@ -14,25 +14,27 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=16
-DEFAULT_MAXENT_VALUES_STR="1,2,5,10,20,50,100,1000"
+PARALLEL_JOBS=20
+DEFAULT_MAXENT_VALUES_STR="1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100,1000"
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test"
-N_STEPS=5
+DIR_NAME="_optimise_quick_test_SIGMA_5000_lr0.1_BV"
+N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
-LEARNING_RATE=1.0
+LEARNING_RATE=0.1
 EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
 
 # --- Added defaults for ensembles, losses and split types ---
-DEFAULT_ENSEMBLES_STR="ISO_TRI,ISO_BI"
+DEFAULT_ENSEMBLES_STR="AF2_filtered,AF2_MSAss"
 ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
 DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
 DEFAULT_SPLIT_TYPES_STR="random"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
+
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---
@@ -132,27 +134,7 @@ trap cleanup EXIT
 
 rm -rf logs
 mkdir -p logs
-# --- Removed hard-coded arrays and using parsed arrays instead ---
-# ENSEMBLES and SPLIT_TYPES and LOSSES now come from parsed inputs above
-# ENSEMBLES=("ISO_TRI" "ISO_BI")
-# ENSEMBLES=("ISO_TRI")
-# 
-# SPLIT_TYPES=("random" "sequence" "sequence_cluster" "stratified" "spatial")
-# SPLIT_TYPES=("random")
-# LOSSES=("mcMSE" "MSE")
-# LOSSES=("MSE" )
-# --- end replacement ---
 
-# --- Removed hard-coded MAXENT_VALUES definitions; using parsed MAXENT_VALUES array ---
-# MAXENT_VALUES will come from the parsed MAXENT_VALUES above
-# MAXENT_VALUES=(1 10 100  1000 10000)
-# MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000)
-# MAXENT_VALUES=(1 10)
-
-
-
-# MAXENT_VALUES=(100000 1000000 10000000 100000000 1000000000)
-# MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000 1000000 1000000000)
 time_data="_$(date +'%Y%m%d_%H%M%S')"
 OUTPUT_DIR="${DIR_NAME}_${time_data}"
 OPT_OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
@@ -170,7 +152,7 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
         echo "    Maxent: $MAXENT"
         # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
         wait_for_slot
-        python optimise_ISO_TRI_BI_splits_maxENT.py \
+        python optimise_ISO_TRI_BI_splits_maxENT_BV.py \
           --ensemble "$ENSEMBLE" \
           --loss-function "$LOSS" \
           --maxent-range "$MAXENT,$MAXENT" \
@@ -201,10 +183,7 @@ echo "Running weights validation..."
 python "${ANA_DIR}/weights_validation_ISO_TRI_BI_precluster.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/weights_validation.log" 2>&1
-echo "Running CV validation..."
-python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/CV_validation.log" 2>&1
+echo "Running Loss Analysis..."
 python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1

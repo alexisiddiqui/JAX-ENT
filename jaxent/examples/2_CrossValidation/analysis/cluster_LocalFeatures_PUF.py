@@ -76,6 +76,426 @@ python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
     --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
     --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
     
+
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexiDocuments/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+    
+    --reference_pdb /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb
+
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_crop.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb" \
+    --names "AF2-Filtered" "AF2-MSAss" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2 \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test3 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete2 \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec2.json
+    
+
+
+python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
+    --ensembles "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH4_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_pH7_production_analysis/concatenated_downsampled_100.xtc" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb" "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb,/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_renum.pdb"  \
+    --names "MD-pH4" "MD-pH7" "NMR-20C" "NMR-37C" \
+    --json_data_path /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/key_residues_MD.json \
+    --input_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete \
+    --output_dir /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_MD_complete_MD \
+    --save_pdbs \
+    --json_feature_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
+    --json_rules_spec /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec_MD.json
+    
 """
 
 #!/usr/bin/env python3
@@ -110,8 +530,8 @@ from tqdm import tqdm
 ENSEMBLE_COLORS = {
     "AF2-MSAss": "#1f77b4",
     "AF2-Filtered": "#ff7f0e",
-    "pH4": "#2ca02c",
-    "pH7": "#d62728",
+    "MD-pH4": "#2ca02c",
+    "MD-pH7": "#d62728",
     "Folded": "#9467bd",
     "Unfolded": "#8c564b",
     "Control": "#e377c2",
@@ -247,6 +667,27 @@ def validate_and_parse_ensembles(ensembles_list, names_list):
 def get_ensemble_color(ensemble_name, ensemble_idx):
     """Get color for ensemble"""
     return ENSEMBLE_COLORS.get(ensemble_name, DEFAULT_COLORS[ensemble_idx % len(DEFAULT_COLORS)])
+
+
+def get_cluster_colormap(n_clusters):
+    """
+    Get appropriate colormap for clusters.
+    Uses discrete colors if n_clusters < 20, continuous otherwise.
+    
+    Returns:
+        tuple: (colormap, is_discrete)
+    """
+    if n_clusters < 20:
+        # Use tab20 or generate discrete colors
+        if n_clusters <= 10:
+            cmap = plt.cm.get_cmap('tab10', n_clusters)
+        elif n_clusters <= 20:
+            cmap = plt.cm.get_cmap('tab20', n_clusters)
+        else:
+            cmap = plt.cm.get_cmap('viridis', n_clusters)
+        return cmap, True
+    else:
+        return plt.cm.viridis, False
 
 
 def load_feature_spec(json_path):
@@ -631,6 +1072,13 @@ def create_publication_plots(
 
     logger.info("Creating PCA projection plots with clusters...")
 
+    # Determine colormap based on number of clusters
+    unique_clusters = np.unique(cluster_labels)
+    n_clusters = len(unique_clusters)
+    cluster_cmap, is_discrete = get_cluster_colormap(n_clusters)
+    
+    logger.info(f"Using {'discrete' if is_discrete else 'continuous'} colormap for {n_clusters} clusters")
+
     n_ensembles = len(ensemble_names)
     fig, axes = plt.subplots(2, n_ensembles, figsize=(8 * n_ensembles, 12))
     if n_ensembles == 1:
@@ -650,14 +1098,22 @@ def create_publication_plots(
         # Top row: Colored by clusters
         ax_main = axes[0, j]
         sns.kdeplot(x=x, y=y, ax=ax_main, levels=10, cmap="Blues", fill=True, alpha=0.3)
-        scatter = ax_main.scatter(x, y, c=ensemble_clusters, cmap="viridis", s=20, alpha=0.7)
+        
+        if is_discrete:
+            scatter = ax_main.scatter(x, y, c=ensemble_clusters, cmap=cluster_cmap, 
+                                     s=20, alpha=0.7, vmin=-0.5, vmax=n_clusters-0.5)
+        else:
+            scatter = ax_main.scatter(x, y, c=ensemble_clusters, cmap=cluster_cmap, s=20, alpha=0.7)
 
         ax_main.set_xlabel(f"PC1 ({variance_pc1:.1f}% variance)", fontsize=12)
         ax_main.set_ylabel(f"PC2 ({variance_pc2:.1f}% variance)", fontsize=12)
         ax_main.set_title(f"PCA with Clusters - {ensemble_name}", fontsize=14)
 
         if j == n_ensembles - 1:  # Only add colorbar to rightmost plot
-            plt.colorbar(scatter, ax=ax_main, label="Cluster Label")
+            cbar = plt.colorbar(scatter, ax=ax_main, label="Cluster Label")
+            if is_discrete:
+                cbar.set_ticks(unique_clusters)
+                cbar.set_ticklabels([f"C{int(c)}" for c in unique_clusters])
 
         # Bottom row: Colored by ensemble
         ax_ensemble = axes[1, j]
@@ -684,14 +1140,23 @@ def create_publication_plots(
         y = all_pca_coords[ensemble_mask, 1]
         ensemble_clusters = cluster_labels[ensemble_mask]
 
-        scatter1 = ax1.scatter(
-            x, y, c=ensemble_clusters, cmap="viridis", s=20, alpha=0.7, label=ensemble_name
-        )
+        if is_discrete:
+            scatter1 = ax1.scatter(
+                x, y, c=ensemble_clusters, cmap=cluster_cmap, s=20, alpha=0.7, 
+                label=ensemble_name, vmin=-0.5, vmax=n_clusters-0.5
+            )
+        else:
+            scatter1 = ax1.scatter(
+                x, y, c=ensemble_clusters, cmap=cluster_cmap, s=20, alpha=0.7, label=ensemble_name
+            )
 
     ax1.set_xlabel(f"PC1 ({variance_pc1:.1f}% variance)", fontsize=14)
     ax1.set_ylabel(f"PC2 ({variance_pc2:.1f}% variance)", fontsize=14)
     ax1.set_title("All Ensembles - Colored by Clusters", fontsize=16)
-    plt.colorbar(scatter1, ax=ax1, label="Cluster Label")
+    cbar1 = plt.colorbar(scatter1, ax=ax1, label="Cluster Label")
+    if is_discrete:
+        cbar1.set_ticks(unique_clusters)
+        cbar1.set_ticklabels([f"C{int(c)}" for c in unique_clusters])
 
     # Combined plot colored by ensemble
     for j, ensemble_name in enumerate(ensemble_names):
@@ -749,6 +1214,14 @@ def create_pca_feature_plot(
 
     logger.info(f"PCA explained variance ratio: {pca_features.explained_variance_ratio_[:2]}")
 
+    # Determine colormap based on number of clusters
+    if cluster_labels is not None:
+        unique_clusters = np.unique(cluster_labels)
+        n_clusters = len(unique_clusters)
+        cluster_cmap, is_discrete = get_cluster_colormap(n_clusters)
+    else:
+        cluster_cmap, is_discrete = None, False
+
     n_ensembles = len(ensemble_names)
     fig, axes = plt.subplots(1, n_ensembles, figsize=(8 * n_ensembles, 6))
     if n_ensembles == 1:
@@ -768,8 +1241,16 @@ def create_pca_feature_plot(
         # Color by cluster if available, otherwise use ensemble color
         if cluster_labels is not None:
             ensemble_clusters = cluster_labels[ensemble_mask]
-            scatter = ax.scatter(x, y, c=ensemble_clusters, cmap="viridis", s=20, alpha=0.7)
-            plt.colorbar(scatter, ax=ax, label="Cluster Label")
+            if is_discrete:
+                scatter = ax.scatter(x, y, c=ensemble_clusters, cmap=cluster_cmap, 
+                                   s=20, alpha=0.7, vmin=-0.5, vmax=n_clusters-0.5)
+            else:
+                scatter = ax.scatter(x, y, c=ensemble_clusters, cmap=cluster_cmap, s=20, alpha=0.7)
+            
+            cbar = plt.colorbar(scatter, ax=ax, label="Cluster Label")
+            if is_discrete:
+                cbar.set_ticks(unique_clusters)
+                cbar.set_ticklabels([f"C{int(c)}" for c in unique_clusters])
         else:
             ax.scatter(x, y, color=ensemble_color, s=20, alpha=0.7)
 
@@ -1458,69 +1939,65 @@ def main():
 
     create_cluster_ratio_plot(cluster_labels, ensemble_names, ensemble_labels, args.output_dir)
 
-    # Save trajectories
+    # Save cluster trajectories
     save_cluster_trajectories(
         ensemble_data,
         cluster_labels,
-        features_scaled,
+        all_pca_coords,
         cluster_centers,
         ensemble_names,
         ensemble_labels,
         args.output_dir,
-        args.save_pdbs,
+        save_pdbs=args.save_pdbs,
         all_features_data=all_features_data,
         feature_names=feature_names,
-        transform_results=transform_results,  # pass transforms into saver
+        transform_results=transform_results,
     )
 
     # Save clustering results
-    data_dir = os.path.join(args.output_dir, "data")
-    os.makedirs(data_dir, exist_ok=True)
+    results_file = os.path.join(args.output_dir, "clustering_results.npz")
+    np.savez(
+        results_file,
+        cluster_labels=cluster_labels,
+        all_pca_coords=all_pca_coords,
+        ensemble_labels=ensemble_labels,
+    )
+    logger.info(f"Saved clustering results to: {results_file}")
 
-    np.save(os.path.join(data_dir, "cluster_labels.npy"), cluster_labels)
-    np.save(os.path.join(data_dir, "all_pca_coords.npy"), all_pca_coords)
-    if cluster_centers is not None:
-        np.save(os.path.join(data_dir, "cluster_centers.npy"), cluster_centers)
-
-    # Save transform results if available
-    if transform_results:
-        np.savez(os.path.join(data_dir, "transform_results.npz"), **transform_results)
-        logger.info(f"Saved {len(transform_results)} transform results")
-
-        # Save transform results to CSV
-        transform_csv_path = os.path.join(data_dir, "transform_results.csv")
-        with open(transform_csv_path, "w", newline="") as csvfile:
-            writer = csv.writer(csvfile)
-
-            # Create header with global_frame_index, ensemble_index, cluster_label, and transform columns
-            header = ["global_frame_index", "ensemble_index", "cluster_label"] + list(
-                transform_results.keys()
-            )
-            writer.writerow(header)
-
-            # Write data rows
-            n_frames = len(cluster_labels)
-            for frame_idx in range(n_frames):
-                row = [frame_idx, int(ensemble_labels[frame_idx]), int(cluster_labels[frame_idx])]
-
-                # Add transform values for this frame
-                for transform_name in transform_results.keys():
-                    transform_value = transform_results[transform_name][frame_idx]
-                    # Convert boolean to integer for CSV readability
-                    if isinstance(transform_value, (bool, np.bool_)):
-                        row.append(int(transform_value))
-                    else:
-                        row.append(transform_value)
-
-                writer.writerow(row)
-
-        logger.info(f"Saved transform results to CSV: {transform_csv_path}")
-
+    # Summary statistics
     logger.info("=" * 80)
-    logger.info(f"Analysis complete. Results in {args.output_dir}")
-    logger.info(f"Processed {len(ensembles)} ensembles")
-    logger.info(f"Found {len(np.unique(cluster_labels))} clusters")
-    logger.info(f"Total time: {datetime.datetime.now() - start_time}")
+    logger.info("CLUSTERING SUMMARY")
+    logger.info("=" * 80)
+
+    unique_clusters, cluster_counts = np.unique(cluster_labels, return_counts=True)
+    total_frames = len(cluster_labels)
+
+    logger.info(f"Total frames: {total_frames}")
+    logger.info(f"Number of clusters: {len(unique_clusters)}")
+    logger.info("")
+
+    for cluster_id, count in zip(unique_clusters, cluster_counts):
+        percentage = (count / total_frames) * 100
+        logger.info(f"Cluster {cluster_id}: {count} frames ({percentage:.2f}%)")
+
+        # Per-ensemble breakdown
+        for ensemble_idx, ensemble_name in enumerate(ensemble_names):
+            ensemble_mask = ensemble_labels == ensemble_idx
+            ensemble_cluster_mask = (cluster_labels == cluster_id) & ensemble_mask
+            ensemble_cluster_count = np.sum(ensemble_cluster_mask)
+            ensemble_total = np.sum(ensemble_mask)
+
+            if ensemble_total > 0:
+                ensemble_percentage = (ensemble_cluster_count / ensemble_total) * 100
+                logger.info(
+                    f"  {ensemble_name}: {ensemble_cluster_count} frames ({ensemble_percentage:.2f}% of ensemble)"
+                )
+
+        logger.info("")
+
+    elapsed_time = datetime.datetime.now() - start_time
+    logger.info("=" * 80)
+    logger.info(f"Clustering analysis completed in {elapsed_time}")
     logger.info("=" * 80)
 
 

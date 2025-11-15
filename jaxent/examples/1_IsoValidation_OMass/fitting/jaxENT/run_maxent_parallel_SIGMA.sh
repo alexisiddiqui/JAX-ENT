@@ -14,11 +14,13 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=16
-DEFAULT_MAXENT_VALUES_STR="1,2,5,10,20,50,100,1000"
+PARALLEL_JOBS=20
+DEFAULT_MAXENT_VALUES_STR="1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100,1000"
+
+
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test"
-N_STEPS=5
+DIR_NAME="_optimise_FIGURE_SIGMA_5000"
+N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -32,7 +34,7 @@ DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
-DEFAULT_SPLIT_TYPES_STR="random"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---
@@ -170,7 +172,7 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
         echo "    Maxent: $MAXENT"
         # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
         wait_for_slot
-        python optimise_ISO_TRI_BI_splits_maxENT.py \
+        python optimise_ISO_TRI_BI_splits_Sigma.py \
           --ensemble "$ENSEMBLE" \
           --loss-function "$LOSS" \
           --maxent-range "$MAXENT,$MAXENT" \
