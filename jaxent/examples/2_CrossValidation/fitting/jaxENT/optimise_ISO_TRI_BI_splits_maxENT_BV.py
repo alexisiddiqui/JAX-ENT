@@ -31,7 +31,7 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 # Import model components
 from jax import Array
-from optimise_fn import run_optimise_ISO_TRI_BI_maxENT
+from optimise_fn import run_optimise_ISO_TRI_BI_maxENT_BV
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
@@ -436,7 +436,7 @@ def run_maxent_sweep(
                 run_start_time = time.time()
 
                 try:
-                    run_optimise_ISO_TRI_BI_maxENT(
+                    run_optimise_ISO_TRI_BI_maxENT_BV(
                         train_data=train_data,
                         val_data=val_data,
                         prior_data=prior_dataset,
