@@ -7,18 +7,19 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax.experimental import sparse
+from sklearn import covariance
 
 from jaxent.src.custom_types import T_ExpD
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
-from jaxent.src.data.splitting.sparse_map import create_sparse_map
+from jaxent.src.data.splitting.sparse_map import create_sparse_map, create_covariance_mat
 from jaxent.src.interfaces.topology import Partial_Topology
 
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=["y_true", "residue_feature_ouput_mapping"],
+    data_fields=["y_true", "residue_feature_ouput_mapping", "covariance_matrix"],
     meta_fields=["data"],
 )
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,7 @@ class Dataset:
     data: Sequence[ExpD_Datapoint]
     y_true: Array
     residue_feature_ouput_mapping: sparse.BCOO
+    covariance_matrix: Array | None = None # This is the inverse covariance matrix for the dataset
 
 
 class ExpD_Dataloader(Generic[T_ExpD]):
@@ -45,8 +47,9 @@ class ExpD_Dataloader(Generic[T_ExpD]):
     test: Dataset  # static but accessed during training - must be traced
     key: m_key  # metadata key
     id: m_id = m_id("id")  # metadata id - not implemented yet, dummy value for now
+    covariance_matrix: Array | None = None # static but accessed during training - must be traced
 
-    def __init__(self, data: Sequence[T_ExpD]) -> None:
+    def __init__(self, data: Sequence[T_ExpD], covariance_matrix: Array | None = None) -> None:
         self.data: Sequence[T_ExpD] = data
         print("Data Length:", len(self.data))
         self.y_true: np.ndarray = self.extract_data()  # warning this is not a jax array
@@ -74,7 +77,7 @@ class ExpD_Dataloader(Generic[T_ExpD]):
                 _data.top.fragment_index = idx
 
         self.key = self.data[0].key
-
+        self.covariance_matrix = covariance_matrix
         # self.train: Dataset
         # self.val: Dataset
         # self.test: Dataset
@@ -121,28 +124,68 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         if test_data is None:
             test_data = self.data
 
+        train_indices = [data.top.fragment_index for data in train_data]
+        val_indices = [data.top.fragment_index for data in val_data]
+
+        # assert len(set(train_indices).intersection(set(val_indices))) == 0, (
+        #     "Training and validation datasets have overlapping fragment indices."
+        # )
+        # assert that all topology fragments are unique
+        assert len(set(train_indices)) == len(train_data), (
+            "Training topology fragments are not unique/missing. Exiting."
+        )
+        assert len(set(val_indices)) == len(val_data), (
+            "Validation topology fragments are not unique/missing. Exiting."
+        )
+        # print(f"\nBefore create_covariance_mat:")
+        # print(f"  self.covariance_matrix shape: {self.covariance_matrix.shape if self.covariance_matrix is not None else 'None'}")
+        # print(f"  train_indices: {train_indices}")
+
+        # train_cov_matrix = create_covariance_mat(self.covariance_matrix, jnp.asarray(train_indices))
+
+        # print(f"After create_covariance_mat:")
+        # print(f"  train_cov_matrix shape: {train_cov_matrix.shape if train_cov_matrix is not None else 'None'}")
+        # print(f"  train_cov_matrix:\n{train_cov_matrix}")
         # Create sparse mappings
+
+        covariance_matrix = self.covariance_matrix/jnp.linalg.norm(self.covariance_matrix, ord='fro') if self.covariance_matrix is not None else None
+        print("Normalized covariance matrix:\n", covariance_matrix)
         train_sparse_map = create_sparse_map(features, feature_topology, train_data)
         val_sparse_map = create_sparse_map(features, feature_topology, val_data)
         test_sparse_map = create_sparse_map(features, feature_topology, test_data)
 
+        train_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(train_indices)) 
+        val_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(val_indices))
+        test_cov_matrix = create_covariance_mat(covariance_matrix, jnp.arange(len(test_data)))
+
+        train_y_true = jnp.array([data.extract_features() for data in train_data])
+        val_y_true = jnp.array([data.extract_features() for data in val_data])
+        test_y_true = jnp.array([data.extract_features() for data in test_data])
+
+        print(f"Train y_true shape: {train_y_true.shape}")
+        print(f"Val y_true shape: {val_y_true.shape}")
+        print(f"Test y_true shape: {test_y_true.shape}")
+
         # Create Dataset objects
         self.train = Dataset(
             data=train_data,
-            y_true=jnp.array([data.extract_features() for data in train_data]),
+            y_true=train_y_true,
             residue_feature_ouput_mapping=train_sparse_map,
+            covariance_matrix=train_cov_matrix,
         )
 
         self.val = Dataset(
             data=val_data,
-            y_true=jnp.array([data.extract_features() for data in val_data]),
+            y_true=val_y_true,
             residue_feature_ouput_mapping=val_sparse_map,
+            covariance_matrix=val_cov_matrix,
         )
 
         self.test = Dataset(
             data=test_data,
-            y_true=jnp.array([data.extract_features() for data in test_data]),
+            y_true=test_y_true,
             residue_feature_ouput_mapping=test_sparse_map,
+            covariance_matrix=test_cov_matrix,
         )
 
     def tree_flatten(self):
@@ -158,7 +201,7 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         leaves = (self.train, self.val, self.test)
 
         # Everything else is metadata that doesn't need transformation
-        aux_data = (self.data, self.y_true, self.top, self.key, self.id)
+        aux_data = (self.data, self.y_true, self.top, self.key, self.id, self.covariance_matrix)
 
         return leaves, aux_data
 
@@ -181,7 +224,7 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         instance.train, instance.val, instance.test = leaves
 
         # Set attributes from auxiliary data
-        instance.data, instance.y_true, instance.top, instance.key, instance.id = aux_data
+        instance.data, instance.y_true, instance.top, instance.key, instance.id, instance.covariance_matrix = aux_data
 
         return instance
 
