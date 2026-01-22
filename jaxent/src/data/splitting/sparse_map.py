@@ -13,6 +13,26 @@ from jaxent.src.interfaces.topology import (
 )
 
 
+def create_covariance_mat(covariance_matrix: Array | None, indices: Array ) -> Array | None:
+    """
+    Creates a covariance matrix for the training/validation/test datasets based on
+    the provided covariance matrix over the complete set of experimental fragments.
+    """
+    if covariance_matrix is None:
+        return None
+    
+    if indices is None:
+        raise ValueError("Indices must be provided when covariance_matrix is not None")
+
+    # assert that the indices are within the bounds of the covariance matrix
+    assert jnp.all(indices < covariance_matrix.shape[0]), (
+        "Indices are out of bounds for the covariance matrix"
+    )
+    # ensure a 1-D integer index array and use jnp.ix_ for proper 2-D slicing
+    indices = jnp.asarray(indices, dtype=jnp.int32).ravel()
+    return covariance_matrix[jnp.ix_(indices, indices)]
+
+
 def create_sparse_map(
     input_features: Input_Features,
     feature_topology: Sequence[Partial_Topology],
