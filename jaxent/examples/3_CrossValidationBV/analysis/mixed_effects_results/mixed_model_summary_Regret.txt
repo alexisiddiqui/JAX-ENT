@@ -1,0 +1,83 @@
+                                     Mixed Linear Model Regression Results
+================================================================================================================
+Model:                                MixedLM                   Dependent Variable:                   percentile
+No. Observations:                     576                       Method:                               REML      
+No. Groups:                           1                         Scale:                                625.7029  
+Min. group size:                      576                       Log-Likelihood:                       -2461.5044
+Max. group size:                      576                       Converged:                            Yes       
+Mean group size:                      576.0                                                                     
+----------------------------------------------------------------------------------------------------------------
+                                                           Coef.       Std.Err.      z    P>|z|  [0.025   0.975]
+----------------------------------------------------------------------------------------------------------------
+C(metric)[cluster_0]                                        56.151         157.668  0.356 0.722 -252.872 365.174
+C(metric)[cluster_1]                                        69.969         157.668  0.444 0.657 -239.054 378.992
+C(metric)[d_mse_test]                                       52.886         157.668  0.335 0.737 -256.137 361.909
+C(metric)[d_mse_train]                                      55.965         157.668  0.355 0.723 -253.058 364.988
+C(metric)[d_mse_val]                                        48.358         157.668  0.307 0.759 -260.665 357.381
+C(metric)[kl_divergence]                                    39.758         157.668  0.252 0.801 -269.265 348.781
+C(metric)[test_mse]                                         52.886         157.668  0.335 0.737 -256.137 361.909
+C(metric)[train_mse]                                        55.965         157.668  0.355 0.723 -253.058 364.988
+C(metric)[val_loss]                                         48.140         157.668  0.305 0.760 -260.883 357.162
+C(metric)[val_mse]                                          48.358         157.668  0.307 0.759 -260.665 357.381
+C(metric)[work_density]                                     49.424         157.668  0.313 0.754 -259.599 358.447
+C(metric)[work_fitting]                                     49.470         157.668  0.314 0.754 -259.553 358.492
+C(metric)[work_magnitude]                                   60.244         157.668  0.382 0.702 -248.779 369.267
+C(metric)[work_opt]                                         43.274         157.668  0.274 0.784 -265.748 352.297
+C(metric)[work_scale]                                       33.424         157.668  0.212 0.832 -275.599 342.447
+C(metric)[work_shape]                                       38.798         157.668  0.246 0.806 -270.225 347.821
+C(mclass)[T.GT_only]                                         8.938         222.702  0.040 0.968 -427.550 445.425
+C(exp)[T.MoPrP_Reweighting]                                -36.199          10.526 -3.439 0.001  -56.830 -15.568
+C(exp)[T.TeaA_IsoValidation]                               -40.596         222.775 -0.182 0.855 -477.227 396.035
+C(metric)[T.cluster_1]:C(mclass)[T.GT_only]                 10.278          11.792  0.872 0.383  -12.834  33.389
+C(metric)[T.d_mse_test]:C(mclass)[T.GT_only]               -12.172          11.792 -1.032 0.302  -35.283  10.940
+C(metric)[T.d_mse_train]:C(mclass)[T.GT_only]              -24.316          11.792 -2.062 0.039  -47.427  -1.205
+C(metric)[T.d_mse_val]:C(mclass)[T.GT_only]                 -3.579          11.792 -0.304 0.762  -26.690  19.533
+C(metric)[T.kl_divergence]:C(mclass)[T.GT_only]             -8.328          11.792 -0.706 0.480  -31.440  14.783
+C(metric)[T.test_mse]:C(mclass)[T.GT_only]                 -12.172          11.792 -1.032 0.302  -35.283  10.940
+C(metric)[T.train_mse]:C(mclass)[T.GT_only]                -24.316          11.792 -2.062 0.039  -47.427  -1.205
+C(metric)[T.val_loss]:C(mclass)[T.GT_only]                 -15.938          11.792 -1.352 0.176  -39.049   7.173
+C(metric)[T.val_mse]:C(mclass)[T.GT_only]                   -3.579          11.792 -0.304 0.762  -26.690  19.533
+C(metric)[T.work_density]:C(mclass)[T.GT_only]               1.623          11.792  0.138 0.891  -21.488  24.735
+C(metric)[T.work_fitting]:C(mclass)[T.GT_only]              -1.927          11.792 -0.163 0.870  -25.039  21.184
+C(metric)[T.work_magnitude]:C(mclass)[T.GT_only]           -13.839          11.792 -1.174 0.241  -36.951   9.272
+C(metric)[T.work_opt]:C(mclass)[T.GT_only]                  -7.231          11.792 -0.613 0.540  -30.343  15.880
+C(metric)[T.work_scale]:C(mclass)[T.GT_only]               -19.166          11.792 -1.625 0.104  -42.277   3.946
+C(metric)[T.work_shape]:C(mclass)[T.GT_only]                -6.473          11.792 -0.549 0.583  -29.585  16.638
+C(metric)[T.cluster_1]:C(exp)[T.MoPrP_Reweighting]          33.967          14.442  2.352 0.019    5.661  62.272
+C(metric)[T.d_mse_test]:C(exp)[T.MoPrP_Reweighting]         39.177          14.442  2.713 0.007   10.872  67.483
+C(metric)[T.d_mse_train]:C(exp)[T.MoPrP_Reweighting]        40.511          14.442  2.805 0.005   12.206  68.817
+C(metric)[T.d_mse_val]:C(exp)[T.MoPrP_Reweighting]          52.571          14.442  3.640 0.000   24.265  80.876
+C(metric)[T.kl_divergence]:C(exp)[T.MoPrP_Reweighting]      43.340          14.442  3.001 0.003   15.034  71.645
+C(metric)[T.test_mse]:C(exp)[T.MoPrP_Reweighting]           39.177          14.442  2.713 0.007   10.872  67.483
+C(metric)[T.train_mse]:C(exp)[T.MoPrP_Reweighting]          40.511          14.442  2.805 0.005   12.206  68.817
+C(metric)[T.val_loss]:C(exp)[T.MoPrP_Reweighting]           44.708          14.442  3.096 0.002   16.403  73.014
+C(metric)[T.val_mse]:C(exp)[T.MoPrP_Reweighting]            52.571          14.442  3.640 0.000   24.265  80.876
+C(metric)[T.work_density]:C(exp)[T.MoPrP_Reweighting]       23.144          14.442  1.603 0.109   -5.161  51.450
+C(metric)[T.work_fitting]:C(exp)[T.MoPrP_Reweighting]       32.316          14.442  2.238 0.025    4.010  60.622
+C(metric)[T.work_magnitude]:C(exp)[T.MoPrP_Reweighting]     17.597          14.442  1.218 0.223  -10.709  45.902
+C(metric)[T.work_opt]:C(exp)[T.MoPrP_Reweighting]           30.651          14.442  2.122 0.034    2.345  58.957
+C(metric)[T.work_scale]:C(exp)[T.MoPrP_Reweighting]         40.513          14.442  2.805 0.005   12.208  68.819
+C(metric)[T.work_shape]:C(exp)[T.MoPrP_Reweighting]         51.352          14.442  3.556 0.000   23.047  79.658
+C(metric)[T.cluster_1]:C(exp)[T.TeaA_IsoValidation]         11.164          14.442  0.773 0.439  -17.141  39.470
+C(metric)[T.d_mse_test]:C(exp)[T.TeaA_IsoValidation]        56.746          14.442  3.929 0.000   28.441  85.052
+C(metric)[T.d_mse_train]:C(exp)[T.TeaA_IsoValidation]       58.090          14.442  4.022 0.000   29.785  86.396
+C(metric)[T.d_mse_val]:C(exp)[T.TeaA_IsoValidation]         53.245          14.442  3.687 0.000   24.940  81.551
+C(metric)[T.kl_divergence]:C(exp)[T.TeaA_IsoValidation]     35.705          14.442  2.472 0.013    7.399  64.010
+C(metric)[T.test_mse]:C(exp)[T.TeaA_IsoValidation]          56.746          14.442  3.929 0.000   28.441  85.052
+C(metric)[T.train_mse]:C(exp)[T.TeaA_IsoValidation]         58.090          14.442  4.022 0.000   29.785  86.396
+C(metric)[T.val_loss]:C(exp)[T.TeaA_IsoValidation]          48.359          14.442  3.349 0.001   20.053  76.664
+C(metric)[T.val_mse]:C(exp)[T.TeaA_IsoValidation]           53.245          14.442  3.687 0.000   24.940  81.551
+C(metric)[T.work_density]:C(exp)[T.TeaA_IsoValidation]      23.233          14.442  1.609 0.108   -5.073  51.538
+C(metric)[T.work_fitting]:C(exp)[T.TeaA_IsoValidation]      24.963          14.442  1.728 0.084   -3.343  53.268
+C(metric)[T.work_magnitude]:C(exp)[T.TeaA_IsoValidation]    16.542          14.442  1.145 0.252  -11.764  44.847
+C(metric)[T.work_opt]:C(exp)[T.TeaA_IsoValidation]          33.810          14.442  2.341 0.019    5.504  62.115
+C(metric)[T.work_scale]:C(exp)[T.TeaA_IsoValidation]        88.560          14.442  6.132 0.000   60.254 116.865
+C(metric)[T.work_shape]:C(exp)[T.TeaA_IsoValidation]        36.301          14.442  2.514 0.012    7.996  64.607
+C(mclass)[T.GT_only]:C(exp)[T.MoPrP_Reweighting]            -0.125           5.106 -0.024 0.980  -10.132   9.883
+C(mclass)[T.GT_only]:C(exp)[T.TeaA_IsoValidation]           -0.117         314.741 -0.000 1.000 -616.998 616.764
+ensemble Var                                             24758.938 21929985365.281                              
+loss Var                                                     4.860           0.511                              
+loss_metric Var                                             80.455           1.416                              
+split Var                                                    0.000           0.186                              
+split_metric Var                                             0.000           0.660                              
+================================================================================================================

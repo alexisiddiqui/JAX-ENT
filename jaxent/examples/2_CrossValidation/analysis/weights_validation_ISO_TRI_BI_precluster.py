@@ -38,6 +38,7 @@ STATE_MAPPING = {
     0: "Folded",
     1: "PUF1",
     2: "PUF2",
+    4: "unfolded",
 }
 
 # Publication-ready style
