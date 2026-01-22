@@ -1231,6 +1231,7 @@ def main():
         0: "Folded",
         1: "PUF1",
         2: "PUF2",
+        4: "unfolded",
     }
 
     # Resolve directories
@@ -1258,6 +1259,7 @@ def main():
             "Folded": ratios_data["fractional_populations"]["folded"]["fraction"],
             "PUF1": ratios_data["fractional_populations"]["PUF1"]["fraction"],
             "PUF2": ratios_data["fractional_populations"]["PUF2"]["fraction"],
+            "unfolded": 0,
         }
         print("\nTarget state ratios:")
         for state, ratio in target_ratios.items():

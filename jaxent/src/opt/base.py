@@ -158,8 +158,8 @@ class OptimizationHistory:
 
         best_state: OptimizationState = states[-1]
         for state in states:
-            # Use the sum of unscaled validation losses instead of total_val_loss
-            if jnp.sum(state.losses.val_losses) < jnp.sum(best_state.losses.val_losses):
+            # Use the first validation loss component for comparison
+            if state.losses.val_losses[0] < best_state.losses.val_losses[0]:
                 best_state = state
 
         return best_state
