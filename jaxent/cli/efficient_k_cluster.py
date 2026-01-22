@@ -433,23 +433,27 @@ def save_cluster_trajectories(
 
         cluster_frame_indices = np.where(cluster_mask)[0]
 
-        # Get PCA coordinates for frames in this cluster
-        cluster_pca_coords = pca_coords[cluster_mask]
+        # For clusters with 2 or fewer frames, just take the first frame
+        if len(cluster_frame_indices) <= 2:
+            representative_frames[cluster_idx] = cluster_frame_indices[0]
+        else:
+            # Get PCA coordinates for frames in this cluster
+            cluster_pca_coords = pca_coords[cluster_mask]
 
-        # Get the center for this cluster
-        center = cluster_centers[cluster_idx]
+            # Get the center for this cluster
+            center = cluster_centers[cluster_idx]
 
-        # Calculate distances from each frame to the cluster center
-        distances = np.sqrt(np.sum((cluster_pca_coords - center) ** 2, axis=1))
+            # Calculate distances from each frame to the cluster center
+            distances = np.sqrt(np.sum((cluster_pca_coords - center) ** 2, axis=1))
 
-        # Find the frame with minimum distance to center
-        min_dist_idx = np.argmin(distances)
+            # Find the frame with minimum distance to center
+            min_dist_idx = np.argmin(distances)
 
-        # Get the original frame index
-        representative_frame_idx = cluster_frame_indices[min_dist_idx]
+            # Get the original frame index
+            representative_frame_idx = cluster_frame_indices[min_dist_idx]
 
-        # Store the representative frame
-        representative_frames[cluster_idx] = representative_frame_idx
+            # Store the representative frame
+            representative_frames[cluster_idx] = representative_frame_idx
 
     # Create a single trajectory file with cluster centers only
     all_clusters_file = os.path.join(clusters_dir, "all_clusters.xtc")

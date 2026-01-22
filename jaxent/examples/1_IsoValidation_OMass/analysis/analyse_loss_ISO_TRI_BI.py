@@ -13,6 +13,7 @@ import sys
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import pandas as pd
 import seaborn as sns
 import numpy as np
@@ -51,6 +52,7 @@ SPLIT_TYPE_COLOURS = {
     "R3": "green",
     "sequence_cluster": "green",  # Non-Redundant
     "Sp": "grey",
+    "spatial": "grey",  # Add lowercase variant
 }
 
 SPLIT_NAME_MAPPING = {
@@ -59,6 +61,7 @@ SPLIT_NAME_MAPPING = {
     "R3": "Non-Redundant",
     "sequence_cluster": "Non-Redundant",
     "Sp": "Spatial",
+    "spatial": "Spatial",  # Add lowercase variant
 }
 
 LOSS_MARKERS = {"mcMSE": "o", "MSE": "s", "Sigma_MSE": "^"}
@@ -599,35 +602,90 @@ def compute_kl_divergence(weights: np.ndarray) -> float:
 
 def compute_recovery_percentage(cluster_assignments: np.ndarray, weights: np.ndarray = None) -> float:
     """
-    Compute open state recovery percentage.
-
-    Args:
-        cluster_assignments: Cluster assignments (0=open, 1=closed)
-        weights: Optional frame weights
-
-    Returns:
-        Open state recovery percentage
+    Compute open state recovery percentage using 1 - sqrt(JSD) against the target distribution.
     """
-    if weights is None:
-        weights = np.ones(len(cluster_assignments))
+    if cluster_assignments is None or len(cluster_assignments) == 0:
+        return np.nan
 
-    # Normalize weights
+    if weights is None:
+        weights = np.ones(len(cluster_assignments), dtype=float)
+    else:
+        weights = np.asarray(weights, dtype=float)
+
+    if len(weights) != len(cluster_assignments) or np.sum(weights) <= 0:
+        return np.nan
+
     weights = weights / np.sum(weights)
 
-    # Calculate weighted open state ratio (cluster 0)
-    open_mask = cluster_assignments == 0
-    open_ratio = np.sum(weights[open_mask])
+    # Predicted distribution (open=0, closed=1, remaining treated as intermediate)
+    open_ratio = float(np.sum(weights[cluster_assignments == 0]))
+    closed_ratio = float(np.sum(weights[cluster_assignments == 1]))
+    intermediate_ratio = max(0.0, 1.0 - open_ratio - closed_ratio)
 
-    # Ground truth is 40% open
-    ground_truth_open = 0.4
+    pred_dist = np.array([open_ratio, closed_ratio, intermediate_ratio], dtype=float)
+    pred_dist = np.clip(pred_dist, 0.0, 1.0)
+    if pred_dist.sum() == 0:
+        return np.nan
+    pred_dist = pred_dist / pred_dist.sum()
 
-    # Recovery percentage
-    recovery = (open_ratio / ground_truth_open) * 100.0
+    # Ground-truth distribution
+    gt_dist = np.array([0.4, 0.6, 0.0], dtype=float)
+    gt_dist = gt_dist / gt_dist.sum()
 
-    # make periodic about 100%
-    recovery = 100.0 - abs(recovery - 100.0)
+    eps = 1e-12
+    pred_dist = np.clip(pred_dist, eps, 1.0)
+    gt_dist = np.clip(gt_dist, eps, 1.0)
+    midpoint = np.clip(0.5 * (pred_dist + gt_dist), eps, 1.0)
 
-    return recovery
+    def _kl(p: np.ndarray, q: np.ndarray) -> float:
+        return float(np.sum(p * np.log2(p / q)))
+
+    jsd = 0.5 * _kl(pred_dist, midpoint) + 0.5 * _kl(gt_dist, midpoint)
+    jsd = max(0.0, jsd)
+
+    return 100.0 * max(0.0, 1.0 - np.sqrt(jsd))
+
+
+def compute_cluster_percentages(weights: np.ndarray, cluster_assignments: np.ndarray) -> Dict[str, float]:
+    """
+    Compute cluster population percentages from frame weights and cluster assignments.
+    
+    Args:
+        weights: Frame weights (will be normalized)
+        cluster_assignments: Cluster assignments (0=open, 1=closed, 2+=intermediate)
+    
+    Returns:
+        Dictionary with raw_open_percentage, raw_closed_percentage, raw_intermediate_percentage
+    """
+    if len(weights) == 0 or len(cluster_assignments) == 0 or len(weights) != len(cluster_assignments):
+        return {
+            "raw_open_percentage": np.nan,
+            "raw_closed_percentage": np.nan,
+            "raw_intermediate_percentage": np.nan,
+        }
+    
+    # Normalize weights
+    weights = np.asarray(weights, dtype=float)
+    if np.sum(weights) <= 0:
+        return {
+            "raw_open_percentage": np.nan,
+            "raw_closed_percentage": np.nan,
+            "raw_intermediate_percentage": np.nan,
+        }
+    
+    weights = weights / np.sum(weights)
+    
+    # Calculate percentages
+    open_percentage = float(np.sum(weights[cluster_assignments == 0]) * 100)
+    closed_percentage = float(np.sum(weights[cluster_assignments == 1]) * 100)
+    intermediate_percentage = 100.0 - open_percentage - closed_percentage
+    intermediate_percentage = max(0.0, intermediate_percentage)  # Ensure non-negative
+    
+    return {
+        "raw_open_percentage": open_percentage,
+        "raw_closed_percentage": closed_percentage,
+        "raw_intermediate_percentage": intermediate_percentage,
+    }
 
 
 def augment_best_models_with_metrics(
@@ -718,10 +776,13 @@ def augment_best_models_with_metrics(
 
             # Compute recovery if cluster assignments available
             recovery = np.nan
+            cluster_percentages = {}
             if ensemble in cluster_assignments:
                 clusters = cluster_assignments[ensemble]
                 if len(weights) == len(clusters):
                     recovery = compute_recovery_percentage(clusters, weights)
+                    # Compute cluster percentages
+                    cluster_percentages = compute_cluster_percentages(weights, clusters)
                 else:
                     print(
                         f"Warning: length mismatch between weights ({len(weights)}) and clusters ({len(clusters)}) "
@@ -732,6 +793,10 @@ def augment_best_models_with_metrics(
             row_dict = row.to_dict()
             row_dict["kl_divergence"] = kl_div
             row_dict["recovery_percent"] = recovery
+            
+            # Add cluster percentages
+            row_dict.update(cluster_percentages)
+            
             augmented_rows.append(row_dict)
         else:
             print(f"Warning: No frame_weights found in state for {ensemble}/{loss_func}/split{split_idx} maxent={maxent_val}")
@@ -1407,6 +1472,347 @@ def generate_summary_statistics(df: pd.DataFrame, output_dir: str, split_type: s
     return summary
 
 
+def plot_cluster_population_composition(recovery_df: pd.DataFrame, best_gammas: pd.DataFrame, output_dir: str, ensemble_order: List[str] = None, analysis_split_types: List[str] = None):
+    """
+    Plot cluster population composition (open, closed, intermediate percentages) for best gamma values.
+    Creates separate subplots for each loss function.
+    
+    Args:
+        recovery_df: DataFrame containing cluster population data with columns:
+                     ensemble, split_type, split_name, replicate, gamma, loss_function,
+                     raw_open_percentage, raw_closed_percentage, raw_intermediate_percentage
+        best_gammas: DataFrame containing best gamma values per ensemble, split_type, and loss_function
+        output_dir: Directory to save the plot
+        ensemble_order: Order of ensembles for plotting (default: ["ISO_BI", "ISO_TRI"])
+        analysis_split_types: Split types to include in analysis (default: detected from data)
+    """
+    if ensemble_order is None:
+        ensemble_order = ["ISO_BI", "ISO_TRI"]
+    
+    if analysis_split_types is None:
+        analysis_split_types = sorted(recovery_df["split_type"].unique())
+    
+    # Merge to get only data for best models
+    merge_cols = ["ensemble", "split_type", "loss_function"]
+    plot_df = pd.merge(
+        recovery_df,
+        best_gammas[["ensemble", "split_type", "loss_function", "gamma"]],
+        on=merge_cols + ["gamma"],
+        how="inner",
+    )
+
+    if plot_df.empty:
+        print("No data available for cluster population composition plot")
+        return None
+
+    # Get unique loss functions
+    loss_functions = sorted(plot_df["loss_function"].unique())
+    
+    # Aggregate across replicates for each ensemble, split_type, and loss_function
+    agg = (
+        plot_df.groupby(["ensemble", "split_type", "loss_function"])
+        .agg(
+            raw_open_percentage=("raw_open_percentage", "mean"),
+            raw_closed_percentage=("raw_closed_percentage", "mean"),
+            raw_intermediate_percentage=("raw_intermediate_percentage", "mean"),
+        )
+        .reset_index()
+    )
+
+    state_map = {
+        "raw_open_percentage": "Open",
+        "raw_closed_percentage": "Closed",
+        "raw_intermediate_percentage": "Intermediate",
+    }
+    melted = agg.melt(
+        id_vars=["ensemble", "split_type", "loss_function"],
+        value_vars=list(state_map.keys()),
+        var_name="cluster",
+        value_name="percentage",
+    )
+    melted["cluster_label"] = melted["cluster"].map(state_map)
+
+    cluster_order = ["Open", "Closed", "Intermediate"]
+    
+    # Create palette with all split types present in data
+    split_types_in_data = melted["split_type"].unique()
+    palette = {st: SPLIT_TYPE_COLOURS.get(st, "grey") for st in split_types_in_data}
+
+    # Create subplots: rows for ensembles, columns for loss functions
+    fig, axes = plt.subplots(
+        len(ensemble_order), len(loss_functions), 
+        figsize=(6 * len(loss_functions), 5 * len(ensemble_order)), 
+        sharey=True, sharex=True
+    )
+    
+    # Ensure axes is 2D
+    if len(ensemble_order) == 1 and len(loss_functions) == 1:
+        axes = np.array([[axes]])
+    elif len(ensemble_order) == 1:
+        axes = axes.reshape(1, -1)
+    elif len(loss_functions) == 1:
+        axes = axes.reshape(-1, 1)
+
+    for row_idx, ensemble in enumerate(ensemble_order):
+        for col_idx, loss_func in enumerate(loss_functions):
+            ax = axes[row_idx, col_idx]
+            
+            # Filter data for this ensemble and loss function
+            subset_data = melted[
+                (melted["ensemble"] == ensemble) & 
+                (melted["loss_function"] == loss_func)
+            ]
+
+            if not subset_data.empty:
+                sns.barplot(
+                    data=subset_data,
+                    x="cluster_label",
+                    y="percentage",
+                    hue="split_type",
+                    order=cluster_order,
+                    hue_order=analysis_split_types,
+                    palette=palette,
+                    ax=ax,
+                    capsize=0.06,
+                    errwidth=1,
+                    edgecolor="black",
+                    linewidth=0.8,
+                )
+                
+                # Title and labels
+                if row_idx == 0:
+                    ax.set_title(f"{loss_func}", fontsize=18, fontweight="bold")
+                if col_idx == 0:
+                    ax.set_ylabel(f"{ensemble}\nCluster Population (%)", 
+                                fontsize=16, fontweight="bold",
+                                color=ENSEMBLE_COLOURS.get(ensemble, "black"))
+                else:
+                    ax.set_ylabel("")
+                    
+                ax.set_xlabel("Cluster State" if row_idx == len(ensemble_order) - 1 else "", 
+                            fontsize=14, fontweight="bold")
+                ax.set_ylim(0, 100)
+                ax.grid(False, alpha=0)
+                
+                # Color x-axis elements
+                col = ENSEMBLE_COLOURS.get(ensemble, "black")
+                ax.tick_params(axis="x", colors=col, labelsize=12)
+                ax.tick_params(axis="y", labelsize=12)
+                
+                # Remove individual legends
+                if ax.get_legend() is not None:
+                    ax.legend_.remove()
+            else:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", 
+                       transform=ax.transAxes, fontsize=14)
+                ax.set_xlabel("")
+                ax.set_ylabel("")
+
+    # Create unified legend
+    handles = [
+        Patch(
+            facecolor=SPLIT_TYPE_COLOURS.get(st, "grey"), 
+            edgecolor="black", 
+            label=SPLIT_NAME_MAPPING.get(st, st)
+        )
+        for st in analysis_split_types
+    ]
+    fig.legend(
+        handles,
+        [SPLIT_NAME_MAPPING.get(st, st) for st in analysis_split_types],
+        loc="upper right",
+        bbox_to_anchor=(0.98, 0.98),
+        title="Split Type",
+        title_fontsize=14,
+        fontsize=12,
+        frameon=True,
+        framealpha=0.95,
+        edgecolor="black",
+    )
+    
+    fig.suptitle("Cluster Population Composition - Best Models", fontsize=20, fontweight="bold", y=0.995)
+    plt.tight_layout(rect=[0, 0, 0.88, 0.99])
+    
+    output_path = os.path.join(output_dir, "cluster_population_composition.png")
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"Saved cluster population composition plot to {output_path}")
+    plt.close(fig)
+
+    return fig
+
+def save_weights_for_best_models(
+    best_models_df: pd.DataFrame,
+    results: Dict,
+    output_dir: str,
+) -> None:
+    """
+    Extract frame weights from best models and save as NPZ files.
+    Saves individual replicate weights and their averages per ensemble-loss-split_type combination.
+
+    Args:
+        best_models_df: DataFrame containing best models
+        results: Dictionary of optimization results
+        output_dir: Directory to save weight NPZ files
+    """
+    weights_dir = os.path.join(output_dir, "weights")
+    os.makedirs(weights_dir, exist_ok=True)
+
+    # Group by ensemble, loss_function, and split_type
+    grouping = best_models_df.groupby(["ensemble", "loss_function", "split_type"])
+
+    for (ensemble, loss_func, split_type), group_df in grouping:
+        print(f"\n  Processing weights for {ensemble} - {loss_func} - {split_type}")
+
+        # Storage for all replicate weights
+        replicate_weights = {}
+        valid_replicates = []
+
+        # Extract weights for each split replicate
+        for _, row in group_df.iterrows():
+            split_idx = int(row["split"])
+            maxent_val = row["maxent_value"]
+            conv_step = int(row["convergence_step"])
+
+            # Safe nested lookup in results
+            ensemble_dict = results.get(ensemble, {})
+            loss_dict = ensemble_dict.get(loss_func, {})
+            split_entry = loss_dict.get(split_idx, None)
+
+            if split_entry is None:
+                print(f"    Warning: No results for split {split_idx}")
+                continue
+
+            # Determine history based on format
+            history = None
+            if isinstance(split_entry, dict):
+                # New format: dict of maxent_val -> history
+                if maxent_val in split_entry:
+                    history = split_entry[maxent_val]
+                else:
+                    alt_key = str(maxent_val)
+                    if alt_key in split_entry:
+                        history = split_entry[alt_key]
+                    else:
+                        print(f"    Warning: maxent value {maxent_val} not found for split {split_idx}")
+                        continue
+            else:
+                # Old format: split_entry itself is a history object
+                history = split_entry
+
+            # Validate history and states
+            if history is None or not hasattr(history, "states") or not history.states:
+                print(f"    Warning: Invalid history for split {split_idx}")
+                continue
+
+            # Ensure convergence step exists
+            if conv_step <= 0 or conv_step > len(history.states):
+                print(f"    Warning: convergence_step {conv_step} out of range for split {split_idx}")
+                continue
+
+            state = history.states[conv_step - 1]  # Convert to 0-indexed
+
+            # Extract weights
+            if hasattr(state, "params") and hasattr(state.params, "frame_weights") and state.params.frame_weights is not None:
+                weights = np.array(state.params.frame_weights, dtype=np.float32)
+                # Handle NaN arrays by converting to uniform weights
+                if np.any(np.isnan(weights)):
+                    weights = np.ones_like(weights) / len(weights)
+                replicate_weights[split_idx] = weights
+                valid_replicates.append(split_idx)
+                print(f"    Extracted weights for split {split_idx} (shape: {weights.shape})")
+            else:
+                print(f"    Warning: No frame_weights found for split {split_idx}")
+
+        # Save individual replicate weights
+        if valid_replicates:
+            for split_idx in valid_replicates:
+                weights = replicate_weights[split_idx]
+                filename = f"weights_{ensemble}_{loss_func}_{split_type}_split{split_idx:03d}.npz"
+                filepath = os.path.join(weights_dir, filename)
+                np.savez_compressed(filepath, weights=weights)
+                print(f"    Saved: {filename}")
+
+            # Compute and save average weights across replicates
+            avg_weights = np.mean(
+                [replicate_weights[idx] for idx in valid_replicates],
+                axis=0,
+                dtype=np.float32
+            )
+            # Renormalize average weights to sum to 1
+            avg_weights = avg_weights / np.sum(avg_weights)
+            
+            avg_filename = f"weights_{ensemble}_{loss_func}_{split_type}_average.npz"
+            avg_filepath = os.path.join(weights_dir, avg_filename)
+            np.savez_compressed(
+                avg_filepath,
+                weights=avg_weights,
+                n_replicates=len(valid_replicates),
+                replicate_indices=np.array(valid_replicates, dtype=np.int32)
+            )
+            print(f"    Saved average: {avg_filename} (from {len(valid_replicates)} replicates)")
+        else:
+            print(f"    No valid weights found for {ensemble} - {loss_func} - {split_type}")
+
+    print(f"\nAll weights saved to: {weights_dir}")
+
+def save_selected_recovery_and_kl(recovery_df: pd.DataFrame, best_gammas: pd.DataFrame, output_dir: str, atol: float = 1e-8):
+    """
+    For each best gamma (ensemble, split_type, loss_function, gamma) find matching rows in recovery_df
+    (per replicate) and save per-replicate CSVs plus a combined CSV and NPZ.
+    """
+    sel_dir = os.path.join(output_dir, "selected_metrics")
+    os.makedirs(sel_dir, exist_ok=True)
+
+    selected_rows = []
+    # Ensure gamma column present in recovery_df
+    if "gamma" not in recovery_df.columns:
+        # try common alternatives
+        if "maxent_value" in recovery_df.columns:
+            recovery_df = recovery_df.copy()
+            recovery_df["gamma"] = recovery_df["maxent_value"]
+        else:
+            print("  Warning: recovery_df has no 'gamma' or 'maxent_value' column. Skipping selected metrics save.")
+            return
+
+    for _, bg in best_gammas.iterrows():
+        ensemble = bg.get("ensemble")
+        split_type = bg.get("split_type")
+        loss_func = bg.get("loss_function") if "loss_function" in bg.index else None
+        best_gamma = float(bg["gamma"])
+
+        mask = (recovery_df["ensemble"] == ensemble) & (recovery_df["split_type"] == split_type)
+        if loss_func is not None:
+            mask = mask & (recovery_df["loss_function"] == loss_func)
+
+        candidates = recovery_df[mask].copy()
+        if candidates.empty:
+            print(f"  Warning: no recovery rows for {ensemble} {split_type} {loss_func if loss_func else ''}")
+            continue
+
+        gamma_mask = np.isclose(candidates["gamma"].values.astype(float), best_gamma, atol=atol, rtol=1e-6)
+        matches = candidates[gamma_mask]
+        if matches.empty:
+            print(f"  Warning: no matching gamma rows for {ensemble} {split_type} {loss_func if loss_func else ''} gamma={best_gamma}")
+            continue
+
+        for _, row in matches.iterrows():
+            rep = row.get("replicate", row.get("split", "NA"))
+            fname = f"selected_metrics_{ensemble}_{split_type}_{loss_func if loss_func else 'na'}_{rep}.csv"
+            path = os.path.join(sel_dir, fname)
+            row.to_frame().T.to_csv(path, index=False)
+            selected_rows.append(row)
+
+    if len(selected_rows) == 0:
+        print("  No selected recovery rows saved.")
+        return
+
+    combined = pd.DataFrame(selected_rows)
+    combined_path = os.path.join(sel_dir, "selected_metrics_all.csv")
+    combined.to_csv(combined_path, index=False)
+    npz_path = os.path.join(sel_dir, "selected_metrics_all.npz")
+    np.savez_compressed(npz_path, **{c: combined[c].to_numpy(dtype=object) for c in combined.columns})
+    print(f"  Saved selected metrics: {combined_path} and {npz_path}")
+
 def main():
     """
     Main function to run the complete analysis with multiple split types.
@@ -1638,9 +2044,55 @@ def main():
                 best_models_augmented.to_csv(best_models_path, index=False)
                 print(f"Best models data saved to: {best_models_path}")
 
-                # Generate comparison plots
+                # --- New: save per-replicate selected recovery & KL for chosen best gammas ---
+                # Prepare recovery_df and best_gammas used elsewhere in the script
+                recovery_df = best_models_augmented.copy()
+                # ensure columns align with helper expectations
+                if "maxent_value" in recovery_df.columns and "gamma" not in recovery_df.columns:
+                    recovery_df["gamma"] = recovery_df["maxent_value"]
+                # build best_gammas table matching ensemble, split_type, loss_function -> gamma
+                best_gammas = (
+                    best_models_augmented.groupby(["ensemble", "split_type", "loss_function"])
+                    .agg({"maxent_value": "first"})
+                    .reset_index()
+                    .rename(columns={"maxent_value": "gamma"})
+                )
+                save_selected_recovery_and_kl(recovery_df, best_gammas, output_base_dir)
+
+                # Generate best model comparison plots
                 print("Generating best model comparison plots...")
-                plot_best_model_comparisons(best_models_augmented, output_base_dir)
+                plot_best_model_comparisons(best_models_augmented, output_dir)
+
+                # NEW: Save frame weights
+                print("Extracting and saving frame weights...")
+                save_weights_for_best_models(best_models_augmented, combined_results, output_base_dir)
+
+                # Generate cluster population composition plot
+                if "raw_open_percentage" in best_models_augmented.columns and "raw_closed_percentage" in best_models_augmented.columns:
+                    print("Generating cluster population composition plot...")
+                    
+                    # Prepare data for cluster population plot
+                    recovery_df = best_models_augmented.copy()
+                    recovery_df["gamma"] = recovery_df["maxent_value"]
+                    recovery_df["replicate"] = recovery_df["split"]
+                    recovery_df["split_name"] = recovery_df["split_type"].map(SPLIT_NAME_MAPPING)
+                    
+                    # Select best gammas (maxent values) per ensemble, split type, AND loss function
+                    best_gammas = (
+                        best_models_augmented.groupby(["ensemble", "split_type", "loss_function"])
+                        .agg({"maxent_value": "first"})
+                        .reset_index()
+                        .rename(columns={"maxent_value": "gamma"})
+                    )
+                    
+                    plot_cluster_population_composition(
+                        recovery_df, 
+                        best_gammas, 
+                        output_base_dir,
+                        ensemble_order=["ISO_BI", "ISO_TRI"]
+                    )
+                else:
+                    print("Warning: Cluster percentage data not available. Skipping cluster population plot.")
 
                 # Print summary of best models
                 print("\nBest Models Summary:")
@@ -1651,11 +2103,13 @@ def main():
                         best_models_augmented["split_type"] == split_type
                     ]
                     for _, row in split_best.iterrows():
+                        kl_str = f"KL Div={row['kl_divergence']:.4f}" if not pd.isna(row.get('kl_divergence')) else "KL Div=N/A"
+                        rec_str = f"Recovery={row['recovery_percent']:.1f}%" if not pd.isna(row.get('recovery_percent')) else "Recovery=N/A"
                         print(
                             f"  {row['ensemble']} - {row['loss_function']} - Split {row['split']}: "
                             f"MaxEnt={row['maxent_value']:.1f}, Conv Step={row['convergence_step']}, "
                             f"Val Loss={row['val_loss']:.6f}, Score={row['model_score']:.3f}, "
-                            f"KL Div={row['kl_divergence']:.4f}, Recovery={row['recovery_percent']:.1f}%"
+                            f"{kl_str}, {rec_str}"
                         )
             else:
                 print("Failed to augment best models with metrics")
