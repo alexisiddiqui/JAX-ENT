@@ -42,7 +42,7 @@ class DownloadProgressBar:
             self.pbar.close()
 
 
-def slice_trajectories(data_dir, interval=100):
+def slice_trajectories(data_dir, sliced_dir, interval=100):
     """
     Slice trajectories to keep only every `interval`th frame using MDAnalysis.
 
@@ -52,26 +52,24 @@ def slice_trajectories(data_dir, interval=100):
     """
     print(f"Slicing trajectories to keep every {interval}th frame...")
 
-    # Create a directory for sliced trajectories
-    sliced_dir = os.path.join(data_dir, "sliced_trajectories")
-    os.makedirs(sliced_dir, exist_ok=True)
+
 
     # Define topology-trajectory pairs based on naming conventions
     traj_pairs = []
 
     # For LeuT_WT files
-    wt_psf = os.path.join(data_dir, "LeuT_WT_protonly.psf")
-    for i in range(1, 4):
-        wt_dcd = os.path.join(data_dir, f"LeuT_WT_protonly_run{i}.dcd")
-        if os.path.exists(wt_psf) and os.path.exists(wt_dcd):
-            traj_pairs.append((wt_psf, wt_dcd, f"LeuT_WT_run{i}_sliced.dcd"))
+    # wt_psf = os.path.join(data_dir, "LeuT_WT_protonly.psf")
+    # for i in range(1, 4):
+    #     wt_dcd = os.path.join(data_dir, f"LeuT_WT_protonly_run{i}.dcd")
+    #     if os.path.exists(wt_psf) and os.path.exists(wt_dcd):
+    #         traj_pairs.append((wt_psf, wt_dcd, f"LeuT_WT_run{i}_sliced.dcd"))
 
-    # For LeuT_Y268A files
-    y268a_psf = os.path.join(data_dir, "LeuT_Y268A_protonly.psf")
-    for i in range(1, 4):
-        y268a_dcd = os.path.join(data_dir, f"LeuT_Y268A_protonly_run{i}.dcd")
-        if os.path.exists(y268a_psf) and os.path.exists(y268a_dcd):
-            traj_pairs.append((y268a_psf, y268a_dcd, f"LeuT_Y268A_run{i}_sliced.dcd"))
+    # # For LeuT_Y268A files
+    # y268a_psf = os.path.join(data_dir, "LeuT_Y268A_protonly.psf")
+    # for i in range(1, 4):
+    #     y268a_dcd = os.path.join(data_dir, f"LeuT_Y268A_protonly_run{i}.dcd")
+    #     if os.path.exists(y268a_psf) and os.path.exists(y268a_dcd):
+    #         traj_pairs.append((y268a_psf, y268a_dcd, f"LeuT_Y268A_run{i}_sliced.dcd"))
 
     # For TeaA files - assuming the topology/trajectory pairings based on naming
     closed_pdb = os.path.join(data_dir, "TeaA_ref_closed_state.pdb")
@@ -249,7 +247,7 @@ def plot_rmsd_paired_distances(
     plt.close()
 
 
-def create_TeaA_filtered_trajectories(data_dir):
+def create_TeaA_filtered_trajectories(data_dir,sliced_dir):
     """
     Create TeaA_filtered_sliced.xtc by filtering the initial sliced trajectory based on RMSD
     to reference structures. Only frames with RMSD ≤ 1.0 Å to either open or closed
@@ -261,7 +259,6 @@ def create_TeaA_filtered_trajectories(data_dir):
     closed_ref_pdb = os.path.join(data_dir, "TeaA_ref_closed_state.pdb")
     open_ref_pdb = os.path.join(data_dir, "TeaA_ref_open_state.pdb")
 
-    sliced_dir = os.path.join(data_dir, "sliced_trajectories")
     initial_sliced_xtc = os.path.join(sliced_dir, "TeaA_initial_sliced.xtc")
 
     filtered_sliced_xtc = os.path.join(sliced_dir, "TeaA_filtered_sliced.xtc")
@@ -443,15 +440,17 @@ if __name__ == "__main__":
         description="Download, extract, and slice HDXer AutoValidation data."
     )
     parser.add_argument(
-        "--interval", type=int, default=20, help="Slicing interval for trajectories (default: 20)"
+        "--interval", type=int, default=1, help="Slicing interval for trajectories (default: 20)"
     )
     args = parser.parse_args()
 
     # Slice trajectories
     print(f"Processing trajectory files in: {traj_dir}")
+    sliced_dir = os.path.join(traj_dir, f"sliced_{args.interval}")
+    os.makedirs(sliced_dir, exist_ok=True)
     try:
-        slice_trajectories(traj_dir, interval=args.interval)
-        create_TeaA_filtered_trajectories(traj_dir)
+        slice_trajectories(traj_dir, interval=args.interval,sliced_dir=sliced_dir)
+        create_TeaA_filtered_trajectories(traj_dir,sliced_dir=sliced_dir)
 
     except urllib.error.URLError as e:
         print(f"Error downloading file: {e}")
