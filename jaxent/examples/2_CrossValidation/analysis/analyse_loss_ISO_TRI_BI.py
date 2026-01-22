@@ -56,6 +56,7 @@ STATE_MAPPING = {
     0: "Folded",
     1: "PUF1",
     2: "PUF2",
+    4: "unfolded",
 }
 
 # Loss function markers (from TeaA)
@@ -356,8 +357,8 @@ def plot_convergence_maxent_heatmaps(
 
 def compute_model_scores(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Compute model scores as -log10(validation error) and optionally include a
-    maxent/kl_divergence bonus when kl_divergence is available and valid.
+    Compute model scores as -log10(validation error) and include penalties for
+    training error, KL divergence and split-to-split variance where available.
 
     Args:
         df: DataFrame containing loss data
@@ -369,32 +370,35 @@ def compute_model_scores(df: pd.DataFrame) -> pd.DataFrame:
 
     # Safeguard against zero or negative validation losses
     eps = 1e-300
-    val_loss = df.get("val_loss", pd.Series(dtype=float))
-    val_loss = val_loss.fillna(np.nan).clip(lower=eps)
+    val_loss = df.get("val_loss", pd.Series(dtype=float)).fillna(np.nan).clip(lower=eps)
+    train_loss = df.get("train_loss", pd.Series(dtype=float)).fillna(np.nan).clip(lower=eps)
 
-    train_loss = df.get("train_loss", pd.Series(dtype=float))
-    train_loss = train_loss.fillna(np.nan).clip(lower=eps)
+    # Base score: negative log10 of validation loss plus a modest penalty for train loss
+    base_score = -np.log10(val_loss) - (1.0 * np.log10(train_loss))
 
-    # Base score: negative log10 of validation loss
-    base_score = -np.log10(val_loss) - (0.9 * np.log10(train_loss))
-
-    # Initialize model_score with base_score
+    # Start with base score
     df["model_score"] = base_score
 
-    # If kl_divergence and maxent_value are present, add the extra term where valid
-    if "kl_divergence" in df.columns and "maxent_value" in df.columns:
-        kl = df["kl_divergence"].replace(0, np.nan)  # avoid division by zero
-        maxent = df["maxent_value"]
+    # KL divergence penalty (if available) - penalize higher KL (less uniform)
+    if "kl_divergence" in df.columns:
+        kl = df["kl_divergence"].fillna(0).clip(lower=0)
+        kl_penalty = 0.1 * kl
+    else:
+        kl_penalty = 0.0
 
-        # Compute bonus only where kl is finite and maxent is finite
-        bonus = pd.Series(0.0, index=df.index)
-        valid_mask = kl.notna() & np.isfinite(kl) & maxent.notna() & np.isfinite(maxent)
+    # Variance across replicates penalty (coefficient of variation of val_loss)
+    grouping_cols = [c for c in ["split_type", "ensemble", "loss_function", "maxent_value", "convergence_step"] if c in df.columns]
+    if len(grouping_cols) > 0:
+        val_mean = df.groupby(grouping_cols)["val_loss"].transform("mean").fillna(np.nan).clip(lower=eps)
+        val_std = df.groupby(grouping_cols)["val_loss"].transform("std").fillna(0.0)
+        cv = val_std / val_mean
+        # Convert CV to a penalty (higher CV -> lower score). Keep scale moderate.
+        variance_penalty = - np.log10(1.0 + cv)
+    else:
+        variance_penalty = 0.0
 
-        if valid_mask.any():
-            bonus.loc[valid_mask] = kl.loc[valid_mask] / maxent.loc[valid_mask]
-
-        # Add bonus to model_score
-        df["model_score"] = df["model_score"]
+    # Apply penalties/bonuses to model_score
+    df["model_score"] = df["model_score"] - kl_penalty + variance_penalty
 
     return df
 
@@ -1617,6 +1621,7 @@ def plot_final_performance_comparison(df: pd.DataFrame, output_dir: str, split_t
     ax1.set_title("Final Training Loss", fontweight="bold")
     ax1.set_ylabel("Training Loss (log scale)", fontweight="bold")
     ax1.set_xlabel("Ensemble", fontweight="bold")
+    ax1.set_ylim(1e-4, 1e0)
     sns.despine(ax=ax1)
 
     # Validation loss comparison
@@ -1625,6 +1630,7 @@ def plot_final_performance_comparison(df: pd.DataFrame, output_dir: str, split_t
     ax2.set_title("Final Validation Loss", fontweight="bold")
     ax2.set_ylabel("Validation Loss (log scale)", fontweight="bold")
     ax2.set_xlabel("Ensemble", fontweight="bold")
+    ax2.set_ylim(1e-4, 1e0)
     sns.despine(ax=ax2)
 
     plt.tight_layout()
@@ -1668,6 +1674,354 @@ def generate_summary_statistics(df: pd.DataFrame, output_dir: str, split_type: s
     print(summary)
 
     return summary
+
+
+def save_weights_for_best_models(
+    best_models_df: pd.DataFrame,
+    results: Dict,
+    output_dir: str,
+) -> None:
+    """
+    Extract frame weights from best models and save as NPZ files.
+    Saves individual replicate weights and their averages per ensemble-loss-split_type combination.
+
+    Args:
+        best_models_df: DataFrame containing best models
+        results: Dictionary of optimization results
+        output_dir: Directory to save weight NPZ files
+    """
+    weights_dir = os.path.join(output_dir, "weights")
+    os.makedirs(weights_dir, exist_ok=True)
+
+    # Group by ensemble, loss_function, and split_type
+    grouping = best_models_df.groupby(["ensemble", "loss_function", "split_type"])
+
+    for (ensemble, loss_func, split_type), group_df in grouping:
+        print(f"\n  Processing weights for {ensemble} - {loss_func} - {split_type}")
+
+        # Storage for all replicate weights
+        replicate_weights = {}
+        valid_replicates = []
+
+        # Extract weights for each split replicate
+        for _, row in group_df.iterrows():
+            split_idx = int(row["split"])
+            maxent_val = row["maxent_value"]
+            conv_step = int(row["convergence_step"])
+
+            # Safe nested lookup in results
+            ensemble_dict = results.get(ensemble, {})
+            loss_dict = ensemble_dict.get(loss_func, {})
+            split_entry = loss_dict.get(split_idx, None)
+
+            if split_entry is None:
+                print(f"    Warning: No results for split {split_idx}")
+                continue
+
+            # Determine history based on format
+            history = None
+            if isinstance(split_entry, dict):
+                # New format: dict of maxent_val -> history
+                if maxent_val in split_entry:
+                    history = split_entry[maxent_val]
+                else:
+                    alt_key = str(maxent_val)
+                    if alt_key in split_entry:
+                        history = split_entry[alt_key]
+                    else:
+                        print(f"    Warning: maxent value {maxent_val} not found for split {split_idx}")
+                        continue
+            else:
+                # Old format: split_entry itself is a history object
+                history = split_entry
+
+            # Validate history and states
+            if history is None or not hasattr(history, "states") or not history.states:
+                print(f"    Warning: Invalid history for split {split_idx}")
+                continue
+
+            # Ensure convergence step exists
+            if conv_step <= 0 or conv_step > len(history.states):
+                print(f"    Warning: convergence_step {conv_step} out of range for split {split_idx}")
+                continue
+
+            state = history.states[conv_step - 1]  # Convert to 0-indexed
+
+            # Extract weights
+            if hasattr(state, "params") and hasattr(state.params, "frame_weights") and state.params.frame_weights is not None:
+                weights = np.array(state.params.frame_weights, dtype=np.float32)
+                # Handle NaN arrays by converting to uniform weights
+                if np.any(np.isnan(weights)):
+                    weights = np.ones_like(weights) / len(weights)
+                replicate_weights[split_idx] = weights
+                valid_replicates.append(split_idx)
+                print(f"    Extracted weights for split {split_idx} (shape: {weights.shape})")
+            else:
+                print(f"    Warning: No frame_weights found for split {split_idx}")
+
+        # Save individual replicate weights
+        if valid_replicates:
+            for split_idx in valid_replicates:
+                weights = replicate_weights[split_idx]
+                filename = f"weights_{ensemble}_{loss_func}_{split_type}_split{split_idx:03d}.npz"
+                filepath = os.path.join(weights_dir, filename)
+                np.savez_compressed(filepath, weights=weights)
+                print(f"    Saved: {filename}")
+
+            # Compute and save average weights across replicates
+            avg_weights = np.mean(
+                [replicate_weights[idx] for idx in valid_replicates],
+                axis=0,
+                dtype=np.float32
+            )
+            # Renormalize average weights to sum to 1
+            avg_weights = avg_weights / np.sum(avg_weights)
+            
+            avg_filename = f"weights_{ensemble}_{loss_func}_{split_type}_average.npz"
+            avg_filepath = os.path.join(weights_dir, avg_filename)
+            np.savez_compressed(
+                avg_filepath,
+                weights=avg_weights,
+                n_replicates=len(valid_replicates),
+                replicate_indices=np.array(valid_replicates, dtype=np.int32)
+            )
+            print(f"    Saved average: {avg_filename} (from {len(valid_replicates)} replicates)")
+        else:
+            print(f"    No valid weights found for {ensemble} - {loss_func} - {split_type}")
+
+    print(f"\nAll weights saved to: {weights_dir}")
+
+
+# Add helper utilities integrated from the iso-analysis script
+def compute_kl_divergence(weights: np.ndarray) -> float:
+    """
+    Compute KL divergence between frame weights and uniform distribution.
+    Returns np.nan if weights are invalid.
+    """
+    if weights is None or len(weights) == 0 or np.sum(weights) == 0:
+        return np.nan
+    p = np.array(weights, dtype=float)
+    p = p / np.sum(p)
+    q = np.ones(len(p)) / len(p)
+    eps = 1e-10
+    p = np.clip(p, eps, 1.0)
+    q = np.clip(q, eps, 1.0)
+    kl_div = float(np.sum(p * np.log(p / q)))
+    return kl_div
+
+
+def compute_recovery_percentage(cluster_assignments: np.ndarray, weights: np.ndarray = None) -> float:
+    """
+    Compute open/closed recovery percentage using 1 - sqrt(JSD) against a simple target.
+    Returns percentage in [0,100] or np.nan if inputs invalid.
+    """
+    if cluster_assignments is None or len(cluster_assignments) == 0:
+        return np.nan
+
+    if weights is None:
+        weights = np.ones(len(cluster_assignments), dtype=float)
+    else:
+        weights = np.asarray(weights, dtype=float)
+
+    if len(weights) != len(cluster_assignments) or np.sum(weights) <= 0:
+        return np.nan
+
+    weights = weights / np.sum(weights)
+
+    # Predicted distribution (open=0, closed=1, remaining intermediate)
+    open_ratio = float(np.sum(weights[np.asarray(cluster_assignments) == 0]))
+    closed_ratio = float(np.sum(weights[np.asarray(cluster_assignments) == 1]))
+    intermediate_ratio = max(0.0, 1.0 - open_ratio - closed_ratio)
+
+    pred_dist = np.array([open_ratio, closed_ratio, intermediate_ratio], dtype=float)
+    pred_dist = np.clip(pred_dist, 0.0, 1.0)
+    if pred_dist.sum() == 0:
+        return np.nan
+    pred_dist = pred_dist / pred_dist.sum()
+
+    # Ground-truth distribution (example: 40% open, 60% closed)
+    gt_dist = np.array([0.4, 0.6, 0.0], dtype=float)
+    gt_dist = gt_dist / gt_dist.sum()
+
+    eps = 1e-12
+    pred_dist = np.clip(pred_dist, eps, 1.0)
+    gt_dist = np.clip(gt_dist, eps, 1.0)
+    midpoint = np.clip(0.5 * (pred_dist + gt_dist), eps, 1.0)
+
+    def _kl(p: np.ndarray, q: np.ndarray) -> float:
+        mask = p > 0
+        return float(np.sum(p[mask] * np.log2(p[mask] / q[mask])))
+
+    jsd = 0.5 * _kl(pred_dist, midpoint) + 0.5 * _kl(gt_dist, midpoint)
+    jsd = max(0.0, jsd)
+
+    return 100.0 * max(0.0, 1.0 - np.sqrt(jsd))
+
+
+def compute_cluster_percentages(weights: np.ndarray, cluster_assignments: np.ndarray) -> dict:
+    """
+    Compute cluster population percentages from frame weights and cluster assignments.
+    Returns dict with raw_open_percentage, raw_closed_percentage, raw_intermediate_percentage.
+    """
+    if weights is None or cluster_assignments is None:
+        return {
+            "raw_open_percentage": np.nan,
+            "raw_closed_percentage": np.nan,
+            "raw_intermediate_percentage": np.nan,
+        }
+    weights = np.asarray(weights, dtype=float)
+    clusters = np.asarray(cluster_assignments)
+    if len(weights) == 0 or len(clusters) == 0 or len(weights) != len(clusters) or np.sum(weights) <= 0:
+        return {
+            "raw_open_percentage": np.nan,
+            "raw_closed_percentage": np.nan,
+            "raw_intermediate_percentage": np.nan,
+        }
+    weights = weights / np.sum(weights)
+    open_pct = float(np.sum(weights[clusters == 0]) * 100.0)
+    closed_pct = float(np.sum(weights[clusters == 1]) * 100.0)
+    inter_pct = max(0.0, 100.0 - open_pct - closed_pct)
+
+    return {
+        "raw_open_percentage": open_pct,
+        "raw_closed_percentage": closed_pct,
+        "raw_intermediate_percentage": inter_pct,
+    }
+
+
+def save_selected_recovery_and_kl(recovery_df: pd.DataFrame, best_gammas: pd.DataFrame, output_dir: str, atol: float = 1e-8):
+    """
+    For each best gamma (ensemble, split_type, loss_function, gamma) find matching rows in recovery_df
+    (per replicate) and save per-replicate CSVs plus a combined CSV and NPZ.
+    """
+    sel_dir = os.path.join(output_dir, "selected_metrics")
+    os.makedirs(sel_dir, exist_ok=True)
+
+    # Work on copies
+    recovery_df = recovery_df.copy()
+    best_gammas = best_gammas.copy()
+
+    # Ensure a numeric 'gamma' column exists in recovery_df (try common alternative names)
+    if "gamma" not in recovery_df.columns:
+        alt = next((c for c in ["maxent_value", "maxent", "gamma_value", "gamma_val"] if c in recovery_df.columns), None)
+        if alt is not None:
+            try:
+                recovery_df["gamma"] = recovery_df[alt].astype(float)
+            except Exception:
+                recovery_df["gamma"] = pd.to_numeric(recovery_df[alt], errors="coerce")
+        else:
+            print("  Warning: recovery_df missing 'gamma' and common alternatives. Cannot match gammas. Skipping save.")
+            return
+
+    # Ensure best_gammas has a numeric 'gamma' column too
+    if "gamma" not in best_gammas.columns:
+        alt_bg = next((c for c in ["maxent_value", "maxent", "gamma_value", "gamma_val"] if c in best_gammas.columns), None)
+        if alt_bg is not None:
+            try:
+                best_gammas["gamma"] = best_gammas[alt_bg].astype(float)
+            except Exception:
+                best_gammas["gamma"] = pd.to_numeric(best_gammas[alt_bg], errors="coerce")
+        else:
+            print("  Warning: best_gammas missing 'gamma' and common alternatives. Skipping save.")
+            return
+
+    # Normalize string columns for robust matching
+    if "ensemble" in recovery_df.columns:
+        recovery_df["_ensemble_str"] = recovery_df["ensemble"].astype(str)
+    else:
+        recovery_df["_ensemble_str"] = ""
+
+    if "split_type" in recovery_df.columns:
+        recovery_df["_split_type_str"] = recovery_df["split_type"].astype(str)
+    else:
+        recovery_df["_split_type_str"] = ""
+
+    if "loss_function" in recovery_df.columns:
+        recovery_df["_loss_func_str"] = recovery_df["loss_function"].astype(str)
+    else:
+        recovery_df["_loss_func_str"] = ""
+
+    selected_rows = []
+
+    # Iterate best_gammas robustly
+    for _, bg in best_gammas.iterrows():
+        ensemble = bg.get("ensemble", None)
+        split_type = bg.get("split_type", None)
+        loss_func = bg.get("loss_function", None)
+        try:
+            best_gamma = float(bg["gamma"])
+        except Exception:
+            print(f"  Warning: invalid gamma in best_gammas row: {bg}. Skipping.")
+            continue
+
+        # Build mask for ensemble and split_type (string compare)
+        mask = np.ones(len(recovery_df), dtype=bool)
+        if ensemble is not None:
+            mask &= (recovery_df["_ensemble_str"] == str(ensemble))
+        if split_type is not None:
+            mask &= (recovery_df["_split_type_str"] == str(split_type))
+        if loss_func is not None and not (pd.isna(loss_func)):
+            mask &= (recovery_df["_loss_func_str"] == str(loss_func))
+
+        candidates = recovery_df[mask].copy()
+        if candidates.empty:
+            print(f"  Warning: no recovery rows for {ensemble} {split_type} {loss_func if loss_func else ''}")
+            continue
+
+        # Match gamma with tolerance using np.isclose
+        try:
+            candidate_gammas = candidates["gamma"].astype(float).values
+        except Exception:
+            candidate_gammas = pd.to_numeric(candidates["gamma"], errors="coerce").fillna(np.nan).values
+
+        gamma_mask = np.isclose(candidate_gammas, best_gamma, atol=atol, rtol=1e-6)
+        matches = candidates[gamma_mask]
+
+        if matches.empty:
+            print(f"  Warning: no matching gamma rows for {ensemble} {split_type} {loss_func if loss_func else ''} gamma={best_gamma}")
+            continue
+
+        # Save per-match CSVs and collect rows as dicts
+        for idx, match_row in matches.reset_index(drop=True).iterrows():
+            rep = match_row.get("replicate", match_row.get("split", idx))
+            lossf_str = str(loss_func) if (loss_func is not None and not pd.isna(loss_func)) else "na"
+            en_str = str(ensemble) if ensemble is not None else "na"
+            st_str = str(split_type) if split_type is not None else "na"
+            # sanitize filename components
+            def _san(s):
+                return "".join(c if c.isalnum() or c in "-_." else "_" for c in str(s))
+            fname = f"selected_metrics_{_san(en_str)}_{_san(st_str)}_{_san(lossf_str)}_{_san(rep)}.csv"
+            path = os.path.join(sel_dir, fname)
+            try:
+                pd.DataFrame([match_row]).to_csv(path, index=False)
+                print(f"  Saved per-replicate metrics: {fname}")
+            except Exception as e:
+                print(f"  Error saving {path}: {e}")
+                continue
+
+            # store as dict to ensure combined DataFrame builds correctly
+            selected_rows.append(dict(match_row))
+
+    if len(selected_rows) == 0:
+        print("  No selected recovery rows saved.")
+        return
+
+    # Combined CSV
+    combined = pd.DataFrame(selected_rows)
+    combined_path = os.path.join(sel_dir, "selected_metrics_all.csv")
+    try:
+        combined.to_csv(combined_path, index=False)
+        print(f"  Saved combined CSV: {combined_path}")
+    except Exception as e:
+        print(f"  Error saving combined CSV {combined_path}: {e}")
+
+    # Save NPZ of columns (object dtype safe)
+    npz_path = os.path.join(sel_dir, "selected_metrics_all.npz")
+    try:
+        np.savez_compressed(npz_path, **{c: combined[c].to_numpy(dtype=object) for c in combined.columns})
+        print(f"  Saved combined NPZ: {npz_path}")
+    except Exception as e:
+        print(f"  Error saving NPZ {npz_path}: {e}")
 
 
 def main():
@@ -1766,6 +2120,7 @@ def main():
             "Folded": ratios_data["fractional_populations"]["folded"]["fraction"],
             "PUF1": ratios_data["fractional_populations"]["PUF1"]["fraction"],
             "PUF2": ratios_data["fractional_populations"]["PUF2"]["fraction"],
+            "unfolded": 0,
         }
         print("Target state ratios:")
         for state, ratio in target_ratios.items():
@@ -1928,9 +2283,26 @@ def main():
                 best_models_augmented.to_csv(best_models_path, index=False)
                 print(f"Best models data saved to: {best_models_path}")
 
+                # Save selected per-gamma/per-replicate metrics (ensures selected_metrics CSV/NPZ are written)
+                try:
+                    # Use the augmented best-models DataFrame as both the recovery_df and best_gammas
+                    # (this will save the selected rows corresponding to the chosen gammas)
+                    save_selected_recovery_and_kl(
+                        recovery_df=best_models_augmented,
+                        best_gammas=best_models_augmented,
+                        output_dir=output_base_dir,
+                        atol=1e-8,
+                    )
+                except Exception as e:
+                    print(f"Warning: failed to save selected recovery/kl metrics: {e}")
+
                 # Generate comparison plots
                 print("Generating best model comparison plots...")
                 plot_best_model_comparisons(best_models_augmented, output_base_dir)
+
+                # NEW: Save frame weights
+                print("Extracting and saving frame weights...")
+                save_weights_for_best_models(best_models_augmented, combined_results, output_base_dir)
 
                 # Generate cluster proportion plots
                 print("Generating cluster proportion plots for best models...")

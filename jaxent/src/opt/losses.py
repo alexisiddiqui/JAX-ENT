@@ -48,6 +48,44 @@ def hdx_pf_l2_loss(
     return train_loss, val_loss
 
 
+
+def hdx_pf_l1_loss(
+    model: Simulation, dataset: ExpD_Dataloader[HDX_protection_factor], prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the L2 loss between the predicted and experimental data.
+    """
+
+    # Calculate the predicted data
+    predictions = (
+        model.outputs
+    )  # TODO: find a way to move the forward call to outside the loss function
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
+
+    # print(predictions[0].log_Pf)
+    # Calculate the L2 loss
+    train_loss = jnp.mean((pred_pf - true_pf) ** 1)
+    # print(loss)
+    # average the loss over the length of the dataset
+
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+
+    true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
+
+    # Calculate the L2 loss
+    val_loss = jnp.mean((pred_pf - true_pf) ** 2)
+    # print(loss)
+    # average the loss over the length of the dataset
+
+    return train_loss, val_loss
+
+
+
 def hdx_pf_mae_loss(
     model: Simulation, dataset: ExpD_Dataloader[HDX_peptide], prediction_index: int
 ) -> tuple[Array, Array]:
@@ -81,6 +119,168 @@ def hdx_pf_mae_loss(
     val_loss = jnp.mean(jnp.abs(pred_pf - true_pf) ** 1)
 
     # average the loss over the length of the dataset
+
+    return train_loss, val_loss
+
+
+def hdx_pf_kld_loss(
+    model: Simulation, dataset: ExpD_Dataloader[HDX_peptide], prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the kld loss of the softmax normalised protection factors.
+    """
+    epsilon = 1e-8
+
+    # Calculate the predicted data
+    predictions = (
+        model.outputs
+    )  # TODO: find a way to move the forward call to outside the loss function
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
+
+    # Normalise the protection factors
+    pred_pf = jnp.exp(pred_pf) + epsilon
+    pred_pf = pred_pf / jnp.sum(pred_pf)
+
+    true_pf = jnp.exp(true_pf) + epsilon
+    true_pf = true_pf / jnp.sum(true_pf)
+
+    # Calculate the KLD loss
+    train_loss = optax.losses.convex_kl_divergence(
+        log_predictions=jnp.log(pred_pf), targets=true_pf
+    )
+
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+
+    true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
+
+    # Normalise the protection factors
+    pred_pf = jnp.exp(pred_pf) + epsilon
+    pred_pf = pred_pf / jnp.sum(pred_pf)
+
+    true_pf = jnp.exp(true_pf) + epsilon
+    true_pf = true_pf / jnp.sum(true_pf)
+
+    # Calculate the KLD loss
+    val_loss = optax.losses.convex_kl_divergence(
+        log_predictions=jnp.log(pred_pf), targets=true_pf
+    )
+
+    return train_loss, val_loss
+
+
+def hdx_pf_work_density_loss(
+    model: Simulation, dataset: ExpD_Dataloader[HDX_peptide], prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculates the Work_Density loss between the predicted and experimental protection factors.
+    """
+    R = 8.314
+    T = 300.0
+    epsilon = 1e-16
+
+    def compute_entropy(pf):
+        avg_logPF = jnp.mean(pf)
+        delta_phi = jnp.abs(pf - avg_logPF)
+        q = jnp.exp(-delta_phi)
+        Z = jnp.sum(q)
+        Pi = q / (Z + epsilon)
+        S = -R * Pi * jnp.log(Pi + epsilon)
+        return S
+
+    predictions = model.outputs
+
+    # Train
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)
+
+    S_pred = compute_entropy(pred_pf)
+    S_true = compute_entropy(true_pf)
+    train_loss = T * jnp.mean(jnp.abs(S_pred - S_true)) / 1000.0
+
+    # Val
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.val.y_true.reshape(-1)
+
+    S_pred = compute_entropy(pred_pf)
+    S_true = compute_entropy(true_pf)
+    val_loss = T * jnp.mean(jnp.abs(S_pred - S_true)) / 1000.0
+
+    return train_loss, val_loss
+
+
+def hdx_pf_work_scale_loss(
+    model: Simulation, dataset: ExpD_Dataloader[HDX_peptide], prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculates the Work_Scale loss between the predicted and experimental protection factors.
+    """
+    R = 8.314
+    T = 300.0
+
+    predictions = model.outputs
+
+    # Train
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)
+
+    mu_pred = jnp.mean(pred_pf)
+    mu_true = jnp.mean(true_pf)
+    train_loss = R * T * jnp.abs(mu_pred - mu_true) / 1000.0
+
+    # Val
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.val.y_true.reshape(-1)
+
+    mu_pred = jnp.mean(pred_pf)
+    mu_true = jnp.mean(true_pf)
+    val_loss = R * T * jnp.abs(mu_pred - mu_true) / 1000.0
+
+    return train_loss, val_loss
+
+
+def hdx_pf_work_shape_loss(
+    model: Simulation, dataset: ExpD_Dataloader[HDX_peptide], prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculates the Work_Shape loss between the predicted and experimental protection factors.
+    """
+    R = 8.314
+    T = 300.0
+
+    def compute_enthalpy(pf):
+        avg_logPF = jnp.mean(pf)
+        delta_phi = jnp.abs(pf - avg_logPF)
+        H = R * T * delta_phi
+        return H
+
+    predictions = model.outputs
+
+    # Train
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.train.y_true.reshape(-1)
+
+    H_pred = compute_enthalpy(pred_pf)
+    H_true = compute_enthalpy(true_pf)
+    train_loss = jnp.mean(jnp.abs(H_pred - H_true)) / 1000.0
+
+    # Val
+    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    true_pf = dataset.val.y_true.reshape(-1)
+
+    H_pred = compute_enthalpy(pred_pf)
+    H_true = compute_enthalpy(true_pf)
+    val_loss = jnp.mean(jnp.abs(H_pred - H_true)) / 1000.0
 
     return train_loss, val_loss
 
@@ -273,6 +473,46 @@ def maxent_L1_loss(
     loss = jnp.mean((jnp.abs(simulation_weights - prior_frame_weights)) ** 1)
 
     return loss, loss
+
+
+def model_params_L2_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    """
+    Calculates the L2 penalty of the model parameters compared to the prior.
+    """
+    model_params = model.params.model_parameters
+    prior_params = dataset.model_parameters
+
+    losses = []
+    for m_params, p_params in zip(model_params, prior_params):
+        squared_diffs = jax.tree_util.tree_map(lambda m, p: (m - p) ** 2, m_params, p_params)
+        loss = jax.tree_util.tree_reduce(jnp.add, jax.tree_util.tree_map(jnp.sum, squared_diffs))
+        losses.append(loss)
+
+    total_loss = jnp.sum(jnp.array(losses))
+
+    return total_loss, total_loss
+
+
+def model_params_L1_loss(
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+) -> tuple[Array, Array]:
+    """
+    Calculates the L1 penalty of the model parameters compared to the prior.
+    """
+    model_params = model.params.model_parameters
+    prior_params = dataset.model_parameters
+
+    losses = []
+    for m_params, p_params in zip(model_params, prior_params):
+        abs_diffs = jax.tree_util.tree_map(lambda m, p: jnp.abs(m - p), m_params, p_params)
+        loss = jax.tree_util.tree_reduce(jnp.add, jax.tree_util.tree_map(jnp.sum, abs_diffs))
+        losses.append(loss)
+
+    total_loss = jnp.sum(jnp.array(losses))
+
+    return total_loss, total_loss
 
 
 def sparse_max_entropy_loss(

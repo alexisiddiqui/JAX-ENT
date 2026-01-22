@@ -1,5 +1,6 @@
 import os
 from typing import List, Sequence, Tuple, cast
+import time
 
 import jax
 import jax.numpy as jnp
@@ -97,6 +98,7 @@ def optimise_sweep(
     steps_since_threshold_start = 0
     optimizer.history = OptimizationHistory()
 
+    loop_start_time = time.time()
     try:
         previous_loss = None
         prev_opt_state = None  # replace this with opt_state
@@ -303,6 +305,19 @@ def optimise_sweep(
     best_state = optimizer.history.get_best_state()
     if best_state is not None:
         _simulation.params = optimizer.history.best_state.params
+
+    loop_end_time = time.time()
+    total_time = loop_end_time - loop_start_time
+    avg_iteration_time = total_time / (step + 1) if step >= 0 else 0
+    iterations_per_second = (step + 1) / total_time if total_time > 0 else 0
+    
+    print("\n" + "=" * 50)
+    print(f"Optimization Loop Performance:")
+    print(f"  Total iterations completed: {step + 1}")
+    print(f"  Total time: {total_time:.2f}s")
+    print(f"  Avg time per iteration: {avg_iteration_time:.4f}s")
+    print(f"  Iterations per second: {iterations_per_second:.2f}")
+    print("=" * 50 + "\n")
 
     return cast(InitialisedSimulation, _simulation), optimizer
 
@@ -612,7 +627,6 @@ def run_optimise_ISO_TRI_BI_maxENT_MAE(
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         save_optimization_history_to_file(filename=output_path, history=optimizer.ema_history)
-
 
 
 

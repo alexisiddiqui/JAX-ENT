@@ -24,6 +24,24 @@ class Simulation_Parameters:
     ########################################################################
     # TODO I think this is maybe kinda silly - but
     @staticmethod
+    def propagate_model_parameters(params: "Simulation_Parameters", model_index: int=0):
+        """
+        Propagates the model parameters at model_index to all model parameters.
+        """
+        model_param = params.model_parameters[model_index]
+        new_model_params = [model_param for _ in params.model_parameters]
+
+        return Simulation_Parameters(
+            frame_weights=params.frame_weights,
+            frame_mask=params.frame_mask,
+            model_parameters=new_model_params,
+            normalise_loss_functions=params.normalise_loss_functions,
+            forward_model_weights=params.forward_model_weights,
+            forward_model_scaling=params.forward_model_scaling,
+        )
+
+
+    @staticmethod
     def normalize_masked_loss_scalingweights(params: "Simulation_Parameters"):
         """
         Normalizes weights where mask is non-zero, avoiding boolean contexts.
@@ -54,6 +72,25 @@ class Simulation_Parameters:
             normalise_loss_functions=params.normalise_loss_functions,
             forward_model_weights=result,
             forward_model_scaling=params.forward_model_scaling,
+        )
+
+    @staticmethod
+    def param_labels(params: "Simulation_Parameters") -> "Simulation_Parameters":
+        """Create a label tree for optax.multi_transform that matches the parameter structure.
+        
+        Args:
+            params: The simulation parameters to create labels for
+            
+        Returns:
+            A Simulation_Parameters instance with string labels for each parameter group
+        """
+        return Simulation_Parameters(
+            frame_weights='frame',
+            frame_mask='frame',
+            model_parameters=['model'] * len(params.model_parameters),
+            forward_model_weights='other',
+            forward_model_scaling='other',
+            normalise_loss_functions='other',
         )
 
     @staticmethod
