@@ -14,23 +14,26 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=2
-DEFAULT_MAXENT_VALUES_STR="1,10,100,1000,10000"
+PARALLEL_JOBS=16
+DEFAULT_MAXENT_VALUES_STR="1,2,5,10,20,50,100,1000"
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test_splits"
-N_STEPS=50
-INITIAL_STEPS=2
+DIR_NAME="_optimise_quick_test"
+N_STEPS=5
+INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
 EMA_ALPHA=0.5
-FORWARD_MODEL_SCALING=100.0
+FORWARD_MODEL_SCALING=1000.0
 
 # --- Added defaults for ensembles, losses and split types ---
 DEFAULT_ENSEMBLES_STR="ISO_TRI,ISO_BI"
 ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
-DEFAULT_LOSSES_STR="mcMSE,MSE"
+DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
+
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
+DEFAULT_SPLIT_TYPES_STR="random"
+
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---
 
@@ -202,6 +205,9 @@ echo "Running CV validation..."
 python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/CV_validation.log" 2>&1
+python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
+  --results-dir "$OPT_OUTPUT_DIR" \
+  > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"
 echo "Script finished."

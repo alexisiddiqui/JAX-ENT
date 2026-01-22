@@ -1427,7 +1427,7 @@ def main():
 
     # Define parameters
     ensembles = ["ISO_TRI", "ISO_BI"]
-    loss_functions = ["mcMSE", "MSE"]
+    loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     num_splits = 3
     maxent_values = [
         1,

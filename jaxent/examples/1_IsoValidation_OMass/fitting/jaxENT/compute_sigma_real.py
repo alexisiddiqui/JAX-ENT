@@ -12,9 +12,9 @@ Exanmple usage:
         --output_dir ./_covariance_matrices 
 
         
-    python /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma.py \
-        --dfrac_file /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/moprp.dexp \
-        --segs_file /Users/alexi/JAX-ENT/notebooks/CrossValidation/MoPrP/_MoPrP/moprp_segs.txt \
+    python /home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_real.py \
+        --dfrac_file /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/_output/MoPrP_dfrac.dat \
+        --segs_file  /home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/_output/MoPrP_segments.txt \
         --output_dir ./_MoPrP_covariance_matrices
 
 """

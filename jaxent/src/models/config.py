@@ -32,10 +32,23 @@ class BV_model_Config(BaseConfig):
     peptide: bool = False
     mda_selection_exclusion: str = "resname PRO or resid 1"
 
-    def __init__(self, num_timepoints: int | None = None) -> None:
+    def __init__(self, num_timepoints: int | None = None, timepoints: Array | None = None) -> None:
         super().__init__()
+        if timepoints is not None:
+            self.timepoints = timepoints
+            if num_timepoints is not None and num_timepoints != len(timepoints):
+                raise ValueError(
+                    f"num_timepoints ({num_timepoints}) and length of timepoints array ({len(timepoints)}) do not match."
+                )
+            if num_timepoints is None:
+                num_timepoints = len(timepoints)
+
         if num_timepoints is None or num_timepoints == 0:
             self.key = m_key("HDX_resPF")
+            if num_timepoints is None:
+                self.num_timepoints = 0
+            else:
+                self.num_timepoints = num_timepoints
         else:
             if num_timepoints > 0:
                 self.key = m_key("HDX_peptide")
