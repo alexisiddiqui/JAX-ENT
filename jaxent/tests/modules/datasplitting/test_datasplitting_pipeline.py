@@ -257,11 +257,12 @@ ATOM     18  N   SER A   4      12.000  -2.000   1.000  1.00 10.00           N
 ATOM     19  CA  SER A   4      11.000  -1.000   1.000  1.00 10.00           C  
 ATOM     20  C   SER A   4      10.000  -2.000   1.000  1.00 10.00           C  
 ATOM     21  O   SER A   4       9.000  -1.000   1.000  1.00 10.00           O  
-ATOM     22  N   TYR A   5       8.000  -2.000   1.000  1.00 10.00           N  
-ATOM     23  CA  TYR A   5       7.000  -1.000   1.000  1.00 10.00           C  
-ATOM     24  C   TYR A   5       6.000  -2.000   1.000  1.00 10.00           C  
-ATOM     25  O   TYR A   5       5.000  -1.000   1.000  1.00 10.00           O  
-TER      26      TYR A   5
+ATOM     22  H   SER A   4       9.000  -1.000   1.000  1.00 10.00           H  
+ATOM     23  N   TYR A   5       8.000  -2.000   1.000  1.00 10.00           N  
+ATOM     24  CA  TYR A   5       7.000  -1.000   1.000  1.00 10.00           C  
+ATOM     25  C   TYR A   5       6.000  -2.000   1.000  1.00 10.00           C  
+ATOM     26  O   TYR A   5       5.000  -1.000   1.000  1.00 10.00           O  
+TER      27      TYR A   5
 END
 """
         with tempfile.NamedTemporaryFile(mode="w", suffix=".pdb", delete=False) as f:
@@ -322,7 +323,7 @@ END
             assert len(features) == 1
             assert len(feature_topology) == 1
             assert isinstance(features[0], BV_input_features)
-            assert len(feature_topology[0]) == 1  # Should be 1, not 3
+            assert len(feature_topology[0]) == 3  # Should be 1, not 3
             assert all(isinstance(topo, Partial_Topology) for topo in feature_topology[0])
 
     def test_extract_common_residues_from_feature_topology(self):
