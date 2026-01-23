@@ -115,7 +115,7 @@ def test_quick_optimiser():
     simulation = Simulation(forward_models=models, input_features=features, params=params)
 
     simulation.initialise()
-    simulation.forward(params)
+    simulation.forward(simulation,params)
     test_prediction = simulation.outputs
     print("test prediction", test_prediction[0].log_Pf)
     print(test_prediction[0].log_Pf.shape)
@@ -357,12 +357,12 @@ def test_uptake_optimiser():
     simulation = Simulation(forward_models=models, input_features=features, params=params)
 
     simulation.initialise()
-    simulation.forward(params)
+    simulation.forward(simulation,params)
     test_prediction = simulation.outputs
     print("test prediction", test_prediction[0].uptake)
     print(test_prediction[0].uptake.shape)
 
-    opt_settings = OptimiserSettings(name="test", n_steps=25)
+    opt_settings = OptimiserSettings(name="test", n_steps=5)
 
     # create fake experimental dataset
 
