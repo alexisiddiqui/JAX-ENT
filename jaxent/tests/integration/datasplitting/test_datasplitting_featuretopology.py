@@ -76,7 +76,7 @@ def test_split_with_feature_topology():
     print(f"Dataset size: {len(dataset.data)}")
 
     # Extract topology objects from the experimental dataset for splitting
-    exp_top_segments = [datapoint.top for datapoint in dataset.data]
+    [datapoint.top for datapoint in dataset.data]
 
     # Create splitter using feature topology as common residues
     # Note: We don't provide an ensemble since we're using pre-computed common residues

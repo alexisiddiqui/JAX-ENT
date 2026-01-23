@@ -18,7 +18,7 @@ from jaxent.src.utils.jit_fn import jit_Guard
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.utils.jax_fn import frame_average_features, single_pass
+from jaxent.src.utils.jax_fn import single_pass
 
 
 def forward_pure(

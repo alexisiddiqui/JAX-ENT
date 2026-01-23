@@ -49,7 +49,7 @@ def test_calculate_intrinsic_rates():
     resnames = np.array([res.resname for res in universe.residues])
 
     # Create mapping from residue ID to Residue object
-    residue_id_to_residue = {res.resid: res for res in universe.residues}
+    {res.resid: res for res in universe.residues}
 
     # Create dictionaries using residue IDs as keys for easier comparison
     pred_dict = {res.resid: rate for res, rate in pred_rates.items()}
@@ -308,8 +308,8 @@ def test_calc_contacts_universe():
             # Add +/- signs to differences
             heavy_diff_str = f"{'+' if heavy_diff > 0 else ''}{heavy_diff:.2f}"
             oxygen_diff_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_diff:.2f}"
-            heavy_pct_str = f"{'+' if heavy_diff > 0 else ''}{heavy_pct:.1f}%";
-            oxygen_pct_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_pct:.1f}%";
+            heavy_pct_str = f"{'+' if heavy_diff > 0 else ''}{heavy_pct:.1f}%"
+            oxygen_pct_str = f"{'+' if oxygen_diff > 0 else ''}{oxygen_pct:.1f}%"
 
             print(
                 f"{resid:^10d} {calc_heavy:^12.2f} {ref_heavy:^12.2f} {heavy_diff_str:^12} {heavy_pct_str:^12} "

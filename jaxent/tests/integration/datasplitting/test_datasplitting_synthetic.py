@@ -87,7 +87,7 @@ def test_create_sparse_map():
 
     # now take random selection
     train_segments = top_segments[: len(top_segments) // 2]
-    test_segments = top_segments[len(top_segments) // 2 :]
+    top_segments[len(top_segments) // 2 :]
     # print(train_segments)
     # print(test_segments)
 
@@ -166,7 +166,7 @@ def test_create_sparse_map_ensemble():
 
     # now take random selection
     train_segments = top_segments[: len(top_segments) // 2]
-    test_segments = top_segments[len(top_segments) // 2 :]
+    top_segments[len(top_segments) // 2 :]
     # print(train_segments)
     # print(test_segments)
 

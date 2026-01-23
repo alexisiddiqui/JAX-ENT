@@ -145,7 +145,6 @@ def test_cli_forward_bv_model(featurised_data):
 
             # Basic assertions on the output
             num_residues = 52  # From featurisation step
-            num_timepoints = 1
             assert predictions.shape == (num_residues,)
             assert np.all(predictions >= 0), "Predictions should be non-negative"
             assert np.all(predictions <= 100), (
@@ -265,9 +264,8 @@ def test_cli_forward_multiple_simulations(featurised_data):
         ]  # Note: timepoints are passed as strings to CLI
 
         for i in range(num_simulations):
-            current_timepoints_args = []
             if timepoints_list[i] is not None:
-                current_timepoints_args = ["--timepoints"] + timepoints_list[i].split()
+                ["--timepoints"] + timepoints_list[i].split()
 
             forward_command = [
                 "jaxent-forward",

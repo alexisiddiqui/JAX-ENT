@@ -42,7 +42,7 @@ plt.contour(
     T,
     E,
     levels=np.arange(-3, 0, 0.1),
-    linestyles=["solid" if l <= -0.5 else "dashed" for l in np.arange(-3, 0, 0.1)],
+    linestyles=["solid" if level <= -0.5 else "dashed" for level in np.arange(-3, 0, 0.1)],
 )
 plt.xlabel("d (Å)")
 plt.ylabel("θ")

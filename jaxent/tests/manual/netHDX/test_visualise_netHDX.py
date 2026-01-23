@@ -44,7 +44,7 @@ def plot_hbond_network_enhanced_PCA(
             ca_atoms = residue.atoms.select_atoms("name CA")
             if len(ca_atoms) > 0:
                 ca_selection.append(ca_atoms)
-        except:
+        except Exception:
             continue
 
     # Iterate through all frames in trajectory

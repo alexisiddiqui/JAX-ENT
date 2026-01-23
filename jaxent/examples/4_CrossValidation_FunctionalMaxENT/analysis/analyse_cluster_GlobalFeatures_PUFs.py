@@ -43,7 +43,6 @@ python jaxent/examples/2_CrossValidation/analysis/analyse_cluster_GlobalFeatures
 
 import argparse
 import datetime
-import json
 import logging
 import os
 
