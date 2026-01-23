@@ -1377,9 +1377,9 @@ def hdx_uptake_MAE_loss(
         total_loss = 0.0
 
         # Iterate over timepoints
-        for timepoint_idx in range(y_true.shape[1]):
+        for timepoint_idx in range(y_true.shape[0]):
             # Get the true uptake for this timepoint
-            true_uptake_timepoint = y_true[:, timepoint_idx,0]
+            true_uptake_timepoint = y_true[timepoint_idx, :]
 
             # Get the predicted uptake for this timepoint
             pred_uptake_timepoint = predictions.uptake[timepoint_idx]
@@ -1396,7 +1396,7 @@ def hdx_uptake_MAE_loss(
             total_loss += timepoint_loss
 
         # Average loss across timepoints
-        return jnp.asarray(total_loss) / (y_true.shape[1])
+        return jnp.asarray(total_loss) / (y_true.shape[0])
 
     # Compute train and validation losses
     train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
@@ -1404,7 +1404,6 @@ def hdx_uptake_MAE_loss(
     val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
 
     return train_loss, val_loss
-
 
 def hdx_uptake_MSE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
@@ -1510,7 +1509,7 @@ def hdx_uptake_MAE_loss_vectorized(
             total_loss = carry
             
             # Get the true uptake for this timepoint (all residues, remove 3rd dim)
-            true_uptake_timepoint = y_true[:, timepoint_idx, 0]
+            true_uptake_timepoint = y_true[timepoint_idx,:]
             
             # Get the predicted uptake for this timepoint
             pred_uptake_timepoint = predictions.uptake[timepoint_idx]

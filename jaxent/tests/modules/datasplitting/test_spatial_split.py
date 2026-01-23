@@ -580,7 +580,7 @@ ATOM    559  OC2 ALA X  58      13.604  30.398  37.500  1.00  0.00      SYST O
 class MockExpD_Datapoint(ExpD_Datapoint):
     def __init__(self, top, data_id=None):
         self.top = top
-        self.key = f"mock_key_{data_id}" if data_id else "mock_key"
+        self.key = f"mock_key_{data_id}" if data_id else "mock_key"  # type: ignore
         self.data_id = data_id
 
     def extract_features(self):
@@ -790,15 +790,6 @@ def real_universe(request):
     return universe
 
 
-@pytest.fixture
-def patch_partial_distances():
-    """Patch partial_topology_pairwise_distances and yield the mock."""
-    with patch(
-        "jaxent.src.interfaces.topology.mda_adapter.mda_TopologyAdapter.partial_topology_pairwise_distances"
-    ) as mock_distances:
-        yield mock_distances
-
-
 @pytest.fixture(autouse=True)
 def patch_pairwise_distances(request):
     """Automatically patch partial_topology_pairwise_distances for all tests."""
@@ -807,8 +798,8 @@ def patch_pairwise_distances(request):
     )
     mock_func = patcher.start()
 
-    def make_distance_matrix(dataset, **kwargs):
-        n = len(dataset)
+    def make_distance_matrix(topologies, **kwargs):
+        n = len(topologies)
         if n == 0:
             return np.zeros((0, 0)), np.zeros((0, 0))
         mat = np.random.rand(n, n)
@@ -817,7 +808,7 @@ def patch_pairwise_distances(request):
         std = np.zeros_like(mat)
         return mat, std
 
-    mock_func.side_effect = lambda dataset, **kwargs: make_distance_matrix(dataset, **kwargs)
+    mock_func.side_effect = lambda topologies, **kwargs: make_distance_matrix(topologies, **kwargs)
 
     request.addfinalizer(patcher.stop)
 
@@ -830,7 +821,6 @@ class TestSpatialSplitBasicFunctionality:
         create_datapoints_from_topologies,
         setup_splitter,
         real_universe,
-        patch_partial_distances,
     ):
         """Test that spatial_split returns two lists."""
         topologies = create_single_chain_topologies(chain="X", count=15)
@@ -851,7 +841,6 @@ class TestSpatialSplitBasicFunctionality:
         create_datapoints_from_topologies,
         setup_splitter,
         real_universe,
-        patch_partial_distances,
     ):
         """Test spatial split with different training set sizes."""
         topologies = create_single_chain_topologies(chain="X", count=15)

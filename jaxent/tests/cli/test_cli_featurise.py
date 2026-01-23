@@ -4,8 +4,8 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-from custom_types.features import AbstractFeatures
 
+from jaxent.src.custom_types.features import AbstractFeatures
 from jaxent.tests.test_utils import get_inst_path
 
 

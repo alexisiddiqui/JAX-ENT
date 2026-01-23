@@ -119,7 +119,7 @@ def test_forward_method():
     simulation.initialise()
 
     # Test forward method
-    simulation.forward(params)
+    simulation.forward(simulation,params)
 
     # Check outputs exist
     assert hasattr(simulation, "outputs"), "forward() should create outputs"
@@ -127,7 +127,17 @@ def test_forward_method():
     assert len(simulation.outputs) > 0, "outputs should not be empty"
 
     # Check that simulation state was updated
-    assert simulation.params == params, "simulation.params should be updated"
+    # simulation.params is normalized inside forward(), so we expect it to match the normalized version of input params
+    expected_params = Simulation_Parameters.normalize_weights(params)
+    
+    leaves_sim, _ = jax.tree_util.tree_flatten(simulation.params)
+    leaves_exp, _ = jax.tree_util.tree_flatten(expected_params)
+    
+    for l1, l2 in zip(leaves_sim, leaves_exp):
+        if hasattr(l1, 'shape'):
+             assert jnp.allclose(l1, l2), "simulation.params arrays mismatch"
+        else:
+             assert l1 == l2, "simulation.params scalar mismatch"
 
     print("✓ Forward method test passed")
     return True
@@ -166,7 +176,7 @@ def test_forward_vs_predict():
     simulation.initialise()
 
     # Run forward
-    simulation.forward(params)
+    simulation.forward(simulation,params)
     forward_outputs = simulation.outputs
 
     # Run predict
@@ -179,7 +189,7 @@ def test_forward_vs_predict():
 
     # Check that forward modifies simulation state
     original_outputs = simulation.outputs
-    simulation.forward(params)
+    simulation.forward(simulation,params)
     assert simulation.outputs is not None, "forward should update simulation.outputs"
 
     # Check that predict doesn't modify simulation state
@@ -232,7 +242,7 @@ def test_frame_weights_impact():
     uniform_weights = jnp.ones_like(params.frame_weights) / len(params.frame_weights)
     uniform_params = params.__replace__(frame_weights=uniform_weights)
 
-    simulation.forward(uniform_params)
+    simulation.forward(simulation,uniform_params)
     uniform_results = simulation.outputs
 
     # Test with different weights (if we have enough frames)
@@ -242,7 +252,7 @@ def test_frame_weights_impact():
         biased_weights = biased_weights.at[0].set(1.0)  # All weight on first frame
         biased_params = params.__replace__(frame_weights=biased_weights)
 
-        simulation.forward(biased_params)
+        simulation.forward(simulation,biased_params)
         biased_results = simulation.outputs
 
         print("✓ Frame weights impact test completed")

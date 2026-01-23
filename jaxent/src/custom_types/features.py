@@ -155,9 +155,9 @@ class AbstractFeatures(ABC):
             actual_class = getattr(module, class_name)
 
             # Verify that the loaded class is compatible with the calling class
-            if not np.issubdtype(actual_class, cls):
+            if not issubclass(actual_class, cls):
                 raise TypeError(
-                    f"Loaded class {actual_class.__name__} is not compatible with {cls.__name__}"
+                    f"Loaded class {actual_class.__name__} is not a subclass of {cls.__name__}"
                 )
 
             # Extract arrays in the correct order, handling None values
