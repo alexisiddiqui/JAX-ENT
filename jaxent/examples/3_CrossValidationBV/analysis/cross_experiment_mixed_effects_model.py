@@ -1,14 +1,10 @@
 import argparse
 import os
-import sys
-import re
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import statsmodels.formula.api as smf
-from scipy import stats
-from mpl_toolkits.mplot3d import Axes3D
 
 # Set publication-ready style
 sns.set_style("ticks")
@@ -582,7 +578,7 @@ def plot_random_intercepts(model_result, gt_score_type, output_dir):
     plt.title(f"Random Intercepts: Ensemble ({gt_score_type})")
     plt.xlabel("BLUP Value")
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f"4_random_intercepts_ensemble.png"))
+    plt.savefig(os.path.join(output_dir, "4_random_intercepts_ensemble.png"))
     plt.close()
 
 def plot_metric_robustness_summary(rob_df, gt_score_type, output_dir):

@@ -284,12 +284,12 @@ def create_publication_plots(pca_coords, cluster_labels, cluster_centers, pca, o
     cumulative = np.cumsum(pca.explained_variance_ratio_)
 
     # Plot individual and cumulative explained variance
-    bars = ax_var.bar(
+    ax_var.bar(
         components, pca.explained_variance_ratio_, color="steelblue", alpha=0.7, label="Individual"
     )
 
     ax_var2 = ax_var.twinx()
-    line = ax_var2.plot(
+    ax_var2.plot(
         components,
         cumulative,
         "o-",
@@ -608,7 +608,7 @@ def main():
     )
 
     # Create publication-quality plots
-    plot_paths = create_publication_plots(
+    create_publication_plots(
         pca_coords, cluster_labels, cluster_centers, pca, args.output_dir
     )
 

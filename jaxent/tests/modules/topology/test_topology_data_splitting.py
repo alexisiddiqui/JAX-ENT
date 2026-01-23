@@ -330,7 +330,7 @@ class TestTopologyDataSplitting:
         val_peptide_residues = extract_all_residues(val_set, use_peptide_trim=True)
 
         # Check for overlap in peptide residues (after trimming)
-        peptide_overlaps = check_overlap(train_peptide_residues, val_peptide_residues)
+        check_overlap(train_peptide_residues, val_peptide_residues)
 
         # We likely have overlapping residues, which is the problem we want to solve
         if full_overlaps:
@@ -755,7 +755,7 @@ class TestTopologyRedundancyBasic:
 
         # Calculate redundancy with both modes and trim settings
         redundancy_max_trim = calculate_fragment_redundancy(fragments, mode="max", check_trim=True)
-        redundancy_mean_trim = calculate_fragment_redundancy(
+        calculate_fragment_redundancy(
             fragments, mode="mean", check_trim=True
         )
         redundancy_max_no_trim = calculate_fragment_redundancy(

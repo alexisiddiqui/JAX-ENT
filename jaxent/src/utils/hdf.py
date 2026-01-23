@@ -12,7 +12,6 @@ import sys
 
 sys.path.insert(0, base_dir)
 import importlib
-from ast import literal_eval
 from typing import Optional, Type, TypeVar
 
 import h5py
@@ -125,9 +124,9 @@ def load_model_parameters_from_hdf5(
     for slot in dynamic_slots:
         param_dict[slot] = load_array_from_hdf5(group, slot)
 
-    # Load static parameters
-    key_str = group.attrs["key"]
-    key_list = literal_eval(key_str)
+    # Load static parameters TODO: check if this is needed.
+    # key_str = group.attrs["key"]
+    # key_list = literal_eval(key_str)
     # param_dict["key"] = frozenset(key_list)
 
     return cls(**param_dict)

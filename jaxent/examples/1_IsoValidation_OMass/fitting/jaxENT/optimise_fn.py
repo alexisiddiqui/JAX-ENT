@@ -55,7 +55,7 @@ def create_data_loaders(
     train_indices = [data.top.fragment_index for data in train_data]
     val_indices = [data.top.fragment_index for data in val_data]
     if cov_matrix is not None:
-        print(f"\n=== Debug Info ===")
+        print("\n=== Debug Info ===")
         print(f"Full covariance matrix shape: {cov_matrix.shape}")
         print(f"Train indices: {train_indices}")
         print(f"Val indices: {val_indices}")
@@ -312,7 +312,7 @@ def optimise_sweep(
     iterations_per_second = (step + 1) / total_time if total_time > 0 else 0
     
     print("\n" + "=" * 50)
-    print(f"Optimization Loop Performance:")
+    print("Optimization Loop Performance:")
     print(f"  Total iterations completed: {step + 1}")
     print(f"  Total time: {total_time:.2f}s")
     print(f"  Avg time per iteration: {avg_iteration_time:.4f}s")
