@@ -119,13 +119,6 @@ from tqdm import tqdm  # Add tqdm import
 #     ic(f"Final results shape: {np.array(results).shape}")  # results (residues, frames)
 #     return results.tolist()
 
-from typing import Literal, Sequence
-import MDAnalysis as mda
-import numpy as np
-from icecream import ic
-from MDAnalysis.core.groups import AtomGroup
-from MDAnalysis.lib.distances import distance_array
-from tqdm import tqdm
 
 def calc_BV_contacts_universe(
     universe: mda.Universe,

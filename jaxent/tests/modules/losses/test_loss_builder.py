@@ -208,7 +208,7 @@ def create_dummy_data_with_size(config_name, config):
             y_true = jnp.array(y_true_list)
 
             # Create mapping matrix based on data type
-            n_fragments = len(exp_data)
+            len(exp_data)
 
             # The sparse_map is now passed in from create_dummy_data_with_size
             # This ensures it's concrete before JIT compilation.
@@ -758,7 +758,7 @@ def finalize_performance_analysis():
     create_performance_heatmaps(PERFORMANCE_RESULTS)
 
     print("Creating performance summary table...")
-    summary_df = create_performance_summary_table(PERFORMANCE_RESULTS)
+    create_performance_summary_table(PERFORMANCE_RESULTS)
 
     # Print top-level summary statistics
     print(

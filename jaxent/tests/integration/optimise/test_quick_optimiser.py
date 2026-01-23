@@ -236,7 +236,7 @@ def test_quick_sparse_optimiser():
     # create fake experimental dataset
 
     # Get common residues
-    top_segments = pt.mda_TopologyAdapter.find_common_residues(
+    pt.mda_TopologyAdapter.find_common_residues(
         universes, exclude_selection="(resname PRO or resid 1) "
     )[0]
 
