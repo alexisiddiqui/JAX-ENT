@@ -245,9 +245,9 @@ def test_quick_sparse_optimiser():
     # create fake experimental dataset
 
     # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
-    )[0]
+    Partial_Topology.find_common_residues(universes, exclude_selection="(resname PRO or resid 1) ")[
+        0
+    ]
 
     # Create fake dataset with varying protection factors for better stratification testing
     exp_data = [
@@ -333,7 +333,7 @@ def test_quick_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -459,7 +459,7 @@ def test_quick_MAE_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -543,6 +543,12 @@ def test_quick_MAE_optimiser():
         y_true=jnp.array([data.extract_features() for data in exp_data]),
         residue_feature_ouput_mapping=test_sparse_map,
     )
+
+    pf_prior = [
+        HDX_protection_factor(protection_factor=pf, top=top)
+        for pf, top in zip(test_prediction[0].log_Pf, top_segments)
+    ]
+
     pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
     prior_splitter = DataSplitter(pf_prior_data, random_seed=42, ensemble=universes)
@@ -632,9 +638,9 @@ def test_quick_MAE_sparse_optimiser():
     # create fake experimental dataset
 
     # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
-    )[0]
+    Partial_Topology.find_common_residues(universes, exclude_selection="(resname PRO or resid 1) ")[
+        0
+    ]
 
     # Create fake dataset with varying protection factors for better stratification testing
     exp_data = [
@@ -693,130 +699,130 @@ def test_quick_MAE_sparse_optimiser():
     visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
 
 
-def test_quick_MAE_max_ent_optimiser():
-    bv_config = BV_model_Config()
+# def test_quick_MAE_max_ent_optimiser():
+#     bv_config = BV_model_Config()
 
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
+#     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
-    trajectory_path = (
-        "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
-    )
-    test_universe = Universe(topology_path, trajectory_path)
+#     topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/HOIP/train_HOIP_max_plddt_1/HOIP_apo697_1_af_sample_127_10000_protonated_max_plddt_1969.pdb"
+#     topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+#     # trajectory_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+#     topology_path = "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_overall_combined_stripped.pdb"
+#     trajectory_path = (
+#         "/home/alexi/Documents/JAX-ENT/jaxent/tests/inst/clean/BPTI/BPTI_sampled_500.xtc"
+#     )
+#     test_universe = Universe(topology_path, trajectory_path)
 
-    universes = [test_universe]
+#     universes = [test_universe]
 
-    models = [BV_model(bv_config), BV_model(bv_config)]
+#     models = [BV_model(bv_config), BV_model(bv_config)]
 
-    ensemble = Experiment_Builder(universes, models)
+#     ensemble = Experiment_Builder(universes, models)
 
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
+#     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
-    assert len(features) == len(models)
+#     assert len(features) == len(models)
 
-    BV_features: BV_input_features = features[0]
-    print("BV Features length", BV_features.features_shape)
+#     BV_features: BV_input_features = features[0]
+#     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
-    trajectory_length = BV_features.features_shape[1]
-    print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
-        model_parameters=[bv_config.forward_parameters, bv_config.forward_parameters],
-        forward_model_weights=jnp.ones(2),
-        forward_model_scaling=jnp.array([1, 10]),
-        normalise_loss_functions=jnp.zeros(2),
-    )
+#     BV_features.features_shape[0]
+#     trajectory_length = BV_features.features_shape[1]
+#     print(trajectory_length)
+#     params = Simulation_Parameters(
+#         frame_weights=jnp.ones(trajectory_length) / trajectory_length,
+#         frame_mask=jnp.ones(trajectory_length),
+#         model_parameters=[bv_config.forward_parameters, bv_config.forward_parameters],
+#         forward_model_weights=jnp.ones(2),
+#         forward_model_scaling=jnp.array([1, 10]),
+#         normalise_loss_functions=jnp.zeros(2),
+#     )
 
-    simulation = Simulation(forward_models=models, input_features=features, params=params)
+#     simulation = Simulation(forward_models=models, input_features=features, params=params)
 
-    simulation.initialise()
-    simulation.forward(params)
-    test_prediction = simulation.outputs
-    print("test prediction", test_prediction[0].log_Pf)
-    print(test_prediction[0].log_Pf.shape)
+#     simulation.initialise()
+#     simulation.forward(params)
+#     test_prediction = simulation.outputs
+#     print("test prediction", test_prediction[0].log_Pf)
+#     print(test_prediction[0].log_Pf.shape)
 
-    opt_settings = OptimiserSettings(name="test", n_steps=25)
+#     opt_settings = OptimiserSettings(name="test", n_steps=25)
 
-    # create fake experimental dataset
+#     # create fake experimental dataset
 
-    pf = HDX_protection_factor(protection_factor=10, top=None)
+#     pf = HDX_protection_factor(protection_factor=10, top=None)
 
-    test = pf.top
-    print(test)
+#     test = pf.top
+#     print(test)
 
-    # Get common residues
-    top_segments = Partial_Topology.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
-    )[0]
-    top_segments = sorted(top_segments, key=lambda x: x.residue_start)
-    # Create fake dataset with varying protection factors for better stratification testing
-    exp_data = [
-        HDX_protection_factor(protection_factor=10, top=top)
-        for i, top in enumerate(feature_topology[0], start=1)
-    ]
-    # print("exp_data", exp_data)
-    dataset = ExpD_Dataloader(data=exp_data)
-    top_segments = [data.top for data in dataset.data]
-    print("top_segments", [top.fragment_index for top in top_segments])
-    print("top_segments", [top.residue_start for top in top_segments])
+#     # Get common residues
+#     top_segments = Partial_Topology.find_common_residues(
+#         universes, exclude_selection="(resname PRO or resid 1) "
+#     )[0]
+#     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
+#     # Create fake dataset with varying protection factors for better stratification testing
+#     exp_data = [
+#         HDX_protection_factor(protection_factor=10, top=top)
+#         for i, top in enumerate(feature_topology[0], start=1)
+#     ]
+#     # print("exp_data", exp_data)
+#     dataset = ExpD_Dataloader(data=exp_data)
+#     top_segments = [data.top for data in dataset.data]
+#     print("top_segments", [top.fragment_index for top in top_segments])
+#     print("top_segments", [top.residue_start for top in top_segments])
 
-    print("type", type(feature_topology[0]))
-    # create random split
-    splitter = DataSplitter(
-        dataset,
-        random_seed=42,
-        ensemble=universes,
-        common_residues=set(feature_topology[0]),
-    )
-    train_data, val_data = splitter.random_split()
+#     print("type", type(feature_topology[0]))
+#     # create random split
+#     splitter = DataSplitter(
+#         dataset,
+#         random_seed=42,
+#         ensemble=universes,
+#         common_residues=set(feature_topology[0]),
+#     )
+#     train_data, val_data = splitter.random_split()
 
-    # now sparse maps
-    train_sparse_map = create_sparse_map(features[0], feature_topology[0], train_data)
+#     # now sparse maps
+#     train_sparse_map = create_sparse_map(features[0], feature_topology[0], train_data)
 
-    val_sparse_map = create_sparse_map(features[0], feature_topology[0], val_data)
+#     val_sparse_map = create_sparse_map(features[0], feature_topology[0], val_data)
 
-    test_sparse_map = create_sparse_map(features[0], feature_topology[0], exp_data)
+#     test_sparse_map = create_sparse_map(features[0], feature_topology[0], exp_data)
 
-    print(train_sparse_map)
-    print(val_sparse_map)
-    print(test_sparse_map)
+#     print(train_sparse_map)
+#     print(val_sparse_map)
+#     print(test_sparse_map)
 
-    print(dataset.y_true)
-    print(dataset.y_true.shape)
+#     print(dataset.y_true)
+#     print(dataset.y_true.shape)
 
-    dataset.train = Dataset(
-        data=train_data,
-        y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
-    )
+#     dataset.train = Dataset(
+#         data=train_data,
+#         y_true=jnp.array([data.extract_features() for data in train_data]),
+#         residue_feature_ouput_mapping=train_sparse_map,
+#     )
 
-    dataset.val = Dataset(
-        data=val_data,
-        y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
-    )
+#     dataset.val = Dataset(
+#         data=val_data,
+#         y_true=jnp.array([data.extract_features() for data in val_data]),
+#         residue_feature_ouput_mapping=val_sparse_map,
+#     )
 
-    dataset.test = Dataset(
-        data=exp_data,
-        y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
-    )
+#     dataset.test = Dataset(
+#         data=exp_data,
+#         y_true=jnp.array([data.extract_features() for data in exp_data]),
+#         residue_feature_ouput_mapping=test_sparse_map,
+#     )
 
-    opt_simulation = run_optimise(
-        simulation,
-        data_to_fit=(dataset, params),
-        config=opt_settings,
-        forward_models=models,
-        indexes=[0, 1],
-        loss_functions=[hdx_pf_l2_loss, max_entropy_loss],
-    )
+#     opt_simulation = run_optimise(
+#         simulation,
+#         data_to_fit=(dataset, params),
+#         config=opt_settings,
+#         forward_models=models,
+#         indexes=[0, 1],
+#         loss_functions=[hdx_pf_l2_loss, max_entropy_loss],
+#     )
 
-    visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
+#     visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
 
 
 def test_quick_MAE_sparse_max_ent_optimiser():
@@ -846,7 +852,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
 
@@ -1003,7 +1009,7 @@ def test_quick_MAE_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
 
@@ -1162,7 +1168,7 @@ def test_quick_sparse_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
 
@@ -1374,7 +1380,7 @@ def test_regularised_optimiser():
     print(dataset.y_true)
     print(dataset.y_true.shape)
 
-    opt_simulation = run_optimise(
+    run_optimise(
         simulation,
         data_to_fit=(dataset, pf_prior, updake_dataset, None),
         config=opt_settings,
@@ -1389,7 +1395,7 @@ def test_regularised_optimiser():
 
 
 def test_uptake_optimiser():
-    bv_config = BV_model_Config()
+    BV_model_Config()
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
@@ -1428,8 +1434,6 @@ def test_uptake_optimiser():
         forward_model_weights=jnp.ones(1),
     )
 
-    params = [linear_bv_params]
-
     simulation = Simulation(forward_models=models, input_features=features, params=linear_bv_params)
 
     simulation.initialise()
@@ -1467,7 +1471,7 @@ def test_uptake_optimiser():
     print(dataset.y_true)
     print(dataset.y_true.shape)
 
-    opt_simulation = run_optimise(
+    run_optimise(
         simulation,
         data_to_fit=[updake_dataset, None],
         config=opt_settings,

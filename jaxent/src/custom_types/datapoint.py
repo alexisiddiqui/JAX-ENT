@@ -200,7 +200,7 @@ class ExpD_Datapoint:
                 if path.exists():
                     try:
                         path.unlink()
-                    except:
+                    except Exception:
                         pass
             raise IOError(f"Failed to save datapoints: {e}")
 

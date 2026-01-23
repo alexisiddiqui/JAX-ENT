@@ -99,7 +99,6 @@ def compare_adjacency_matrices(
     print("Calculated CA RMSDs between all frame pairs")
 
     # Calculate adjacency matrices for each config
-    all_matrices = {}
     rmsd_data = {}
 
     for config_name, config in configs.items():
@@ -254,7 +253,7 @@ def visualize_results(stat_power: Dict[str, Dict[str, float]], output_dir: str) 
         x_sorted, y_sorted, z_sorted = np.array(all_x)[idx], np.array(all_y)[idx], z[idx]
 
         plt.scatter(x_sorted, y_sorted, c=z_sorted, s=30, alpha=0.5, cmap="Greys", edgecolor="none")
-    except:
+    except Exception:
         # Fallback to hexbin if KDE fails
         hb = plt.hexbin(all_x, all_y, gridsize=40, cmap="Greys", alpha=0.5, mincnt=1)
         plt.colorbar(hb, label="Count")

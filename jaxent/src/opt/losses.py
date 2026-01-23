@@ -48,7 +48,6 @@ def hdx_pf_l2_loss(
     return train_loss, val_loss
 
 
-
 def hdx_pf_l1_loss(
     model: Simulation, dataset: ExpD_Dataloader[HDX_protection_factor], prediction_index: int
 ) -> tuple[Array, Array]:
@@ -83,7 +82,6 @@ def hdx_pf_l1_loss(
     # average the loss over the length of the dataset
 
     return train_loss, val_loss
-
 
 
 def hdx_pf_mae_loss(
@@ -166,9 +164,7 @@ def hdx_pf_kld_loss(
     true_pf = true_pf / jnp.sum(true_pf)
 
     # Calculate the KLD loss
-    val_loss = optax.losses.convex_kl_divergence(
-        log_predictions=jnp.log(pred_pf), targets=true_pf
-    )
+    val_loss = optax.losses.convex_kl_divergence(log_predictions=jnp.log(pred_pf), targets=true_pf)
 
     return train_loss, val_loss
 
@@ -445,7 +441,7 @@ def maxent_L2_loss(
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
-    n_frames = simulation_weights.shape[0]
+    # n_frames = simulation_weights.shape[0]
 
     loss = jnp.mean((jnp.abs(simulation_weights - prior_frame_weights)) ** 2)
 
@@ -468,7 +464,7 @@ def maxent_L1_loss(
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
-    n_frames = simulation_weights.shape[0]
+    # n_frames = simulation_weights.shape[0]
 
     loss = jnp.mean((jnp.abs(simulation_weights - prior_frame_weights)) ** 1)
 
@@ -1405,6 +1401,7 @@ def hdx_uptake_MAE_loss(
 
     return train_loss, val_loss
 
+
 def hdx_uptake_MSE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[Array, Array]:
@@ -1495,6 +1492,7 @@ def hdx_uptake_MSE_loss(
 
 #     return train_loss, val_loss
 
+
 def hdx_uptake_MAE_loss_vectorized(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -1503,41 +1501,38 @@ def hdx_uptake_MAE_loss_vectorized(
     Iterates over timepoints (axis 1) consistent with the original implementation.
     """
     predictions = model.outputs[prediction_index]
-    
+
     def compute_loss(sparse_mapping, y_true):
         def loop_body(timepoint_idx, carry):
             total_loss = carry
-            
+
             # Get the true uptake for this timepoint (all residues, remove 3rd dim)
-            true_uptake_timepoint = y_true[timepoint_idx,:]
-            
+            true_uptake_timepoint = y_true[timepoint_idx, :]
+
             # Get the predicted uptake for this timepoint
             pred_uptake_timepoint = predictions.uptake[timepoint_idx]
-            
+
             # Apply sparse mapping to predicted uptake
             pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
             true_mapped = true_uptake_timepoint
-            
+
             # Compute MAE for this timepoint
             timepoint_loss = jnp.mean(jnp.abs(pred_mapped - true_mapped))
-            
+
             return total_loss + timepoint_loss
-        
+
         # Iterate over timepoints (axis 1)
         n_timepoints = y_true.shape[1]
         total_loss = jax.lax.fori_loop(0, n_timepoints, loop_body, 0.0)
-        
+
         # Average loss across timepoints
         return total_loss / n_timepoints
-    
-    train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true
-    )
-    val_loss = compute_loss(
-        dataset.val.residue_feature_ouput_mapping, dataset.val.y_true
-    )
-    
+
+    train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
+
     return train_loss, val_loss
+
 
 def hdx_uptake_sigma_MSE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
@@ -1547,7 +1542,7 @@ def hdx_uptake_sigma_MSE_loss(
     Uses inverse covariance matrix (precision matrix) for weighting.
     """
     predictions = model.outputs[prediction_index]
-    
+
     def compute_loss(sparse_mapping, y_true, cov_matrix):
         """
         Args:
@@ -1556,44 +1551,45 @@ def hdx_uptake_sigma_MSE_loss(
         """
         # Initialize loss accumulator
         total_loss = 0.0
-        
+
         # Iterate over timepoints
         for timepoint_idx in range(y_true.shape[1]):  # Iterate over 2nd dimension (timepoints)
             # Get the true uptake for this timepoint
             true_uptake_timepoint = y_true[:, timepoint_idx, 0]  # shape: (n_fragments,)
-            
+
             # Get the predicted uptake for this timepoint
             pred_uptake_timepoint = predictions.uptake[timepoint_idx]  # shape: (n_residues,)
-            
+
             # Apply sparse mapping to predicted uptake
-            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)  # shape: (n_fragments,)
-            
+            pred_mapped = apply_sparse_mapping(
+                sparse_mapping, pred_uptake_timepoint
+            )  # shape: (n_fragments,)
+
             # Compute residual vector
             residual = pred_mapped - true_uptake_timepoint  # shape: (n_fragments,)
-            
+
             # Compute weighted loss using inverse covariance matrix
             weighted_residual = jnp.dot(cov_matrix, residual)  # Sigma^{-1} @ residual
             timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
-            
+
             # Accumulate loss
             total_loss += timepoint_loss
-        
+
         # Average loss across timepoints
         return jnp.asarray(total_loss) / y_true.shape[1]
-    
+
     # Compute train and validation losses
     train_loss = compute_loss(
         dataset.train.residue_feature_ouput_mapping,
         dataset.train.y_true,
-        dataset.train.covariance_matrix
+        dataset.train.covariance_matrix,
     )
     val_loss = compute_loss(
-        dataset.val.residue_feature_ouput_mapping,
-        dataset.val.y_true,
-        dataset.val.covariance_matrix
+        dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, dataset.val.covariance_matrix
     )
-    
+
     return train_loss, val_loss
+
 
 def hdx_uptake_eye_MSE_loss(
     model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
@@ -1603,7 +1599,7 @@ def hdx_uptake_eye_MSE_loss(
     Uses inverse covariance matrix (precision matrix) for weighting.
     """
     predictions = model.outputs[prediction_index]
-    
+
     def compute_loss(sparse_mapping, y_true, cov_matrix):
         """
         Args:
@@ -1612,52 +1608,44 @@ def hdx_uptake_eye_MSE_loss(
         """
         # Initialize loss accumulator
         total_loss = 0.0
-        
+
         # Iterate over timepoints
         for timepoint_idx in range(y_true.shape[1]):  # Iterate over 2nd dimension (timepoints)
             # Get the true uptake for this timepoint
             true_uptake_timepoint = y_true[:, timepoint_idx, 0]  # shape: (n_fragments,)
-            
+
             # Get the predicted uptake for this timepoint
             pred_uptake_timepoint = predictions.uptake[timepoint_idx]  # shape: (n_residues,)
-            
+
             # Apply sparse mapping to predicted uptake
-            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)  # shape: (n_fragments,)
-            
+            pred_mapped = apply_sparse_mapping(
+                sparse_mapping, pred_uptake_timepoint
+            )  # shape: (n_fragments,)
+
             # Compute residual vector
             residual = pred_mapped - true_uptake_timepoint  # shape: (n_fragments,)
-            
+
             # Compute weighted loss using inverse covariance matrix
             weighted_residual = jnp.dot(cov_matrix, residual)  # Sigma^{-1} @ residual
             timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
-            
+
             # Accumulate loss
             total_loss += timepoint_loss
-        
+
         # Average loss across timepoints
         return jnp.asarray(total_loss) / y_true.shape[1]
 
-    eye_mat =jnp.eye(dataset.train.y_true.shape[0])
-                     
+    eye_mat = jnp.eye(dataset.train.y_true.shape[0])
 
     eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
-    
 
     # Compute train and validation losses
     train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping,
-        dataset.train.y_true,
-        eye_mat
-    )   
-    val_loss = compute_loss(
-        dataset.val.residue_feature_ouput_mapping,
-        dataset.val.y_true,
-        eye_mat
+        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
     )
-    
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat)
+
     return train_loss, val_loss
-
-
 
 
 def HDX_uptake_KL_loss(

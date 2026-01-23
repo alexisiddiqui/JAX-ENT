@@ -100,7 +100,7 @@ def _as_python_scalar_if_scalar(x):
             return arr.item()
         else:
             return x
-    except:
+    except Exception:
         # If we're in a traced context, just return the JAX array
         return x
 

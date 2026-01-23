@@ -140,7 +140,6 @@ def test_forward_method():
              assert l1 == l2, "simulation.params scalar mismatch"
 
     print("✓ Forward method test passed")
-    return True
 
 
 def test_predict_method():
@@ -188,13 +187,12 @@ def test_forward_vs_predict():
     assert len(forward_outputs) == len(predict_outputs), "should have same number of outputs"
 
     # Check that forward modifies simulation state
-    original_outputs = simulation.outputs
     simulation.forward(simulation,params)
     assert simulation.outputs is not None, "forward should update simulation.outputs"
 
     # Check that predict doesn't modify simulation state
     before_predict = simulation.outputs
-    prediction_result = simulation.predict(params)
+    simulation.predict(params)
     after_predict = simulation.outputs
     assert before_predict is after_predict, "predict should not modify simulation.outputs"
 
@@ -243,7 +241,6 @@ def test_frame_weights_impact():
     uniform_params = params.__replace__(frame_weights=uniform_weights)
 
     simulation.forward(simulation,uniform_params)
-    uniform_results = simulation.outputs
 
     # Test with different weights (if we have enough frames)
     if len(params.frame_weights) > 1:
@@ -253,7 +250,6 @@ def test_frame_weights_impact():
         biased_params = params.__replace__(frame_weights=biased_weights)
 
         simulation.forward(simulation,biased_params)
-        biased_results = simulation.outputs
 
         print("✓ Frame weights impact test completed")
 

@@ -69,7 +69,6 @@ def test_featurise_cli_bv_model():
         # Summary statistics and assertions
         num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
         num_frames = 500
-        num_timepoints = 1
 
         assert features.k_ints is not None
         assert features.heavy_contacts is not None

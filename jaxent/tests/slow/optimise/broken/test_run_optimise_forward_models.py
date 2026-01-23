@@ -337,15 +337,15 @@ def visualize_optimization_results(train_data, val_data, exp_data, opt_simulatio
     simulation, history = opt_simulation
 
     # Create all plots
-    split_fig = plot_split_visualization(train_data, val_data, exp_data)
-    total_loss_fig = plot_total_losses(history)
-    loss_fig = plot_loss_components(history)
-    weights_fig = plot_frame_weights_heatmap(history)
+    plot_split_visualization(train_data, val_data, exp_data)
+    plot_total_losses(history)
+    plot_loss_components(history)
+    plot_frame_weights_heatmap(history)
 
     # Add new plots for forward model scaling and weights
     # scaling_fig = plot_forward_model_scaling(history)
     # weight_fig = plot_forward_model_weights(history)
-    importance_fig = plot_forward_model_importance(history)
+    plot_forward_model_importance(history)
 
     # Display plots
     plt.show()
@@ -382,7 +382,7 @@ def test_quick_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -502,7 +502,7 @@ def test_quick_optimiser_REAL():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -668,7 +668,7 @@ def test_quick_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -809,7 +809,7 @@ def test_quick_MAE_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -950,7 +950,7 @@ def test_quick_MAE_sparse_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     random_mask = jax.random.bernoulli(jax.random.PRNGKey(42), p=0.01, shape=(trajectory_length,))
@@ -1100,7 +1100,7 @@ def test_quick_MAE_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     params = Simulation_Parameters(
@@ -1241,7 +1241,7 @@ def test_quick_MAE_sparse_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
     random_mask = jax.random.bernoulli(jax.random.PRNGKey(42), p=0.01, shape=(trajectory_length,))
@@ -1397,7 +1397,7 @@ def test_quick_sparse_max_ent_optimiser():
     BV_features: BV_input_features = features[0]
     print("BV Features length", BV_features.features_shape)
 
-    features_length = BV_features.features_shape[0]
+    BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]  # <-- changed from [2] to [1]
     print(trajectory_length)
 
@@ -1623,7 +1623,7 @@ def test_regularised_optimiser():
     print(dataset.y_true)
     print(dataset.y_true.shape)
 
-    opt_simulation = run_optimise(
+    run_optimise(
         simulation,
         data_to_fit=(dataset, pf_prior, updake_dataset, None),
         config=opt_settings,
@@ -1638,7 +1638,7 @@ def test_regularised_optimiser():
 
 
 def test_uptake_optimiser():
-    bv_config = BV_model_Config()
+    BV_model_Config()
 
     featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
 
@@ -1677,7 +1677,6 @@ def test_uptake_optimiser():
         forward_model_weights=jnp.ones(1),
     )
 
-    params = [linear_bv_params]
 
     simulation = Simulation(forward_models=models, input_features=features, params=linear_bv_params)
 
@@ -1716,7 +1715,7 @@ def test_uptake_optimiser():
     print(dataset.y_true)
     print(dataset.y_true.shape)
 
-    opt_simulation = run_optimise(
+    run_optimise(
         simulation,
         data_to_fit=[updake_dataset, None],
         config=opt_settings,

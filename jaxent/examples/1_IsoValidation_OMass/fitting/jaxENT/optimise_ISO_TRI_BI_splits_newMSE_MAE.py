@@ -30,7 +30,7 @@ jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 # Import model components
-from optimise_fn import run_optimise_ISO_TRI_BI_maxENT, run_optimise_ISO_TRI_BI_maxENT_MAE
+from optimise_fn import run_optimise_ISO_TRI_BI_maxENT_MAE
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide

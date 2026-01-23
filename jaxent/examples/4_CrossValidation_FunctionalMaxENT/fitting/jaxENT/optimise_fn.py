@@ -55,7 +55,7 @@ def create_data_loaders(
     train_indices = [data.top.fragment_index for data in train_data]
     val_indices = [data.top.fragment_index for data in val_data]
     if cov_matrix is not None:
-        print(f"\n=== Debug Info ===")
+        print("\n=== Debug Info ===")
         print(f"Full covariance matrix shape: {cov_matrix.shape}")
         print(f"Train indices: {train_indices}")
         print(f"Val indices: {val_indices}")
