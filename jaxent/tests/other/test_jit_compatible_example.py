@@ -13,12 +13,11 @@ import jax.numpy as jnp
 import optax
 import pytest
 
-from jaxent.src.utils.jit_fn import jit_Guard
-
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.utils.jax_fn import single_pass
+from jaxent.src.utils.jit_fn import jit_Guard
 
 
 def forward_pure(
@@ -156,15 +155,18 @@ class JITSimulation:
 
 # --- Test Suite ---
 
+
 # Dummy classes for testing purposes
 class DummyFeature:
     def __init__(self, num_frames=10, num_features=5):
         self.features = jnp.ones((num_frames, num_features))
         self.features_shape = (num_frames, num_features)
 
+
 class DummyForwardPass(ForwardPass):
     def __call__(self, features, params):
         return features * 2
+
 
 class DummyModel(ForwardModel):
     def __init__(self, config=None):
@@ -180,6 +182,7 @@ class DummyModel(ForwardModel):
     def featurise(self, *args, **kwargs):
         pass
 
+
 @pytest.fixture
 def simulation_params():
     """Fixture for creating dummy simulation parameters."""
@@ -192,6 +195,7 @@ def simulation_params():
         normalise_loss_functions=jnp.ones(1),
     )
 
+
 @pytest.fixture
 def test_data():
     """Fixture for creating dummy input features and forward models."""
@@ -202,19 +206,19 @@ def test_data():
     model_parameters = [{}]
     return input_features, forward_models, model_parameters
 
+
 def test_forward_pure_runs_successfully(simulation_params, test_data):
     """Test that the pure forward function executes without errors."""
     input_features, forward_models, model_parameters = test_data
     forward_passes = [model.forwardpass for model in forward_models]
 
-    result = forward_pure(
-        simulation_params, input_features, forward_passes, model_parameters
-    )
+    result = forward_pure(simulation_params, input_features, forward_passes, model_parameters)
     assert result is not None
     assert isinstance(result, list)
     assert len(result) == 1
     expected_output = jnp.ones(5) * 2
     assert jnp.allclose(result[0], expected_output)
+
 
 def test_jitsimulation_initialise_success(simulation_params, test_data):
     """Test that JITSimulation initializes successfully with valid data."""
@@ -223,6 +227,7 @@ def test_jitsimulation_initialise_success(simulation_params, test_data):
     assert sim.initialise() is True
     assert sim._forward_jit is not None
 
+
 def test_jitsimulation_initialise_raises_error_without_params(test_data):
     """Test that JITSimulation raises a ValueError if params are not provided."""
     input_features, forward_models, _ = test_data
@@ -230,12 +235,14 @@ def test_jitsimulation_initialise_raises_error_without_params(test_data):
     with pytest.raises(ValueError, match="No simulation parameters were provided"):
         sim.initialise()
 
+
 def test_jitsimulation_forward_raises_error_before_initialise(simulation_params, test_data):
     """Test that calling forward() before initialise() raises a RuntimeError."""
     input_features, forward_models, _ = test_data
     sim = JITSimulation(input_features, forward_models, params=simulation_params)
     with pytest.raises(RuntimeError, match="Simulation not initialized"):
         sim.forward(simulation_params)
+
 
 def test_jitsimulation_forward_produces_output(simulation_params, test_data):
     """Test that the forward method produces the expected output after initialization."""
@@ -251,6 +258,7 @@ def test_jitsimulation_forward_produces_output(simulation_params, test_data):
     assert jnp.allclose(outputs[0], expected_output)
     assert sim.outputs is not None
 
+
 def test_jitsimulation_handles_mismatched_models_and_params(test_data):
     """Test assertion error for mismatched forward models and model parameters."""
     input_features, forward_models, _ = test_data
@@ -265,6 +273,7 @@ def test_jitsimulation_handles_mismatched_models_and_params(test_data):
     sim = JITSimulation(input_features, forward_models, params=mismatched_params)
     with pytest.raises(AssertionError, match="Number of forward models must be equal"):
         sim.initialise()
+
 
 @jit_Guard.test_isolation()
 def test_jitsimulation_handles_mismatched_feature_shapes():
