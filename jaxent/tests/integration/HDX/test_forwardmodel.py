@@ -6,6 +6,7 @@ from pathlib import Path
 import MDAnalysis as mda
 import numpy as np
 import pandas as pd
+# import pytest
 
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_intrinsic_rates
@@ -177,6 +178,7 @@ def load_contact_data(data_dir: Path, file_prefix: str = "Contacts") -> dict:
     return contact_data
 
 
+# @pytest.mark.skip(reason="Reference .tmp files not available - test marked NOTWORKING 06/02/25")
 def test_calc_contacts_universe():
     """Test the calculation of contacts against reference data with detailed comparison."""
     base_dir = Path(__file__).parents[4]
@@ -227,11 +229,13 @@ def test_calc_contacts_universe():
     NH_residue_atom_index.sort()
     HN_residue_atom_index.sort()
 
-    # Convert atom indices to actual Atom objects
-    NH_atoms = [universe.atoms[atom_idx] for _, atom_idx in NH_residue_atom_index]
-    HN_atoms = [universe.atoms[atom_idx] for _, atom_idx in HN_residue_atom_index]
+    # Convert atom indices to AtomGroup objects
+    NH_atom_indices = [atom_idx for _, atom_idx in NH_residue_atom_index]
+    HN_atom_indices = [atom_idx for _, atom_idx in HN_residue_atom_index]
+    NH_atoms = universe.atoms[NH_atom_indices]
+    HN_atoms = universe.atoms[HN_atom_indices]
 
-    # Calculate contacts - pass Atom objects instead of indices
+    # Calculate contacts - pass AtomGroup objects
     heavy_contacts = calc_BV_contacts_universe(
         universe=universe,
         target_atoms=NH_atoms,
@@ -360,7 +364,16 @@ def test_calc_contacts_universe():
             )
 
     # Assert that most contacts match within tolerance
-    match_ratio = len(matches) / (len(matches) + len(mismatches))
+    total_comparisons = len(matches) + len(mismatches)
+    if total_comparisons == 0:
+        print("\nERROR: No residues were compared!")
+        print(f"Number of calculated residues: {len(NH_residue_atom_index)}")
+        print(f"Calculated residue IDs: {sorted([resid for resid, _ in NH_residue_atom_index])}")
+        print(f"Reference heavy contact residue IDs: {sorted(ref_contacts.keys())}")
+        print(f"Reference oxygen contact residue IDs: {sorted(ref_hbonds.keys())}")
+        raise AssertionError("No residues were found in both calculated and reference data")
+
+    match_ratio = len(matches) / total_comparisons
     assert match_ratio > 0.9, (
         f"Only {match_ratio:.1%}" + " of contacts match reference values (threshold: 90%)"
     )

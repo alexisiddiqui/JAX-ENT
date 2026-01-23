@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pyscn Analysis Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .score-badge {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .grade-a { background: #4caf50; color: white; }
+        .grade-b { background: #8bc34a; color: white; }
+        .grade-c { background: #ff9800; color: white; }
+        .grade-d { background: #ff5722; color: white; }
+        .grade-f { background: #f44336; color: white; }
+        
+        .tabs {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        .tab-buttons {
+            display: flex;
+            background: #f5f5f5;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            background: white;
+            color: #667eea;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+            padding: 30px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .metric-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .table th, .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .risk-low { color: #4caf50; }
+        .risk-medium { color: #ff9800; }
+        .risk-high { color: #f44336; }
+        
+        .severity-critical { color: #f44336; }
+        .severity-warning { color: #ff9800; }
+        .severity-info { color: #2196f3; }
+
+         
+        .score-bars {
+            margin: 20px 0;
+        }
+        .score-bar-item {
+            margin-bottom: 24px;
+        }
+        .score-bar-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .score-label {
+            font-weight: 600;
+            color: #333;
+        }
+        .score-value {
+            font-weight: 700;
+            color: #667eea;
+        }
+        .score-bar-container {
+            width: 100%;
+            height: 12px;
+            background: #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .score-bar-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+            border-radius: 6px;
+        }
+        .score-excellent { background: linear-gradient(90deg, #4caf50, #66bb6a); }
+        .score-good { background: linear-gradient(90deg, #8bc34a, #9ccc65); }
+        .score-fair { background: linear-gradient(90deg, #ff9800, #ffa726); }
+        .score-poor { background: linear-gradient(90deg, #f44336, #ef5350); }
+        .score-detail {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #666;
+        }
+
+         
+        .tab-header-with-score {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .score-badge-compact {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 700;
+            color: white;
+            white-space: nowrap;
+        }
+        .score-badge-compact.score-excellent {
+            background: linear-gradient(135deg, #4caf50, #66bb6a);
+            box-shadow: 0 2px 6px rgba(76, 175, 80, 0.4);
+        }
+        .score-badge-compact.score-good {
+            background: linear-gradient(135deg, #8bc34a, #9ccc65);
+            box-shadow: 0 2px 6px rgba(139, 195, 74, 0.4);
+        }
+        .score-badge-compact.score-fair {
+            background: linear-gradient(135deg, #ff9800, #ffa726);
+            box-shadow: 0 2px 6px rgba(255, 152, 0, 0.4);
+        }
+        .score-badge-compact.score-poor {
+            background: linear-gradient(135deg, #f44336, #ef5350);
+            box-shadow: 0 2px 6px rgba(244, 67, 54, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>pyscn Analysis Report</h1>
+            <p>Generated: 2026-01-22 16:36:50</p>
+            <div class="score-badge grade-c">
+                Health Score: 60/100 (Grade: C)
+            </div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('summary', this)">Summary</button>
+                
+                <button class="tab-button" onclick="showTab('complexity', this)">Complexity</button>
+                
+                
+                <button class="tab-button" onclick="showTab('deadcode', this)">Dead Code</button>
+                
+                
+                <button class="tab-button" onclick="showTab('clone', this)">Clone Detection</button>
+                
+                
+                <button class="tab-button" onclick="showTab('cbo', this)">Class Coupling</button>
+                
+                
+                
+                <button class="tab-button" onclick="showTab('sys-deps', this)">Dependencies</button>
+                
+                
+                <button class="tab-button" onclick="showTab('sys-arch', this)">Architecture</button>
+                
+                
+            </div>
+
+            <div id="summary" class="tab-content active">
+                <h2>Analysis Summary</h2>
+
+                <h3 style="margin-top: 20px; margin-bottom: 16px; color: #2c3e50;">Quality Scores</h3>
+                <div class="score-bars">
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Complexity</span>
+                            <span class="score-value">25/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-poor" style="width: 25%"></div>
+                        </div>
+                        <div class="score-detail">Avg: 11.7, High-risk: 10</div>
+                    </div>
+                    
+
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Dead Code</span>
+                            <span class="score-value">75/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-good" style="width: 75%"></div>
+                        </div>
+                        <div class="score-detail">12 issues, 9 critical</div>
+                    </div>
+                    
+
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Duplication</span>
+                            <span class="score-value">90/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-excellent" style="width: 90%"></div>
+                        </div>
+                        <div class="score-detail">1.1% duplication, 1 groups</div>
+                    </div>
+                    
+
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Coupling (CBO)</span>
+                            <span class="score-value">20/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-poor" style="width: 20%"></div>
+                        </div>
+                        <div class="score-detail">Avg: 2.4, High-coupling: 0/41</div>
+                    </div>
+                    
+
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Dependencies</span>
+                            <span class="score-value">85/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-good" style="width: 85%"></div>
+                        </div>
+                        <div class="score-detail">No cycles, Depth: 7</div>
+                    </div>
+                    
+
+                    
+                    <div class="score-bar-item">
+                        <div class="score-bar-header">
+                            <span class="score-label">Architecture</span>
+                            <span class="score-value">100/100</span>
+                        </div>
+                        <div class="score-bar-container">
+                            <div class="score-bar-fill score-excellent" style="width: 100%"></div>
+                        </div>
+                        <div class="score-detail">100% compliant</div>
+                    </div>
+                    
+                </div>
+
+                <h3 style="margin-top: 24px; margin-bottom: 16px; color: #2c3e50;">File Statistics</h3>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">74</div>
+                        <div class="metric-label">Total Files</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">74</div>
+                        <div class="metric-label">Analyzed Files</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">11.73</div>
+                        <div class="metric-label">Avg Complexity</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">12</div>
+                        <div class="metric-label">Dead Code Issues</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">402</div>
+                        <div class="metric-label">Unique Fragments</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">1.1%</div>
+                        <div class="metric-label">Code Duplication</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-value">41</div>
+                        <div class="metric-label">Total Classes</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">0</div>
+                        <div class="metric-label">High Coupling (CBO)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">2.39</div>
+                        <div class="metric-label">Avg CBO</div>
+                    </div>
+                    
+                </div>
+
+                
+                
+                
+                <h3 style="margin-top: 16px; color: #2c3e50;">Dependencies</h3>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">74</div>
+                        <div class="metric-label">Total Modules</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">152</div>
+                        <div class="metric-label">Total Dependencies</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">7</div>
+                        <div class="metric-label">Max Depth</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-value">✅ 0</div>
+                        <div class="metric-label">Circular Dependencies</div>
+                    </div>
+                    
+                </div>
+                
+
+                
+                <h3 style="margin-top: 8px; color: #2c3e50;">Architecture</h3>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">0</div>
+                        <div class="metric-label">Violations</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">100.0%</div>
+                        <div class="metric-label">Compliance</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">1</div>
+                        <div class="metric-label">Layers Analyzed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">152</div>
+                        <div class="metric-label">Total Rules</div>
+                    </div>
+                </div>
+                
+                
+            </div>
+
+            
+            <div id="complexity" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Complexity Analysis</h2>
+                    <div class="score-badge-compact score-poor">
+                        25/100
+                    </div>
+                </div>
+                
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">113</div>
+                        <div class="metric-label">Total Functions</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">11.73</div>
+                        <div class="metric-label">Average</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">52</div>
+                        <div class="metric-label">Maximum</div>
+                    </div>
+                </div>
+                
+                <h3>Top Complex Functions</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Function</th>
+                            <th>File</th>
+                            <th>Complexity</th>
+                            <th>Nesting Depth</th>
+                            <th>Risk</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        
+                        <tr>
+                            <td>Partial_Topology.to_mda_group</td>
+                            <td>jaxent/src/interfaces/deprecated_topology.py</td>
+                            <td>52</td>
+                            <td>5</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>Partial_Topology.from_mda_universe</td>
+                            <td>jaxent/src/interfaces/deprecated_topology.py</td>
+                            <td>43</td>
+                            <td>5</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>Partial_Topology.get_atomgroup_reordering_indices</td>
+                            <td>jaxent/src/interfaces/deprecated_topology.py</td>
+                            <td>43</td>
+                            <td>7</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>Partial_Topology.find_common_residues</td>
+                            <td>jaxent/src/interfaces/deprecated_topology.py</td>
+                            <td>36</td>
+                            <td>5</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>mda_TopologyAdapter.to_mda_group</td>
+                            <td>jaxent/src/interfaces/topology/mda_adapter.py</td>
+                            <td>30</td>
+                            <td>4</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>DataSplitter.stratified_split</td>
+                            <td>jaxent/src/data/splitting/split.py</td>
+                            <td>30</td>
+                            <td>5</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>Partial_Topology.merge</td>
+                            <td>jaxent/src/interfaces/deprecated_topology.py</td>
+                            <td>28</td>
+                            <td>3</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>TopologyFactory.merge</td>
+                            <td>jaxent/src/interfaces/topology/factory.py</td>
+                            <td>26</td>
+                            <td>3</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>ExpD_Datapoint.load_list_from_files</td>
+                            <td>jaxent/src/custom_types/datapoint.py</td>
+                            <td>21</td>
+                            <td>4</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>DataSplitter.sequence_cluster_split</td>
+                            <td>jaxent/src/data/splitting/split.py</td>
+                            <td>20</td>
+                            <td>3</td>
+                            <td class="risk-high">high</td>
+                        </tr>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    </tbody>
+                </table>
+                
+                <p style="color: #666; margin-top: 10px;">Showing top 10 of 113 functions</p>
+                
+                
+            </div>
+            
+
+            
+            <div id="deadcode" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Dead Code Detection</h2>
+                    <div class="score-badge-compact score-good">
+                        75/100
+                    </div>
+                </div>
+                
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">12</div>
+                        <div class="metric-label">Total Issues</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">9</div>
+                        <div class="metric-label">Critical</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">3</div>
+                        <div class="metric-label">Warnings</div>
+                    </div>
+                </div>
+                
+                
+                <h3>Top Dead Code Issues</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Function</th>
+                            <th>Lines</th>
+                            <th>Severity</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/interfaces/builder.py</td>
+                            <td>load_default_parameters</td>
+                            <td>99-102</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/interfaces/builder.py</td>
+                            <td>load_default_parameters</td>
+                            <td>103-103</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/interfaces/builder.py</td>
+                            <td>load_default_parameters</td>
+                            <td>103-109</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/interfaces/builder.py</td>
+                            <td>load_default_parameters</td>
+                            <td>103-103</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/interfaces/builder.py</td>
+                            <td>load_default_parameters</td>
+                            <td>103-103</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>105-106</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>106-106</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>107-111</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>111-111</td>
+                            <td class="severity-critical">critical</td>
+                            <td>unreachable_after_raise</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>113-115</td>
+                            <td class="severity-warning">warning</td>
+                            <td>unreachable_branch</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>115-115</td>
+                            <td class="severity-warning">warning</td>
+                            <td>unreachable_branch</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>_apply_op</td>
+                            <td>117-123</td>
+                            <td class="severity-warning">warning</td>
+                            <td>unreachable_branch</td>
+                        </tr>
+                        
+                        
+                        
+                        
+                    </tbody>
+                </table>
+                
+                <p style="color: #666; margin-top: 10px;">Showing top 10 of 12 dead code issues</p>
+                
+                
+                
+            </div>
+            
+
+            
+            <div id="clone" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Clone Detection</h2>
+                    <div class="score-badge-compact score-excellent">
+                        90/100
+                    </div>
+                </div>
+                
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">402</div>
+                        <div class="metric-label">Unique Fragments</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">1</div>
+                        <div class="metric-label">Clone Groups</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">0.92</div>
+                        <div class="metric-label">Avg Similarity</div>
+                    </div>
+                </div>
+                
+                
+                <h3>Clone Groups</h3>
+                <p style="color: #666; margin-bottom: 15px;">Code fragments grouped by similarity</p>
+                
+                
+                <div style="background: #f8f9fa; padding: 15px; margin-bottom: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+                    <h4 style="margin-top: 0; color: #333;">Group 0 - 344 clones (Type Type-3, similarity: 0.93)</h4>
+                    <table class="table" style="margin-bottom: 0;">
+                        <thead>
+                            <tr>
+                                <th>File</th>
+                                <th>Lines</th>
+                                <th>Size</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/analysis/plots/optimisation.py</td>
+                                <td>30-95</td>
+                                <td>66 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/analysis/plots/optimisation.py</td>
+                                <td>98-130</td>
+                                <td>33 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/analysis/plots/optimisation.py</td>
+                                <td>133-297</td>
+                                <td>165 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/analysis/plots/optimisation.py</td>
+                                <td>155-283</td>
+                                <td>129 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/analysis/plots/optimisation.py</td>
+                                <td>224-250</td>
+                                <td>27 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/config/path.py</td>
+                                <td>9-203</td>
+                                <td>195 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/config/path.py</td>
+                                <td>10-35</td>
+                                <td>26 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/custom_types/HDX.py</td>
+                                <td>11-31</td>
+                                <td>21 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/custom_types/HDX.py</td>
+                                <td>35-54</td>
+                                <td>20 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            <tr>
+                                <td>jaxent/src/custom_types/__init__.py</td>
+                                <td>21-32</td>
+                                <td>12 lines</td>
+                            </tr>
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            
+                            <tr>
+                                <td colspan="3" style="color: #666; font-style: italic;">... and 334 more clones</td>
+                            </tr>
+                            
+                        </tbody>
+                    </table>
+                </div>
+                
+                
+                
+                
+                
+            </div>
+            
+
+            
+            <div id="cbo" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Class Coupling</h2>
+                    <div class="score-badge-compact score-poor">
+                        20/100
+                    </div>
+                </div>
+                <p style="margin-bottom: 20px; color: #666;">Coupling Between Objects (CBO) metrics</p>
+                
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">41</div>
+                        <div class="metric-label">Total Classes</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">0</div>
+                        <div class="metric-label">High Risk Classes</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">2.39</div>
+                        <div class="metric-label">Average CBO</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">7</div>
+                        <div class="metric-label">Max CBO</div>
+                    </div>
+                </div>
+                
+                <h3>Most Dependent Classes</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Class</th>
+                            <th>File</th>
+                            <th>CBO</th>
+                            <th>Risk Level</th>
+                            <th>Dependent Classes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        
+                        <tr>
+                            <td>Simulation</td>
+                            <td>jaxent/src/models/core.py</td>
+                            <td>7</td>
+                            <td class="risk-medium">medium</td>
+                            <td>Input_Features, Output_Features, Callable, Any, ForwardModel, Simulation_Parameters, ForwardPass</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>OptimiseFnInputs</td>
+                            <td>jaxent/src/opt/run.py</td>
+                            <td>5</td>
+                            <td class="risk-medium">medium</td>
+                            <td>TypedDict, InitialisedSimulation, JaxEnt_Loss, OptaxOptimizer, OptimizationState</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>OptaxOptimizer</td>
+                            <td>jaxent/src/opt/optimiser.py</td>
+                            <td>5</td>
+                            <td class="risk-medium">medium</td>
+                            <td>Optimisable_Parameters, Simulation_Parameters, OptimizationHistory, MutableLearningRate, Callable</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>ForwardModel</td>
+                            <td>jaxent/src/custom_types/base.py</td>
+                            <td>5</td>
+                            <td class="risk-medium">medium</td>
+                            <td>m_key, ExpD_Datapoint, ForwardPass, ABC, T_Config</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>ExpD_Dataloader</td>
+                            <td>jaxent/src/data/loader.py</td>
+                            <td>5</td>
+                            <td class="risk-medium">medium</td>
+                            <td>Dataset, m_key, m_id, T_ExpD, Partial_Topology</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>BV_model</td>
+                            <td>jaxent/src/models/HDX/BV/forwardmodel.py</td>
+                            <td>4</td>
+                            <td class="risk-medium">medium</td>
+                            <td>ForwardPass, ExpD_Datapoint, Partial_Topology, m_key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>OptimizationState</td>
+                            <td>jaxent/src/opt/base.py</td>
+                            <td>4</td>
+                            <td class="risk-medium">medium</td>
+                            <td>NamedTuple, Simulation_Parameters, LossComponents, OptimizationState</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>linear_BV_model</td>
+                            <td>jaxent/src/models/HDX/BV/forwardmodel.py</td>
+                            <td>4</td>
+                            <td class="risk-medium">medium</td>
+                            <td>BV_model, m_key, ForwardPass, ExpD_Datapoint</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>netHDX_model</td>
+                            <td>jaxent/src/models/HDX/netHDX/forwardmodel.py</td>
+                            <td>3</td>
+                            <td class="risk-low">low</td>
+                            <td>m_key, ForwardPass, Partial_Topology</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>BV_Model_Parameters</td>
+                            <td>jaxent/src/models/HDX/BV/parameters.py</td>
+                            <td>3</td>
+                            <td class="risk-low">low</td>
+                            <td>Model_Parameters, Array, BV_Model_Parameters</td>
+                        </tr>
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                    </tbody>
+                </table>
+                
+                <p style="color: #666; margin-top: 10px;">Showing top 10 of 41 classes</p>
+                
+                
+            </div>
+            
+
+            
+            
+            <div id="sys-deps" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Module Dependencies</h2>
+                    <div class="score-badge-compact score-good">
+                        85/100
+                    </div>
+                </div>
+                <p style="margin-bottom: 20px; color: #666;">Project-wide module dependency graph metrics</p>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">74</div>
+                        <div class="metric-label">Total Modules</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">152</div>
+                        <div class="metric-label">Total Dependencies</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">7</div>
+                        <div class="metric-label">Max Depth</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-value">✅ 0</div>
+                        <div class="metric-label">Circular Dependencies</div>
+                    </div>
+                    
+                </div>
+
+                
+                
+                <h3 style="margin-top: 30px;">Circular Dependencies</h3>
+                
+                <div style="padding: 20px; background: #d4edda; border-left: 4px solid #28a745; border-radius: 4px; margin: 20px 0;">
+                    <strong style="color: #155724;">✅ No circular dependencies detected</strong>
+                    <p style="color: #155724; margin: 10px 0 0 0;">All modules have acyclic dependency relationships.</p>
+                </div>
+                
+                
+
+                
+                <h3>Longest Dependency Chains</h3>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Depth</th>
+                            <th>Path</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        
+                        
+                        <tr>
+                            <td>1</td>
+                            <td>6</td>
+                            <td>jaxent.src.models.HDX.BV.forwardmodel → jaxent.src.models.config → jaxent.src.models.HDX.netHDX.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>2</td>
+                            <td>6</td>
+                            <td>jaxent.src.models.func.netHDX → jaxent.src.models.config → jaxent.src.models.HDX.netHDX.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>3</td>
+                            <td>5</td>
+                            <td>jaxent.src.interfaces.builder → jaxent.src.models.core → jaxent.src.custom_types.base → jaxent.src.custom_types.datapoint → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>4</td>
+                            <td>5</td>
+                            <td>jaxent.src.interfaces.builder → jaxent.src.models.core → jaxent.src.custom_types.base → jaxent.src.custom_types.datapoint → jaxent.src.interfaces.topology</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>5</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.HDX.BV.forwardmodel → jaxent.src.models.config → jaxent.src.models.HDX.netHDX.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>6</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.HDX.forward → jaxent.src.models.HDX.BV.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>7</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.HDX.netHDX.forwardmodel → jaxent.src.models.HDX.netHDX.netHDX_functions → jaxent.src.custom_types.base → jaxent.src.custom_types.datapoint → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>8</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.HDX.netHDX.forwardmodel → jaxent.src.models.HDX.netHDX.netHDX_functions → jaxent.src.custom_types.base → jaxent.src.custom_types.datapoint → jaxent.src.interfaces.topology</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>9</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.config → jaxent.src.models.HDX.netHDX.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model → jaxent.src.custom_types.key</td>
+                        </tr>
+                        
+                        
+                        
+                        <tr>
+                            <td>10</td>
+                            <td>5</td>
+                            <td>jaxent.src.models.func.netHDX → jaxent.src.models.config → jaxent.src.models.HDX.netHDX.parameters → jaxent.src.interfaces.simulation → jaxent.src.interfaces.model</td>
+                        </tr>
+                        
+                        
+                    </tbody>
+                </table>
+                
+            </div>
+            
+
+            
+            <div id="sys-arch" class="tab-content">
+                <div class="tab-header-with-score">
+                    <h2 style="margin: 0;">Architecture Validation</h2>
+                    <div class="score-badge-compact score-excellent">
+                        100/100
+                    </div>
+                </div>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">1</div>
+                        <div class="metric-label">Layers Analyzed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">152</div>
+                        <div class="metric-label">Total Rules</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">0</div>
+                        <div class="metric-label">Violations</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">100.0%</div>
+                        <div class="metric-label">Compliance</div>
+                    </div>
+                </div>
+
+                
+                <p style="color: #4caf50; font-weight: bold; margin-top: 20px;">✓ No architecture violations</p>
+                
+            </div>
+            
+            
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabName, el) {
+            
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+            
+            
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            
+            document.getElementById(tabName).classList.add('active');
+            
+            
+            if (el) { el.classList.add('active'); }
+        }
+    </script>
+</body>
+</html>
