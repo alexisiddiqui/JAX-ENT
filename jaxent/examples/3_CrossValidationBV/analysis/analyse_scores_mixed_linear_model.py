@@ -158,7 +158,7 @@ def run_analysis_on_subset(
     work_metrics = [col for col in df_clean.columns if "work_" in col.lower()]
     cluster_metrics = [col for col in df_clean.columns if col.startswith("cluster_")]
 
-    print(f"\nIdentified metric groups:")
+    print("\nIdentified metric groups:")
     print(f"  Error metrics: {error_metrics}")
     print(f"  Work metrics: {work_metrics}")
     print(f"  Cluster metrics: {cluster_metrics}")
@@ -860,7 +860,7 @@ def fit_mixed_effects_model(
 
         return results
 
-    except Exception as e:
+    except Exception:
         return None
 
 

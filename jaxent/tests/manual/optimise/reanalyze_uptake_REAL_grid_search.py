@@ -693,7 +693,7 @@ def create_1d_slice_plots(df, target_component, plots_dir):
 def find_best_configurations(all_results):
     """Find and print the best configurations based on different criteria."""
     # Define component names
-    component_count = len(all_results[0]["best_val_components"])
+    len(all_results[0]["best_val_components"])
 
     print("\n===== Best Configurations Summary =====")
 

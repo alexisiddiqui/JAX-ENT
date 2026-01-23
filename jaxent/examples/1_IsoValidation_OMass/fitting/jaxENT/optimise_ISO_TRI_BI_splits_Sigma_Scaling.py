@@ -24,8 +24,6 @@ from typing import List
 
 import jax
 import jax.numpy as jnp
-from numpy import cov
-from sklearn.metrics import jaccard_score
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
