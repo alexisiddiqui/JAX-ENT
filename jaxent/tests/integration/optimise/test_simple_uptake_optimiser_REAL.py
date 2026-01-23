@@ -149,7 +149,7 @@ def test_uptake_optimiser():
     simulation = Simulation(forward_models=models, input_features=features, params=params)
 
     simulation.initialise()
-    simulation.forward(params)
+    simulation.forward(simulation,params)
     test_prediction = simulation.outputs
     print("test prediction", test_prediction[0].uptake)
     print(test_prediction[0].uptake.shape)
@@ -229,7 +229,7 @@ def test_uptake_optimiser():
     )
 
     optimiser = OptaxOptimizer(
-        parameter_masks={Optimisable_Parameters.frame_weights},
+        parameter_partition_masks={Optimisable_Parameters.frame_weights},
     )
 
     prior_dataset = ExpD_Dataloader(data=prior_data)

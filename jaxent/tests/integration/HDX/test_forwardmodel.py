@@ -227,11 +227,14 @@ def test_calc_contacts_universe():
     NH_residue_atom_index.sort()
     HN_residue_atom_index.sort()
 
-    # Convert atom indices to actual Atom objects
-    NH_atoms = [universe.atoms[atom_idx] for _, atom_idx in NH_residue_atom_index]
-    HN_atoms = [universe.atoms[atom_idx] for _, atom_idx in HN_residue_atom_index]
+    # Create AtomGroups from atom indices
+    NH_atom_indices = [atom_idx for _, atom_idx in NH_residue_atom_index]
+    HN_atom_indices = [atom_idx for _, atom_idx in HN_residue_atom_index]
 
-    # Calculate contacts - pass Atom objects instead of indices
+    NH_atoms = universe.atoms[NH_atom_indices]
+    HN_atoms = universe.atoms[HN_atom_indices]
+
+    # Calculate contacts - pass AtomGroup objects
     heavy_contacts = calc_BV_contacts_universe(
         universe=universe,
         target_atoms=NH_atoms,
