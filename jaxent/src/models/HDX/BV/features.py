@@ -24,7 +24,7 @@ class BV_input_features(Input_Features):
 
     @property
     def features_shape(self) -> tuple[int, ...]:
-        if type(self.heavy_contacts) != type(self.acceptor_contacts):
+        if type(self.heavy_contacts) is not type(self.acceptor_contacts):
             raise TypeError("heavy_contacts and acceptor_contacts must be of the same type")
 
         if isinstance(self.heavy_contacts, Array):

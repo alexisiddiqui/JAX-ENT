@@ -134,7 +134,7 @@ class TestDataSplitter:
 
                 # Mock the validation by patching the __init__ method or the specific validation
                 # Let's try mocking the total residue count calculation
-                with patch.object(DataSplitter, "__init__", return_value=None) as mock_init:
+                with patch.object(DataSplitter, "__init__", return_value=None):
                     splitter = DataSplitter.__new__(DataSplitter)
                     splitter.dataset = mock_dataloader
                     splitter.common_residues = common_residues
