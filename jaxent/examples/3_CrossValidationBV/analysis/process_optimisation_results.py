@@ -2,7 +2,7 @@ import argparse
 import os
 import re
 import sys
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -17,25 +17,18 @@ sys.path.insert(0, base_dir)
 from jaxent.src.utils.hdf import load_optimization_history_from_file
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
-from jaxent.src.interfaces.simulation import Simulation_Parameters
 import jaxent.src.interfaces.topology as pt
-from jaxent.src.predict import run_predict
 from jaxent.src.custom_types.HDX import HDX_peptide
-from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.models.config import BV_model_Config
-from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.utils.jax_fn import frame_average_features
 
 
 from jaxent.src.custom_types.base import ForwardPass
-from jaxent.src.custom_types.key import m_key
 from jaxent.src.models.HDX.BV.features import (
-    BV_input_features,
-    BV_output_features,
     uptake_BV_output_features,
 )
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
 
 

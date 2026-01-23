@@ -276,7 +276,7 @@ class TestCrossClassCompatibility:
         # Try to load into different class - should work if features overlap
         # but may have missing required features
         try:
-            loaded = uptake_BV_output_features.load_features(str(filepath))
+            uptake_BV_output_features.load_features(str(filepath))
             # This might fail in __init__ due to missing 'uptake' parameter
         except TypeError:
             # Expected if 'uptake' is required and not provided

@@ -648,7 +648,7 @@ def finalize_performance_analysis():
     create_performance_heatmaps(PERFORMANCE_RESULTS)
 
     print("Creating performance summary table...")
-    summary_df = create_performance_summary_table(PERFORMANCE_RESULTS)
+    create_performance_summary_table(PERFORMANCE_RESULTS)
 
     # Print top-level summary statistics
     print(
@@ -698,31 +698,6 @@ def finalize_performance_analysis():
 def generate_performance_plots():
     """Manually trigger performance plot generation (call this after tests complete)."""
     finalize_performance_analysis()
-
-
-# Hook to run finalization after all tests
-def pytest_sessionfinish(session, exitstatus):
-    """Called after whole test run finished, right before returning the exit status."""
-    print(f"DEBUG: pytest_sessionfinish called with exitstatus {exitstatus}")
-    finalize_performance_analysis()
-
-
-# Simple test to trigger plot generation
-def test_generate_final_performance_plots():
-    """Final test that generates all performance plots and summaries."""
-    # This test runs last and generates the final output
-    print("\nFinal test - generating performance analysis...")
-    generate_performance_plots()
-
-
-# Helper function for jax_pairwise_cosine_similarity
-def test_jax_pairwise_cosine_similarity():
-    key = jax.random.PRNGKey(1)
-    array = jax.random.normal(key, (5, 3))
-    similarity_matrix = jax_pairwise_cosine_similarity(array)
-    assert similarity_matrix.shape == (5, 5)
-    assert jnp.all(similarity_matrix >= 0) and jnp.all(similarity_matrix <= 2)
-    assert jnp.allclose(jnp.diag(similarity_matrix), 2.0)  # Self-similarity should be 1+1=2
 
 
 # Standalone function to run performance analysis

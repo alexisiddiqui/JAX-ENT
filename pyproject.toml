@@ -64,3 +64,10 @@ module = "MDAnalysis,tqdm,networkx"
 
 [tool.mypy]
 ignore_missing_imports = true
+
+[tool.ruff]
+include = ["jaxent/**/*.py"]
+exclude = ["jaxent/examples/**", "jaxent/docs/**","jaxent/dev/**", "jaxent/deprecated/**"]
+
+[tool.ruff.lint]
+ignore = ["E402"]
