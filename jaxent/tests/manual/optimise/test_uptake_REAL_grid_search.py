@@ -37,6 +37,7 @@ from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model

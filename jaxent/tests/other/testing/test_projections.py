@@ -365,7 +365,7 @@ def plot_aggregated_statistics(aggregated_results: Dict[str, Dict], output_path:
                 )
 
         x_pos = np.arange(len(labels))
-        bars = ax.bar(
+        ax.bar(
             x_pos,
             data_to_plot,
             yerr=error_bars,

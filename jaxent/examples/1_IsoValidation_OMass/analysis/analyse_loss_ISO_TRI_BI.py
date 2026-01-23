@@ -10,7 +10,7 @@ import argparse
 import glob
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch

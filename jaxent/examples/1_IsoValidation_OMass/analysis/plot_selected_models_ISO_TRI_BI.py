@@ -32,14 +32,12 @@ Plot both before and after convergence filtering and the difference (Before-Afte
 
 import argparse
 import os
-import sys
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy import stats
-import statsmodels.api as sm
 import statsmodels.formula.api as smf
 from itertools import cycle
 

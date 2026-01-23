@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax.experimental import sparse
-from sklearn import covariance
 
 from jaxent.src.custom_types import T_ExpD
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint

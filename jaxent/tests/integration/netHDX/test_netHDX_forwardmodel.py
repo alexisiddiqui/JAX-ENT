@@ -372,13 +372,19 @@ def test_calc_contacts_universe():
     base_dir = Path(__file__).parents[4]
     inst_path = get_inst_path(base_dir)
 
-    topology_path = inst_path / "clean" / "HOIP" / "train_HOIP_high_rank_1" / "HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    topology_path = (
+        inst_path
+        / "clean"
+        / "HOIP"
+        / "train_HOIP_high_rank_1"
+        / "HOIP_apo697_1_af_sample_127_10000_protonated_first_frame.pdb"
+    )
     data_dir = inst_path / "clean" / "HOIP" / "train_HOIP_high_rank_1"
 
     universe = mda.Universe(str(topology_path))
 
     # Get N atoms (for heavy atom contacts)
-    NH_residue_atom_index: List[Tuple[int, int]] = []
+    NH_residue_atom_index: list[tuple[int, int]] = []
     for residue in universe.residues:
         if residue.resname != "PRO":
             try:
@@ -387,7 +393,7 @@ def test_calc_contacts_universe():
             except IndexError:
                 continue
 
-    HN_residue_atom_index: List[Tuple[int, int]] = []
+    HN_residue_atom_index: list[tuple[int, int]] = []
     for residue in universe.residues:
         if residue.resname != "PRO":
             try:

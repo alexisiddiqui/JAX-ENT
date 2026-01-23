@@ -878,7 +878,7 @@ def plot_metric_cross_correlation(
     # Loop over data dimensions and create text annotations
     for i in range(n_metrics):
         for j in range(n_metrics):
-            text = ax.text(
+            ax.text(
                 j,
                 i,
                 f"{corr_matrix[i, j]:.2f}",
@@ -1403,7 +1403,6 @@ def analyze_md_ensemble(
     try:
         # Load universe and create output directories
         universe = Universe(topology_path, trajectory_path)
-        n_frames = universe.trajectory.n_frames
 
         # Create config and build network
         print("Building hydrogen bond network...")
@@ -1436,7 +1435,7 @@ def analyze_md_ensemble(
         global_percent_diffs = calculate_global_metric_percent_difference(
             network_metrics, ref_frame
         )
-        pairwise_global_percent_diffs = calculate_pairwise_global_metric_percent_difference(
+        calculate_pairwise_global_metric_percent_difference(
             network_metrics
         )
 

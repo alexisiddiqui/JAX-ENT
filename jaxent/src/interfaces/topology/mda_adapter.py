@@ -853,7 +853,7 @@ class mda_TopologyAdapter:
         if chain_selection_string:
             try:
                 chain_atoms = universe.select_atoms(chain_selection_string).atoms
-            except:
+            except Exception:
                 chain_atoms = [
                     atom
                     for atom in universe.atoms
@@ -1098,12 +1098,6 @@ class mda_TopologyAdapter:
 
         Refactored to use shared utility methods.
         """
-        try:
-            import MDAnalysis as mda
-        except ImportError:
-            raise ImportError(
-                "MDAnalysis is required for this method. Install with: pip install MDAnalysis"
-            )
 
         if mode not in ("chain", "residue"):
             raise ValueError("Mode must be either 'chain' or 'residue'")
@@ -1158,12 +1152,6 @@ class mda_TopologyAdapter:
 
         Refactored to use shared utility methods.
         """
-        try:
-            import MDAnalysis as mda
-        except ImportError:
-            raise ImportError(
-                "MDAnalysis is required for this method. Install with: pip install MDAnalysis"
-            )
 
         if not topologies:
             raise ValueError("No topologies provided")
