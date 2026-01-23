@@ -73,7 +73,8 @@ class uptake_BV_output_features(Output_Features):
         if isinstance(self.uptake, Array):
             return self.uptake.shape
         else:
-            return (len(self.uptake), len(self.uptake[0]))
+            uptake = jnp.asarray(self.uptake)
+            return uptake.shape
 
     def y_pred(self) -> Array:
         return jnp.asarray(self.uptake)
