@@ -734,8 +734,8 @@ class TestSpatialSplit:
         assert len(val_data) > 0, "Validation set should not be empty"
 
         # With overlap removal, should have no overlapping topologies
-        train_topologies = set(d.top for d in train_data)
-        val_topologies = set(d.top for d in val_data)
+        set(d.top for d in train_data)
+        set(d.top for d in val_data)
 
         # Check that merged topologies don't overlap
         train_merged = splitter.last_split_train_topologies_by_chain

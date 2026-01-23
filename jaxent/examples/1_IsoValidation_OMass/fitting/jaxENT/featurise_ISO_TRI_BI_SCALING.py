@@ -4,7 +4,6 @@ This script runs featurises the sliced IsoValidation ensembles Iso-BI (filtered)
 
 import os
 import time
-import glob
 import re
 
 import jax.numpy as jnp

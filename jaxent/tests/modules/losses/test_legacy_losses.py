@@ -665,7 +665,7 @@ def finalize_performance_analysis():
     create_performance_heatmaps(PERFORMANCE_RESULTS)
 
     print("Creating performance summary table...")
-    summary_df = create_performance_summary_table(PERFORMANCE_RESULTS)
+    create_performance_summary_table(PERFORMANCE_RESULTS)
 
     # Print top-level summary statistics
     print(

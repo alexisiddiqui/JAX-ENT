@@ -16,7 +16,7 @@ import argparse
 import os
 import re
 import sys
-from typing import Dict, List, Tuple, Optional
+from typing import List, Tuple, Optional
 
 import numpy as np
 import pandas as pd

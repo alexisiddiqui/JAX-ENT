@@ -41,8 +41,6 @@ from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
-from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
-from jax import Array
 
 
 # def hdx_uptake_mean_centred_MSE_loss(

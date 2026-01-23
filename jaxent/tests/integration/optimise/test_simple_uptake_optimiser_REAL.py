@@ -126,7 +126,7 @@ def test_uptake_optimiser():
         dfracs = [line.split() for line in dfrac_text]
 
     dfracs = [jnp.array(line, dtype=float) for line in dfracs]
-    dfrac_dict = {res: dfrac for res, dfrac in zip(exp_residues, dfracs)}
+    {res: dfrac for res, dfrac in zip(exp_residues, dfracs)}
     # print("feature_topology", [top.fragment_index for top in feature_topology[0]])
     # print(feature_topology)
     assert len(features) == len(models)

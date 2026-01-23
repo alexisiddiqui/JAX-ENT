@@ -17,11 +17,10 @@ Key metrics:
 """
 
 import argparse
-import json
 import os
 import re
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np

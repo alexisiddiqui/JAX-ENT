@@ -285,10 +285,10 @@ class TestFindCommonResidues:
         ensemble = [bpti_universe]
 
         # Get baseline to understand the expected behavior
-        baseline_with_termini = mda_TopologyAdapter.from_mda_universe(
+        mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=False
         )[0]
-        baseline_without_termini = mda_TopologyAdapter.from_mda_universe(
+        mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", exclude_termini=True
         )[0]
 
@@ -564,7 +564,7 @@ class TestFindCommonResidues:
         individual_chains = mda_TopologyAdapter.from_mda_universe(
             bpti_universe, mode="chain", include_selection="protein"
         )
-        individual_residues = TopologyFactory.extract_residues(
+        TopologyFactory.extract_residues(
             individual_chains[0], use_peptide_trim=False
         )
 
@@ -1442,7 +1442,7 @@ class TestBuildRenumberingMapping:
 
     def test_renumbering_with_termini_exclusion(self, bpti_universe):
         """Test renumbering mapping with terminal exclusion"""
-        mapping_with_termini = mda_TopologyAdapter._build_renumbering_mapping(
+        mda_TopologyAdapter._build_renumbering_mapping(
             bpti_universe, exclude_termini=False
         )
         mapping_without_termini = mda_TopologyAdapter._build_renumbering_mapping(

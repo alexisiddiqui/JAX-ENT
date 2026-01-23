@@ -261,7 +261,7 @@ def _test_reinit_each_param(input_features, forward_models, param_variants, rais
             )
 
             with timeout_context(30):
-                init_success = simulation.initialise()
+                simulation.initialise()
 
             with timeout_context(15):
                 simulation.forward(params)
