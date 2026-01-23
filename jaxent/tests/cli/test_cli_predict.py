@@ -116,7 +116,7 @@ def test_cli_predict_bv_model():
 
         # --- Verify Output and Summary Statistics ---
         predictions_data = np.load(predictions_npz_path)
-        predictions = predictions_data["predictions"]
+        predictions = predictions_data["log_Pf"]
 
         print("\n--- Prediction Summary Statistics ---")
         print(f"Shape: {predictions.shape}")
@@ -246,7 +246,7 @@ def test_cli_predict_bv_model_uptake():
 
         # --- Verify Output and Summary Statistics ---
         predictions_data = np.load(predictions_npz_path)
-        predictions = predictions_data["predictions"]
+        predictions = predictions_data["uptake"]
 
         print("\n--- Prediction Summary Statistics ---")
         print(f"Shape: {predictions.shape}")
