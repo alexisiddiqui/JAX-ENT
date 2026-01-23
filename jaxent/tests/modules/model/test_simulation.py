@@ -215,6 +215,8 @@ class TestSimulation:
 
     def test_simulation_forward_pure(self, raise_jit_failure):
         params = create_default_simulation_params(num_models=1)
+        # Normalize weights before calling forward_pure
+        params = Simulation_Parameters.normalize_weights(params)
         input_features = [MockInputFeatures(data=jnp.ones((10, 5)))]
         forwardpass = (MockForwardPass(),)
 
@@ -238,7 +240,7 @@ class TestSimulation:
         simulation.initialise()  # This will attempt JIT compilation
 
         # Call forward, which uses the JIT-compiled function
-        simulation.forward(params)
+        simulation.forward(simulation, params)
 
         assert isinstance(simulation.outputs, Sequence)
         assert len(simulation.outputs) == 1
@@ -258,7 +260,7 @@ class TestSimulation:
 
         original_simulation = Simulation(input_features, forward_models, params, raise_jit_failure)
         original_simulation.initialise()
-        original_simulation.forward(params)  # Populate outputs
+        original_simulation.forward(original_simulation,params)  # Populate outputs
 
         # Flatten the original simulation object
         flat_simulation, tree_def = jax.tree_util.tree_flatten(original_simulation)
@@ -308,7 +310,7 @@ class TestSimulation:
         # For now, assuming the fix is applied, so outputs are not part of the pytree.
         # The forward method will populate outputs after unflattening.
         # So, we should call forward on the reconstructed simulation and then compare outputs.
-        reconstructed_simulation.forward(reconstructed_simulation.params)
+        reconstructed_simulation.forward(reconstructed_simulation,reconstructed_simulation.params)
         assert jnp.allclose(
             reconstructed_simulation.outputs[0].output_data,
             original_simulation.outputs[0].output_data,
