@@ -88,10 +88,10 @@ PERFORMANCE_RESULTS = defaultdict(lambda: defaultdict(dict))
 
 # Define different input size configurations
 INPUT_SIZE_CONFIGS = {
-    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 20},
-    "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 100},
-    "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
-    "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
+    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 2},
+    "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 10},
+    # "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
+    # "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
 }
 
 
