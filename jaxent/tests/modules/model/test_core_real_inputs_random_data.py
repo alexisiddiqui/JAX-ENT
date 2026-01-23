@@ -88,7 +88,7 @@ def test_simulation_forward_jit_real_inputs(real_inputs_random_data, raise_jit_f
     )
     simulation.initialise()
 
-    simulation.forward(params)
+    simulation.forward(simulation,params)
 
     assert simulation.outputs is not None
     assert len(simulation.outputs) == 1
@@ -109,7 +109,7 @@ def test_simulation_as_pytree_real_inputs(real_inputs_random_data, raise_jit_fai
 
     @jax.jit
     def run_sim_in_jit(sim: Simulation, p: Simulation_Parameters):
-        sim.forward(p)
+        sim.forward(sim,p)
         return sim.outputs
 
     # Run twice to ensure no re-compilation hangs
@@ -165,7 +165,7 @@ def test_simulation_multiple_models_real_inputs(real_inputs_random_data, raise_j
         input_features, forward_models, params, raise_jit_failure=raise_jit_failure
     )
     simulation.initialise()
-    simulation.forward(params)
+    simulation.forward(simulation,params)
 
     assert len(simulation.outputs) == 2
     assert simulation.outputs[0].log_Pf.shape == (20,)

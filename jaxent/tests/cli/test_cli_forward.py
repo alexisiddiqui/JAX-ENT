@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from custom_types.features import Output_Features
 
+from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.utils.jit_fn import jit_Guard
 from jaxent.tests.test_utils import get_inst_path
 
