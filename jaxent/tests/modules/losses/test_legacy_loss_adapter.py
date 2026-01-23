@@ -67,8 +67,9 @@ def create_mock_exp_datapoint(residues, timepoints, fragment_idx, chain="A"):
         exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (residues,))
         key = m_key("HDX_resPF")
     else:
-        # Uptake data - timepoints x residues for uptake losses
-        exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (timepoints, residues))
+        # Uptake data - one value per timepoint (HDX_peptide structure)
+        # Each peptide covers multiple residues but has one uptake value per timepoint
+        exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (timepoints,))
         key = m_key("HDX_peptide")
 
     # Create a minimal ExpD_Datapoint-like object
@@ -79,8 +80,12 @@ def create_mock_exp_datapoint(residues, timepoints, fragment_idx, chain="A"):
             self.key = key
 
         def extract_features(self):
-            # For uptake data, flatten timepoints x residues
-            return self.data.flatten()
+            # For uptake data (HDX_peptide), reshape to (n_timepoints, 1)
+            # For protection factor data, return as-is (single value)
+            if self.key == m_key("HDX_peptide"):
+                return self.data.reshape(-1, 1)
+            else:
+                return self.data.flatten()
 
     return MockExpDatapoint(exp_data, topology, key)
 
