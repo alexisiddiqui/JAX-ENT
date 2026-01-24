@@ -32,7 +32,8 @@ Key Improvements:
    - Full backward compatibility maintained
 """
 
-from typing import Dict, List, Mapping, Optional, Set, Union
+from collections.abc import Mapping
+from typing import Optional, Union
 
 import MDAnalysis as mda
 import numpy as np
@@ -392,7 +393,7 @@ class mda_TopologyAdapter:
         universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-    ) -> tuple[AtomGroup, Dict[str, List]]:
+    ) -> tuple[AtomGroup, dict[str, list]]:
         """Apply include/exclude selections and group atoms by chain.
 
         This method consolidates the common selection logic used across multiple methods.
@@ -446,7 +447,7 @@ class mda_TopologyAdapter:
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
-    ) -> tuple[list[Residue], Dict[int, int], Set[int]]:
+    ) -> tuple[list[Residue], dict[int, int], set[int]]:
         """Process residues for a single chain with terminal exclusion and renumbering.
 
         This consolidates the chain processing logic used in multiple methods.
@@ -546,7 +547,7 @@ class mda_TopologyAdapter:
     def _create_topology_from_residues(
         chain_id: str,
         residues: list[Residue],
-        residue_mapping: Dict[int, int],
+        residue_mapping: dict[int, int],
         mode: str,
         fragment_name_template: str = "auto",
     ) -> list[Partial_Topology]:
@@ -737,7 +738,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def _create_mda_group_lookup_key(
         mda_group: Union[ResidueGroup, AtomGroup],
-        renumber_mapping: Optional[Dict] = None,
+        renumber_mapping: Optional[dict] = None,
     ) -> Optional[tuple[str, frozenset[int]]]:
         """Create a lookup key for an MDA group.
 
@@ -1166,7 +1167,7 @@ class mda_TopologyAdapter:
         )
 
         # Group topologies by chain
-        topologies_by_chain: Dict[str | int, list[Partial_Topology]] = {}
+        topologies_by_chain: dict[str | int, list[Partial_Topology]] = {}
         for topo in topologies:
             if topo.chain not in topologies_by_chain:
                 topologies_by_chain[topo.chain] = []

@@ -3,7 +3,7 @@ Parameter loss implementations using factory functions.
 These losses operate on model parameters (weights) and priors.
 """
 
-from typing import Callable, List, Tuple
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -308,7 +308,7 @@ def create_maxent_softmax_kl_loss():
 
 # Composite Parameter Loss Factory
 def create_composite_parameter_loss(
-    loss_components: List[Tuple[Callable, float]],
+    loss_components: list[tuple[Callable, float]],
     normalise: bool = True,
     eps: float = 1e-8,
     scale_eps: bool = False,

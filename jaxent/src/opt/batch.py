@@ -3,7 +3,8 @@
 # # - we then unpack these to generate OptimisationHistory objects, essentially we are going to stack Simulation_Parameters and LossComponents in two additional dimensions - (steps, batch)
 # 1b) I think we need to define a new type for the output of _batch_optimise that registers the simualtion parameters and loss components for each step - LossLandscape
 # 2) we need to find way to handle the batch remainder
-from typing import Callable, Sequence
+from collections.abc import Sequence
+from typing import Callable
 
 from jax import vmap
 

@@ -1,6 +1,7 @@
 from functools import partial
 from multiprocessing import Pool
-from typing import Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Optional, cast
 
 import MDAnalysis as mda
 from MDAnalysis import Universe

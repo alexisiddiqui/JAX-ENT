@@ -1,4 +1,4 @@
-from typing import Callable, Dict
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -239,7 +239,7 @@ def create_consistency_loss(
 class LossRegistry:
     """Registry using functional composition instead of builders."""
 
-    _loss_factories: Dict[str, Callable[[], JaxEnt_Loss]] = {}
+    _loss_factories: dict[str, Callable[[], JaxEnt_Loss]] = {}
 
     @classmethod
     def register(cls, name: str, factory: Callable[[], JaxEnt_Loss]):
