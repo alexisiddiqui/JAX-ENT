@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Optional, Union
+from beartype.typing import ClassVar, Optional, Union
 
 import numpy as np
 import pandas as pd

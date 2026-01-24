@@ -2,7 +2,7 @@ import importlib
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Any, ClassVar, Generic, TypeVar
+from beartype.typing import Any, ClassVar, Generic, TypeVar
 
 import jax.numpy as jnp
 import numpy as np

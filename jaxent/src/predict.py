@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Union
+from beartype.typing import Union
 
 from icecream import ic
 
