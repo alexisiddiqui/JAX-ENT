@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Sequence
+from collections.abc import Sequence
+from typing import ClassVar, Optional
 
 import jax.numpy as jnp
 from jax import Array

@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Dict, List, Optional, Type, Union
+from typing import ClassVar, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -21,7 +21,7 @@ class ExpD_Datapoint:
     key: ClassVar[m_key]
 
     # Class registry to map keys to classes
-    _registry: ClassVar[Dict[str, Type["ExpD_Datapoint"]]] = {}
+    _registry: ClassVar[dict[str, type["ExpD_Datapoint"]]] = {}
 
     def __init_subclass__(cls, **kwargs):
         """Register subclasses automatically"""
@@ -104,7 +104,7 @@ class ExpD_Datapoint:
     @classmethod
     def save_list_to_files(
         cls,
-        datapoints: List["ExpD_Datapoint"],
+        datapoints: list["ExpD_Datapoint"],
         json_path: Optional[Union[str, Path]] = None,
         csv_path: Optional[Union[str, Path]] = None,
         base_name: Optional[str] = None,
@@ -210,8 +210,8 @@ class ExpD_Datapoint:
         json_path: Optional[Union[str, Path]] = None,
         csv_path: Optional[Union[str, Path]] = None,
         base_name: Optional[str] = None,
-        datapoint_class: Optional[Type["ExpD_Datapoint"]] = None,
-    ) -> List["ExpD_Datapoint"]:
+        datapoint_class: Optional[type["ExpD_Datapoint"]] = None,
+    ) -> list["ExpD_Datapoint"]:
         """
         Load a list of ExpD_Datapoint objects from JSON (topology) and CSV (features) files.
 
@@ -309,7 +309,7 @@ class ExpD_Datapoint:
     @classmethod
     def _create_datapoint_from_features(
         cls,
-        target_class: Type["ExpD_Datapoint"],
+        target_class: type["ExpD_Datapoint"],
         topology: Partial_Topology,
         features: np.ndarray,
         index: int,
@@ -398,8 +398,8 @@ class ExpD_Datapoint:
         cls,
         directory: Union[str, Path],
         dataset_name: str = "full_dataset",
-        datapoint_class: Optional[Type["ExpD_Datapoint"]] = None,
-    ) -> List["ExpD_Datapoint"]:
+        datapoint_class: Optional[type["ExpD_Datapoint"]] = None,
+    ) -> list["ExpD_Datapoint"]:
         """
         Convenience method to load datapoints from a directory using standard naming.
 
@@ -419,7 +419,7 @@ class ExpD_Datapoint:
     @classmethod
     def save_to_directory(
         cls,
-        datapoints: List["ExpD_Datapoint"],
+        datapoints: list["ExpD_Datapoint"],
         directory: Union[str, Path],
         dataset_name: str = "full_dataset",
         validate_homogeneous: bool = True,
