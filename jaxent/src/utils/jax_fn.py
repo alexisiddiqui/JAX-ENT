@@ -1,4 +1,4 @@
-from typing import TypeVar
+from beartype.typing import TypeVar
 
 import jax.numpy as jnp
 from jax import Array

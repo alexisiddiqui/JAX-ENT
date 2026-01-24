@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from beartype.typing import Optional, Union
 
 import MDAnalysis as mda
 import numpy as np

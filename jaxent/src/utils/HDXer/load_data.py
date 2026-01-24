@@ -12,7 +12,7 @@ Supported formats:
 
 import os
 import re
-from typing import Optional
+from beartype.typing import Optional
 
 import jax.numpy as jnp
 import numpy as np

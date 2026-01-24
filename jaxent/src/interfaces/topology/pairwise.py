@@ -1,4 +1,4 @@
-from typing import Optional
+from beartype.typing import Optional
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
 

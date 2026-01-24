@@ -1,6 +1,6 @@
 from functools import partial
 from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from beartype.typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp

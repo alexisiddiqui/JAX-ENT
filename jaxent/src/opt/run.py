@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Callable, Optional, TypedDict, cast
+from beartype.typing import Callable, Optional, TypedDict, cast
 
 import jax
 import jax.numpy as jnp

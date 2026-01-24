@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from beartype.typing import Optional, Union
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons

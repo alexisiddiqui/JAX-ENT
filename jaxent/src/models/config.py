@@ -1,6 +1,6 @@
 from dataclasses import field
-from typing import Protocol
-
+from beartype.typing import Protocol
+from beartype.typing import runtime_checkable
 import jax.numpy as jnp
 from jax import Array
 
@@ -10,7 +10,7 @@ from jaxent.src.interfaces.simulation import Model_Parameters
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 
-
+@runtime_checkable
 class Model_Config(Protocol):
     key: m_key
 

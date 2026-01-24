@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import ClassVar
+from beartype.typing import ClassVar
 
 import jax.numpy as jnp
 from jax import Array

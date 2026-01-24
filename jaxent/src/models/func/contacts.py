@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Literal
+from beartype.typing import Literal
 
 import MDAnalysis as mda
 from MDAnalysis import Universe

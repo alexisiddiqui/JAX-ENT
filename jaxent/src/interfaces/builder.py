@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Optional
+from beartype.typing import Optional
 
 import jax.numpy as jnp
 import MDAnalysis as mda

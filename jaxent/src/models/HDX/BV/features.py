@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from collections.abc import Sequence
-from typing import ClassVar, Optional
+from beartype.typing import ClassVar, Optional
 
 import jax.numpy as jnp
 from jax import Array

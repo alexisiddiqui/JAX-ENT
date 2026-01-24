@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, base_dir)
 import importlib
-from typing import Optional, Type, TypeVar
+from typing import Optional, TypeVar
 
 import h5py
 import jax
@@ -94,7 +94,7 @@ def save_model_parameters_to_hdf5(
 
 
 def load_model_parameters_from_hdf5(
-    h5file, path: str, default_cls: Optional[Type[T_mp]] = None
+    h5file, path: str, default_cls: Optional[type[T_mp]] = None
 ) -> Model_Parameters:
     """
     Load Model_Parameters from HDF5.
@@ -162,7 +162,7 @@ def save_simulation_parameters_to_hdf5(
 
 
 def load_simulation_parameters_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[Type[T_mp]] = None
+    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
 ) -> Simulation_Parameters:
     """
     Load Simulation_Parameters from HDF5.
@@ -291,7 +291,7 @@ def save_optimization_state_to_hdf5(h5file, path: str, state: OptimizationState,
 
 
 def load_optimization_state_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[Type[T_mp]] = None
+    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
 ) -> OptimizationState:
     """
     Load OptimizationState from HDF5.
@@ -353,7 +353,7 @@ def save_optimization_history_to_hdf5(
 
 
 def load_optimization_history_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[Type[T_mp]] = None
+    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from HDF5.
@@ -409,7 +409,7 @@ def save_optimization_history_to_file(
 
 
 def load_optimization_history_from_file(
-    filename: str, default_model_params_cls: Optional[Type[T_mp]] = None
+    filename: str, default_model_params_cls: Optional[type[T_mp]] = None
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from an HDF5 file.

@@ -3,7 +3,7 @@ Parameter loss implementations using factory functions.
 These losses operate on model parameters (weights) and priors.
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 import jax
 import jax.numpy as jnp
