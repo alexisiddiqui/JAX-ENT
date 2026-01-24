@@ -2,6 +2,8 @@ from typing import Sequence, cast
 
 import jax.numpy as jnp
 import MDAnalysis as mda
+from MDAnalysis import Universe
+from MDAnalysis.core.groups import AtomGroup, ResidueGroup
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
@@ -47,7 +49,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     def _prepare_selection_lists(
         self,
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         include_selection: str | list[str] | None | list[None],
         exclude_selection: str | list[str] | None | list[None],
     ) -> tuple[list[str], list[str]]:
@@ -100,7 +102,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     def initialise(
         self,
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         include_selection: str | list[str] | None = None,
         exclude_selection: str | list[str] | None = None,
     ) -> bool:
@@ -146,7 +148,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 exclude_termini=self.exclude_termini,
                 renumber_residues=True,
             )
-            common_residue_group = cast(mda.ResidueGroup, common_residue_group)
+            common_residue_group = cast(ResidueGroup, common_residue_group)
             k_ints_res_dict = calculate_HDXrate(
                 common_residue_group, self.config.temperature, self.config.ph
             )
@@ -200,7 +202,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     # TODO fix typing
 
     def featurise(
-        self, ensemble: list[mda.Universe]
+        self, ensemble: list[Universe]
     ) -> tuple[BV_input_features, list[Partial_Topology]]:
         """
         Calculate BV model features (heavy atom contacts and H-bond acceptor contacts)
@@ -236,7 +238,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 renumber_residues=True,
                 mda_atom_filtering="name N",
             )
-            n_atoms = cast(mda.AtomGroup, n_atoms)
+            n_atoms = cast(AtomGroup, n_atoms)
 
             # Get H atoms (for H-bond acceptor contacts)
             h_atoms = mda_TopologyAdapter.to_mda_group(
@@ -249,7 +251,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 renumber_residues=True,
                 mda_atom_filtering="name H or name HN",
             )
-            h_atoms = cast(mda.AtomGroup, h_atoms)
+            h_atoms = cast(AtomGroup, h_atoms)
 
             # Calculate heavy atom contacts using N atoms
             _heavy_contacts = calc_BV_contacts_universe(
