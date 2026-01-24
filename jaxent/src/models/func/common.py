@@ -310,7 +310,7 @@ def compute_trajectory_average_com_distances(
     ----------
     universe : Universe
         MDAnalysis Universe containing the trajectory
-    group_list : List[Union[AtomGroup, ResidueGroup]]
+    group_list : list[Union[AtomGroup, ResidueGroup]]
         List of atom or residue groups to compute distances between
     start : int, optional
         Start frame for analysis (default: first frame)

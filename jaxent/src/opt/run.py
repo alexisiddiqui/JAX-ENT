@@ -1,4 +1,5 @@
-from typing import Callable, Optional, Sequence, Tuple, TypedDict, cast
+from collections.abc import Sequence
+from typing import Callable, Optional, TypedDict, cast
 
 import jax
 import jax.numpy as jnp
@@ -55,7 +56,7 @@ def _optimise(
     loss_functions: Sequence[JaxEnt_Loss],
     opt_state: OptimizationState,
     optimizer: OptaxOptimizer,
-) -> Tuple[InitialisedSimulation, OptaxOptimizer]:
+) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     for step in range(n_steps):
         history = optimizer.history
 
@@ -119,7 +120,7 @@ def run_optimise(
     initialise: Optional[bool] = False,
     _opt_fn: Callable = _optimise,  # we seperate this so that users can add diagnostics in the loss loop
     jit_update_step: bool = False,
-) -> Tuple[InitialisedSimulation, OptimizationHistory]:
+) -> tuple[InitialisedSimulation, OptimizationHistory]:
     """Runs the optimization process"""
 
     if forward_models:

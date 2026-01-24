@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Generic, Sequence
+from collections.abc import Sequence
+from typing import Generic
 
 import jax
 import jax.numpy as jnp

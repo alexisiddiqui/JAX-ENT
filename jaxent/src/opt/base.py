@@ -5,7 +5,8 @@
 
 from dataclasses import dataclass, field
 from functools import partial
-from typing import NamedTuple, Optional, Protocol, Sequence, TypeVar
+from collections.abc import Sequence
+from typing import NamedTuple, Optional, Protocol, TypeVar
 
 import jax
 import jax.numpy as jnp

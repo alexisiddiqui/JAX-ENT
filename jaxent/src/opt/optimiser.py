@@ -1,5 +1,6 @@
 from functools import partial
-from typing import Any, Callable, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -497,7 +498,7 @@ class OptaxOptimizer:
         loss_functions: tuple[JaxEnt_Loss, ...],
         # history: OptimizationHistory,
         indexes: tuple[int, ...],
-    ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
+    ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
 
         # Switch to regular learning rate after initial steps
@@ -513,7 +514,7 @@ class OptaxOptimizer:
             )
 
 
-        def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
+        def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
             return losses.total_train_loss, losses

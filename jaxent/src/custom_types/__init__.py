@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, Sequence, TypeVar, runtime_checkable
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from jaxent.src.models.config import Model_Config  # noqa: F401
 
 if TYPE_CHECKING:
     from jaxent.src.custom_types.features import Input_Features, Output_Features  # noqa: F401
     from jaxent.src.data.loader import ExpD_Datapoint  # noqa: F401
     from jaxent.src.interfaces.model import Model_Parameters  # noqa: F401
-    from jaxent.src.models.config import Model_Config  # noqa: F401
     from jaxent.src.models.core import Simulation_Parameters  # noqa: F401
 
 
 T_In = TypeVar("T_In", bound="Input_Features", contravariant=True)
 T_Out = TypeVar("T_Out", bound="Output_Features", covariant=True)
 T_Params = TypeVar("T_Params", bound="Model_Parameters", contravariant=True)
-T_Config = TypeVar("T_Config", bound="Model_Config")
+T_Config = TypeVar("T_Config", bound=Model_Config)
 T_Feat_In = TypeVar("T_Feat_In", bound="Input_Features", covariant=True)
 
 T_ExpD = TypeVar("T_ExpD", bound="ExpD_Datapoint")

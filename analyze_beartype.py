@@ -74,7 +74,7 @@ def analyze_beartype_log(file_path):
         print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
-    log_file = "beartype_log.txt"
+    log_file = "beartype_log2.txt"
     if len(sys.argv) > 1:
         log_file = sys.argv[1]
     analyze_beartype_log(log_file)

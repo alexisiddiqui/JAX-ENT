@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from typing import ClassVar, Optional
 
 import jax.numpy as jnp
 import numpy as np
@@ -47,7 +48,7 @@ class NetHDX_input_features:
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
 
     @property
-    def features_shape(self) -> Tuple[int, ...]:
+    def features_shape(self) -> tuple[int, ...]:
         return (len(self.contact_matrices), len(self.residue_ids), len(self.residue_ids))
 
     def cast_to_jax(self) -> None:
@@ -67,7 +68,7 @@ class NetHDX_output_features:
     key = m_key("HDX_resPF")
 
     @property
-    def output_shape(self) -> Tuple[int, ...]:
+    def output_shape(self) -> tuple[int, ...]:
         return (1, len(self.log_Pf))
 
     def data(self) -> Array:
