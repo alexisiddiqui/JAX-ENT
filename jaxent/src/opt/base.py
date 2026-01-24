@@ -2,11 +2,10 @@
 # L1, L2, KL Divergence, Hinge loss, Cross-entropy loss, etc.
 # Specialized loss functions for specific tasks:
 # Monotonicity loss, Consistency loss.
-
+from beartype.typing import NamedTuple, Optional, Protocol, TypeVar, runtime_checkable
 from dataclasses import dataclass, field
 from functools import partial
 from collections.abc import Sequence
-from typing import NamedTuple, Optional, Protocol, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -51,7 +50,7 @@ D = TypeVar(
     contravariant=True,
 )
 
-
+@runtime_checkable
 class JaxEnt_Loss(Protocol[M, D]):
     def __call__(
         self, model: M, dataset: D, prediction_index: int | str | None
@@ -80,16 +79,16 @@ class OptimizationState(NamedTuple):
     params: Simulation_Parameters
     opt_state: optax.OptState
     step: int = 0
-    losses: Optional[LossComponents] = None
-    gradients: Optional[Simulation_Parameters] = None
+    losses: LossComponents | None = None
+    gradients: Simulation_Parameters | None = None
 
     def update(
         self,
         new_params: Simulation_Parameters,
         new_opt_state: optax.OptState,
         new_losses: LossComponents,
-        new_gradients: Optional[Simulation_Parameters] = None,
-        step: Optional[int] = None,
+        new_gradients: Simulation_Parameters | None = None,
+        step: int | None = None,
     ) -> "OptimizationState":
         return OptimizationState(
             params=new_params,
@@ -146,7 +145,7 @@ class OptimizationHistory:
     """Tracks the history of optimization states and metrics"""
 
     states: list[OptimizationState] = field(default_factory=list)
-    best_state: Optional[OptimizationState] = None
+    best_state: OptimizationState | None = None
 
     def add_state(self, state: OptimizationState):
         """Add a new state to history and update best state if needed"""

@@ -4,7 +4,7 @@
 # 1b) I think we need to define a new type for the output of _batch_optimise that registers the simualtion parameters and loss components for each step - LossLandscape
 # 2) we need to find way to handle the batch remainder
 from collections.abc import Sequence
-from typing import Callable
+from beartype.typing import Callable
 
 from jax import vmap
 

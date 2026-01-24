@@ -1,4 +1,4 @@
-from typing import Optional
+from beartype.typing import Optional
 
 from icecream import ic  # Import icecream for debugging
 

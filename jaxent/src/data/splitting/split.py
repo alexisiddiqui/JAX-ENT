@@ -1,7 +1,7 @@
 import copy
 import random
 from collections.abc import Sequence
-from typing import Optional
+from beartype.typing import Optional
 
 import MDAnalysis as mda
 from MDAnalysis import Universe
