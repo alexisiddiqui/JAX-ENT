@@ -2,7 +2,7 @@
 # L1, L2, KL Divergence, Hinge loss, Cross-entropy loss, etc.
 # Specialized loss functions for specific tasks:
 # Monotonicity loss, Consistency loss.
-from beartype.typing import NamedTuple, Optional, Protocol, TypeVar, runtime_checkable
+from beartype.typing import NamedTuple, Optional, Protocol, TypeVar, runtime_checkable, Any, Union
 from dataclasses import dataclass, field
 from functools import partial
 from collections.abc import Sequence
@@ -92,7 +92,7 @@ class OptimizationState(NamedTuple):
     """
 
     params: Simulation_Parameters
-    opt_state: chex.ArrayTree  # optax.OptState is structurally identical
+    opt_state: Union[Any, "chex.ArrayTree"]  # optax.OptState is structurally identical
     step: int = 0
     losses: LossComponents | None = None
     gradients: Simulation_Parameters | None = None
@@ -100,7 +100,7 @@ class OptimizationState(NamedTuple):
     def update(
         self,
         new_params: Simulation_Parameters,
-        new_opt_state: optax.OptState,
+        new_opt_state: Union[Any, "chex.ArrayTree"],  # optax.OptState is structurally identical
         new_losses: LossComponents,
         new_gradients: Simulation_Parameters | None = None,
         step: int | None = None,
