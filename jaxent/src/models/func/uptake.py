@@ -1,4 +1,4 @@
-from typing import Optional
+from beartype.typing import Optional
 from warnings import deprecated
 
 import MDAnalysis as mda

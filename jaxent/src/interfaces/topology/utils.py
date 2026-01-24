@@ -1,4 +1,4 @@
-from typing import Union
+from beartype.typing import Union
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
 

@@ -1,6 +1,7 @@
 ########################################################################
 # TODO need to simplify code using _create_modified_instance and lambda functions - using this we can then use lax to speed up the optimisation
-from typing import Any, Callable, ClassVar, TypeVar, cast
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar, cast
 
 import jax.numpy as jnp
 from jax import Array

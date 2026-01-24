@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Optional, Union
+from beartype.typing import Any, Optional, Union
 
 
 @dataclass

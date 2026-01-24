@@ -1,4 +1,4 @@
-from typing import cast
+from beartype.typing import cast
 
 import mdtraj as md  # type: ignore
 import numpy as np
