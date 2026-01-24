@@ -462,6 +462,7 @@ version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "beartype" },
+    { name = "chex" },
     { name = "h5py" },
     { name = "hdxrate" },
     { name = "icecream" },
@@ -492,6 +493,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "beartype", specifier = ">=0.22.9" },
+    { name = "chex", specifier = ">=0.1.88" },
     { name = "h5py", specifier = ">=3.14.0" },
     { name = "hdxrate", specifier = ">=0.2.2" },
     { name = "icecream", specifier = ">=2.1.4" },

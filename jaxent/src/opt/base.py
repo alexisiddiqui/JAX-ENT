@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from collections.abc import Sequence
 
+import chex
 import jax
 import jax.numpy as jnp
 import optax
@@ -71,13 +72,27 @@ class LossComponents(NamedTuple):
 
 class OptimizationState(NamedTuple):
     """Represents the state of the optimization at a given step.
-    Basic math operations (addition, subtraction, multiplecation, division, etc.) are supported
-    between two OptimizationState instances, as all elements in this are jax pytrees and tree map can be used to apply the operations.
-    For all math operations the step and opt_state are taken from the right hand side instance.
+    
+    Basic math operations (addition, subtraction, multiplication, division, etc.) are supported
+    between two OptimizationState instances, as all elements in this are jax pytrees and tree map 
+    can be used to apply the operations. For all math operations the step and opt_state are taken 
+    from the right hand side instance.
+    
+    Attributes:
+        params: Simulation parameters for the optimization
+        opt_state: Optimizer state from optax (typed as chex.ArrayTree for beartype compatibility)
+        step: Current optimization step number
+        losses: Loss components for this step
+        gradients: Gradients of parameters for this step
+        
+    Note:
+        We use chex.ArrayTree instead of optax.OptState because both have identical type
+        definitions, but chex exports ArrayTree in its public API, allowing beartype to
+        resolve the recursive forward reference successfully.
     """
 
     params: Simulation_Parameters
-    opt_state: optax.OptState
+    opt_state: chex.ArrayTree  # optax.OptState is structurally identical
     step: int = 0
     losses: LossComponents | None = None
     gradients: Simulation_Parameters | None = None
