@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Optional
 from warnings import deprecated
 
 import MDAnalysis as mda
@@ -14,7 +14,7 @@ def calculate_HDXrate(
     residue_group: ResidueGroup,
     temperature: float = 300.0,
     pD: float = 7.0,
-) -> Dict[Residue, float]:
+) -> dict[Residue, float]:
     """
     Calculate the intrinsic rate for a group of residues.
     This is using the HDXrate from sequence implementation:
@@ -35,12 +35,12 @@ def calculate_HDXrate(
 
     Returns
     -------
-    Dict[Residue, float]
+    dict[Residue, float]
         A dictionary mapping each residue to its HDX rate.
     """
 
     # Fix: residue_list should be a list of Residue objects, not a list of lists
-    residue_list: List[Residue] = [residue for residue in residue_group.residues]
+    residue_list: list[Residue] = [residue for residue in residue_group.residues]
 
     chains = set()
 
@@ -93,7 +93,7 @@ def calculate_HDXrate(
 @deprecated("calculate_intrinsic_rates is deprecated. Use calculate_HDXrate instead.")
 def calculate_intrinsic_rates(
     universe: Universe, residue_group: Optional[ResidueGroup] = None
-) -> Dict[Residue, float]:
+) -> dict[Residue, float]:
     """
     Calculate intrinsic exchange rates for each residue in an MDAnalysis Universe or a specific ResidueGroup.
 
@@ -106,11 +106,11 @@ def calculate_intrinsic_rates(
 
     Returns:
     --------
-    Dict[mda.Residue, float]: A dictionary mapping residue objects to their intrinsic rates.
+    dict[mda.Residue, float]: A dictionary mapping residue objects to their intrinsic rates.
     """
 
     # Default rate parameters from Bai et al., Proteins, 1993, 17, 75-86
-    rate_params: Dict[str, float] = {
+    rate_params: dict[str, float] = {
         "lgkAref": 2.04,
         "lgkBref": 10.36,
         "lgkWref": -1.5,
@@ -126,7 +126,7 @@ def calculate_intrinsic_rates(
 
     # Rate adjustments from Nguyen et al., J. Am. Soc. Mass Spec., 2018, 29, 1936-1939
     # Each value is [lgAL, lgBL, lgAR, lgBR]
-    rate_adjs: Dict[str, List[float]] = {
+    rate_adjs: dict[str, list[float]] = {
         "ALA": [0.00, 0.00, 0.00, 0.00],
         "ARG": [-0.59, 0.08, -0.32, 0.22],
         "ASN": [-0.58, 0.49, -0.13, 0.32],
@@ -156,7 +156,7 @@ def calculate_intrinsic_rates(
         "CTH": [0.05, 0.00, 0.00, 0.00],  # C-term COOH
     }
 
-    def _adj_to_rates(rate_adjs: List[float]) -> float:
+    def _adj_to_rates(rate_adjs: list[float]) -> float:
         """Helper function to calculate intrinsic rates from adjustments"""
         # Calculate reference rates at experimental temperature
         lgkAexp = rate_params["lgkAref"] - (rate_params["EaA"] / np.log(10) / rate_params["R"]) * (
@@ -196,7 +196,7 @@ def calculate_intrinsic_rates(
         residues = residue_group
 
     # Initialize dictionary
-    kint_dict: Dict[Residue, float] = {}
+    kint_dict: dict[Residue, float] = {}
 
     # Calculate rates for each residue
     for curr in residues:

@@ -1,4 +1,4 @@
-from typing import List, Tuple, cast
+from typing import cast
 
 import mdtraj as md  # type: ignore
 import numpy as np
@@ -8,7 +8,7 @@ def get_contact_atoms(
     universe: md.Trajectory,
     residue_idx: int,
     contact_selection: str,
-    residue_ignore: Tuple[int, int] = (-2, 2),
+    residue_ignore: tuple[int, int] = (-2, 2),
 ) -> np.ndarray:
     """Get indices of atoms to check contacts with for a given residue."""
     # Get range of residues to exclude (n-2 to n+2 by default)
@@ -38,12 +38,12 @@ def get_contact_atoms(
 
 def calc_BV_contacts_mdtraj(
     universe: md.Trajectory,
-    residue_atom_index: List[Tuple[int, int]],
+    residue_atom_index: list[tuple[int, int]],
     contact_selection: str,
     radius: float,
-    residue_ignore: Tuple[int, int] = (-2, 2),
+    residue_ignore: tuple[int, int] = (-2, 2),
     switch: bool = False,
-) -> List[List[float]]:
+) -> list[list[float]]:
     """Calculate contacts for multiple residue/atom pairs using Best-Vendruscolo method."""
     if switch:
         raise NotImplementedError("Switch function not implemented in this version")
@@ -74,7 +74,7 @@ def calc_BV_contacts_mdtraj(
 
 def calc_contacts(
     universe: md.Trajectory, query_idx: int, contact_indices: np.ndarray, radius: float
-) -> List[int]:
+) -> list[int]:
     """Calculate contacts using a hard cutoff."""
     # Handle single atom case
 
