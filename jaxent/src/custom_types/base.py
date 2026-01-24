@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Generic, Protocol
 
 import MDAnalysis as mda
+from MDAnalysis import Universe
 
 from jaxent.src.custom_types import T_Config, T_Feat_In, T_In, T_Out, T_Params
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
@@ -19,11 +20,11 @@ class ForwardPass(Protocol[T_In, T_Out, T_Params]):
 
 class Featuriser(Generic[T_Feat_In], Protocol):
     """
-    A featuriser is a callable object that takes in a list of mda.Universes and then returns a list of features.
+    A featuriser is a callable object that takes in a list of Universes and then returns a list of features.
     """
 
     def __call__(
-        self, ensemble: list[mda.Universe]
+        self, ensemble: list[Universe]
     ) -> tuple[T_Feat_In, list[Partial_Topology]]: ...
 
 
@@ -38,14 +39,14 @@ class ForwardModel(ABC, Generic[T_Params, T_In, T_Config]):
         self.key = self.config.key
 
     @abstractmethod
-    def initialise(self, ensemble: list[mda.Universe]) -> bool:
+    def initialise(self, ensemble: list[Universe]) -> bool:
         """
         This should be some form of validation to ensure that the data is compatible with the forward model.
         """
         pass
 
     @abstractmethod
-    def featurise(self, ensemble: list[mda.Universe]) -> tuple[T_In, list[Partial_Topology]]:
+    def featurise(self, ensemble: list[Universe]) -> tuple[T_In, list[Partial_Topology]]:
         pass
 
     @property

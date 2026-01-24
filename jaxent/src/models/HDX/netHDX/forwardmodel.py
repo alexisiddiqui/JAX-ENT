@@ -1,4 +1,5 @@
 import MDAnalysis as mda
+from MDAnalysis import Universe
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
@@ -20,7 +21,7 @@ class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, 
         super().__init__(config=config)
         self.forward: dict[m_key, ForwardPass] = {m_key("HDX_resPF"): NetHDX_ForwardPass()}
 
-    def initialise(self, ensemble: list[mda.Universe]) -> bool:
+    def initialise(self, ensemble: list[Universe]) -> bool:
         ########################################################################
         # TODO needs to ensure that there are backbone protons
         # also need to check whether hydrogen bonds analysis requires Hbonds - maybe could be skippable if angles are not required
@@ -36,7 +37,7 @@ class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, 
         return True
 
     def featurise(
-        self, ensemble: list[mda.Universe]
+        self, ensemble: list[Universe]
     ) -> tuple[NetHDX_input_features, list[Partial_Topology]]:
         """
         Featurize the ensemble using hydrogen bond networks,

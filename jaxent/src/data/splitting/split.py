@@ -3,6 +3,7 @@ import random
 from typing import Optional, Sequence
 
 import MDAnalysis as mda
+from MDAnalysis import Universe
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import (
@@ -83,7 +84,7 @@ class DataSplitter:
         self,
         dataset: ExpD_Dataloader,
         random_seed: int = 42,
-        ensemble: list[mda.Universe] | None = None,
+        ensemble: list[Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
         check_trim: bool = True,
         peptide_trim: int = 2,
@@ -995,7 +996,7 @@ class DataSplitter:
 
     def spatial_split(
         self,
-        universe: mda.Universe,
+        universe: Universe,
         remove_overlap: bool = False,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,

@@ -4,13 +4,14 @@ from warnings import deprecated
 import MDAnalysis as mda
 import numpy as np
 from hdxrate import k_int_from_sequence
-from MDAnalysis.core.groups import Residue  # Import Residue class
+from MDAnalysis import Universe
+from MDAnalysis.core.groups import Residue, ResidueGroup  # Import Residue class
 
 from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 
 def calculate_HDXrate(
-    residue_group: mda.ResidueGroup,
+    residue_group: ResidueGroup,
     temperature: float = 300.0,
     pD: float = 7.0,
 ) -> Dict[Residue, float]:
@@ -25,7 +26,7 @@ def calculate_HDXrate(
 
     Parameters
     ----------
-    residue_group : mda.ResidueGroup
+    residue_group : ResidueGroup
         The group of residues to calculate the HDX rate for.
     temperature : float
         The temperature in Kelvin.
@@ -91,7 +92,7 @@ def calculate_HDXrate(
 
 @deprecated("calculate_intrinsic_rates is deprecated. Use calculate_HDXrate instead.")
 def calculate_intrinsic_rates(
-    universe: mda.Universe, residue_group: Optional[mda.ResidueGroup] = None
+    universe: Universe, residue_group: Optional[ResidueGroup] = None
 ) -> Dict[Residue, float]:
     """
     Calculate intrinsic exchange rates for each residue in an MDAnalysis Universe or a specific ResidueGroup.

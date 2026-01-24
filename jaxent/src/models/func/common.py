@@ -2,6 +2,8 @@ from typing import Optional, Union
 
 import MDAnalysis as mda
 import numpy as np
+from MDAnalysis import Universe
+from MDAnalysis.core.groups import AtomGroup, ResidueGroup
 from icecream import ic  # Import the icecream debugging library
 from MDAnalysis.analysis import distances
 from tqdm import tqdm
@@ -216,7 +218,7 @@ from jaxent.src.utils.mda import determine_optimal_backend
 
 
 def get_residue_atom_pairs(
-    universe: mda.Universe, common_residues: set[tuple[str, int]], atom_name: str
+    universe: Universe, common_residues: set[tuple[str, int]], atom_name: str
 ) -> list[tuple[int, int]]:
     """Generate residue and atom index pairs for specified atoms in common residues.
 
@@ -291,8 +293,8 @@ def get_residue_atom_pairs(
 
 
 def compute_trajectory_average_com_distances(
-    universe: mda.Universe,
-    group_list: list[Union[mda.AtomGroup, mda.ResidueGroup]],
+    universe: Universe,
+    group_list: list[Union[AtomGroup, ResidueGroup]],
     start: Optional[int] = None,
     stop: Optional[int] = None,
     step: Optional[int] = None,
@@ -306,9 +308,9 @@ def compute_trajectory_average_com_distances(
 
     Parameters
     ----------
-    universe : mda.Universe
+    universe : Universe
         MDAnalysis Universe containing the trajectory
-    group_list : List[Union[mda.AtomGroup, mda.ResidueGroup]]
+    group_list : List[Union[AtomGroup, ResidueGroup]]
         List of atom or residue groups to compute distances between
     start : int, optional
         Start frame for analysis (default: first frame)

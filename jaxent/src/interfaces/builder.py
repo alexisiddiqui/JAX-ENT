@@ -2,6 +2,7 @@ from typing import Optional, Sequence
 
 import jax.numpy as jnp
 import MDAnalysis as mda
+from MDAnalysis import Universe
 
 from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.features import Input_Features
@@ -18,7 +19,7 @@ class Experiment_Builder:
 
     def __init__(
         self,
-        universes: list[mda.Universe],
+        universes: list[Universe],
         forward_models: Sequence[ForwardModel],
         experimental_data: Optional[list[ExpD_Dataloader]] = None,
         features: Optional[list[Input_Features]] = None,

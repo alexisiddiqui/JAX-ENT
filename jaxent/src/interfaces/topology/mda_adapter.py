@@ -36,7 +36,8 @@ from typing import Dict, List, Mapping, Optional, Set, Union
 
 import MDAnalysis as mda
 import numpy as np
-from MDAnalysis.core.groups import Residue
+from MDAnalysis import Universe
+from MDAnalysis.core.groups import AtomGroup, Residue, ResidueGroup
 from tqdm import tqdm
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
@@ -49,20 +50,20 @@ from jaxent.src.models.func.common import compute_trajectory_average_com_distanc
 class mda_TopologyAdapter:
     @staticmethod
     def get_mda_group_sort_key(
-        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
+        group: Union[ResidueGroup, AtomGroup, Residue],
     ) -> tuple[int, tuple[int, ...], float, int]:
         """Public method to generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         return mda_TopologyAdapter._get_mda_group_sort_key(group)
 
     @staticmethod
     def _get_mda_group_sort_key(
-        group: Union[mda.ResidueGroup, mda.AtomGroup, Residue],
+        group: Union[ResidueGroup, AtomGroup, Residue],
     ) -> tuple[int, tuple[int, ...], float, int]:
         """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         if isinstance(group, Residue):
             residues = [group]
             chain_id = mda_TopologyAdapter._get_chain_id(group)
-        elif isinstance(group, mda.ResidueGroup):
+        elif isinstance(group, ResidueGroup):
             residues = [res for res in group.residues]
             if len(residues) == 0:
                 raise ValueError("ResidueGroup contains no residues")
@@ -74,7 +75,7 @@ class mda_TopologyAdapter:
                     f"ResidueGroup contains residues from multiple chains: {chain_ids}"
                 )
             chain_id = list(chain_ids)[0]
-        elif isinstance(group, mda.AtomGroup):
+        elif isinstance(group, AtomGroup):
             residues = list(group.residues)
             if len(residues) == 0:
                 raise ValueError("AtomGroup contains no residues")
@@ -106,10 +107,10 @@ class mda_TopologyAdapter:
     # ================================================================================
     @staticmethod
     def _check_chain(
-        chain_id: str, sample_atom: Union[mda.AtomGroup, mda.ResidueGroup]
+        chain_id: str, sample_atom: Union[AtomGroup, ResidueGroup]
     ) -> tuple[str, tuple[bool, bool]]:
         if (
-            not isinstance(sample_atom, mda.Universe)
+            not isinstance(sample_atom, Universe)
             and hasattr(sample_atom, "chainID")
             and sample_atom.chainID == chain_id
         ):
@@ -117,7 +118,7 @@ class mda_TopologyAdapter:
         else:
             has_chainID = False
         if (
-            not isinstance(sample_atom, mda.Universe)
+            not isinstance(sample_atom, Universe)
             and hasattr(sample_atom, "segid")
             and sample_atom.segid == chain_id
         ):
@@ -135,7 +136,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _extract_chain_identifier(
-        atom_or_universe: Union[mda.AtomGroup, mda.ResidueGroup, mda.Universe],
+        atom_or_universe: Union[AtomGroup, ResidueGroup, Universe],
         chain_id: Optional[str] = None,
     ) -> tuple[str, tuple[bool, bool]]:
         """Extract chain identifier with consistent chainID/segid preference logic.
@@ -178,7 +179,7 @@ class mda_TopologyAdapter:
             else:
                 sample_atom = atom_or_universe
 
-        assert not isinstance(sample_atom, mda.Universe), (
+        assert not isinstance(sample_atom, Universe), (
             "Universe filtering did not occur as expected."
         )
 
@@ -190,13 +191,13 @@ class mda_TopologyAdapter:
         # Check that chainID and segid are available and extract values
         chainID_value = None
         segid_value = None
-        if not isinstance(sample_atom, mda.Universe) and hasattr(sample_atom, "chainID"):
+        if not isinstance(sample_atom, Universe) and hasattr(sample_atom, "chainID"):
             has_chainID = True
             chainID_value = sample_atom.chainID.strip()
         else:
             has_chainID = False
 
-        if not isinstance(sample_atom, mda.Universe) and hasattr(sample_atom, "segid"):
+        if not isinstance(sample_atom, Universe) and hasattr(sample_atom, "segid"):
             has_segid = True
             segid_value = sample_atom.segid.strip()
         else:
@@ -230,7 +231,7 @@ class mda_TopologyAdapter:
                 f"Has chainID: {has_chainID}, Has segid: {has_segid}",
             )
 
-        assert not isinstance(sample_atom, mda.Universe), (
+        assert not isinstance(sample_atom, Universe), (
             "Universe filtering did not occur as expected."
         )
         return mda_TopologyAdapter._check_chain(selected_chainID, sample_atom)
@@ -239,7 +240,7 @@ class mda_TopologyAdapter:
     def _build_residue_selection_string(
         chain_id: str,
         resids: list[int],
-        universe: mda.Universe,
+        universe: Universe,
     ) -> str:
         """Build MDAnalysis selection string for specific residues in a chain.
 
@@ -264,7 +265,7 @@ class mda_TopologyAdapter:
             return f"({resid_selection})"
 
     @staticmethod
-    def _get_chain_id(atom_or_residue: Union[mda.AtomGroup, mda.ResidueGroup]) -> str:
+    def _get_chain_id(atom_or_residue: Union[AtomGroup, ResidueGroup]) -> str:
         """Extract chain ID from an atom or residue.
 
         Args:
@@ -322,7 +323,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _normalize_parameters(
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str], None] = None,
         termini_chain_selection: Union[str, list[str]] = "protein",
@@ -388,10 +389,10 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _apply_selection_pipeline(
-        universe: mda.Universe,
+        universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-    ) -> tuple[mda.AtomGroup, Dict[str, List]]:
+    ) -> tuple[AtomGroup, Dict[str, List]]:
         """Apply include/exclude selections and group atoms by chain.
 
         This method consolidates the common selection logic used across multiple methods.
@@ -439,9 +440,9 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _process_chain_residues(
-        universe: mda.Universe,
+        universe: Universe,
         chain_id: str,
-        selected_atoms: list[mda.AtomGroup | Residue] | mda.ResidueGroup | mda.AtomGroup,
+        selected_atoms: list[AtomGroup | Residue] | ResidueGroup | AtomGroup,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
@@ -465,9 +466,9 @@ class mda_TopologyAdapter:
             - included_resids: Set of original resids that are included after filtering
         """
 
-        if isinstance(selected_atoms, mda.ResidueGroup):
+        if isinstance(selected_atoms, ResidueGroup):
             selected_residues = [res for res in selected_atoms.residues]
-        elif isinstance(selected_atoms, mda.AtomGroup):
+        elif isinstance(selected_atoms, AtomGroup):
             selected_residues = list(set(selected_atoms.residues))
         elif isinstance(selected_atoms, list):
             # Handle list of atoms, residues, or groups
@@ -626,7 +627,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _mda_group_to_topology(
-        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        mda_group: Union[ResidueGroup, AtomGroup],
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -648,9 +649,9 @@ class mda_TopologyAdapter:
             TypeError: If group type is not supported
         """
         # Extract residues
-        if isinstance(mda_group, mda.ResidueGroup):
+        if isinstance(mda_group, ResidueGroup):
             residues = list(mda_group)
-        elif isinstance(mda_group, mda.AtomGroup):
+        elif isinstance(mda_group, AtomGroup):
             residues = list(mda_group.residues)
         else:
             raise TypeError(f"Unsupported group type: {type(mda_group)}")
@@ -735,7 +736,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _create_mda_group_lookup_key(
-        mda_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        mda_group: Union[ResidueGroup, AtomGroup],
         renumber_mapping: Optional[Dict] = None,
     ) -> Optional[tuple[str, frozenset[int]]]:
         """Create a lookup key for an MDA group.
@@ -748,9 +749,9 @@ class mda_TopologyAdapter:
             Tuple of (chain_id, frozenset(resids)) or None if invalid
         """
         # Extract residues
-        if isinstance(mda_group, mda.ResidueGroup):
+        if isinstance(mda_group, ResidueGroup):
             residues = list(mda_group)
-        elif isinstance(mda_group, mda.AtomGroup):
+        elif isinstance(mda_group, AtomGroup):
             residues = list(mda_group.residues)
         else:
             return None
@@ -790,7 +791,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _build_renumbering_mapping(
-        universe: mda.Universe,
+        universe: Universe,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
     ) -> dict[tuple[str, int], int]:
@@ -834,7 +835,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def _validate_topology_containment(
         topology: Partial_Topology,
-        universe: mda.Universe,
+        universe: Universe,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
@@ -903,8 +904,8 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _build_chain_selection_string(
-        universe: mda.Universe, chain_id: str, base_selection: Optional[str] = None
-    ) -> tuple[str, mda.AtomGroup]:
+        universe: Universe, chain_id: str, base_selection: Optional[str] = None
+    ) -> tuple[str, AtomGroup]:
         """
         Utility method to build a selection string for a specific chain,
         accounting for available attributes in the universe.
@@ -922,7 +923,7 @@ class mda_TopologyAdapter:
         if has_chainID:
             chain_selection_parts.append(f"chainID {selected_chain_id}")
 
-        fallback_atoms = mda.AtomGroup([], universe)
+        fallback_atoms = AtomGroup([], universe)
 
         if not chain_selection_parts:
             selection_string = ""
@@ -963,7 +964,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _find_included_residues_by_chain(
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         include_selection: list[str] = ["protein"],
         exclude_selection: list[str] = ["resname SOL"],
         termini_chain_selection: list[str] = ["protein"],
@@ -1023,7 +1024,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _find_excluded_residues_by_chain(
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         topologies_by_universe: list[list[Partial_Topology]],
         include_selection: list[str] = ["protein"],
         termini_chain_selection: list[str] = ["protein"],
@@ -1085,7 +1086,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def from_mda_universe(
-        universe: mda.Universe,
+        universe: Universe,
         mode: str = "residue",
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -1139,7 +1140,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def to_mda_group(
         topologies: Union[set[Partial_Topology], list[Partial_Topology]],
-        universe: mda.Universe,
+        universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -1147,7 +1148,7 @@ class mda_TopologyAdapter:
         renumber_residues: bool = False,
         mda_atom_filtering: Optional[str] = None,
         check_trim: bool = True,
-    ) -> Union["mda.ResidueGroup", "mda.AtomGroup"]:
+    ) -> Union["ResidueGroup", "AtomGroup"]:
         """Create MDAnalysis ResidueGroup or AtomGroup from Partial_Topology objects.
 
         Refactored to use shared utility methods.
@@ -1255,7 +1256,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def find_common_residues(
-        ensemble: list[mda.Universe],
+        ensemble: list[Universe],
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str], None] = "resname SOL",
         termini_chain_selection: Union[str, list[str]] = "protein",
@@ -1320,12 +1321,12 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def get_residuegroup_ranking_indices(
-        residue_group: Union[mda.ResidueGroup, mda.AtomGroup],
+        residue_group: Union[ResidueGroup, AtomGroup],
     ) -> list[int]:
         """Get indices to reorder individual residues in a ResidueGroup/AtomGroup by topology ranking."""
-        if isinstance(residue_group, mda.AtomGroup):
+        if isinstance(residue_group, AtomGroup):
             residues = list(residue_group.residues)
-        elif isinstance(residue_group, mda.ResidueGroup):
+        elif isinstance(residue_group, ResidueGroup):
             residues = [res for res in residue_group]
         else:
             raise TypeError("residue_group must be a ResidueGroup or AtomGroup")
@@ -1345,8 +1346,8 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def get_atomgroup_reordering_indices(
-        mda_groups: list[Union[mda.ResidueGroup, mda.AtomGroup]],
-        universe: mda.Universe,
+        mda_groups: list[Union[ResidueGroup, AtomGroup]],
+        universe: Universe,
         target_topologies: Optional[list[Partial_Topology]] = None,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -1383,7 +1384,7 @@ class mda_TopologyAdapter:
             "All target_topologies must be Partial_Topology instances"
         )
         assert all(
-            isinstance(mda_group, (mda.ResidueGroup, mda.AtomGroup)) for mda_group in mda_groups
+            isinstance(mda_group, (ResidueGroup, AtomGroup)) for mda_group in mda_groups
         ), "All mda_groups must be ResidueGroup or AtomGroup instances"
 
         # extract mda_groups as Partial_Topology objects
@@ -1433,7 +1434,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def partial_topology_pairwise_distances(
         topologies: list[Partial_Topology],
-        universe: mda.Universe,
+        universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -1467,7 +1468,7 @@ class mda_TopologyAdapter:
                     check_trim=check_trim,
                 )
 
-                if isinstance(group, mda.ResidueGroup):
+                if isinstance(group, ResidueGroup):
                     group = group.atoms
 
                 mda_groups.append(group)
@@ -1495,7 +1496,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def to_mda_residue_dict(
         topologies: Union[set[Partial_Topology], list[Partial_Topology]],
-        universe: mda.Universe,
+        universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -1514,7 +1515,7 @@ class mda_TopologyAdapter:
             mda_atom_filtering=None,
         )
 
-        if isinstance(residue_group, mda.AtomGroup):
+        if isinstance(residue_group, AtomGroup):
             residues = residue_group.residues
         else:
             residues = residue_group
