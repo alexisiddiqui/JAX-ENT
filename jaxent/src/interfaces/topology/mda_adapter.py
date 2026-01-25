@@ -38,7 +38,7 @@ from beartype.typing import Optional, Union
 import MDAnalysis as mda
 import numpy as np
 from MDAnalysis import Universe
-from MDAnalysis.core.groups import AtomGroup, Residue, ResidueGroup
+from MDAnalysis.core.groups import Atom, AtomGroup, Residue, ResidueGroup
 from tqdm import tqdm
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
@@ -108,7 +108,7 @@ class mda_TopologyAdapter:
     # ================================================================================
     @staticmethod
     def _check_chain(
-        chain_id: str, sample_atom: Union[AtomGroup, ResidueGroup]
+        chain_id: str, sample_atom: Union[Atom, Residue, AtomGroup, ResidueGroup]
     ) -> tuple[str, tuple[bool, bool]]:
         if (
             not isinstance(sample_atom, Universe)
@@ -137,7 +137,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _extract_chain_identifier(
-        atom_or_universe: Union[AtomGroup, ResidueGroup, Universe],
+        atom_or_universe: Union[Atom, Residue, AtomGroup, ResidueGroup, Universe],
         chain_id: Optional[str] = None,
     ) -> tuple[str, tuple[bool, bool]]:
         """Extract chain identifier with consistent chainID/segid preference logic.
@@ -266,7 +266,7 @@ class mda_TopologyAdapter:
             return f"({resid_selection})"
 
     @staticmethod
-    def _get_chain_id(atom_or_residue: Union[AtomGroup, ResidueGroup]) -> str:
+    def _get_chain_id(atom_or_residue: Union[Atom, Residue, AtomGroup, ResidueGroup]) -> str:
         """Extract chain ID from an atom or residue.
 
         Args:
@@ -443,7 +443,7 @@ class mda_TopologyAdapter:
     def _process_chain_residues(
         universe: Universe,
         chain_id: str,
-        selected_atoms: list[AtomGroup | Residue] | ResidueGroup | AtomGroup,
+        selected_atoms: list[Atom | Residue | AtomGroup] | ResidueGroup | AtomGroup,
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
