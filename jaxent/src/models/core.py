@@ -68,8 +68,9 @@ class Simulation:
 
         # at this point we need to convert all the input features, parametere etc to jax arrays
         # use cast_to_jax for input features
-        self._input_features: tuple[Input_Features] = cast(
-            tuple[Input_Features], tuple([feature.cast_to_jax() for feature in self.input_features])
+        self._input_features: tuple[Input_Features, ...] = cast(
+            tuple[Input_Features, ...],
+            tuple([feature.cast_to_jax() for feature in self.input_features]),
         )
 
         print("Loaded forward passes")
