@@ -1,21 +1,12 @@
 from dataclasses import field
-from beartype.typing import Protocol
-from beartype.typing import runtime_checkable
 import jax.numpy as jnp
 from jax import Array
-
-from jaxent.src.custom_types.config import BaseConfig
+from jaxent.src.custom_types.config import BaseConfig, Model_Config
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.interfaces.simulation import Model_Parameters
+from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 
-@runtime_checkable
-class Model_Config(Protocol):
-    key: m_key
-
-    @property
-    def forward_parameters(self) -> Model_Parameters: ...
 
 
 class BV_model_Config(BaseConfig):
