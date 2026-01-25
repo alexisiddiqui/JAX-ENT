@@ -1,5 +1,7 @@
 # JAX-ENT: JAX-based Ensemble Modeling and Optimization Toolkit
 
+By default the python env is found in the .venv directory. 
+
 JAX-ENT is a Python library built on JAX for performing ensemble-based modeling and optimization, particularly focused on applications in structural biology and biophysics, such as Hydrogen Deuterium Exchange Mass Spectrometry (HDX-MS). It provides a flexible framework for defining forward models, featurizing molecular dynamics (MD) ensembles, handling experimental data, and optimizing model parameters using JAX's automatic differentiation and JIT compilation capabilities.
 
 ## Core Concepts and Architecture

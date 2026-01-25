@@ -1,8 +1,7 @@
-from beartype.typing import Optional
 from warnings import deprecated
 
-import MDAnalysis as mda
 import numpy as np
+from beartype.typing import Optional
 from hdxrate import k_int_from_sequence
 from MDAnalysis import Universe
 from MDAnalysis.core.groups import Residue, ResidueGroup  # Import Residue class
@@ -62,7 +61,7 @@ def calculate_HDXrate(
     # Create a chain universe from the residue group
     chain_universe = universe.select_atoms(chain_selection_string)
 
-    chain_univserse_residue_list: list[Residue] = chain_universe.residues
+    chain_univserse_residue_list: list[Residue] = list(chain_universe.residues)
 
     chain_univserse_residuegroup_indices = [
         idx for idx, residue in enumerate(chain_univserse_residue_list) if residue in residue_list

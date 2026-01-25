@@ -32,6 +32,9 @@ class MockInputFeatures:
     def features_shape(self) -> tuple[int, ...]:
         return self.features.shape
 
+    def cast_to_jax(self) -> "MockInputFeatures":
+        return self
+
 
 @dataclass()
 class MockExpDatapoint(ExpD_Datapoint):
