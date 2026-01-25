@@ -51,14 +51,14 @@ from jaxent.src.models.func.common import compute_trajectory_average_com_distanc
 class mda_TopologyAdapter:
     @staticmethod
     def get_mda_group_sort_key(
-        group: Union[ResidueGroup, AtomGroup, Residue],
+        group: Union[ResidueGroup, AtomGroup, Residue, object],
     ) -> tuple[int, tuple[int, ...], float, int]:
         """Public method to generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         return mda_TopologyAdapter._get_mda_group_sort_key(group)
 
     @staticmethod
     def _get_mda_group_sort_key(
-        group: Union[ResidueGroup, AtomGroup, Residue],
+        group: Union[ResidueGroup, AtomGroup, Residue, object],
     ) -> tuple[int, tuple[int, ...], float, int]:
         """Generate a sort key for an MDAnalysis group that matches Partial_Topology ranking."""
         if isinstance(group, Residue):
@@ -628,7 +628,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _mda_group_to_topology(
-        mda_group: Union[ResidueGroup, AtomGroup],
+        mda_group: Union[ResidueGroup, AtomGroup, object],
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
         exclude_termini: bool = True,
@@ -737,7 +737,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def _create_mda_group_lookup_key(
-        mda_group: Union[ResidueGroup, AtomGroup],
+        mda_group: Union[ResidueGroup, AtomGroup, object],
         renumber_mapping: Optional[dict] = None,
     ) -> Optional[tuple[str, frozenset[int]]]:
         """Create a lookup key for an MDA group.
@@ -777,9 +777,9 @@ class mda_TopologyAdapter:
                         renumbered_resid = new_id
                         break
                 if renumbered_resid is not None:
-                    resids.append(renumbered_resid)
+                    resids.append(int(renumbered_resid))
             else:
-                resids.append(res.resid)
+                resids.append(int(res.resid))
 
         if len(chain_ids) > 1:
             raise ValueError(f"Group contains residues from multiple chains: {chain_ids}")
@@ -829,7 +829,7 @@ class mda_TopologyAdapter:
 
             # Add to overall mapping
             for new_resid, orig_resid in residue_mapping.items():
-                renumber_mapping[(chain_id, new_resid)] = orig_resid
+                renumber_mapping[(chain_id, int(new_resid))] = int(orig_resid)
 
         return renumber_mapping
 
@@ -1322,7 +1322,7 @@ class mda_TopologyAdapter:
 
     @staticmethod
     def get_residuegroup_ranking_indices(
-        residue_group: Union[ResidueGroup, AtomGroup],
+        residue_group: Union[ResidueGroup, AtomGroup, object],
     ) -> list[int]:
         """Get indices to reorder individual residues in a ResidueGroup/AtomGroup by topology ranking."""
         if isinstance(residue_group, AtomGroup):
@@ -1419,7 +1419,7 @@ class mda_TopologyAdapter:
         # Find the index of the target topology with the maximum overlap for each converted topology
         result_indices = []
         for overlap_scores in overlaps:
-            max_index = np.argmax(overlap_scores)
+            max_index = int(np.argmax(overlap_scores))
             result_indices.append(max_index)
 
         # assert that the result indices are unique
@@ -1526,7 +1526,7 @@ class mda_TopologyAdapter:
             chain_id = mda_TopologyAdapter._get_chain_id(res)
             if chain_id not in residue_dict:
                 residue_dict[chain_id] = []
-            residue_dict[chain_id].append(res.resid)
+            residue_dict[chain_id].append(int(res.resid))
 
         for chain_id in residue_dict:
             residue_dict[chain_id].sort()
