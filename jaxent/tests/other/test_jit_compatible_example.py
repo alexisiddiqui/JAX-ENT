@@ -12,9 +12,12 @@ import jax
 import jax.numpy as jnp
 import optax
 import pytest
+from jax.tree_util import register_pytree_node
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
+from jaxent.src.custom_types.protocols import InputFeaturesLike
+from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.utils.jax_fn import single_pass
 from jaxent.src.utils.jit_fn import jit_Guard
@@ -53,7 +56,7 @@ def forward_pure(
         # We need to access the .features attribute directly
         feature_data = feature.features
         avg_feature = jnp.average(feature_data, weights=params.frame_weights, axis=0)
-        average_features.append(avg_feature)
+        average_features.append(DummyFeature(avg_feature))
 
     # Process each model explicitly rather than using tree_map
     output_features = []
@@ -157,15 +160,48 @@ class JITSimulation:
 
 
 # Dummy classes for testing purposes
-class DummyFeature:
-    def __init__(self, num_frames=10, num_features=5):
-        self.features = jnp.ones((num_frames, num_features))
-        self.features_shape = (num_frames, num_features)
+class DummyFeature(InputFeaturesLike):
+    __slots__ = ("features",)
+    def __init__(self, features=None, num_frames=10, num_features=5):
+        if features is not None:
+            self.features = features
+        else:
+            self.features = jnp.ones((num_frames, num_features))
+    
+    @property
+    def features_shape(self):
+        return self.features.shape
+    
+    @property
+    def __features__(self):
+        return ("features",)
+    
+    def cast_to_jax(self):
+        return DummyFeature(features=jnp.asarray(self.features))
+
+register_pytree_node(
+    DummyFeature,
+    lambda x: ((x.features,), ()),
+    lambda aux, children: DummyFeature(features=children[0])
+)
 
 
 class DummyForwardPass(ForwardPass):
     def __call__(self, features, params):
-        return features * 2
+        return features.features * 2
+
+
+class MockModelParameters(Model_Parameters):
+    """Mock model parameters for testing."""
+    __slots__ = ("key",)
+    def __init__(self, key=None):
+        self.key = key or frozenset()
+
+register_pytree_node(
+    MockModelParameters,
+    MockModelParameters.tree_flatten,
+    MockModelParameters.tree_unflatten
+)
 
 
 class DummyModel(ForwardModel):
@@ -189,7 +225,7 @@ def simulation_params():
     return Simulation_Parameters(
         frame_weights=jnp.ones(10) / 10,
         frame_mask=jnp.ones(10),
-        model_parameters=[{}],  # Dummy object
+        model_parameters=[MockModelParameters()],  # Proper object
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
         normalise_loss_functions=jnp.ones(1),
@@ -203,7 +239,7 @@ def test_data():
     mock_config = MagicMock()
     mock_config.forward_parameters = {}
     forward_models = [DummyModel(config=mock_config)]
-    model_parameters = [{}]
+    model_parameters = [MockModelParameters()]
     return input_features, forward_models, model_parameters
 
 
@@ -265,7 +301,7 @@ def test_jitsimulation_handles_mismatched_models_and_params(test_data):
     mismatched_params = Simulation_Parameters(
         frame_weights=jnp.ones(10) / 10,
         frame_mask=jnp.ones(10),
-        model_parameters=[{}, {}],
+        model_parameters=[MockModelParameters(), MockModelParameters()],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
         normalise_loss_functions=jnp.ones(1),
@@ -285,7 +321,7 @@ def test_jitsimulation_handles_mismatched_feature_shapes():
     params = Simulation_Parameters(
         frame_weights=jnp.ones(10) / 10,
         frame_mask=jnp.ones(10),
-        model_parameters=[{}, {}],
+        model_parameters=[MockModelParameters(), MockModelParameters()],
         forward_model_weights=jnp.ones(2),
         forward_model_scaling=jnp.ones(2),
         normalise_loss_functions=jnp.ones(2),

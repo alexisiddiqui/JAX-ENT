@@ -20,7 +20,7 @@ class Simulation:
     """
 
     outputs: tuple[Output_Features]
-    _jit_forward_pure: Callable
+    _jit_forward_pure: Callable | None
 
     def __init__(
         self,
@@ -33,14 +33,14 @@ class Simulation:
         self.input_features: list[Input_Features[Any]] = input_features
         self.forward_models: Sequence[ForwardModel] = forward_models
 
-        self.params: Simulation_Parameters = cast(Simulation_Parameters, params)
+        self.params: Simulation_Parameters | None = params
 
         self.forwardpass: Sequence[ForwardPass] = tuple(
             [model.forwardpass for model in self.forward_models]
         )
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
-        self._jit_forward_pure: Callable = None  # type: ignore
+        self._jit_forward_pure: Callable | None = None
         self.raise_jit_failure: bool = raise_jit_failure
 
     def __repr__(self) -> str:
