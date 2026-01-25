@@ -9,6 +9,7 @@ from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import JaxEnt_Loss
+from jaxent.src.custom_types.protocols import SimulationLike, DataloaderLike
 
 # Type aliases
 PureLossFunction = Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]
@@ -117,7 +118,7 @@ def create_functional_loss(
 
     # @functools.partial(jax.jit, static_argnames=["prediction_index"])
     def functional_loss(
-        model: InitialisedSimulation, dataset: ExpD_Dataloader, prediction_index: int
+        model: SimulationLike, dataset: DataloaderLike, prediction_index: int
     ) -> tuple[Array, Array]:
         # Direct indexing with static prediction_index - no need for jax.lax.switch
         predictions = model.outputs[prediction_index]
@@ -171,7 +172,7 @@ def create_parameter_loss(
 
     # @functools.partial(jax.jit, static_argnames=["prediction_index"])
     def parameter_loss(
-        model: InitialisedSimulation,
+        model: SimulationLike,
         dataset: Simulation_Parameters,
         prediction_index: None,
     ) -> tuple[Array, Array]:
@@ -202,7 +203,7 @@ def create_consistency_loss(
 
     # @functools.partial(jax.jit, static_argnames=["prediction_index"])
     def consistency_loss(
-        model: InitialisedSimulation,
+        model: SimulationLike,
         dataset: Array,
         prediction_index: int,
     ) -> tuple[Array, Array]:
