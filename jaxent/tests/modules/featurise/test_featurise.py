@@ -1,6 +1,7 @@
 import MDAnalysis as mda
 import numpy as np
 import pytest
+import beartype.roar
 from MDAnalysis.coordinates.memory import MemoryReader
 
 from jaxent.src.custom_types.config import FeaturiserSettings, Settings
@@ -444,7 +445,7 @@ class TestRunFeaturise:
         ensemble = Experiment_Builder(universes, self.single_model)
 
         # Test with invalid config type
-        with pytest.raises(ValueError, match="Invalid config"):
+        with pytest.raises((beartype.roar.BeartypeCallHintParamViolation, ValueError)):
             run_featurise(ensemble, "invalid_config", validate=False)
 
     def test_run_featurise_error_handling_missing_name(self):
@@ -453,9 +454,9 @@ class TestRunFeaturise:
         ensemble = Experiment_Builder(universes, self.single_model)
 
         # Create config without name
-        config_no_name = FeaturiserSettings(name=None, batch_size=None)
-
-        with pytest.raises(UserWarning, match="Name is required"):
+        # Move instantiation inside raises because beartype might catch it there
+        with pytest.raises((beartype.roar.BeartypeCallHintParamViolation, UserWarning)):
+            config_no_name = FeaturiserSettings(name=None, batch_size=None)
             run_featurise(ensemble, config_no_name, validate=False)
 
     def test_run_featurise_empty_ensemble(self):

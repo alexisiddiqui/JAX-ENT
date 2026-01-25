@@ -50,7 +50,7 @@ class ExpD_Datapoint:
         cls,
         json_path: Optional[Union[str, Path]] = None,
         csv_path: Optional[Union[str, Path]] = None,
-        base_name: Optional[str] = None,
+        base_name: Optional[Union[str, Path]] = None,
     ) -> tuple[Path, Path]:
         """
         Build JSON and CSV file paths, inferring missing paths from provided ones.
@@ -107,7 +107,7 @@ class ExpD_Datapoint:
         datapoints: list["ExpD_Datapoint"],
         json_path: Optional[Union[str, Path]] = None,
         csv_path: Optional[Union[str, Path]] = None,
-        base_name: Optional[str] = None,
+        base_name: Optional[Union[str, Path]] = None,
         validate_homogeneous: bool = True,
     ) -> None:
         """
@@ -209,7 +209,7 @@ class ExpD_Datapoint:
         cls,
         json_path: Optional[Union[str, Path]] = None,
         csv_path: Optional[Union[str, Path]] = None,
-        base_name: Optional[str] = None,
+        base_name: Optional[Union[str, Path]] = None,
         datapoint_class: Optional[type["ExpD_Datapoint"]] = None,
     ) -> list["ExpD_Datapoint"]:
         """

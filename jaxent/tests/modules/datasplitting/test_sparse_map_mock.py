@@ -5,27 +5,45 @@ import numpy as np
 import pytest
 from jax.experimental import sparse
 
+from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.interfaces.topology import Partial_Topology
-from jaxent.src.data.loader import ExpD_Datapoint
 
 
 # Mock for Input_Features protocol
 class MockInputFeatures:
     """Mock Input_Features for testing"""
+
     def __init__(self, shape):
-        self.features_shape = shape
+        self._shape = shape
         self.data = np.random.rand(*shape)
+        self.__features__ = ["data"]
+
+    @property
+    def features_shape(self) -> tuple[int, ...]:
+        """Return the shape of the features."""
+        return tuple(self._shape)
+
+    def cast_to_jax(self) -> "MockInputFeatures":
+        """Cast features to JAX arrays."""
+        # Convert data to JAX array
+        import jax.numpy as jnp
+
+        self.data = jnp.asarray(self.data)
+        return self
+
 
 # Concrete implementation for ExpD_Datapoint abstract class
 @dataclass
 class MockExpDDatapoint(ExpD_Datapoint):
     """Mock ExpD_Datapoint for testing"""
+
     top: Partial_Topology
-    
+
     def extract_features(self) -> np.ndarray:
         # Not used in create_sparse_map, so can be empty
         return np.array([])
+
 
 class TestCreateSparseMap:
     """Test suite for create_sparse_map function"""
@@ -115,9 +133,7 @@ class TestCreateSparseMap:
         input_features = MockInputFeatures((2,))
 
         feature_topology = [
-            Partial_Topology(
-                chain="A", residues=[1, 2], fragment_index=1
-            ),  # Should start from 0
+            Partial_Topology(chain="A", residues=[1, 2], fragment_index=1),  # Should start from 0
             Partial_Topology(chain="A", residues=[3, 4], fragment_index=2),
         ]
 
@@ -138,9 +154,7 @@ class TestCreateSparseMap:
         ]
 
         output_features = [
-            MockExpDDatapoint(
-                top=Partial_Topology(chain="B", residues=[5, 6])
-            ),  # Different chain
+            MockExpDDatapoint(top=Partial_Topology(chain="B", residues=[5, 6])),  # Different chain
         ]
 
         with pytest.raises(ValueError, match="No matching residues found"):

@@ -14,7 +14,7 @@ class BV_model_Config(BaseConfig):
     temperature: float = 300.0
     bv_bc: Array = jnp.array([0.35])
     bv_bh: Array = jnp.array([2.0])
-    ph: float = 7
+    ph: float = 7.0
     heavy_radius: float = 6.5
     o_radius: float = 2.4
     num_timepoints: int = 0
