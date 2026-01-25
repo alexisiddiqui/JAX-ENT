@@ -296,8 +296,8 @@ class TestConcreteClassesSaveLoad:
             },
             # Without optional k_ints
             {"heavy_contacts": [[1.0], [2.0], [3.0]], "acceptor_contacts": [[0.1], [0.2], [0.3]]},
-            # Edge case: empty sequences
-            {"heavy_contacts": [], "acceptor_contacts": [], "k_ints": []},
+            # Edge case: empty sequences (must be 2D to be valid)
+            {"heavy_contacts": [[]], "acceptor_contacts": [[]], "k_ints": []},
             # Single residue, multiple frames
             {
                 "heavy_contacts": [[1.0, 2.0, 3.0, 4.0, 5.0]],
@@ -369,7 +369,7 @@ class TestConcreteClassesSaveLoad:
             # Complex case
             {
                 "uptake": [
-                    [[i * j * k for k in range(1, 4)] for j in range(1, 6)] for i in range(1, 3)
+                    [[float(i * j * k) for k in range(1, 4)] for j in range(1, 6)] for i in range(1, 3)
                 ]
             },
         ]
