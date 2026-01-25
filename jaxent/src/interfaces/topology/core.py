@@ -176,7 +176,7 @@ class Partial_Topology:
         if not isinstance(other, Partial_Topology):
             return NotImplemented
         # Default to check_trim=False for direct comparison
-        return self.rank_order() < other.rank_order()
+        return bool(self.rank_order() < other.rank_order())
 
     def __hash__(self) -> int:
         """Allow topologies to be added to sets"""

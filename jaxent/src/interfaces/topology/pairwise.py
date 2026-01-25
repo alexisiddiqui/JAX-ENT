@@ -54,7 +54,7 @@ class PairwiseTopologyComparisons:
 
         top_residues = top._get_active_residues(check_trim)
         other_residues = other._get_active_residues(check_trim)
-        return sorted(set(top_residues) & set(other_residues))
+        return [int(x) for x in sorted(set(top_residues) & set(other_residues))]
 
     @staticmethod
     def get_difference(
@@ -65,7 +65,7 @@ class PairwiseTopologyComparisons:
 
         top_residues = top._get_active_residues(check_trim)
         other_residues = other._get_active_residues(check_trim)
-        return sorted(set(top_residues) - set(other_residues))
+        return [int(x) for x in sorted(set(top_residues) - set(other_residues))]
 
     @staticmethod
     def is_adjacent_to(

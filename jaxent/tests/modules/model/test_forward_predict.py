@@ -11,10 +11,6 @@ Final fixed version that passes all tests.
 import os
 import sys
 import tempfile
-from dataclasses import dataclass
-import dataclasses
-from typing import ClassVar, Optional
-
 from utils.jit_fn import jit_Guard
 
 # JAX setup
@@ -26,7 +22,6 @@ os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 import jax.numpy as jnp
 import numpy as np
-from jax.tree_util import register_pytree_node
 
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
@@ -90,53 +85,7 @@ def create_minimal_trajectory():
     return coords
 
 
-@dataclass
-class FixedBVFeatures:
-    """
-    Final corrected version of BV Features mock object. It's a dataclass
-    with an intelligent __post_init__ to handle reconstruction when only
-    feature arrays are provided.
-    """
-
-    __features__: ClassVar = ("heavy_contacts", "acceptor_contacts")
-
-    heavy_contacts: jnp.ndarray
-    acceptor_contacts: jnp.ndarray
-    k_ints: Optional[jnp.ndarray] = None
-    features_shape: Optional[tuple[int, ...]] = None
-
-    def __post_init__(self):
-        """
-        This method is called by the dataclass after __init__. It sets
-        default or derived values for fields that might not have been
-        provided, which handles reconstruction in `frame_average_features`.
-        """
-        if self.features_shape is None:
-            self.features_shape = self.heavy_contacts.shape
-        if self.k_ints is None:
-            n_features = self.features_shape[0]
-            self.k_ints = jnp.ones(n_features) * 0.1
-
-    def _get_ordered_slots(self):
-        """Return dataclass fields in order."""
-        return [f.name for f in dataclasses.fields(self)]
-
-    def cast_to_jax(self):
-        return self
-
-    def tree_flatten(self):
-        children = (self.heavy_contacts, self.acceptor_contacts)
-        aux_data = (self.k_ints, self.features_shape)
-        return children, aux_data
-
-    @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        heavy, acceptor = children
-        k_ints, features_shape = aux_data
-        return cls(heavy, acceptor, k_ints, features_shape)
-
-
-register_pytree_node(FixedBVFeatures, FixedBVFeatures.tree_flatten, FixedBVFeatures.tree_unflatten)
+from jaxent.src.models.HDX.BV.features import BV_input_features
 
 
 def create_test_simulation_fixed():
@@ -150,11 +99,10 @@ def create_test_simulation_fixed():
     acceptor_contacts_frames = jnp.linspace(0.4, 0.8, n_frames)
 
     features = [
-        FixedBVFeatures(
+        BV_input_features(
             heavy_contacts=jnp.ones((n_features, n_frames)) * heavy_contacts_frames,
             acceptor_contacts=jnp.ones((n_features, n_frames)) * acceptor_contacts_frames,
             k_ints=jnp.ones(n_features) * 0.1,
-            features_shape=(n_features, n_frames),
         )
     ]
     params = Simulation_Parameters(
@@ -176,6 +124,7 @@ def create_test_simulation_real():
     try:
         import MDAnalysis as mda
 
+
         pdb_path = create_minimal_topology_file()
         try:
             coords = create_minimal_trajectory()
@@ -189,11 +138,10 @@ def create_test_simulation_real():
             acceptor_contacts_frames = jnp.linspace(0.4, 0.8, n_frames)
 
             features = [
-                FixedBVFeatures(
+                BV_input_features(
                     heavy_contacts=jnp.ones((n_features, n_frames)) * heavy_contacts_frames,
                     acceptor_contacts=jnp.ones((n_features, n_frames)) * acceptor_contacts_frames,
                     k_ints=jnp.ones(n_features) * 0.1,
-                    features_shape=(n_features, n_frames),
                 )
             ]
             params = Simulation_Parameters(
