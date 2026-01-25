@@ -1,6 +1,11 @@
 from dataclasses import dataclass, field
 from beartype.typing import Any, Optional, Union
+from typing import TypeAlias
+import numpy as np
+import jax.numpy as jnp
 
+# Covers standard int, np.int64, np.int32, etc.
+IntLike: TypeAlias = int | np.integer | jnp.integer
 
 @dataclass
 class Partial_Topology:
@@ -10,20 +15,20 @@ class Partial_Topology:
     Fully JSON-serializable.
     """
 
-    chain: Union[str, int] = "A"  # Chain identifier (string or integer)
-    residues: list[int] = field(default_factory=list)  # Canonical representation
+    chain: Union[str, IntLike] = "A"  # Chain identifier (string or integer)
+    residues: list[IntLike] = field(default_factory=list)  # Canonical representation
     fragment_sequence: Union[str, list[str]] = ""  # Actual amino acid sequence
     fragment_name: str = "seg"  # Fragment identifier/name
-    fragment_index: Optional[int] = None
+    fragment_index: Optional[IntLike] = None
     peptide: bool = False  # Whether this is treated as a peptide
-    peptide_trim: int = 2  # Residues to trim from start when peptide=True
+    peptide_trim: IntLike = 2  # Residues to trim from start when peptide=True
 
     # Computed properties (not stored in JSON)
-    residue_start: int = field(init=False, repr=False)
-    residue_end: int = field(init=False, repr=False)
-    length: int = field(init=False, repr=False)
+    residue_start: IntLike = field(init=False, repr=False)
+    residue_end: IntLike = field(init=False, repr=False)
+    length: IntLike = field(init=False, repr=False)
     is_contiguous: bool = field(init=False, repr=False)
-    peptide_residues: list[int] = field(init=False, repr=False, default_factory=list)
+    peptide_residues: list[IntLike] = field(init=False, repr=False, default_factory=list)
 
     def __post_init__(self):
         """Compute derived properties from the residue list"""
@@ -73,7 +78,7 @@ class Partial_Topology:
         else:
             object.__setattr__(self, "peptide_residues", [])
 
-    def _get_active_residues(self, check_trim: bool = False) -> list[int]:
+    def _get_active_residues(self, check_trim: bool = False) -> list[IntLike]:
         """Get the active residues for this topology
 
         Args:
@@ -84,7 +89,7 @@ class Partial_Topology:
             return self.peptide_residues
         return self.residues
 
-    def get_residue_ranges(self) -> list[tuple[int, int]]:
+    def get_residue_ranges(self) -> list[tuple[IntLike, IntLike]]:
         """Get contiguous ranges within the residue list"""
         if not self.residues:
             return []
@@ -105,15 +110,14 @@ class Partial_Topology:
     def _to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary"""
         # Include all the core data fields that should be persisted
-        import jax.numpy as jnp
         return {
-            "chain": int(self.chain) if isinstance(self.chain, jnp.integer) else self.chain,
-            "residues": [int(r) if isinstance(r, jnp.integer) else r for r in self.residues],
+            "chain": int(self.chain) if not isinstance(self.chain, str) else self.chain,
+            "residues": [int(r) for r in self.residues],
             "fragment_sequence": self.fragment_sequence,
             "fragment_name": self.fragment_name,
-            "fragment_index": int(self.fragment_index) if self.fragment_index is not None and isinstance(self.fragment_index, jnp.integer) else self.fragment_index,
+            "fragment_index": int(self.fragment_index) if self.fragment_index is not None else None,
             "peptide": self.peptide,
-            "peptide_trim": self.peptide_trim,
+            "peptide_trim": int(self.peptide_trim),
         }
 
     @classmethod
@@ -217,7 +221,7 @@ class Partial_Topology:
         # Negative length to sort longer fragments first (descending).
         return (len(str(self.chain)), self._get_chain_score(), avg_residue, -length)
 
-    def contains_all_residues(self, residues: list[int], check_trim: bool = True) -> bool:
+    def contains_all_residues(self, residues: list[IntLike], check_trim: bool = True) -> bool:
         """Check if this topology contains ALL of the specified residues
 
         Args:
@@ -227,7 +231,7 @@ class Partial_Topology:
         active_residues = self._get_active_residues(check_trim)
         return all(res in active_residues for res in residues)
 
-    def contains_any_residues(self, residues: list[int], check_trim: bool = True) -> bool:
+    def contains_any_residues(self, residues: list[IntLike], check_trim: bool = True) -> bool:
         """Check if this topology contains ANY of the specified residues
 
         Args:
@@ -238,8 +242,8 @@ class Partial_Topology:
         return any(res in active_residues for res in residues)
 
     def contains_which_residue(
-        self, residues: Union[int, list[int]], check_trim: bool = False
-    ) -> Union[bool, dict[int, bool]]:
+        self, residues: Union[IntLike, list[IntLike]], check_trim: bool = False
+    ) -> Union[bool, dict[IntLike, bool]]:
         """Check if this topology contains specific residue(s)
 
         Args:
