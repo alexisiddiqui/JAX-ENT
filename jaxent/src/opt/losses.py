@@ -1023,7 +1023,7 @@ def cosine_frame_weight_consistency_loss(
 
 
 def corr_frame_weight_consistency_loss(
-    model: Simulation, dataset: Array, prediction_index: int
+    model: SimulationLike, dataset: Array, prediction_index: int
 ) -> tuple[Array, Array]:
     weights = model.params.frame_weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
@@ -1062,7 +1062,7 @@ def corr_frame_weight_consistency_loss(
 
 
 def hdx_uptake_mean_centred_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
@@ -1120,8 +1120,8 @@ def hdx_uptake_mean_centred_MSE_loss(
 
 
 def hdxer_MSE_loss(
-    model: Simulation,
-    dataset: ExpD_Dataloader,
+    model: SimulationLike,
+    dataset: DataloaderLike,
     prediction_index: int,
 ) -> tuple[Array, Array]:
     """
@@ -1179,8 +1179,8 @@ def hdxer_MSE_loss(
 
 
 def hdxer_mcMSE_loss(
-    model: Simulation,
-    dataset: ExpD_Dataloader,
+    model: SimulationLike,
+    dataset: DataloaderLike,
     prediction_index: int,
 ) -> tuple[Array, Array]:
     """
@@ -1239,7 +1239,7 @@ def hdxer_mcMSE_loss(
 
 
 def hdx_uptake_mean_centred_MAE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the mean-centered L1 loss between the predicted and experimental data for HDX uptake.
@@ -1297,7 +1297,7 @@ def hdx_uptake_mean_centred_MAE_loss(
 
 
 def hdx_uptake_l2_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the L2 loss between the predicted and experimental data for HDX uptake.
@@ -1352,7 +1352,7 @@ def hdx_uptake_l2_loss(
 
 
 def hdx_uptake_MAE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the L2 loss between the predicted and experimental data for HDX uptake.
@@ -1407,7 +1407,7 @@ def hdx_uptake_MAE_loss(
 
 
 def hdx_uptake_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the L2 loss between the predicted and experimental data for HDX uptake.
@@ -1498,7 +1498,7 @@ def hdx_uptake_MSE_loss(
 
 
 def hdx_uptake_MAE_loss_vectorized(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
     MAE version using jax.lax.fori_loop instead of Python loops.
@@ -1539,7 +1539,7 @@ def hdx_uptake_MAE_loss_vectorized(
 
 
 def hdx_uptake_sigma_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the weighted L2 loss between predicted and experimental data for HDX uptake.
@@ -1596,7 +1596,7 @@ def hdx_uptake_sigma_MSE_loss(
 
 
 def hdx_uptake_eye_MSE_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the weighted L2 loss between predicted and experimental data for HDX uptake.
@@ -1653,7 +1653,7 @@ def hdx_uptake_eye_MSE_loss(
 
 
 def HDX_uptake_KL_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the KL divergence loss between predicted and experimental HDX uptake data.
@@ -1718,7 +1718,7 @@ def HDX_uptake_KL_loss(
 
 
 def HDX_uptake_convex_KL_loss(
-    model: Simulation, dataset: ExpD_Dataloader, prediction_index: int
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
 ) -> tuple[Array, Array]:
     """
     Calculate the KL divergence loss between predicted and experimental HDX uptake data.
