@@ -64,7 +64,13 @@ class BV_output_features(Output_Features):
 class uptake_BV_output_features(Output_Features):
     """Concrete implementation of Output_Features for uptake BV output features."""
 
-    uptake: list[list[float]] | Sequence[Sequence[float]] | Array  # (timepoints, residues)
+    uptake: (
+        list[list[list[float]]]
+        | Sequence[Sequence[Sequence[float]]]
+        | list[list[float]]
+        | Sequence[Sequence[float]]
+        | Array
+    )  # (batch, peptides, timepoints) or (peptides, timepoints)
 
     __features__: ClassVar[set[str]] = {"uptake"}
     key: ClassVar[m_key] = m_key("HDX_peptide")

@@ -318,9 +318,9 @@ class TestCrossClassCompatibility:
 
     def test_dtype_preservation(self, tmp_path):
         """Test that dtypes are handled correctly."""
-        # Test with different numeric types
-        heavy_contacts = np.array([[1, 2, 3]], dtype=np.int32)
-        acceptor_contacts = np.array([[1.5, 2.5, 3.5]], dtype=np.float64)
+        # Test with different numeric types (using JAX arrays to satisfy type hints)
+        heavy_contacts = jnp.array([[1, 2, 3]], dtype=jnp.int32)
+        acceptor_contacts = jnp.array([[1.5, 2.5, 3.5]], dtype=jnp.float64)
 
         original = BV_input_features(
             heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts
@@ -331,8 +331,8 @@ class TestCrossClassCompatibility:
         loaded = BV_input_features.load_features(str(filepath))
 
         # Note: save_features converts to float32, so we expect that dtype
-        assert loaded.heavy_contacts.dtype == np.float32
-        assert loaded.acceptor_contacts.dtype == np.float32
+        assert loaded.heavy_contacts.dtype == jnp.float32
+        assert loaded.acceptor_contacts.dtype == jnp.float32
 
         # But values should be preserved (within float32 precision)
         np.testing.assert_array_almost_equal(loaded.heavy_contacts, heavy_contacts, decimal=6)
