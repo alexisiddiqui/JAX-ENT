@@ -12,15 +12,15 @@ Supported formats:
 
 import os
 import re
-from beartype.typing import Optional
 
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+from beartype.typing import Optional
 from jax import Array
 
 
-def load_HDXer_kints(kint_path: str) -> tuple[Array, list[float]]:
+def load_HDXer_kints(kint_path: str) -> tuple[Array, list[int]]:
     """
     Loads the intrinsic rates from a .dat file.
     Adjsuts the residue indices to be zero-based for termini exclusions
