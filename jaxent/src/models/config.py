@@ -1,16 +1,17 @@
 from dataclasses import field
+
 import jax.numpy as jnp
 from jax import Array
-from jaxent.src.custom_types.config import BaseConfig, Model_Config
+
+from jaxent.src.custom_types.config import BaseConfig
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 
 
-
 class BV_model_Config(BaseConfig):
-    temperature: float = 300
+    temperature: float = 300.0
     bv_bc: Array = jnp.array([0.35])
     bv_bh: Array = jnp.array([2.0])
     ph: float = 7
