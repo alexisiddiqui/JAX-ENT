@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, TypeVar
 
 from beartype.typing import runtime_checkable
 
-from jaxent.src.models.config import Model_Config  # noqa: F401
+from jaxent.src.custom_types.config import Model_Config  # noqa: F401
 
 if TYPE_CHECKING:
     from jaxent.src.custom_types.datapoint import ExpD_Datapoint  # noqa: F401

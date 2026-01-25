@@ -411,7 +411,7 @@ class TestSpatialSplitBasicFunctionality:
         splitter = setup_splitter(datapoints, common_residues)
 
         with patch("builtins.__import__", side_effect=ImportError("No module named 'numpy'")):
-            with pytest.raises(ImportError, match="NumPy is required"):
+            with pytest.raises(ImportError, match="No module named 'numpy'"):
                 splitter.spatial_split(mock_universe)
 
 
