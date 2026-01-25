@@ -34,3 +34,10 @@ class DataloaderLike(Protocol):
     train: DatasetLike
     val: DatasetLike
 
+@runtime_checkable
+class ExpDDatapointLike(Protocol):
+    """Protocol for experimental data point objects."""
+    top: Any  # Partial_Topology
+    key: Any  # m_key or ClassVar
+    
+    def extract_features(self) -> Any: ...
