@@ -1,6 +1,6 @@
 from beartype.typing import Optional, Union
 
-from jaxent.src.interfaces.topology.core import Partial_Topology
+from jaxent.src.interfaces.topology.core import IntLike, Partial_Topology
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 
 
@@ -8,14 +8,14 @@ class TopologyFactory:
     ### Operations for creating and merging topologies
     @staticmethod
     def from_range(
-        chain: Union[str, int],
-        start: int,
-        end: int,
+        chain: Union[str, IntLike],
+        start: IntLike,
+        end: IntLike,
         fragment_sequence: Union[str, list[str]] = "",
         fragment_name: str = "seg",
-        fragment_index: Optional[int] = None,
+        fragment_index: Optional[IntLike] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: IntLike = 2,
     ) -> Partial_Topology:
         """Create from a contiguous range of residues"""
         residues = list(range(int(start), int(end) + 1))
@@ -31,13 +31,13 @@ class TopologyFactory:
 
     @staticmethod
     def from_residues(
-        chain: Union[str, int],
-        residues: list[int],
+        chain: Union[str, IntLike],
+        residues: list[IntLike],
         fragment_sequence: Union[str, list[str]] = "",
         fragment_name: str = "seg",
-        fragment_index: Optional[int] = None,
+        fragment_index: Optional[IntLike] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: IntLike = 2,
     ) -> Partial_Topology:
         """Create from an arbitrary list of residues"""
         return Partial_Topology(
@@ -52,13 +52,13 @@ class TopologyFactory:
 
     @staticmethod
     def from_single(
-        chain: Union[str, int],
-        residue: int,
+        chain: Union[str, IntLike],
+        residue: IntLike,
         fragment_sequence: Union[str, list[str]] = "",
         fragment_name: str = "seg",
-        fragment_index: Optional[int] = None,
+        fragment_index: Optional[IntLike] = None,
         peptide: bool = False,
-        peptide_trim: int = 2,
+        peptide_trim: IntLike = 2,
     ) -> Partial_Topology:
         """Create from a single residue"""
         return Partial_Topology(
@@ -77,7 +77,7 @@ class TopologyFactory:
         trim: bool = False,
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
-        merged_index: Optional[int] = None,
+        merged_index: Optional[IntLike] = None,
         intersection: bool = False,
     ) -> Partial_Topology:
         """Merge multiple topologies into a single topology
@@ -186,7 +186,7 @@ class TopologyFactory:
     def merge_contiguous(
         topologies: list[Partial_Topology],
         trim: bool = False,
-        gap_tolerance: int = 0,
+        gap_tolerance: IntLike = 0,
         **kwargs,
     ) -> Partial_Topology:
         """Merge topologies that are contiguous or nearly contiguous
@@ -232,10 +232,10 @@ class TopologyFactory:
     def merge_overlapping(
         topologies: list[Partial_Topology],
         trim: bool = False,
-        min_overlap: int = 1,
+        min_overlap: IntLike = 1,
         merged_name: Optional[str] = None,
         merged_sequence: Optional[Union[str, list[str]]] = None,
-        merged_index: Optional[int] = None,
+        merged_index: Optional[IntLike] = None,
     ) -> Partial_Topology:
         """Merge topologies that have overlapping residues
 

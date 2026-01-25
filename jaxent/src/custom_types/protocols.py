@@ -33,3 +33,4 @@ class DataloaderLike(Protocol):
     """Protocol for objects providing train/val datasets."""
     train: DatasetLike
     val: DatasetLike
+

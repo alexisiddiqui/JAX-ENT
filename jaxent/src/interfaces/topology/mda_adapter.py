@@ -41,7 +41,7 @@ from MDAnalysis import Universe
 from MDAnalysis.core.groups import Atom, AtomGroup, Residue, ResidueGroup
 from tqdm import tqdm
 
-from jaxent.src.interfaces.topology.core import Partial_Topology
+from jaxent.src.interfaces.topology.core import IntLike, Partial_Topology
 from jaxent.src.interfaces.topology.factory import TopologyFactory
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 from jaxent.src.interfaces.topology.utils import group_set_by_chain
@@ -240,7 +240,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def _build_residue_selection_string(
         chain_id: str,
-        resids: list[int],
+        resids: list[IntLike],
         universe: Universe,
     ) -> str:
         """Build MDAnalysis selection string for specific residues in a chain.
@@ -447,7 +447,7 @@ class mda_TopologyAdapter:
         exclude_termini: bool = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
-    ) -> tuple[list[Residue], dict[int, int], set[int]]:
+    ) -> tuple[list[Residue], dict[IntLike, IntLike], set[IntLike]]:
         """Process residues for a single chain with terminal exclusion and renumbering.
 
         This consolidates the chain processing logic used in multiple methods.
@@ -514,11 +514,11 @@ class mda_TopologyAdapter:
         if renumber_residues:
             # Create a mapping from original resid to new resid
             residue_start = min(selected_residues, key=lambda r: r.resid).resid
-            residue_mapping: dict[int, int] = {
+            residue_mapping: dict[IntLike, IntLike] = {
                 res.resid: res.resid - residue_start + 1 for res in selected_residues
             }
         else:
-            residue_mapping: dict[int, int] = {res.resid: res.resid for res in selected_residues}
+            residue_mapping: dict[IntLike, IntLike] = {res.resid: res.resid for res in selected_residues}
 
         # Apply terminal exclusion
         if exclude_termini and len(full_chain_residues) > 2:
@@ -547,7 +547,7 @@ class mda_TopologyAdapter:
     def _create_topology_from_residues(
         chain_id: str,
         residues: list[Residue],
-        residue_mapping: dict[int, int],
+        residue_mapping: dict[IntLike, IntLike],
         mode: str,
         fragment_name_template: str = "auto",
     ) -> list[Partial_Topology]:
