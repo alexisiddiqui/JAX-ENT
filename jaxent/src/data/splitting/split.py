@@ -1,9 +1,8 @@
 import copy
 import random
 from collections.abc import Sequence
-from beartype.typing import Optional
 
-import MDAnalysis as mda
+from beartype.typing import Optional
 from MDAnalysis import Universe
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
@@ -1035,9 +1034,8 @@ class DataSplitter:
         try:
             import numpy as np
         except ImportError:
-            raise ImportError(
-                "NumPy is required for spatial splitting. Install with: pip install numpy"
-            )
+            # Re-raise original ImportError to preserve the original error message
+            raise
 
         print(
             f"Starting spatial split with train_size={self.train_size}, remove_overlap={remove_overlap}"

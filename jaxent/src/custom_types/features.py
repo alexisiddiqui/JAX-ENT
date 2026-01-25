@@ -245,6 +245,9 @@ class AbstractFeatures(ABC):
                     and loaded_value.item() is None
                 ):
                     features_kwargs[slot_name] = None
+                elif isinstance(loaded_value, np.ndarray):
+                    # Convert numpy arrays to JAX arrays for beartype compatibility
+                    features_kwargs[slot_name] = jnp.asarray(loaded_value)
                 else:
                     features_kwargs[slot_name] = loaded_value
 

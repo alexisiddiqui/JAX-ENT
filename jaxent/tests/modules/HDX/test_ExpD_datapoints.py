@@ -56,10 +56,12 @@ class TestExpDDatapoint:
         ):
             ExpD_Datapoint.extract_features(None)
 
+        from unittest.mock import Mock
+
         with pytest.raises(
             NotImplementedError, match="This method must be implemented in the child class."
         ):
-            ExpD_Datapoint._create_from_features(None, None)
+            ExpD_Datapoint._create_from_features(Mock(spec=Partial_Topology), np.array([]))
 
     # def test_abstract_class_cannot_be_instantiated(self):
     #     """Test that ExpD_Datapoint cannot be instantiated directly."""
