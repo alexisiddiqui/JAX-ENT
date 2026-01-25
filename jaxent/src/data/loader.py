@@ -11,6 +11,7 @@ from jax.experimental import sparse
 
 from jaxent.src.custom_types import T_ExpD
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+from jaxent.src.custom_types.protocols import ExpDDatapointLike
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
 from jaxent.src.data.splitting.sparse_map import create_sparse_map, create_covariance_mat
@@ -24,7 +25,7 @@ from jaxent.src.interfaces.topology import Partial_Topology
 )
 @dataclass(frozen=True, slots=True)
 class Dataset:
-    data: Sequence[ExpD_Datapoint]
+    data: Sequence[ExpDDatapointLike]
     y_true: Array
     residue_feature_ouput_mapping: sparse.BCOO
     covariance_matrix: Array | None = None # This is the inverse covariance matrix for the dataset
