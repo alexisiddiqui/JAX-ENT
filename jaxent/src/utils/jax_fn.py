@@ -92,7 +92,10 @@ def frame_average_features(
 ########################################
 
 
+from jaxent.src.custom_types.protocols import InputFeaturesLike, ModelParametersLike
+
+
 def single_pass(
-    forward_pass: ForwardPass, input_feature: Input_Features, parameters: Model_Parameters
+    forward_pass: ForwardPass, input_feature: InputFeaturesLike, parameters: ModelParametersLike
 ):
     return forward_pass(input_feature, parameters)

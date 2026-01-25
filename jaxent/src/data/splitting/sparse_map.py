@@ -33,8 +33,11 @@ def create_covariance_mat(covariance_matrix: Array | None, indices: Array ) -> A
     return covariance_matrix[jnp.ix_(indices, indices)]
 
 
+from jaxent.src.custom_types.protocols import InputFeaturesLike
+
+
 def create_sparse_map(
-    input_features: Input_Features,
+    input_features: InputFeaturesLike,
     feature_topology: Sequence[Partial_Topology],
     output_features: Sequence[ExpD_Datapoint],
     check_trim: bool = True,
