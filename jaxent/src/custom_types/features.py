@@ -2,6 +2,7 @@ import importlib
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from pathlib import Path
 from beartype.typing import Any, ClassVar, Generic, TypeVar
 
 import jax.numpy as jnp
@@ -123,7 +124,7 @@ class AbstractFeatures(ABC):
         jnp.savez(filepath, **save_dict)
 
     @classmethod
-    def load(cls: type[T_Features], filepath: str) -> T_Features:
+    def load(cls: type[T_Features], filepath: str | Path) -> T_Features:
         """
         Load features from a .npz file.
 
