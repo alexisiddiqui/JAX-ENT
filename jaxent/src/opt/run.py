@@ -11,8 +11,10 @@ from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.core import Simulation
+from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
+
 
 
 def optimise(
@@ -35,7 +37,9 @@ def optimise(
 
 class OptimiseFnInputs(TypedDict):
     _simulation: InitialisedSimulation
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features]
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ]
     n_steps: int
     tolerance: float
     convergence: float
@@ -48,7 +52,9 @@ class OptimiseFnInputs(TypedDict):
 
 def _optimise(
     _simulation: InitialisedSimulation,
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features],
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ],
     n_steps: int,
     tolerance: float,
     convergence: float,
@@ -110,7 +116,9 @@ def _optimise(
 
 def run_optimise(
     simulation: Simulation,
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features | Array],
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ],
     config: OptimiserSettings,
     forward_models: Sequence[ForwardModel],
     indexes: Sequence[int],
