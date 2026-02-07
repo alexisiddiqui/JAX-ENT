@@ -90,11 +90,11 @@ class linear_BV_model_Config(BV_model_Config):
 class NetHDXConfig(BaseConfig):
     """Configuration for netHDX calculations"""
 
-    temperature: float = 300
-    distance_cutoff: list[float] = field(
+    temperature: float = 300.0
+    distance_cutoff: float | list[float] = field(
         default_factory=lambda: [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5]
     )
-    angle_cutoff: list[float] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    angle_cutoff: float | list[float] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     residue_ignore: tuple[int, int] = (-1, 1)  # Range of residues to ignore relative to donor
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
@@ -105,8 +105,8 @@ class NetHDXConfig(BaseConfig):
 
     def __init__(
         self,
-        distance_cutoff: list[float] = [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5],
-        angle_cutoff: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        distance_cutoff: float | list[float] = [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5],
+        angle_cutoff: float | list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         num_timepoints: int = 1,
     ) -> None:
         super().__init__()
