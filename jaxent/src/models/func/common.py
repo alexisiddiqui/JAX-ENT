@@ -218,8 +218,8 @@ from jaxent.src.utils.mda import determine_optimal_backend
 
 
 def get_residue_atom_pairs(
-    universe: Universe, common_residues: set[tuple[str, int]], atom_name: str
-) -> list[tuple[int, int]]:
+    universe: Universe, common_residues: set[tuple[str, Union[int, np.integer]]], atom_name: str
+) -> list[tuple[Union[int, np.integer], Union[int, np.integer]]]:
     """Generate residue and atom index pairs for specified atoms in common residues.
 
     Args:

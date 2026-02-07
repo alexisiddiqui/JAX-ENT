@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from beartype.typing import ClassVar, Optional
 
 import jax.numpy as jnp
+from numpy import ndarray
 from jax import Array
 from jax.tree_util import register_pytree_node
 
@@ -16,9 +17,9 @@ class BV_input_features(Input_Features):
     Concrete implementation of Input_Features for BV input features.
     """
 
-    heavy_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
-    acceptor_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
-    k_ints: Optional[list] | Optional[Array] = None  # (residues,)
+    heavy_contacts: Sequence[Sequence[float]] | Array | ndarray  # (frames, residues)
+    acceptor_contacts: Sequence[Sequence[float]] | Array | ndarray  # (frames, residues)
+    k_ints: Optional[list] | Optional[Array] | Optional[ndarray] = None  # (residues,)
 
     __features__: ClassVar[set[str]] = {"heavy_contacts", "acceptor_contacts"}
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
@@ -28,7 +29,7 @@ class BV_input_features(Input_Features):
         if type(self.heavy_contacts) is not type(self.acceptor_contacts):
             raise TypeError("heavy_contacts and acceptor_contacts must be of the same type")
 
-        if isinstance(self.heavy_contacts, Array):
+        if isinstance(self.heavy_contacts, (Array, ndarray)):
             # For JAX arrays: (residues, frames)
             n_residues, n_frames = self.heavy_contacts.shape
         else:
@@ -46,8 +47,8 @@ class BV_input_features(Input_Features):
 class BV_output_features(Output_Features):
     """Concrete implementation of Output_Features for BV output features."""
 
-    log_Pf: list | Sequence[float] | Array  # (1, residues)
-    k_ints: Optional[list] | Optional[Array] = None
+    log_Pf: list | Sequence[float] | Array | ndarray  # (1, residues)
+    k_ints: Optional[list] | Optional[Array] | Optional[ndarray] = None
 
     __features__: ClassVar[set[str]] = {"log_Pf", "k_ints"}
     key: ClassVar[m_key] = m_key("HDX_resPF")
@@ -70,6 +71,7 @@ class uptake_BV_output_features(Output_Features):
         | list[list[float]]
         | Sequence[Sequence[float]]
         | Array
+        | ndarray
     )  # (batch, peptides, timepoints) or (peptides, timepoints)
 
     __features__: ClassVar[set[str]] = {"uptake"}
@@ -77,7 +79,7 @@ class uptake_BV_output_features(Output_Features):
 
     @property
     def output_shape(self) -> tuple[int, ...]:
-        if isinstance(self.uptake, Array):
+        if isinstance(self.uptake, (Array, ndarray)):
             return self.uptake.shape
         else:
             uptake = jnp.asarray(self.uptake)
