@@ -134,7 +134,7 @@ def test_quick_optimiser():
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
     # Create fake dataset with varying protection factors for better stratification testing
     exp_data = [
-        HDX_protection_factor(protection_factor=10, top=top)
+        HDX_protection_factor(protection_factor=10.0, top=top)
         for i, top in enumerate(feature_topology[0], start=1)
     ]
     # print("exp_data", exp_data)
@@ -243,7 +243,7 @@ def test_underscore_optimiser():
     top_segments = sorted(top_segments, key=lambda x: x.residue_start)
 
     exp_data = [
-        HDX_protection_factor(protection_factor=10, top=top)
+        HDX_protection_factor(protection_factor=10.0, top=top)
         for i, top in enumerate(feature_topology[0], start=1)
     ]
     dataset = ExpD_Dataloader(data=exp_data)
