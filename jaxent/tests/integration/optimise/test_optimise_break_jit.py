@@ -295,7 +295,7 @@ class OptimizationTestEnvironment:
 def run_optimization_step(
     simulation: Simulation,
     dataset: ExpD_Dataloader,
-    n_steps: int = 10,
+    n_steps: int = 10.0,
     use_run_optimise: bool = True,
 ) -> Tuple[bool, Any, str]:
     """Run a single optimization step and return success status."""
