@@ -142,7 +142,7 @@ def test_uptake_optimiser():
         frame_mask=jnp.ones(trajectory_length),
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(4),
-        forward_model_scaling=jnp.array([1.0, 10.0, 10, 10]),
+        forward_model_scaling=jnp.array([1.0, 10.0, 10.0, 10]),
         normalise_loss_functions=jnp.zeros(4),
     )
 
@@ -167,7 +167,7 @@ def test_uptake_optimiser():
     # Create prior_sparse_map before using it
     prior_sparse_map = create_sparse_map(features[0], feature_topology[0], prior_data)
 
-    opt_settings = OptimiserSettings(name="test", n_steps=10, convergence=1e-5, tolerance=1e-5)
+    opt_settings = OptimiserSettings(name="test", n_steps=11, convergence=1e-5, tolerance=1e-5)
 
     # create fake experimental dataset
 
