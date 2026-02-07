@@ -459,7 +459,7 @@ class OptaxOptimizer:
     def update_history_compute_ema_loss(
         optimizer: "OptaxOptimizer",
         simulation: InitialisedSimulation,
-        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features | Array, ...],
         loss_functions: tuple[JaxEnt_Loss, ...],
         indexes: tuple[int, ...],
         state: OptimizationState,
@@ -494,7 +494,7 @@ class OptaxOptimizer:
         optimizer: "OptaxOptimizer",
         state: OptimizationState,
         simulation: InitialisedSimulation,
-        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features | Array, ...],
         loss_functions: tuple[JaxEnt_Loss, ...],
         # history: OptimizationHistory,
         indexes: tuple[int, ...],
@@ -592,7 +592,7 @@ class OptaxOptimizer:
 def compute_loss(
     simulation: InitialisedSimulation,
     params: Simulation_Parameters,
-    data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+    data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features | Array, ...],
     indexes: tuple[int, ...],
     loss_functions: tuple[JaxEnt_Loss, ...],
 ) -> LossComponents:

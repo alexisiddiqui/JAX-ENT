@@ -310,7 +310,7 @@ def load_optimization_state_from_hdf5(
     params = load_simulation_parameters_from_hdf5(group, "params", default_model_params_cls)
 
     # Load step
-    step = group.attrs["step"]
+    step = int(group.attrs["step"])
 
     # Load losses if present
     losses = None
