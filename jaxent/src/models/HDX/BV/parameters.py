@@ -66,7 +66,7 @@ class linear_BV_Model_Parameters(Model_Parameters):
     bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
     bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
-    temperature: float = 300
+    temperature: float = 300.0
     timepoints: Array = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "timepoints", "key"}
 
