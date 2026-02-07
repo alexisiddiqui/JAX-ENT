@@ -284,7 +284,7 @@ def hdx_pf_work_shape_loss(
 
 
 def max_entropy_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
@@ -302,7 +302,7 @@ def max_entropy_loss(
 
 
 def maxent_convexKL_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     num_frames = dataset.frame_weights.shape[0]
     epsilon = 1e-10 / num_frames
@@ -323,7 +323,7 @@ def maxent_convexKL_loss(
 
 
 def maxent_JSD_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     num_frames = dataset.frame_weights.shape[0]
     epsilon = 1e-3 / num_frames
@@ -355,7 +355,7 @@ def maxent_JSD_loss(
 
 
 def maxent_W1_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     epsilon = 1e-10
 
@@ -374,7 +374,7 @@ def maxent_W1_loss(
 
 
 def maxent_ESS_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
@@ -401,7 +401,7 @@ def maxent_ESS_loss(
 
 
 def minent_ESS_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
@@ -428,7 +428,7 @@ def minent_ESS_loss(
 
 
 def maxent_L2_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     """
     Calculates the L2 penalty of the simulation weights compared to the prior weights. Scaled by the number of frames, squared.
@@ -451,7 +451,7 @@ def maxent_L2_loss(
 
 
 def maxent_L1_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     """
     Calculates the L2 penalty of the simulation weights compared to the prior weights. Scaled by the number of frames, squared.
@@ -474,7 +474,7 @@ def maxent_L1_loss(
 
 
 def model_params_L2_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     """
     Calculates the L2 penalty of the model parameters compared to the prior.
@@ -494,7 +494,7 @@ def model_params_L2_loss(
 
 
 def model_params_L1_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     """
     Calculates the L1 penalty of the model parameters compared to the prior.
@@ -514,7 +514,7 @@ def model_params_L1_loss(
 
 
 def sparse_max_entropy_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     active_mask = model.params.frame_mask > 0.5
     simulation_weights = jnp.abs(model.params.frame_weights) * active_mask
@@ -528,7 +528,7 @@ def sparse_max_entropy_loss(
 
 
 def mask_L0_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
+    model: InitialisedSimulation, dataset: Any, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
     frame_masks = model.params.frame_mask
 
