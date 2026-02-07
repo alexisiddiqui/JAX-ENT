@@ -15,7 +15,7 @@ class BV_Model_Parameters(Model_Parameters):
     bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Array = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Array | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
 
     def __mul__(self, scalar: float | Array) -> "BV_Model_Parameters":
@@ -67,7 +67,7 @@ class linear_BV_Model_Parameters(Model_Parameters):
     bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Array = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Array | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "timepoints", "key"}
 
     def __mul__(self, scalar: float | Array) -> "linear_BV_Model_Parameters":
