@@ -62,7 +62,7 @@ class NetHDX_input_features:
 class NetHDX_output_features:
     """Output features for netHDX model"""
 
-    log_Pf: list  # (1, residues)
+    log_Pf: list | Sequence[float] | Array | np.ndarray  # (1, residues)
     k_ints: Optional[list]
 
     key = m_key("HDX_resPF")
@@ -79,7 +79,7 @@ class NetHDX_output_features:
 class uptake_NetHDX_output_features:
     """Output features for netHDX model"""
 
-    uptake: list[list[float]] | Sequence[Sequence[float]] | Array  # (1, residues, timepoints)]
+    uptake: list[list[float]] | Sequence[Sequence[float]] | Array | np.ndarray  # (1, residues, timepoints)]
     k_ints: Optional[list]
 
     key = m_key("HDX_peptide")
