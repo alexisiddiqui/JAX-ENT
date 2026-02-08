@@ -331,23 +331,23 @@ def main():
 
         # Create Simulation_Parameters for current simulation
         current_forward_model_weights = jnp.asarray(
-            _process_arg_list(
+            [_process_arg_list(
                 args.forward_model_weights, args.num_simulations, "forward_model_weights"
-            )[i]
+            )[i]]
         )
         current_normalise_loss_functions = jnp.asarray(
-            _process_arg_list(
+            [_process_arg_list(
                 args.normalise_loss_functions,
                 args.num_simulations,
                 "normalise_loss_functions",
                 dtype=int,
-            )[i],
+            )[i]],
             dtype=jnp.int32,
         )
         current_forward_model_scaling = jnp.asarray(
-            _process_arg_list(
+            [_process_arg_list(
                 args.forward_model_scaling, args.num_simulations, "forward_model_scaling"
-            )[i]
+            )[i]]
         )
 
         simulation_parameters_list.append(

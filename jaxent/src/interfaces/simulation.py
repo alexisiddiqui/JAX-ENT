@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 from jax import Array
+from jaxtyping import Float, Int, Array, Bool
 from jax.tree_util import register_pytree_node
 
 from jaxent.src.interfaces.model import Model_Parameters
@@ -14,12 +15,12 @@ from jaxent.src.interfaces.model import Model_Parameters
 
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
-    frame_weights: Array
-    frame_mask: Array  # array of type int
+    frame_weights: Float[Array, " n_frames"]
+    frame_mask: Float[Array, " n_frames"] | Int[Array, " n_models"] | Bool[Array, " n_models"] # array of type int
     model_parameters: Sequence[Model_Parameters]
-    forward_model_weights: Array
-    normalise_loss_functions: Array  # array of type int
-    forward_model_scaling: Array
+    forward_model_weights: Float[Array, " n_models"]
+    normalise_loss_functions: Float[Array, " n_models"] | Int[Array, " n_models"] | Bool[Array, " n_models"]  # array of type int
+    forward_model_scaling: Float[Array, " n_models"]
 
     ########################################################################
     # TODO I think this is maybe kinda silly - but
