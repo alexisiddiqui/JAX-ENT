@@ -1,6 +1,7 @@
 from collections.abc import Callable, Sequence
 from typing import Any, Optional, Union, cast
 
+import chex
 import jax.numpy as jnp
 from jax import (
     jit,
@@ -52,18 +53,25 @@ class Simulation:
     #     # self.output_features: dict[m_id, Array]
 
     def initialise(self) -> bool:
-        # assert that input features have the same first dimension of "features_shape"
+        # Assert that input features have the same frame dimension
         lengths = [feature.features_shape[-1] for feature in self.input_features]
-        assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
+        chex.assert_equal(len(set(lengths)), 1, custom_message="Input features have different frame counts")
         self.length = lengths[0]
 
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
+        
+        # Validate parameter ranks
+        chex.assert_rank(self.params.frame_weights, 1)
+        
         self.params = Simulation_Parameters.normalize_weights(self.params)
         self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
-        # assert that the number of forward models is equal to the number of forward model weights
-        assert len(self.forward_models) == len(self.params.model_parameters), (
-            "Number of forward models must be equal to number of forward model parameters"
+        
+        # Assert that the number of forward models matches model parameters
+        chex.assert_equal(
+            len(self.forward_models), 
+            len(self.params.model_parameters),
+            custom_message="Number of forward models must equal number of model parameters"
         )
 
         # at this point we need to convert all the input features, parametere etc to jax arrays
