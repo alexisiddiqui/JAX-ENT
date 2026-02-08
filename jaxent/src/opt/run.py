@@ -1,6 +1,8 @@
 from collections.abc import Sequence
 from beartype.typing import Callable, Optional, TypedDict, cast
 
+import chex
+
 import jax
 import jax.numpy as jnp
 from jax import Array
@@ -64,6 +66,7 @@ def _optimise(
     optimizer: OptaxOptimizer,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     for step in range(n_steps):
+        chex.assert_tree_all_finite(opt_state.params)
         history = optimizer.history
 
         opt_state, current_loss, save_state, _simulation = optimizer.step(
