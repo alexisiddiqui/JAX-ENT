@@ -49,9 +49,10 @@ import jaxent
 
 import os
 import warnings
-from typing import Optional, Union
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Optional, Union
+
 from beartype import BeartypeConf
 
 __all__ = [
@@ -139,9 +140,7 @@ class RuntimeConfig:
                 mode = RuntimeMode(mode.lower())
             except ValueError:
                 valid_modes = ", ".join(m.value for m in RuntimeMode)
-                raise ValueError(
-                    f"Invalid runtime mode: {mode}. Must be one of: {valid_modes}"
-                )
+                raise ValueError(f"Invalid runtime mode: {mode}. Must be one of: {valid_modes}")
 
         # Get preset configuration for the mode
         presets = {
@@ -196,7 +195,9 @@ class RuntimeConfig:
 
         # Apply overrides
         platform = platform_override if platform_override is not None else preset["platform"]
-        disable_jit = disable_jit_override if disable_jit_override is not None else preset["disable_jit"]
+        disable_jit = (
+            disable_jit_override if disable_jit_override is not None else preset["disable_jit"]
+        )
         enable_chex_asserts = (
             enable_chex_override
             if enable_chex_override is not None
@@ -241,6 +242,7 @@ def _initialize_from_environment() -> RuntimeConfig:
     Returns:
         RuntimeConfig: The initialized configuration
     """
+
     mode = os.environ.get("JAXENT_MODE", "development").lower()
 
     # Parse overrides
