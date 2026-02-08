@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from jax import Array
+from jaxtyping import Float, Array
 
 from jaxent.src.custom_types import InitialisedSimulation
 from jaxent.src.custom_types.features import Output_Features
@@ -62,12 +63,12 @@ class JaxEnt_Loss(Protocol[M, D]):
 class LossComponents(NamedTuple):
     """Stores the various components of loss for training and validation"""
 
-    train_losses: Array  # Individual training loss components
-    val_losses: Array  # Individual validation loss components
-    scaled_train_losses: Array  # Scaled training loss components
-    scaled_val_losses: Array  # Scaled validation loss components
-    total_train_loss: Array  # Total training loss
-    total_val_loss: Array  # Total validation loss
+    train_losses: Float[Array, " n_models"]  # Individual training loss components
+    val_losses: Float[Array, " n_models"]  # Individual validation loss components
+    scaled_train_losses: Float[Array, " n_models"]  # Scaled training loss components
+    scaled_val_losses: Float[Array, " n_models"]  # Scaled validation loss components
+    total_train_loss: Float[Array, ""]  # Total training loss
+    total_val_loss: Float[Array, ""]  # Total validation loss
 
 
 class OptimizationState(NamedTuple):
