@@ -5,8 +5,10 @@ import chex
 import jax.numpy as jnp
 from jax import (
     jit,
+    Array,
 )
 from jax.tree_util import register_pytree_node
+from jaxtyping import Float
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
@@ -300,14 +302,15 @@ class Simulation:
         Pure function for forward computation that is jittable.
 
         Args:
-            params: Simulation parameters
-            input_features: Input features
+            params: Simulation parameters with frame_weights as Float[Array, " n_frames"]
+            input_features: Input features, each with shape (n_residues, n_frames)
             forwardpass: Forward pass functions
 
         Returns:
-            Output features
+            Output features from each forward model
         """
-        # Normalize weights
+        # Validate frame_weights rank
+        chex.assert_rank(params.frame_weights, 1)
 
         # Mask the frame weights
         # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
