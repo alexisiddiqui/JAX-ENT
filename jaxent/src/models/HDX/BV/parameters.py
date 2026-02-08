@@ -4,6 +4,7 @@ from beartype.typing import ClassVar
 import jax.numpy as jnp
 from jax import Array
 from jax.tree_util import register_pytree_node
+from jaxtyping import Float
 
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.simulation import Model_Parameters
@@ -11,11 +12,12 @@ from jaxent.src.interfaces.simulation import Model_Parameters
 
 @dataclass(frozen=True, slots=True)
 class BV_Model_Parameters(Model_Parameters):
-    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
-    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
+    # bv_bc/bv_bh can be 1-D (n_timepoints,) or 0-D scalar during gradient operations
+    bv_bc: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([0.35]))
+    bv_bh: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Array | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
 
     def __mul__(self, scalar: float | Array) -> "BV_Model_Parameters":
@@ -63,11 +65,12 @@ register_pytree_node(
 
 @dataclass(frozen=True, slots=True)
 class linear_BV_Model_Parameters(Model_Parameters):
-    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35]))
-    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0]))
+    # bv_bc/bv_bh can be 1-D (n_timepoints,) or 0-D scalar during gradient operations
+    bv_bc: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([0.35]))
+    bv_bh: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Array | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "timepoints", "key"}
 
     def __mul__(self, scalar: float | Array) -> "linear_BV_Model_Parameters":
