@@ -65,6 +65,7 @@ class Simulation:
         
         # Validate parameter ranks
         chex.assert_rank(self.params.frame_weights, 1)
+        chex.assert_equal_shape([self.params.frame_weights, self.params.frame_mask])
         
         self.params = Simulation_Parameters.normalize_weights(self.params)
         self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)

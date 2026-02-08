@@ -106,6 +106,9 @@ class Simulation_Parameters:
         # Use projection_simplex for frame weights normalization
         # frame_weights = optax.projections.projection_simplex(jnp.asarray(params.frame_weights))
 
+        chex.assert_rank(params.frame_weights, 1)
+        chex.assert_equal_shape([params.frame_weights, params.frame_mask])
+
         frame_weights = jax.nn.softmax(params.frame_weights)
 
         # Clip the frame mask to be between 0 and 1

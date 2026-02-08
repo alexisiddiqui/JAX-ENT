@@ -2,6 +2,7 @@ from functools import partial
 from collections.abc import Sequence
 from beartype.typing import Any, Callable, Optional
 
+import chex
 import jax
 import jax.numpy as jnp
 import optax
@@ -628,6 +629,9 @@ def compute_loss(
 
     scaled_train = train_losses * weights * scaling
     scaled_val = val_losses * weights * scaling
+
+    chex.assert_equal_shape([train_losses, val_losses, weights, scaling])
+
 
     # Compute total losses with a single reduction
     total_train = jnp.sum(scaled_train)
