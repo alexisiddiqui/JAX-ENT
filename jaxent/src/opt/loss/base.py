@@ -3,6 +3,7 @@ from collections.abc import Callable
 import jax
 import jax.numpy as jnp
 from jax import Array
+from jaxtyping import Float
 
 from jaxent.src.custom_types import InitialisedSimulation
 from jaxent.src.data.loader import ExpD_Dataloader
@@ -33,8 +34,11 @@ def apply_post_processing(loss: jnp.ndarray, length: int, post_mean: bool) -> jn
 
 
 def normalize_weights(
-    weights: jnp.ndarray, normalise: bool, eps: float, scale_eps: bool
-) -> jnp.ndarray:
+    weights: Float[Array, " n"],
+    normalise: bool,
+    eps: float,
+    scale_eps: bool,
+) -> Float[Array, " n"]:
     """Normalize weights using JAX-compatible operations."""
     # Calculate epsilon value using JAX-compatible operations
     scale_eps_array = jnp.asarray(scale_eps)
@@ -54,7 +58,9 @@ def normalize_weights(
     return jnp.where(normalise_array, normalized, weights)
 
 
-def pairwise_cosine_similarity(array: Array) -> Array:
+def pairwise_cosine_similarity(
+    array: Float[Array, "n d"],
+) -> Float[Array, "n n"]:
     """Calculate pairwise cosine similarity using JAX operations."""
     # Handle empty arrays first
     if array.size == 0:
@@ -72,7 +78,9 @@ def pairwise_cosine_similarity(array: Array) -> Array:
     return 1 + jnp.clip(similarity_matrix, -1.0, 1.0)
 
 
-def extract_upper_triangle(matrix: Array) -> Array:
+def extract_upper_triangle(
+    matrix: Float[Array, "n n"],
+) -> Float[Array, " k"]:
     """Extract upper triangular elements using JAX operations."""
     n = matrix.shape[0]
     if n == 0:
@@ -81,7 +89,10 @@ def extract_upper_triangle(matrix: Array) -> Array:
     return matrix[rows, cols]
 
 
-def normalize_upper_triangle(upper_tri: Array, normalize: bool) -> Array:
+def normalize_upper_triangle(
+    upper_tri: Float[Array, " k"],
+    normalize: bool,
+) -> Float[Array, " k"]:
     """Normalize upper triangle using JAX operations."""
     normalize_array = jnp.asarray(normalize)
     # Check if we should normalize and array is not empty

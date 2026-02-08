@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
