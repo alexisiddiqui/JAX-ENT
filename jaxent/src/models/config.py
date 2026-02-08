@@ -1,5 +1,7 @@
 from dataclasses import field
 
+import chex
+
 import jax.numpy as jnp
 from jax import Array
 
@@ -73,9 +75,8 @@ class linear_BV_model_Config(BV_model_Config):
             object.__setattr__(self, "bv_bc", self.bv_bc * self.num_timepoints)
             object.__setattr__(self, "bv_bh", self.bv_bh * self.num_timepoints)
 
-        assert self.num_timepoints == len(self.bv_bc) and self.num_timepoints == len(self.bv_bh), (
-            ValueError("Please make sure your timepoint/prior parameters make sense")
-        )
+        chex.assert_equal(self.num_timepoints, len(self.bv_bc))
+        chex.assert_equal(self.num_timepoints, len(self.bv_bh))
 
     @property
     def forward_parameters(self) -> linear_BV_Model_Parameters:
@@ -119,8 +120,10 @@ class NetHDXConfig(BaseConfig):
                 angle_cutoff = [angle_cutoff]
             self.angle_cutoff = angle_cutoff
 
-        assert len(list(self.distance_cutoff)) == len(list(self.angle_cutoff)), (
-            "Distance and angle cutoffs must be the same length"
+        chex.assert_equal(
+            len(list(self.distance_cutoff)), 
+            len(list(self.angle_cutoff)),
+            custom_message="Distance and angle cutoffs must be the same length"
         )
         if num_timepoints > 1:
             self.key = m_key("HDX_peptide")
