@@ -20,9 +20,9 @@ class TestBVInputFeaturesSaveLoad:
     def test_save_load_basic_lists(self, tmp_path):
         """Test basic save/load with list inputs."""
         # Create test data
-        heavy_contacts = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-        acceptor_contacts = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        k_ints = [1, 2, 3]
+        heavy_contacts = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=jnp.float32)
+        k_ints = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
 
         # Create original features
         original = BV_input_features(
@@ -47,9 +47,9 @@ class TestBVInputFeaturesSaveLoad:
     def test_save_load_jax_arrays(self, tmp_path):
         """Test save/load with JAX arrays."""
         # Create test data as JAX arrays
-        heavy_contacts = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-        acceptor_contacts = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-        k_ints = jnp.array([1, 2, 3])
+        heavy_contacts = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=jnp.float32)
+        k_ints = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
 
         # Create original features
         original = BV_input_features(
@@ -71,8 +71,8 @@ class TestBVInputFeaturesSaveLoad:
     def test_save_load_with_none_optional(self, tmp_path):
         """Test save/load when optional field is None."""
         # Create test data with k_ints as None
-        heavy_contacts = [[1.0, 2.0], [3.0, 4.0]]
-        acceptor_contacts = [[0.1, 0.2], [0.3, 0.4]]
+        heavy_contacts = jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[0.1, 0.2], [0.3, 0.4]], dtype=jnp.float32)
 
         # Create original features
         original = BV_input_features(
@@ -96,9 +96,9 @@ class TestBVInputFeaturesSaveLoad:
     def test_save_load_empty_arrays(self, tmp_path):
         """Test save/load with empty arrays."""
         # Create empty test data
-        heavy_contacts = []
-        acceptor_contacts = []
-        k_ints = []
+        heavy_contacts = jnp.array([], dtype=jnp.float32).reshape(0, 0)
+        acceptor_contacts = jnp.array([], dtype=jnp.float32).reshape(0, 0)
+        k_ints = jnp.array([], dtype=jnp.float32)
 
         # Create original features
         original = BV_input_features(
@@ -120,8 +120,8 @@ class TestBVInputFeaturesSaveLoad:
     def test_auto_npz_extension(self, tmp_path):
         """Test that .npz extension is automatically added."""
         # Create test data
-        heavy_contacts = [[1.0, 2.0]]
-        acceptor_contacts = [[0.1, 0.2]]
+        heavy_contacts = jnp.array([[1.0, 2.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[0.1, 0.2]], dtype=jnp.float32)
 
         original = BV_input_features(
             heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts
@@ -166,8 +166,8 @@ class TestBVOutputFeaturesSaveLoad:
 
     def test_save_load_basic(self, tmp_path):
         """Test basic save/load functionality."""
-        log_Pf = [1.5, 2.3, -0.8, 4.1]
-        k_ints = [10, 20, 30]
+        log_Pf = jnp.array([1.5, 2.3, -0.8, 4.1], dtype=jnp.float32)
+        k_ints = jnp.array([10.0, 20.0, 30.0], dtype=jnp.float32)
 
         original = BV_output_features(log_Pf=log_Pf, k_ints=k_ints)
 
@@ -181,8 +181,8 @@ class TestBVOutputFeaturesSaveLoad:
 
     def test_save_load_jax_arrays(self, tmp_path):
         """Test with JAX arrays."""
-        log_Pf = jnp.array([1.5, 2.3, -0.8, 4.1])
-        k_ints = jnp.array([10, 20, 30])
+        log_Pf = jnp.array([1.5, 2.3, -0.8, 4.1], dtype=jnp.float32)
+        k_ints = jnp.array([10.0, 20.0, 30.0], dtype=jnp.float32)
 
         original = BV_output_features(log_Pf=log_Pf, k_ints=k_ints)
 
@@ -195,7 +195,7 @@ class TestBVOutputFeaturesSaveLoad:
 
     def test_save_load_none_k_ints(self, tmp_path):
         """Test with None k_ints."""
-        log_Pf = [1.5, 2.3, -0.8]
+        log_Pf = jnp.array([1.5, 2.3, -0.8], dtype=jnp.float32)
 
         original = BV_output_features(log_Pf=log_Pf, k_ints=None)
 
@@ -208,7 +208,7 @@ class TestBVOutputFeaturesSaveLoad:
 
     def test_y_pred_consistency(self, tmp_path):
         """Test that y_pred method works correctly after load."""
-        log_Pf = [1.5, 2.3, -0.8, 4.1]
+        log_Pf = jnp.array([1.5, 2.3, -0.8, 4.1], dtype=jnp.float32)
 
         original = BV_output_features(log_Pf=log_Pf)
 
@@ -225,7 +225,7 @@ class TestUptakeBVOutputFeaturesSaveLoad:
 
     def test_save_load_3d_data(self, tmp_path):
         """Test save/load with 3D uptake data."""
-        uptake = [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]]]
+        uptake = jnp.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]]], dtype=jnp.float32)
 
         original = uptake_BV_output_features(uptake=uptake)
 
@@ -238,7 +238,7 @@ class TestUptakeBVOutputFeaturesSaveLoad:
 
     def test_save_load_jax_3d_array(self, tmp_path):
         """Test with JAX 3D array."""
-        uptake = jnp.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]])
+        uptake = jnp.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], dtype=jnp.float32)
 
         original = uptake_BV_output_features(uptake=uptake)
 
@@ -250,7 +250,7 @@ class TestUptakeBVOutputFeaturesSaveLoad:
 
     def test_y_pred_consistency_3d(self, tmp_path):
         """Test y_pred consistency for 3D data."""
-        uptake = [[[1.0, 2.0], [3.0, 4.0]]]
+        uptake = jnp.array([[[1.0, 2.0], [3.0, 4.0]]], dtype=jnp.float32)
 
         original = uptake_BV_output_features(uptake=uptake)
 
@@ -267,7 +267,7 @@ class TestCrossClassCompatibility:
     def test_different_classes_same_features(self, tmp_path):
         """Test that features can't be loaded into incompatible classes."""
         # Create BV_output_features
-        log_Pf = [1.0, 2.0, 3.0]
+        log_Pf = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
         bv_output = BV_output_features(log_Pf=log_Pf)
 
         filepath = tmp_path / "cross_class.npz"
@@ -297,9 +297,9 @@ class TestCrossClassCompatibility:
         """Test with larger datasets to ensure no data corruption."""
         # Create larger test data
         n_residues, n_frames = 100, 50
-        heavy_contacts = np.random.random((n_residues, n_frames)).tolist()
-        acceptor_contacts = np.random.random((n_residues, n_frames)).tolist()
-        k_ints = list(range(1000))
+        heavy_contacts = jnp.array(np.random.random((n_residues, n_frames)), dtype=jnp.float32)
+        acceptor_contacts = jnp.array(np.random.random((n_residues, n_frames)), dtype=jnp.float32)
+        k_ints = jnp.arange(1000, dtype=jnp.float32)
 
         original = BV_input_features(
             heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts, k_ints=k_ints
@@ -319,8 +319,8 @@ class TestCrossClassCompatibility:
     def test_dtype_preservation(self, tmp_path):
         """Test that dtypes are handled correctly."""
         # Test with different numeric types (using JAX arrays to satisfy type hints)
-        heavy_contacts = jnp.array([[1, 2, 3]], dtype=jnp.int32)
-        acceptor_contacts = jnp.array([[1.5, 2.5, 3.5]], dtype=jnp.float64)
+        heavy_contacts = jnp.array([[1.0, 2.0, 3.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[1.5, 2.5, 3.5]], dtype=jnp.float32)
 
         original = BV_input_features(
             heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts
