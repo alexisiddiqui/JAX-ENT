@@ -419,7 +419,7 @@ def run_maxent_sweep(
             HDX_peptide._create_from_features(topology=top, features=output_features[idx])
         )
 
-    cov_matrix_path = "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices/Sigma.npz"
+    cov_matrix_path = "../../data/_MoPrP_covariance_matrices/Sigma.npz"
 
     cov_matrix_data = jnp.load(os.path.join(os.path.dirname(__file__), cov_matrix_path))[
         "Sigma_inv"
