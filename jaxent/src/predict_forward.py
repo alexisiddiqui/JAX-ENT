@@ -1,4 +1,4 @@
-from typing import Sequence
+from collections.abc import Sequence
 
 from icecream import ic
 from tqdm.auto import tqdm

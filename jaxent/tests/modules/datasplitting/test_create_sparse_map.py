@@ -32,6 +32,9 @@ class MockInputFeatures:
     def features_shape(self) -> tuple[int, ...]:
         return self.features.shape
 
+    def cast_to_jax(self) -> "MockInputFeatures":
+        return self
+
 
 @dataclass()
 class MockExpDatapoint(ExpD_Datapoint):
@@ -39,10 +42,17 @@ class MockExpDatapoint(ExpD_Datapoint):
 
     top: Partial_Topology
     dfrac: List[float]
-    key = m_key("HDX_peptide")
+    key = m_key("MockExpDatapoint")
 
     def extract_features(self) -> np.ndarray:
         return np.array(self.dfrac).reshape(-1, 1)
+
+    @classmethod
+    def _create_from_features(
+        cls, topology: Partial_Topology, features: np.ndarray
+    ) -> "MockExpDatapoint":
+        """Custom creation method for MockExpDatapoint"""
+        return cls(top=topology, dfrac=[float(x) for x in features.flatten()])
 
 
 class TestCreateSparseMap:

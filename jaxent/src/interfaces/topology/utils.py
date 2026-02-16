@@ -1,4 +1,4 @@
-from typing import Union
+from beartype.typing import Union
 
 from jaxent.src.interfaces.topology.core import Partial_Topology
 
@@ -89,9 +89,9 @@ def calculate_fragment_redundancy(
         # Calculate final redundancy score based on mode
         if fragment_overlaps:
             if mode == "max":
-                redundancy_scores.append(max(fragment_overlaps))
+                redundancy_scores.append(float(max(fragment_overlaps)))
             elif mode == "mean":
-                redundancy_scores.append(sum(fragment_overlaps) / len(fragment_overlaps))
+                redundancy_scores.append(float(sum(fragment_overlaps) / len(fragment_overlaps)))
         else:
             redundancy_scores.append(0.0)
 

@@ -1,8 +1,10 @@
-from typing import Sequence
+from collections.abc import Sequence
 
+import chex
 import jax.numpy as jnp
 from jax import Array
 from jax.experimental import sparse
+from jaxtyping import Float
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.features import Input_Features
@@ -13,7 +15,10 @@ from jaxent.src.interfaces.topology import (
 )
 
 
-def create_covariance_mat(covariance_matrix: Array | None, indices: Array ) -> Array | None:
+def create_covariance_mat(
+    covariance_matrix: Float[Array, "n n"] | None,
+    indices: Array,
+) -> Float[Array, "k k"] | None:
     """
     Creates a covariance matrix for the training/validation/test datasets based on
     the provided covariance matrix over the complete set of experimental fragments.
@@ -24,17 +29,22 @@ def create_covariance_mat(covariance_matrix: Array | None, indices: Array ) -> A
     if indices is None:
         raise ValueError("Indices must be provided when covariance_matrix is not None")
 
-    # assert that the indices are within the bounds of the covariance matrix
-    assert jnp.all(indices < covariance_matrix.shape[0]), (
-        "Indices are out of bounds for the covariance matrix"
+    # Validate covariance matrix is square
+    chex.assert_rank(covariance_matrix, 2)
+    chex.assert_equal(
+        covariance_matrix.shape[0], covariance_matrix.shape[1],
+        custom_message="Covariance matrix must be square"
     )
     # ensure a 1-D integer index array and use jnp.ix_ for proper 2-D slicing
     indices = jnp.asarray(indices, dtype=jnp.int32).ravel()
     return covariance_matrix[jnp.ix_(indices, indices)]
 
 
+from jaxent.src.custom_types.protocols import InputFeaturesLike
+
+
 def create_sparse_map(
-    input_features: Input_Features,
+    input_features: InputFeaturesLike,
     feature_topology: Sequence[Partial_Topology],
     output_features: Sequence[ExpD_Datapoint],
     check_trim: bool = True,
@@ -58,25 +68,30 @@ def create_sparse_map(
     print(f"Number of feature topology fragments: {len(feature_topology)}")
     print(f"Number of output features: {len(output_features)}")
 
-    # Validate inputs
-    assert all([isinstance(top, Partial_Topology) for top in feature_topology]), (
-        "Feature topology must be a list of Partial_Topology objects"
+    # Validate inputs using chex assertions
+    chex.assert_equal(
+        all([isinstance(top, Partial_Topology) for top in feature_topology]), True,
+        custom_message="Feature topology must be a list of Partial_Topology objects"
     )
-    assert all([isinstance(frag, ExpD_Datapoint) for frag in output_features]), (
-        "Output features must be a list of ExpD_Datapoint objects"
+    chex.assert_equal(
+        all([isinstance(frag, ExpD_Datapoint) for frag in output_features]), True,
+        custom_message="Output features must be a list of ExpD_Datapoint objects"
     )
-    assert input_features.features_shape[0] == len(feature_topology), (
-        "Input features and topology do not match"
+    chex.assert_equal(
+        input_features.features_shape[0], len(feature_topology),
+        custom_message="Input features and topology do not match"
     )
 
     # Validate and organize feature topology indices
     try:
-        assert all([top.fragment_index is not None for top in feature_topology]), (
-            "Fragment indices are not present in feature topology"
+        chex.assert_equal(
+            all([top.fragment_index is not None for top in feature_topology]), True,
+            custom_message="Fragment indices are not present in feature topology"
         )
-        assert len(set([top.fragment_index for top in feature_topology])) == len(
-            feature_topology
-        ), "Fragment indices are not unique in feature topology"
+        chex.assert_equal(
+            len(set([top.fragment_index for top in feature_topology])), len(feature_topology),
+            custom_message="Fragment indices are not unique in feature topology"
+        )
     except AssertionError as e:
         raise ValueError(f"Fragment indices are invalid in feature topology: {e}")
 
@@ -85,8 +100,9 @@ def create_sparse_map(
         feature_topology, key=lambda x: x.fragment_index if x.fragment_index is not None else -1
     )
 
-    assert all([top.fragment_index == i for i, top in enumerate(feature_topology_sorted)]), (
-        "Topology fragments are not indexed from 0 - have they been matched with the input features?"
+    chex.assert_equal(
+        all([top.fragment_index == i for i, top in enumerate(feature_topology_sorted)]), True,
+        custom_message="Topology fragments are not indexed from 0 - have they been matched with the input features?"
     )
 
     print("\nSample feature topology:")
@@ -201,16 +217,19 @@ def create_sparse_map(
     return bcoo_matrix
 
 
-def apply_sparse_mapping(sparse_map: sparse.BCOO, features: Array) -> Array:
+def apply_sparse_mapping(
+    sparse_map: sparse.BCOO,  # shape (n_fragments, n_residues)
+    features: Float[Array, " n_residues"],
+) -> Float[Array, " n_fragments"]:
     """
     Applies the sparse mapping to input features.
 
     Args:
-        sparse_map: BCOO sparse matrix mapping residues to fragments
-        features: Input feature array with shape (..., n_residues)
+        sparse_map: BCOO sparse matrix mapping residues to fragments, shape (n_fragments, n_residues)
+        features: Input feature array with shape (n_residues,)
 
     Returns:
-        Mapped features with shape (..., n_fragments)
+        Mapped features with shape (n_fragments,)
     """
     # Use matrix multiplication for proper broadcasting
     return sparse_map.todense() @ features

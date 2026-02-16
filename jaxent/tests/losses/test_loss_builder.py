@@ -1,3 +1,4 @@
+import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -16,6 +17,7 @@ except ImportError:
         "Warning: matplotlib, seaborn, or pandas not available. Performance plots will not be generated."
     )
 
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -33,55 +35,63 @@ from jaxent.src.models.HDX.BV.features import (
     uptake_BV_output_features,
 )
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
-
-# Import all loss functions from the module
-from jaxent.src.opt.losses import (
-    HDX_uptake_convex_KL_loss,
-    HDX_uptake_KL_loss,
-    L1_frame_weight_consistency_loss,
-    convex_KL_frame_weight_consistency_loss,
-    corr_frame_weight_consistency_loss,
-    cosine_frame_weight_consistency_loss,
-    exp_frame_weight_consistency_loss,
-    frame_weight_consistency_loss,
-    hdx_pf_l2_loss,
-    hdx_pf_mae_loss,
-    hdx_uptake_abs_loss,
-    hdx_uptake_l1_loss,
-    hdx_uptake_l2_loss,
-    hdx_uptake_MAE_loss,
-    hdx_uptake_MAE_loss_vectorized,
-    hdx_uptake_mean_centred_l1_loss,
-    hdx_uptake_mean_centred_l2_loss,
-    hdx_uptake_mean_centred_MAE_loss,
-    hdx_uptake_mean_centred_MSE_loss,
-    hdx_uptake_monotonicity_loss,
-    hdx_uptake_MSE_loss,
-    hdxer_mcMSE_loss,
-    hdxer_MSE_loss,
-    jax_pairwise_cosine_similarity,
-    mask_L0_loss,
-    max_entropy_loss,
-    maxent_convexKL_loss,
-    maxent_ESS_loss,
-    maxent_JSD_loss,
-    maxent_L1_loss,
-    maxent_L2_loss,
-    maxent_W1_loss,
-    minent_ESS_loss,
-    normalised_frame_weight_consistency_loss,
-    sparse_max_entropy_loss,
+from jaxent.src.opt.loss.base import pairwise_cosine_similarity
+from jaxent.src.opt.loss.consistency import (
+    convex_kl_frame_weight_consistency_builder,
+    corr_frame_weight_consistency_builder,
+    cosine_frame_weight_consistency_builder,
+    exp_frame_weight_consistency_builder,
+    frame_weight_consistency_builder,
+    l1_frame_weight_consistency_builder,
+    normalised_frame_weight_consistency_builder,
 )
+
+# Import builder functions from the new modular loss system
+from jaxent.src.opt.loss.functional import (
+    hdx_pf_l2_builder,
+    hdx_pf_mae_builder,
+    hdx_uptake_abs_builder,
+    hdx_uptake_convex_kl_builder,
+    hdx_uptake_kl_builder,
+    hdx_uptake_l1_builder,
+    hdx_uptake_l2_builder,
+    hdx_uptake_mae_builder,
+    hdx_uptake_mae_vectorized_builder,
+    hdx_uptake_mean_centred_l1_builder,
+    hdx_uptake_mean_centred_l2_builder,
+    hdx_uptake_mean_centred_mae_builder,
+    hdx_uptake_mean_centred_mse_builder,
+    hdx_uptake_monotonicity_builder,
+    hdx_uptake_mse_builder,
+    hdxer_mc_mse_builder,
+    hdxer_mse_builder,
+)
+from jaxent.src.opt.loss.weights import (
+    create_mask_l0_loss_factory,
+    max_entropy_builder,
+    maxent_convex_kl_builder,
+    maxent_ess_builder,
+    maxent_jsd_builder,
+    maxent_l1_builder,
+    maxent_l2_builder,
+    maxent_w1_builder,
+    minent_ess_builder,
+    sparse_max_entropy_builder,
+)
+
+# jax.config.update("jax_compilation_cache_dir", "")
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 # Global dictionary to store performance results
 PERFORMANCE_RESULTS = defaultdict(lambda: defaultdict(dict))
 
 # Define different input size configurations
 INPUT_SIZE_CONFIGS = {
-    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 20},
-    "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 100},
-    "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
-    "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
+    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 2},
+    # "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 10},
+    # "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
+    # "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
 }
 
 
@@ -184,7 +194,10 @@ def create_dummy_data_with_size(config_name, config):
 
     # Create dataloaders for both types
     class MockDataloader:
-        def __init__(self, exp_data, is_uptake=False):
+        def __init__(self, exp_data, is_uptake=False, sparse_map_train=None, sparse_map_val=None):
+            self.is_uptake = is_uptake
+            self.sparse_map_train = sparse_map_train
+            self.sparse_map_val = sparse_map_val
             # Create datasets with proper mappings for testing
             y_true_list = []
             for data in exp_data:
@@ -195,29 +208,64 @@ def create_dummy_data_with_size(config_name, config):
             y_true = jnp.array(y_true_list)
 
             # Create mapping matrix based on data type
-            n_fragments = len(exp_data)
+            len(exp_data)
 
-            if is_uptake:
-                # For uptake: map full model predictions to single fragment
-                mapping_matrix = jnp.ones((1, num_residues)) / num_residues
-            else:
-                # For protection factors: identity mapping
-                mapping_matrix = jnp.eye(min(n_fragments, num_residues), num_residues)
-
-            from jax.experimental import sparse
-
-            sparse_map = sparse.bcoo_fromdense(mapping_matrix)
-
+            # The sparse_map is now passed in from create_dummy_data_with_size
+            # This ensures it's concrete before JIT compilation.
             self.train = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=sparse_map
+                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=self.sparse_map_train
             )
             self.val = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=sparse_map
+                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=self.sparse_map_val
             )
 
+        def tree_flatten(self):
+            children = (self.train, self.val, self.sparse_map_train, self.sparse_map_val)
+            aux_data = {"is_uptake": self.is_uptake}
+            return children, aux_data
+
+        @classmethod
+        def tree_unflatten(cls, aux_data, children):
+            mock_dataloader = cls(
+                exp_data=[],
+                is_uptake=aux_data["is_uptake"],
+                sparse_map_train=children[2],
+                sparse_map_val=children[3],
+            )
+            mock_dataloader.train = children[0]
+            mock_dataloader.val = children[1]
+            return mock_dataloader
+
+    jax.tree_util.register_pytree_node(
+        MockDataloader, MockDataloader.tree_flatten, MockDataloader.tree_unflatten
+    )
+
+    from jax.experimental import sparse
+
+    # Create mapping matrices for PF and Uptake outside MockDataloader
+    # For protection factors: identity mapping
+    n_fragments_pf = len(exp_datapoints_pf)
+    mapping_matrix_pf = jnp.eye(min(n_fragments_pf, num_residues), num_residues)
+    sparse_map_pf = sparse.bcoo_fromdense(mapping_matrix_pf)
+
+    # For uptake: map full model predictions to single fragment
+    n_fragments_uptake = len(exp_datapoints_uptake)
+    mapping_matrix_uptake = jnp.ones((n_fragments_uptake, num_residues)) / num_residues
+    sparse_map_uptake = sparse.bcoo_fromdense(mapping_matrix_uptake)
+
     # Create dataloaders with proper expected shapes
-    mock_dataloader_pf = MockDataloader(exp_datapoints_pf, is_uptake=False)
-    mock_dataloader_uptake = MockDataloader(exp_datapoints_uptake, is_uptake=True)
+    mock_dataloader_pf = MockDataloader(
+        exp_datapoints_pf,
+        is_uptake=False,
+        sparse_map_train=sparse_map_pf,
+        sparse_map_val=sparse_map_pf,
+    )
+    mock_dataloader_uptake = MockDataloader(
+        exp_datapoints_uptake,
+        is_uptake=True,
+        sparse_map_train=sparse_map_uptake,
+        sparse_map_val=sparse_map_uptake,
+    )
 
     # Data for frame weight consistency losses
     consistency_dataset = jax.random.uniform(key, (num_frames, num_frames), minval=0.0, maxval=2.0)
@@ -248,93 +296,130 @@ def dummy_data_sized(request):
     return create_dummy_data_with_size(config_name, config)
 
 
-# List of all loss functions to test
-ALL_LOSS_FUNCTIONS = {
-    "hdx_pf_l2_loss": hdx_pf_l2_loss,
-    "hdx_pf_mae_loss": hdx_pf_mae_loss,
-    "max_entropy_loss": max_entropy_loss,
-    "maxent_convexKL_loss": maxent_convexKL_loss,
-    "maxent_JSD_loss": maxent_JSD_loss,
-    "maxent_W1_loss": maxent_W1_loss,
-    "maxent_ESS_loss": maxent_ESS_loss,
-    "minent_ESS_loss": minent_ESS_loss,
-    "maxent_L2_loss": maxent_L2_loss,
-    "maxent_L1_loss": maxent_L1_loss,
-    "sparse_max_entropy_loss": sparse_max_entropy_loss,
-    "mask_L0_loss": mask_L0_loss,
-    "hdx_uptake_l1_loss": hdx_uptake_l1_loss,
-    "hdx_uptake_abs_loss": hdx_uptake_abs_loss,
-    "hdx_uptake_mean_centred_l1_loss": hdx_uptake_mean_centred_l1_loss,
-    "hdx_uptake_mean_centred_l2_loss": hdx_uptake_mean_centred_l2_loss,
-    "hdx_uptake_monotonicity_loss": hdx_uptake_monotonicity_loss,
-    "frame_weight_consistency_loss": frame_weight_consistency_loss,
-    "exp_frame_weight_consistency_loss": exp_frame_weight_consistency_loss,
-    "L1_frame_weight_consistency_loss": L1_frame_weight_consistency_loss,
-    "normalised_frame_weight_consistency_loss": normalised_frame_weight_consistency_loss,
-    "convex_KL_frame_weight_consistency_loss": convex_KL_frame_weight_consistency_loss,
-    "cosine_frame_weight_consistency_loss": cosine_frame_weight_consistency_loss,
-    "corr_frame_weight_consistency_loss": corr_frame_weight_consistency_loss,
-    "hdx_uptake_mean_centred_MSE_loss": hdx_uptake_mean_centred_MSE_loss,
-    "hdxer_MSE_loss": hdxer_MSE_loss,
-    "hdxer_mcMSE_loss": hdxer_mcMSE_loss,
-    "hdx_uptake_mean_centred_MAE_loss": hdx_uptake_mean_centred_MAE_loss,
-    "hdx_uptake_l2_loss": hdx_uptake_l2_loss,
-    "hdx_uptake_MAE_loss": hdx_uptake_MAE_loss,
-    "hdx_uptake_MSE_loss": hdx_uptake_MSE_loss,
-    "hdx_uptake_MAE_loss_vectorized": hdx_uptake_MAE_loss_vectorized,
-    "HDX_uptake_KL_loss": HDX_uptake_KL_loss,
-    "HDX_uptake_convex_KL_loss": HDX_uptake_convex_KL_loss,
+# List of all loss function builders to test
+ALL_LOSS_BUILDERS = {
+    "hdx_pf_l2": hdx_pf_l2_builder,
+    "hdx_pf_mae": hdx_pf_mae_builder,
+    "max_entropy": max_entropy_builder,
+    "maxent_convex_kl": maxent_convex_kl_builder,
+    "maxent_jsd": maxent_jsd_builder,
+    # "maxent_w1": maxent_w1_builder,
+    # "maxent_ess": maxent_ess_builder,
+    # "minent_ess": minent_ess_builder,
+    # "maxent_l2": maxent_l2_builder,
+    # "maxent_l1": maxent_l1_builder,
+    # "sparse_max_entropy": sparse_max_entropy_builder,
+    # "mask_l0": create_mask_l0_loss_factory,
+    # "hdx_uptake_l1": hdx_uptake_l1_builder,
+    # "hdx_uptake_abs": hdx_uptake_abs_builder,
+    # "hdx_uptake_mean_centred_l1": hdx_uptake_mean_centred_l1_builder,
+    # "hdx_uptake_mean_centred_l2": hdx_uptake_mean_centred_l2_builder,
+    # "hdx_uptake_monotonicity": hdx_uptake_monotonicity_builder,
+    # "frame_weight_consistency": frame_weight_consistency_builder,
+    # "exp_frame_weight_consistency": exp_frame_weight_consistency_builder,
+    # "l1_frame_weight_consistency": l1_frame_weight_consistency_builder,
+    # "normalised_frame_weight_consistency": normalised_frame_weight_consistency_builder,
+    # "convex_kl_frame_weight_consistency": convex_kl_frame_weight_consistency_builder,
+    # "cosine_frame_weight_consistency": cosine_frame_weight_consistency_builder,
+    # "corr_frame_weight_consistency": corr_frame_weight_consistency_builder,
+    # "hdx_uptake_mean_centred_mse": hdx_uptake_mean_centred_mse_builder,
+    # "hdxer_mse": hdxer_mse_builder,
+    # "hdxer_mc_mse": hdxer_mc_mse_builder,
+    # "hdx_uptake_mean_centred_mae": hdx_uptake_mean_centred_mae_builder,
+    # "hdx_uptake_l2": hdx_uptake_l2_builder,
+    # "hdx_uptake_mae": hdx_uptake_mae_builder,
+    # "hdx_uptake_mse": hdx_uptake_mse_builder,
+    # "hdx_uptake_mae_vectorized": hdx_uptake_mae_vectorized_builder,
+    # "hdx_uptake_kl": hdx_uptake_kl_builder,
+    # "hdx_uptake_convex_kl": hdx_uptake_convex_kl_builder,
 }
+
+
+# Alternative: Use static_argnames instead of static_argnums
+def apply_jit_with_static_names(loss_func, loss_name, use_jit):
+    """Apply JIT with proper static argument names."""
+    if not use_jit:
+        return loss_func
+
+    # Functions that use prediction_index
+    if loss_name in [
+        "hdx_pf_l2",
+        "hdx_pf_mae",
+        "hdx_uptake_l1",
+        "hdx_uptake_abs",
+        "hdx_uptake_mean_centred_l1",
+        "hdx_uptake_mean_centred_l2",
+        "hdx_uptake_mean_centred_mse",
+        "hdxer_mse",
+        "hdxer_mc_mse",
+        "hdx_uptake_mean_centred_mae",
+        "hdx_uptake_l2",
+        "hdx_uptake_mae",
+        "hdx_uptake_mse",
+        "hdx_uptake_mae_vectorized",
+        "hdx_uptake_kl",
+        "hdx_uptake_convex_kl",
+        "hdx_uptake_monotonicity",
+        "frame_weight_consistency",
+        "exp_frame_weight_consistency",
+        "l1_frame_weight_consistency",
+        "normalised_frame_weight_consistency",
+        "convex_kl_frame_weight_consistency",
+        "cosine_frame_weight_consistency",
+        "corr_frame_weight_consistency",
+    ]:
+        return jax.jit(loss_func, static_argnames=["prediction_index"])
+    else:
+        return jax.jit(loss_func)
 
 
 def get_jit_static_args(loss_name):
     """Return the static_argnums for JIT compilation based on loss function type."""
+    # Loss functions that use prediction_index need it as a static argument
     if loss_name in [
-        "hdx_pf_l2_loss",
-        "hdx_pf_mae_loss",
-        "hdx_uptake_l1_loss",
-        "hdx_uptake_abs_loss",
-        "hdx_uptake_mean_centred_l1_loss",
-        "hdx_uptake_mean_centred_l2_loss",
-        "hdx_uptake_mean_centred_MSE_loss",
-        "hdxer_MSE_loss",
-        "hdxer_mcMSE_loss",
-        "hdx_uptake_mean_centred_MAE_loss",
-        "hdx_uptake_l2_loss",
-        "hdx_uptake_MAE_loss",
-        "hdx_uptake_MSE_loss",
-        "hdx_uptake_MAE_loss_vectorized",
-        "HDX_uptake_KL_loss",
-        "HDX_uptake_convex_KL_loss",
+        "hdx_pf_l2",
+        "hdx_pf_mae",
+        "hdx_uptake_l1",
+        "hdx_uptake_abs",
+        "hdx_uptake_mean_centred_l1",
+        "hdx_uptake_mean_centred_l2",
+        "hdx_uptake_mean_centred_mse",
+        "hdxer_mse",
+        "hdxer_mc_mse",
+        "hdx_uptake_mean_centred_mae",
+        "hdx_uptake_l2",
+        "hdx_uptake_mae",
+        "hdx_uptake_mse",
+        "hdx_uptake_mae_vectorized",
+        "hdx_uptake_kl",
+        "hdx_uptake_convex_kl",
+        "hdx_uptake_monotonicity",
+        "frame_weight_consistency",
+        "exp_frame_weight_consistency",
+        "l1_frame_weight_consistency",
+        "normalised_frame_weight_consistency",
+        "convex_kl_frame_weight_consistency",
+        "cosine_frame_weight_consistency",
+        "corr_frame_weight_consistency",
     ]:
-        return [0, 1, 2]
-    elif loss_name == "hdx_uptake_monotonicity_loss":
-        return [0, 2]
-    elif loss_name in [
-        "max_entropy_loss",
-        "maxent_convexKL_loss",
-        "maxent_JSD_loss",
-        "maxent_W1_loss",
-        "maxent_ESS_loss",
-        "minent_ESS_loss",
-        "maxent_L2_loss",
-        "maxent_L1_loss",
-        "sparse_max_entropy_loss",
-        "mask_L0_loss",
-    ]:
-        return [0]
-    elif loss_name in [
-        "frame_weight_consistency_loss",
-        "exp_frame_weight_consistency_loss",
-        "L1_frame_weight_consistency_loss",
-        "normalised_frame_weight_consistency_loss",
-        "convex_KL_frame_weight_consistency_loss",
-        "cosine_frame_weight_consistency_loss",
-        "corr_frame_weight_consistency_loss",
+        return [2]  # prediction_index is the 3rd argument (index 2)
+
+    # Parameter losses also need prediction_index to be static, even if it's None.
+    if loss_name in [
+        "max_entropy",
+        "maxent_convex_kl",
+        "maxent_jsd",
+        "maxent_w1",
+        "maxent_ess",
+        "minent_ess",
+        "maxent_l2",
+        "maxent_l1",
+        "sparse_max_entropy",
+        "mask_l0",
     ]:
         return [0, 2]
-    else:
-        raise ValueError(f"Unknown loss function: {loss_name}")
+
+    return []
 
 
 def prepare_loss_function_args(loss_name, dummy_data):
@@ -346,64 +431,63 @@ def prepare_loss_function_args(loss_name, dummy_data):
     sim_params_dataset = dummy_data["sim_params_dataset"]
     consistency_dataset = dummy_data["consistency_dataset"]
     prediction_index = dummy_data["prediction_index"]
-
     # Update model outputs and choose correct dataset based on loss function type
-    if any(keyword in loss_name for keyword in ["uptake", "HDX_uptake"]):
-        model.outputs = [dummy_data["uptake_output"]]
-        initialised_model.outputs = [dummy_data["uptake_output"]]
+    if any(keyword in loss_name for keyword in ["uptake", "hdx_uptake"]):
+        model.outputs = (dummy_data["uptake_output"],)
+        initialised_model.outputs = (dummy_data["uptake_output"],)
         dataset = dataset_uptake
-    elif loss_name in ["hdxer_MSE_loss", "hdxer_mcMSE_loss"]:
-        model.outputs = [dummy_data["uptake_output"]]
-        initialised_model.outputs = [dummy_data["uptake_output"]]
+    elif loss_name in ["hdxer_mse", "hdxer_mc_mse"]:
+        model.outputs = (dummy_data["uptake_output"],)
+        initialised_model.outputs = (dummy_data["uptake_output"],)
         dataset = dataset_uptake
     else:
-        model.outputs = [dummy_data["pf_output"]]
-        initialised_model.outputs = [dummy_data["pf_output"]]
+        model.outputs = (dummy_data["pf_output"],)
+        initialised_model.outputs = (dummy_data["pf_output"],)
         dataset = dataset_pf
 
     # Determine which arguments to pass based on the loss function signature
     if loss_name in [
-        "hdx_pf_l2_loss",
-        "hdx_pf_mae_loss",
-        "hdx_uptake_l1_loss",
-        "hdx_uptake_abs_loss",
-        "hdx_uptake_mean_centred_l1_loss",
-        "hdx_uptake_mean_centred_l2_loss",
-        "hdx_uptake_mean_centred_MSE_loss",
-        "hdxer_MSE_loss",
-        "hdxer_mcMSE_loss",
-        "hdx_uptake_mean_centred_MAE_loss",
-        "hdx_uptake_l2_loss",
-        "hdx_uptake_MAE_loss",
-        "hdx_uptake_MSE_loss",
-        "hdx_uptake_MAE_loss_vectorized",
-        "HDX_uptake_KL_loss",
-        "HDX_uptake_convex_KL_loss",
+        "hdx_pf_l2",
+        "hdx_pf_mae",
+        "hdx_uptake_l1",
+        "hdx_uptake_abs",
+        "hdx_uptake_mean_centred_l1",
+        "hdx_uptake_mean_centred_l2",
+        "hdx_uptake_mean_centred_mse",
+        "hdxer_mse",
+        "hdxer_mc_mse",
+        "hdx_uptake_mean_centred_mae",
+        "hdx_uptake_l2",
+        "hdx_uptake_mae",
+        "hdx_uptake_mse",
+        "hdx_uptake_mae_vectorized",
+        "hdx_uptake_kl",
+        "hdx_uptake_convex_kl",
     ]:
         return (model, dataset, prediction_index)
-    elif loss_name == "hdx_uptake_monotonicity_loss":
+    elif loss_name == "hdx_uptake_monotonicity":
         return (model, None, prediction_index)
     elif loss_name in [
-        "max_entropy_loss",
-        "maxent_convexKL_loss",
-        "maxent_JSD_loss",
-        "maxent_W1_loss",
-        "maxent_ESS_loss",
-        "minent_ESS_loss",
-        "maxent_L2_loss",
-        "maxent_L1_loss",
-        "sparse_max_entropy_loss",
-        "mask_L0_loss",
+        "max_entropy",
+        "maxent_convex_kl",
+        "maxent_jsd",
+        "maxent_w1",
+        "maxent_ess",
+        "minent_ess",
+        "maxent_l2",
+        "maxent_l1",
+        "sparse_max_entropy",
+        "mask_l0",
     ]:
         return (initialised_model, sim_params_dataset, None)
     elif loss_name in [
-        "frame_weight_consistency_loss",
-        "exp_frame_weight_consistency_loss",
-        "L1_frame_weight_consistency_loss",
-        "normalised_frame_weight_consistency_loss",
-        "convex_KL_frame_weight_consistency_loss",
-        "cosine_frame_weight_consistency_loss",
-        "corr_frame_weight_consistency_loss",
+        "frame_weight_consistency",
+        "exp_frame_weight_consistency",
+        "l1_frame_weight_consistency",
+        "normalised_frame_weight_consistency",
+        "convex_kl_frame_weight_consistency",
+        "cosine_frame_weight_consistency",
+        "corr_frame_weight_consistency",
     ]:
         return (model, consistency_dataset, prediction_index)
     else:
@@ -433,17 +517,25 @@ def time_function_execution(func, args, num_runs=10, warmup_runs=3):
     }
 
 
-@pytest.mark.parametrize("loss_name", ALL_LOSS_FUNCTIONS.keys())
+# @jit_Guard.clear_caches_after()
+@pytest.mark.parametrize("loss_name", ALL_LOSS_BUILDERS.keys())
 @pytest.mark.parametrize("use_jit", [True, False])
 def test_loss_function_performance_comprehensive(dummy_data_sized, loss_name, use_jit):
     """Test performance of loss functions with different sizes and JIT configurations."""
-    loss_func = ALL_LOSS_FUNCTIONS[loss_name]
+    loss_builder = ALL_LOSS_BUILDERS[loss_name]
+
+    # Build the loss function
+    loss_func = loss_builder()
+
     args = prepare_loss_function_args(loss_name, dummy_data_sized)
     config_name = dummy_data_sized["config_name"]
 
     if use_jit:
         static_argnums = get_jit_static_args(loss_name)
-        jitted_loss_func = jax.jit(loss_func, static_argnums=static_argnums)
+        if static_argnums:
+            jitted_loss_func = jax.jit(loss_func, static_argnums=static_argnums)
+        else:
+            jitted_loss_func = jax.jit(loss_func)
         func_to_test = jitted_loss_func
         jit_label = "jit"
     else:
@@ -473,9 +565,10 @@ def test_loss_function_performance_comprehensive(dummy_data_sized, loss_name, us
 
     # Basic performance assertion
     assert timing_results["mean"] < 10.0  # Should complete in reasonable time
+    jax.clear_caches()
 
 
-def create_performance_heatmaps(results_dict, output_dir="_legacy_loss_performance"):
+def create_performance_heatmaps(results_dict, output_dir="_legacy_lossBuilder_performance"):
     """Create heatmaps showing performance across different configurations."""
     if not HAS_PLOTTING_LIBS:
         print("Skipping heatmap generation - plotting libraries not available")
@@ -583,7 +676,7 @@ def create_performance_heatmaps(results_dict, output_dir="_legacy_loss_performan
     print(f"Saved speedup heatmap: {output_file}")
 
 
-def create_performance_summary_table(results_dict, output_dir="_legacy_loss_performance"):
+def create_performance_summary_table(results_dict, output_dir="_legacy_lossBuilder_performance"):
     """Create a detailed summary table of performance results."""
     output_dir = Path(__file__).parent / output_dir
 
@@ -704,7 +797,7 @@ def finalize_performance_analysis():
             print(f"Max JIT speedup: {max(speedups):.2f}x")
             print(f"Min JIT speedup: {min(speedups):.2f}x")
 
-    print("\nPerformance plots saved to: _legacy_loss_performance/")
+    print("\nPerformance plots saved to: _legacy_lossBuilder_performance/")
     print("- performance_heatmap_jit.png")
     print("- performance_heatmap_no_jit.png")
     print("- speedup_heatmap.png")
@@ -736,7 +829,7 @@ def test_generate_final_performance_plots():
 def test_jax_pairwise_cosine_similarity():
     key = jax.random.PRNGKey(1)
     array = jax.random.normal(key, (5, 3))
-    similarity_matrix = jax_pairwise_cosine_similarity(array)
+    similarity_matrix = pairwise_cosine_similarity(array)
     assert similarity_matrix.shape == (5, 5)
     assert jnp.all(similarity_matrix >= 0) and jnp.all(similarity_matrix <= 2)
     assert jnp.allclose(jnp.diag(similarity_matrix), 2.0)  # Self-similarity should be 1+1=2

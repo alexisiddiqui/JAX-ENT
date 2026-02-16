@@ -1,6 +1,7 @@
 ########################################################################
 # TODO need to simplify code using _create_modified_instance and lambda functions - using this we can then use lax to speed up the optimisation
-from typing import Any, Callable, ClassVar, TypeVar, cast
+from collections.abc import Callable
+from typing import Any, ClassVar, TypeVar, cast
 
 import jax.numpy as jnp
 from jax import Array
@@ -93,7 +94,7 @@ class Model_Parameters:
 
     @classmethod
     def tree_unflatten(
-        cls: type[T_mp], static_data: tuple[Any, ...], arrays: tuple[Array, ...]
+        cls: type[T_mp], static_data: tuple[Any, ...], arrays: tuple[Any, ...]
     ) -> T_mp:
         dynamic_slots, static_slots = cls._get_grouped_slots()
 
@@ -106,7 +107,11 @@ class Model_Parameters:
         # Static parameters from aux data
         params.update(zip(static_slots, static_data))
 
-        return cls(**params)
+        # Use object.__new__ to bypass __init__ and type checking
+        instance = object.__new__(cls)
+        for key, value in params.items():
+            object.__setattr__(instance, key, value)
+        return instance
 
     # these are currently used during the optimisation process - we suggest that you implement these methods to speed up these operations
     # @abstractmethod

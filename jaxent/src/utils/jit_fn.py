@@ -68,7 +68,8 @@ import gc
 import weakref
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, Generic, TypeVar
+from collections.abc import Callable, Generator
+from typing import Any, Generic, TypeVar
 
 import jax
 

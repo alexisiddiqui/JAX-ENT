@@ -1,7 +1,11 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple
+from beartype.typing import NamedTuple, Protocol, runtime_checkable, TYPE_CHECKING
+from jaxent.src.custom_types.key import m_key
+
+if TYPE_CHECKING:
+    from jaxent.src.interfaces.model import Model_Parameters
 
 
 class BaseConfig:
@@ -64,3 +68,11 @@ class Settings(BaseConfig):
 
 
 ####################################################################################################
+
+
+@runtime_checkable
+class Model_Config(Protocol):
+    key: m_key
+
+    @property
+    def forward_parameters(self) -> "Model_Parameters": ...

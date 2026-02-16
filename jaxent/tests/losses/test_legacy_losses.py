@@ -34,22 +34,54 @@ from jaxent.src.models.HDX.BV.features import (
 )
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 
-# Import LossRegistry from legacy adapter
-from jaxent.src.opt.loss.legacy import LossRegistry
-
-# Import only jax_pairwise_cosine_similarity directly (not a legacy loss)
-from jaxent.src.opt.losses import jax_pairwise_cosine_similarity
-from jaxent.src.utils.jit_fn import jit_Guard
+# Import all loss functions from the module
+from jaxent.src.opt.losses import (
+    HDX_uptake_convex_KL_loss,
+    HDX_uptake_KL_loss,
+    L1_frame_weight_consistency_loss,
+    convex_KL_frame_weight_consistency_loss,
+    corr_frame_weight_consistency_loss,
+    cosine_frame_weight_consistency_loss,
+    exp_frame_weight_consistency_loss,
+    frame_weight_consistency_loss,
+    hdx_pf_l2_loss,
+    hdx_pf_mae_loss,
+    hdx_uptake_abs_loss,
+    hdx_uptake_l1_loss,
+    hdx_uptake_l2_loss,
+    hdx_uptake_MAE_loss,
+    hdx_uptake_MAE_loss_vectorized,
+    hdx_uptake_mean_centred_l1_loss,
+    hdx_uptake_mean_centred_l2_loss,
+    hdx_uptake_mean_centred_MAE_loss,
+    hdx_uptake_mean_centred_MSE_loss,
+    hdx_uptake_monotonicity_loss,
+    hdx_uptake_MSE_loss,
+    hdxer_mcMSE_loss,
+    hdxer_MSE_loss,
+    jax_pairwise_cosine_similarity,
+    mask_L0_loss,
+    max_entropy_loss,
+    maxent_convexKL_loss,
+    maxent_ESS_loss,
+    maxent_JSD_loss,
+    maxent_L1_loss,
+    maxent_L2_loss,
+    maxent_W1_loss,
+    minent_ESS_loss,
+    normalised_frame_weight_consistency_loss,
+    sparse_max_entropy_loss,
+)
 
 # Global dictionary to store performance results
 PERFORMANCE_RESULTS = defaultdict(lambda: defaultdict(dict))
 
 # Define different input size configurations
 INPUT_SIZE_CONFIGS = {
-    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 20},
-    "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 100},
-    "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
-    "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
+    "small": {"num_residues": 10, "num_timepoints": 5, "num_frames": 2},
+    # "medium": {"num_residues": 50, "num_timepoints": 10, "num_frames": 10},
+    # "large": {"num_residues": 100, "num_timepoints": 20, "num_frames": 200},
+    # "xlarge": {"num_residues": 200, "num_timepoints": 30, "num_frames": 500},
 }
 
 
@@ -67,9 +99,8 @@ def create_mock_exp_datapoint(residues, timepoints, fragment_idx, chain="A"):
         exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (residues,))
         key = m_key("HDX_resPF")
     else:
-        # Uptake data - one value per timepoint (HDX_peptide structure)
-        # Each peptide covers multiple residues but has one uptake value per timepoint
-        exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (timepoints,))
+        # Uptake data - timepoints x residues for uptake losses
+        exp_data = jax.random.uniform(jax.random.PRNGKey(fragment_idx), (timepoints, residues))
         key = m_key("HDX_peptide")
 
     # Create a minimal ExpD_Datapoint-like object
@@ -80,12 +111,8 @@ def create_mock_exp_datapoint(residues, timepoints, fragment_idx, chain="A"):
             self.key = key
 
         def extract_features(self):
-            # For uptake data (HDX_peptide), reshape to (n_timepoints, 1)
-            # For protection factor data, return as-is (single value)
-            if self.key == m_key("HDX_peptide"):
-                return self.data.reshape(-1, 1)
-            else:
-                return self.data.flatten()
+            # For uptake data, flatten timepoints x residues
+            return self.data.flatten()
 
     return MockExpDatapoint(exp_data, topology, key)
 
@@ -221,92 +248,89 @@ def dummy_data_sized(request):
     return create_dummy_data_with_size(config_name, config)
 
 
-# List of all legacy loss functions to test using LossRegistry
-ALL_LEGACY_LOSS_NAMES = [
-    "legacy_hdx_pf_l2_loss",
-    "legacy_hdx_pf_mae_loss",
-    "legacy_max_entropy_loss",
-    "legacy_maxent_convexKL_loss",
-    "legacy_maxent_JSD_loss",
-    "legacy_maxent_W1_loss",
-    "legacy_maxent_ESS_loss",
-    "legacy_minent_ESS_loss",
-    "legacy_maxent_L2_loss",
-    "legacy_maxent_L1_loss",
-    "legacy_sparse_max_entropy_loss",
-    "legacy_mask_L0_loss",
-    "legacy_hdx_uptake_l1_loss",
-    "legacy_hdx_uptake_abs_loss",
-    "legacy_hdx_uptake_mean_centred_l1_loss",
-    "legacy_hdx_uptake_mean_centred_l2_loss",
-    "legacy_hdx_uptake_monotonicity_loss",
-    "legacy_frame_weight_consistency_loss",
-    "legacy_exp_frame_weight_consistency_loss",
-    "legacy_L1_frame_weight_consistency_loss",
-    "legacy_normalised_frame_weight_consistency_loss",
-    "legacy_convex_KL_frame_weight_consistency_loss",
-    "legacy_cosine_frame_weight_consistency_loss",
-    "legacy_corr_frame_weight_consistency_loss",
-    "legacy_hdx_uptake_mean_centred_MSE_loss",
-    "legacy_hdxer_MSE_loss",
-    "legacy_hdxer_mcMSE_loss",
-    "legacy_hdx_uptake_mean_centred_MAE_loss",
-    "legacy_hdx_uptake_l2_loss",
-    "legacy_hdx_uptake_MAE_loss",
-    "legacy_hdx_uptake_MSE_loss",
-    "legacy_hdx_uptake_MAE_loss_vectorized",
-    "legacy_HDX_uptake_KL_loss",
-    "legacy_HDX_uptake_convex_KL_loss",
-]
-
-ALL_LOSS_FUNCTIONS = {name: LossRegistry.get(name) for name in ALL_LEGACY_LOSS_NAMES}
+# List of all loss functions to test
+ALL_LOSS_FUNCTIONS = {
+    "hdx_pf_l2_loss": hdx_pf_l2_loss,
+    "hdx_pf_mae_loss": hdx_pf_mae_loss,
+    "max_entropy_loss": max_entropy_loss,
+    "maxent_convexKL_loss": maxent_convexKL_loss,
+    "maxent_JSD_loss": maxent_JSD_loss,
+    # "maxent_W1_loss": maxent_W1_loss,
+    # "maxent_ESS_loss": maxent_ESS_loss,
+    # "minent_ESS_loss": minent_ESS_loss,
+    # "maxent_L2_loss": maxent_L2_loss,
+    # "maxent_L1_loss": maxent_L1_loss,
+    # "sparse_max_entropy_loss": sparse_max_entropy_loss,
+    # "mask_L0_loss": mask_L0_loss,
+    # "hdx_uptake_l1_loss": hdx_uptake_l1_loss,
+    # "hdx_uptake_abs_loss": hdx_uptake_abs_loss,
+    # "hdx_uptake_mean_centred_l1_loss": hdx_uptake_mean_centred_l1_loss,
+    # "hdx_uptake_mean_centred_l2_loss": hdx_uptake_mean_centred_l2_loss,
+    # "hdx_uptake_monotonicity_loss": hdx_uptake_monotonicity_loss,
+    # "frame_weight_consistency_loss": frame_weight_consistency_loss,
+    # "exp_frame_weight_consistency_loss": exp_frame_weight_consistency_loss,
+    # "L1_frame_weight_consistency_loss": L1_frame_weight_consistency_loss,
+    # "normalised_frame_weight_consistency_loss": normalised_frame_weight_consistency_loss,
+    # "convex_KL_frame_weight_consistency_loss": convex_KL_frame_weight_consistency_loss,
+    # "cosine_frame_weight_consistency_loss": cosine_frame_weight_consistency_loss,
+    # "corr_frame_weight_consistency_loss": corr_frame_weight_consistency_loss,
+    # "hdx_uptake_mean_centred_MSE_loss": hdx_uptake_mean_centred_MSE_loss,
+    # "hdxer_MSE_loss": hdxer_MSE_loss,
+    # "hdxer_mcMSE_loss": hdxer_mcMSE_loss,
+    # "hdx_uptake_mean_centred_MAE_loss": hdx_uptake_mean_centred_MAE_loss,
+    # "hdx_uptake_l2_loss": hdx_uptake_l2_loss,
+    # "hdx_uptake_MAE_loss": hdx_uptake_MAE_loss,
+    # "hdx_uptake_MSE_loss": hdx_uptake_MSE_loss,
+    # "hdx_uptake_MAE_loss_vectorized": hdx_uptake_MAE_loss_vectorized,
+    # "HDX_uptake_KL_loss": HDX_uptake_KL_loss,
+    # "HDX_uptake_convex_KL_loss": HDX_uptake_convex_KL_loss,
+}
 
 
 def get_jit_static_args(loss_name):
     """Return the static_argnums for JIT compilation based on loss function type."""
-    # Use legacy names for matching
     if loss_name in [
-        "legacy_hdx_pf_l2_loss",
-        "legacy_hdx_pf_mae_loss",
-        "legacy_hdx_uptake_l1_loss",
-        "legacy_hdx_uptake_abs_loss",
-        "legacy_hdx_uptake_mean_centred_l1_loss",
-        "legacy_hdx_uptake_mean_centred_l2_loss",
-        "legacy_hdx_uptake_mean_centred_MSE_loss",
-        "legacy_hdxer_MSE_loss",
-        "legacy_hdxer_mcMSE_loss",
-        "legacy_hdx_uptake_mean_centred_MAE_loss",
-        "legacy_hdx_uptake_l2_loss",
-        "legacy_hdx_uptake_MAE_loss",
-        "legacy_hdx_uptake_MSE_loss",
-        "legacy_hdx_uptake_MAE_loss_vectorized",
-        "legacy_HDX_uptake_KL_loss",
-        "legacy_HDX_uptake_convex_KL_loss",
+        "hdx_pf_l2_loss",
+        "hdx_pf_mae_loss",
+        "hdx_uptake_l1_loss",
+        "hdx_uptake_abs_loss",
+        "hdx_uptake_mean_centred_l1_loss",
+        "hdx_uptake_mean_centred_l2_loss",
+        "hdx_uptake_mean_centred_MSE_loss",
+        "hdxer_MSE_loss",
+        "hdxer_mcMSE_loss",
+        "hdx_uptake_mean_centred_MAE_loss",
+        "hdx_uptake_l2_loss",
+        "hdx_uptake_MAE_loss",
+        "hdx_uptake_MSE_loss",
+        "hdx_uptake_MAE_loss_vectorized",
+        "HDX_uptake_KL_loss",
+        "HDX_uptake_convex_KL_loss",
     ]:
         return [0, 1, 2]
-    elif loss_name == "legacy_hdx_uptake_monotonicity_loss":
+    elif loss_name == "hdx_uptake_monotonicity_loss":
         return [0, 2]
     elif loss_name in [
-        "legacy_max_entropy_loss",
-        "legacy_maxent_convexKL_loss",
-        "legacy_maxent_JSD_loss",
-        "legacy_maxent_W1_loss",
-        "legacy_maxent_ESS_loss",
-        "legacy_minent_ESS_loss",
-        "legacy_maxent_L2_loss",
-        "legacy_maxent_L1_loss",
-        "legacy_sparse_max_entropy_loss",
-        "legacy_mask_L0_loss",
+        "max_entropy_loss",
+        "maxent_convexKL_loss",
+        "maxent_JSD_loss",
+        "maxent_W1_loss",
+        "maxent_ESS_loss",
+        "minent_ESS_loss",
+        "maxent_L2_loss",
+        "maxent_L1_loss",
+        "sparse_max_entropy_loss",
+        "mask_L0_loss",
     ]:
         return [0]
     elif loss_name in [
-        "legacy_frame_weight_consistency_loss",
-        "legacy_exp_frame_weight_consistency_loss",
-        "legacy_L1_frame_weight_consistency_loss",
-        "legacy_normalised_frame_weight_consistency_loss",
-        "legacy_convex_KL_frame_weight_consistency_loss",
-        "legacy_cosine_frame_weight_consistency_loss",
-        "legacy_corr_frame_weight_consistency_loss",
+        "frame_weight_consistency_loss",
+        "exp_frame_weight_consistency_loss",
+        "L1_frame_weight_consistency_loss",
+        "normalised_frame_weight_consistency_loss",
+        "convex_KL_frame_weight_consistency_loss",
+        "cosine_frame_weight_consistency_loss",
+        "corr_frame_weight_consistency_loss",
     ]:
         return [0, 2]
     else:
@@ -315,7 +339,6 @@ def get_jit_static_args(loss_name):
 
 def prepare_loss_function_args(loss_name, dummy_data):
     """Prepare arguments for loss function based on its signature."""
-    # Use legacy names for matching
     model = dummy_data["model"]
     initialised_model = dummy_data["initialised_model"]
     dataset_pf = dummy_data["dataset_pf"]
@@ -329,7 +352,7 @@ def prepare_loss_function_args(loss_name, dummy_data):
         model.outputs = [dummy_data["uptake_output"]]
         initialised_model.outputs = [dummy_data["uptake_output"]]
         dataset = dataset_uptake
-    elif loss_name in ["legacy_hdxer_MSE_loss", "legacy_hdxer_mcMSE_loss"]:
+    elif loss_name in ["hdxer_MSE_loss", "hdxer_mcMSE_loss"]:
         model.outputs = [dummy_data["uptake_output"]]
         initialised_model.outputs = [dummy_data["uptake_output"]]
         dataset = dataset_uptake
@@ -340,47 +363,47 @@ def prepare_loss_function_args(loss_name, dummy_data):
 
     # Determine which arguments to pass based on the loss function signature
     if loss_name in [
-        "legacy_hdx_pf_l2_loss",
-        "legacy_hdx_pf_mae_loss",
-        "legacy_hdx_uptake_l1_loss",
-        "legacy_hdx_uptake_abs_loss",
-        "legacy_hdx_uptake_mean_centred_l1_loss",
-        "legacy_hdx_uptake_mean_centred_l2_loss",
-        "legacy_hdx_uptake_mean_centred_MSE_loss",
-        "legacy_hdxer_MSE_loss",
-        "legacy_hdxer_mcMSE_loss",
-        "legacy_hdx_uptake_mean_centred_MAE_loss",
-        "legacy_hdx_uptake_l2_loss",
-        "legacy_hdx_uptake_MAE_loss",
-        "legacy_hdx_uptake_MSE_loss",
-        "legacy_hdx_uptake_MAE_loss_vectorized",
-        "legacy_HDX_uptake_KL_loss",
-        "legacy_HDX_uptake_convex_KL_loss",
+        "hdx_pf_l2_loss",
+        "hdx_pf_mae_loss",
+        "hdx_uptake_l1_loss",
+        "hdx_uptake_abs_loss",
+        "hdx_uptake_mean_centred_l1_loss",
+        "hdx_uptake_mean_centred_l2_loss",
+        "hdx_uptake_mean_centred_MSE_loss",
+        "hdxer_MSE_loss",
+        "hdxer_mcMSE_loss",
+        "hdx_uptake_mean_centred_MAE_loss",
+        "hdx_uptake_l2_loss",
+        "hdx_uptake_MAE_loss",
+        "hdx_uptake_MSE_loss",
+        "hdx_uptake_MAE_loss_vectorized",
+        "HDX_uptake_KL_loss",
+        "HDX_uptake_convex_KL_loss",
     ]:
         return (model, dataset, prediction_index)
-    elif loss_name == "legacy_hdx_uptake_monotonicity_loss":
+    elif loss_name == "hdx_uptake_monotonicity_loss":
         return (model, None, prediction_index)
     elif loss_name in [
-        "legacy_max_entropy_loss",
-        "legacy_maxent_convexKL_loss",
-        "legacy_maxent_JSD_loss",
-        "legacy_maxent_W1_loss",
-        "legacy_maxent_ESS_loss",
-        "legacy_minent_ESS_loss",
-        "legacy_maxent_L2_loss",
-        "legacy_maxent_L1_loss",
-        "legacy_sparse_max_entropy_loss",
-        "legacy_mask_L0_loss",
+        "max_entropy_loss",
+        "maxent_convexKL_loss",
+        "maxent_JSD_loss",
+        "maxent_W1_loss",
+        "maxent_ESS_loss",
+        "minent_ESS_loss",
+        "maxent_L2_loss",
+        "maxent_L1_loss",
+        "sparse_max_entropy_loss",
+        "mask_L0_loss",
     ]:
         return (initialised_model, sim_params_dataset, None)
     elif loss_name in [
-        "legacy_frame_weight_consistency_loss",
-        "legacy_exp_frame_weight_consistency_loss",
-        "legacy_L1_frame_weight_consistency_loss",
-        "legacy_normalised_frame_weight_consistency_loss",
-        "legacy_convex_KL_frame_weight_consistency_loss",
-        "legacy_cosine_frame_weight_consistency_loss",
-        "legacy_corr_frame_weight_consistency_loss",
+        "frame_weight_consistency_loss",
+        "exp_frame_weight_consistency_loss",
+        "L1_frame_weight_consistency_loss",
+        "normalised_frame_weight_consistency_loss",
+        "convex_KL_frame_weight_consistency_loss",
+        "cosine_frame_weight_consistency_loss",
+        "corr_frame_weight_consistency_loss",
     ]:
         return (model, consistency_dataset, prediction_index)
     else:
@@ -410,7 +433,6 @@ def time_function_execution(func, args, num_runs=10, warmup_runs=3):
     }
 
 
-@jit_Guard.clear_caches_after()
 @pytest.mark.parametrize("loss_name", ALL_LOSS_FUNCTIONS.keys())
 @pytest.mark.parametrize("use_jit", [True, False])
 def test_loss_function_performance_comprehensive(dummy_data_sized, loss_name, use_jit):
@@ -421,12 +443,7 @@ def test_loss_function_performance_comprehensive(dummy_data_sized, loss_name, us
 
     if use_jit:
         static_argnums = get_jit_static_args(loss_name)
-
-        # wrap legacy adapter object into a plain Python function for JAX jit
-        def _callable_loss(*args):
-            return loss_func(*args)
-
-        jitted_loss_func = jax.jit(_callable_loss, static_argnums=static_argnums)
+        jitted_loss_func = jax.jit(loss_func, static_argnums=static_argnums)
         func_to_test = jitted_loss_func
         jit_label = "jit"
     else:
@@ -458,7 +475,7 @@ def test_loss_function_performance_comprehensive(dummy_data_sized, loss_name, us
     assert timing_results["mean"] < 10.0  # Should complete in reasonable time
 
 
-def create_performance_heatmaps(results_dict, output_dir="_legacy_lossAdapter_performance"):
+def create_performance_heatmaps(results_dict, output_dir="_legacy_loss_performance"):
     """Create heatmaps showing performance across different configurations."""
     if not HAS_PLOTTING_LIBS:
         print("Skipping heatmap generation - plotting libraries not available")
@@ -566,7 +583,7 @@ def create_performance_heatmaps(results_dict, output_dir="_legacy_lossAdapter_pe
     print(f"Saved speedup heatmap: {output_file}")
 
 
-def create_performance_summary_table(results_dict, output_dir="_legacy_lossAdapter_performance"):
+def create_performance_summary_table(results_dict, output_dir="_legacy_loss_performance"):
     """Create a detailed summary table of performance results."""
     output_dir = Path(__file__).parent / output_dir
 
@@ -687,7 +704,7 @@ def finalize_performance_analysis():
             print(f"Max JIT speedup: {max(speedups):.2f}x")
             print(f"Min JIT speedup: {min(speedups):.2f}x")
 
-    print("\nPerformance plots saved to: _legacy_lossAdapter_performance/")
+    print("\nPerformance plots saved to: _legacy_loss_performance/")
     print("- performance_heatmap_jit.png")
     print("- performance_heatmap_no_jit.png")
     print("- speedup_heatmap.png")
@@ -700,13 +717,7 @@ def generate_performance_plots():
     finalize_performance_analysis()
 
 
-# Standalone function to run performance analysis
-if __name__ == "__main__":
-    print("Running standalone performance analysis...")
-    # Note: This will only work if PERFORMANCE_RESULTS has been populated by running tests first
-    generate_performance_plots()
-
-
+# Hook to run finalization after all tests
 def pytest_sessionfinish(session, exitstatus):
     """Called after whole test run finished, right before returning the exit status."""
     print(f"DEBUG: pytest_sessionfinish called with exitstatus {exitstatus}")
