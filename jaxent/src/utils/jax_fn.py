@@ -1,7 +1,8 @@
-from typing import TypeVar
+from beartype.typing import TypeVar
 
 import jax.numpy as jnp
 from jax import Array
+from jaxtyping import Float
 
 from jaxent.src.custom_types.base import ForwardPass
 from jaxent.src.custom_types.features import Input_Features
@@ -48,9 +49,9 @@ T_In = TypeVar("T_In", bound=Input_Features)
 
 
 def frame_average_features(
-    frame_wise_features: T_In,  # (frames, residues)
-    frame_weights: Array,  # (frames)
-) -> T_In:  # (1, residues)
+    frame_wise_features: T_In,  # each feature: Float[Array, "n_residues n_frames"]
+    frame_weights: Float[Array, " n_frames"],
+) -> T_In:  # each feature: Float[Array, " n_residues"]
     """
     Average features across frames using provided weights by mapping over slots.
 
@@ -92,7 +93,10 @@ def frame_average_features(
 ########################################
 
 
+from jaxent.src.custom_types.protocols import InputFeaturesLike, ModelParametersLike
+
+
 def single_pass(
-    forward_pass: ForwardPass, input_feature: Input_Features, parameters: Model_Parameters
+    forward_pass: ForwardPass, input_feature: InputFeaturesLike, parameters: ModelParametersLike
 ):
     return forward_pass(input_feature, parameters)

@@ -94,7 +94,7 @@ def test_create_sparse_map():
     # now create fake datasets
     print(feature_topology[0][0])
 
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in train_segments]
+    exp_data = [HDX_protection_factor(protection_factor=10.0, top=top) for top in train_segments]
     print("\nBefore creating sparse map:")
     print(f"Feature topology length: {len(feature_topology[0])}")
     print(f"Train segments length: {len(train_segments)}")
@@ -173,7 +173,7 @@ def test_create_sparse_map_ensemble():
     # now create fake datasets
     print(feature_topology[0][0])
 
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in train_segments]
+    exp_data = [HDX_protection_factor(protection_factor=10.0, top=top) for top in train_segments]
     print("\nBefore creating sparse map:")
     print(f"Feature topology length: {len(feature_topology[0])}")
     print(f"Train segments length: {len(train_segments)}")
@@ -215,7 +215,7 @@ def test_random_split():
     print([top.fragment_index for top in top_segments][:3])
 
     # Create fake dataset for testing
-    exp_data = [HDX_protection_factor(protection_factor=10, top=top) for top in top_segments]
+    exp_data = [HDX_protection_factor(protection_factor=10.0, top=top) for top in top_segments]
     dataset = ExpD_Dataloader(data=exp_data)
     print("dataset", len(dataset.data))
 

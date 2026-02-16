@@ -159,8 +159,8 @@ def create_default_simulation_params(num_models: int = 1) -> Simulation_Paramete
     return Simulation_Parameters(
         frame_weights=jnp.ones(
             5
-        ),  # Changed from 10 to 5 to match last dimension of input features (10, 5)
-        frame_mask=jnp.ones(10, dtype=jnp.int32),
+        ),  
+        frame_mask=jnp.ones(5, dtype=jnp.int32),
         model_parameters=[MockModelParameters() for _ in range(num_models)],
         forward_model_weights=jnp.ones(num_models),
         normalise_loss_functions=jnp.ones(num_models, dtype=jnp.int32),
@@ -209,7 +209,7 @@ class TestSimulation:
         simulation = Simulation(input_features, forward_models, params, raise_jit_failure)
         with pytest.raises(
             AssertionError,
-            match="Number of forward models must be equal to number of forward model parameters",
+            match="Number of forward models must equal number of model parameters",
         ):
             simulation.initialise()
 

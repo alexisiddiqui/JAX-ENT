@@ -1,4 +1,7 @@
-from typing import Callable, Optional, Sequence, Tuple, TypedDict, cast
+from collections.abc import Sequence
+from beartype.typing import Callable, Optional, TypedDict, cast
+
+import chex
 
 import jax
 import jax.numpy as jnp
@@ -10,8 +13,10 @@ from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.core import Simulation
+from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
+
 
 
 def optimise(
@@ -34,7 +39,9 @@ def optimise(
 
 class OptimiseFnInputs(TypedDict):
     _simulation: InitialisedSimulation
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features]
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ]
     n_steps: int
     tolerance: float
     convergence: float
@@ -47,7 +54,9 @@ class OptimiseFnInputs(TypedDict):
 
 def _optimise(
     _simulation: InitialisedSimulation,
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features],
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ],
     n_steps: int,
     tolerance: float,
     convergence: float,
@@ -55,8 +64,9 @@ def _optimise(
     loss_functions: Sequence[JaxEnt_Loss],
     opt_state: OptimizationState,
     optimizer: OptaxOptimizer,
-) -> Tuple[InitialisedSimulation, OptaxOptimizer]:
+) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     for step in range(n_steps):
+        chex.assert_tree_all_finite(opt_state.params)
         history = optimizer.history
 
         opt_state, current_loss, save_state, _simulation = optimizer.step(
@@ -83,7 +93,7 @@ def _optimise(
             val_loss=opt_state.losses.total_val_loss,
         )
         history.add_state(save_state)
-        if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
+        if not jnp.isfinite(current_loss) or (current_loss < tolerance):
             print(f"Reached convergence tolerance/nan vals at step {step}, loss: {current_loss}")
             break
         optimizer.history = history  # update only if not nan
@@ -109,7 +119,9 @@ def _optimise(
 
 def run_optimise(
     simulation: Simulation,
-    data_to_fit: Sequence[ExpD_Dataloader | Model_Parameters | Output_Features | Array],
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ],
     config: OptimiserSettings,
     forward_models: Sequence[ForwardModel],
     indexes: Sequence[int],
@@ -119,7 +131,7 @@ def run_optimise(
     initialise: Optional[bool] = False,
     _opt_fn: Callable = _optimise,  # we seperate this so that users can add diagnostics in the loss loop
     jit_update_step: bool = False,
-) -> Tuple[InitialisedSimulation, OptimizationHistory]:
+) -> tuple[InitialisedSimulation, OptimizationHistory]:
     """Runs the optimization process"""
 
     if forward_models:

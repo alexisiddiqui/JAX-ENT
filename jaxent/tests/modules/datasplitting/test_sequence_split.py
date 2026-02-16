@@ -617,15 +617,26 @@ class TestSequenceSplitEdgeCases:
 
     def test_empty_active_residues_error(self, create_datapoints_from_topologies, setup_splitter):
         """Test handling of topologies with no active residues."""
-        # Create a mock topology with no active residues
-        mock_topology = MagicMock()
-        mock_topology._get_active_residues.return_value = []
+        # Create a topology that returns no active residues when trimmed
+        # We create a subclass that overrides _get_active_residues to return empty list
+        class EmptyTopology(type(TopologyFactory.from_range("A", 1, 3))):
+            def _get_active_residues(self, check_trim: bool = False):
+                return []
 
-        mock_datapoint = MockExpD_Datapoint(mock_topology, 0)
+        # Create an instance with minimal residues
+        empty_topology = EmptyTopology(
+            chain="A",
+            residues=[1, 2, 3],
+            fragment_name="empty_active",
+            peptide=False,
+            peptide_trim=0,
+        )
+
+        empty_datapoint = MockExpD_Datapoint(empty_topology, 0)
         # Add another valid datapoint to ensure the dataset size check passes
         valid_topology = TopologyFactory.from_range("A", 1, 10, fragment_name="valid_frag")
         valid_datapoint = MockExpD_Datapoint(valid_topology, 1)
-        datapoints = [mock_datapoint, valid_datapoint]
+        datapoints = [empty_datapoint, valid_datapoint]
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)

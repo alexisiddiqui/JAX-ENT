@@ -1,30 +1,32 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
+import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
+from jaxtyping import Float, Int, Array, Bool
 from jax.tree_util import register_pytree_node
 
 from jaxent.src.interfaces.model import Model_Parameters
 
-########################################################################\
+########################################################################
 # TODO - use generics/typevar to abstractly define the datatypes
 
 
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
-    frame_weights: Array
-    frame_mask: Array  # array of type int
+    frame_weights: Float[Array, " n_frames"]
+    frame_mask: Float[Array, " n_frames"] | Int[Array, " n_models"] | Bool[Array, " n_models"] # array of type int
     model_parameters: Sequence[Model_Parameters]
-    forward_model_weights: Array
-    normalise_loss_functions: Array  # array of type int
-    forward_model_scaling: Array
+    forward_model_weights: Float[Array, " n_models"]
+    normalise_loss_functions: Float[Array, " n_models"] | Int[Array, " n_models"] | Bool[Array, " n_models"]  # array of type int
+    forward_model_scaling: Float[Array, " n_models"]
 
     ########################################################################
     # TODO I think this is maybe kinda silly - but
     @staticmethod
-    def propagate_model_parameters(params: "Simulation_Parameters", model_index: int=0):
+    def propagate_model_parameters(params: "Simulation_Parameters", model_index: int = 0):
         """
         Propagates the model parameters at model_index to all model parameters.
         """
@@ -39,7 +41,6 @@ class Simulation_Parameters:
             forward_model_weights=params.forward_model_weights,
             forward_model_scaling=params.forward_model_scaling,
         )
-
 
     @staticmethod
     def normalize_masked_loss_scalingweights(params: "Simulation_Parameters"):
@@ -77,27 +78,36 @@ class Simulation_Parameters:
     @staticmethod
     def param_labels(params: "Simulation_Parameters") -> "Simulation_Parameters":
         """Create a label tree for optax.multi_transform that matches the parameter structure.
-        
+
+        This method uses object.__new__ and object.__setattr__ to bypass beartype validation,
+        since the labels are strings rather than JAX arrays. This is required because optax's
+        multi_transform needs the labels to be the exact same pytree node type as the parameters.
+
         Args:
             params: The simulation parameters to create labels for
-            
+
         Returns:
             A Simulation_Parameters instance with string labels for each parameter group
         """
-        return Simulation_Parameters(
-            frame_weights='frame',
-            frame_mask='frame',
-            model_parameters=['model'] * len(params.model_parameters),
-            forward_model_weights='other',
-            forward_model_scaling='other',
-            normalise_loss_functions='other',
-        )
+        # Use object.__new__ to create instance without calling __init__ (bypasses beartype)
+        instance = object.__new__(Simulation_Parameters)
+        # Use object.__setattr__ to bypass frozen dataclass and beartype validation
+        object.__setattr__(instance, "frame_weights", "frame")
+        object.__setattr__(instance, "frame_mask", "frame")
+        object.__setattr__(instance, "model_parameters", ["model"] * len(params.model_parameters))
+        object.__setattr__(instance, "forward_model_weights", "other")
+        object.__setattr__(instance, "forward_model_scaling", "other")
+        object.__setattr__(instance, "normalise_loss_functions", "other")
+        return instance
 
     @staticmethod
     def normalize_weights(params: "Simulation_Parameters") -> "Simulation_Parameters":
         """Create a new instance with normalized frame weights using JAX-compatible operations"""
         # Use projection_simplex for frame weights normalization
         # frame_weights = optax.projections.projection_simplex(jnp.asarray(params.frame_weights))
+
+        chex.assert_rank(params.frame_weights, 1)
+        chex.assert_equal_shape([params.frame_weights, params.frame_mask])
 
         frame_weights = jax.nn.softmax(params.frame_weights)
 
@@ -179,7 +189,12 @@ class Simulation_Parameters:
 
     @classmethod
     def tree_unflatten(cls, static, arrays):
-        # Create instance first, then normalize
+        """Reconstruct from flattened pytree representation.
+
+        This method uses object.__new__ and object.__setattr__ to bypass beartype validation,
+        since JAX's tree operations (e.g., optax's internal masking) may produce intermediate
+        structures with booleans or other non-Array types.
+        """
         (
             frame_weights,
             frame_mask,
@@ -189,15 +204,15 @@ class Simulation_Parameters:
             normalise_loss_functions,
         ) = arrays
         _ = static
-        # Instead of normalizing after creation, just create with the given weights
-        return cls(
-            frame_weights=frame_weights,
-            frame_mask=frame_mask,  # .astype(int),
-            model_parameters=model_params,
-            normalise_loss_functions=normalise_loss_functions,
-            forward_model_weights=forward_weights,
-            forward_model_scaling=forward_model_scaling,
-        )
+        # Use object.__new__ to bypass beartype validation
+        instance = object.__new__(cls)
+        object.__setattr__(instance, "frame_weights", frame_weights)
+        object.__setattr__(instance, "frame_mask", frame_mask)
+        object.__setattr__(instance, "model_parameters", model_params)
+        object.__setattr__(instance, "normalise_loss_functions", normalise_loss_functions)
+        object.__setattr__(instance, "forward_model_weights", forward_weights)
+        object.__setattr__(instance, "forward_model_scaling", forward_model_scaling)
+        return instance
 
 
 # Register the class as a pytree node
