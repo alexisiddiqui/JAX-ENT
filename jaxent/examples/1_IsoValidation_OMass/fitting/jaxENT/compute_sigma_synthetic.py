@@ -14,7 +14,7 @@ Example usage:
         --features_dir ./_featurise \
         --output_dir ./_covariance_matrices
 
-    python compute_weighted_sigma.py \
+    python /home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py \
         --clustering_dir ../../data/_clustering_results \
         --features_dir ./_featurise \
         --ensemble_name ISO_BI \
@@ -276,8 +276,8 @@ def main():
 
     # --- Load Features and Topology ---
     print(f"\n--- Loading Features and Topology for {args.ensemble_name} ---")
-    topology_file = os.path.join(args.features_dir, "topology_iso_tri.json")
-    features_file = os.path.join(args.features_dir, "features_iso_tri.npz")
+    topology_file = os.path.join(args.features_dir, f"topology_{args.ensemble_name.lower()}.json")
+    features_file = os.path.join(args.features_dir, f"features_{args.ensemble_name.lower()}.npz")
 
     if not os.path.exists(topology_file):
         raise FileNotFoundError(f"Topology file not found: {topology_file}")
