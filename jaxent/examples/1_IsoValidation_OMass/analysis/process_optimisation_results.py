@@ -77,6 +77,7 @@ def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str
     Load train, validation, and full (test) experimental data for a given split, and extract timepoints.
 
     Args:
+        results_dir: Base directory containing optimization results (unused for data loading).
         datasplit_dir: Base directory containing data splits.
         split_type: Type of split (e.g., 'random', 'sequence').
         split_idx: Index of the split.
@@ -85,8 +86,6 @@ def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str
         Tuple of (train_data, val_data, test_data, timepoints)
     """
     split_path = os.path.join(datasplit_dir, split_type, f"split_{split_idx:03d}")
-    parent_dir = os.path.dirname(results_dir)
-    full_dataset_path = os.path.join(parent_dir, "_datasplits")
 
     train_csv_path = os.path.join(split_path, "train_dfrac.csv")
     train_data = HDX_peptide.load_list_from_files(
@@ -104,8 +103,8 @@ def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str
         csv_path=os.path.join(split_path, "val_dfrac.csv"),
     )
     test_data = HDX_peptide.load_list_from_files(
-        json_path=os.path.join(full_dataset_path, "full_dataset_topology.json"),
-        csv_path=os.path.join(full_dataset_path, "full_dataset_dfrac.csv"),
+        json_path=os.path.join(datasplit_dir, "full_dataset_topology.json"),
+        csv_path=os.path.join(datasplit_dir, "full_dataset_dfrac.csv"),
     )
     return train_data, val_data, test_data, np.array(timepoints)
 
@@ -326,7 +325,7 @@ def main():
     )
     parser.add_argument(
         "--results-dir",
-        default="../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135",
+        default="../fitting/jaxENT/_optimise_test_SIGMA_500__20260216_224925",
         help="Directory containing optimization HDF5 result files (e.g., from optimise_ISO_TRI_BI_splits_Sigma.py)",
     )
     parser.add_argument(
