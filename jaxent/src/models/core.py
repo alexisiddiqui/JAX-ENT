@@ -1,10 +1,14 @@
-from typing import Any, Callable, Optional, Sequence, Union, cast
+from collections.abc import Callable, Sequence
+from typing import Any, Optional, Union, cast
 
+import chex
 import jax.numpy as jnp
 from jax import (
     jit,
+    Array,
 )
 from jax.tree_util import register_pytree_node
+from jaxtyping import Float
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
@@ -19,7 +23,7 @@ class Simulation:
     """
 
     outputs: tuple[Output_Features]
-    _jit_forward_pure: Callable
+    _jit_forward_pure: Callable | None
 
     def __init__(
         self,
@@ -32,14 +36,14 @@ class Simulation:
         self.input_features: list[Input_Features[Any]] = input_features
         self.forward_models: Sequence[ForwardModel] = forward_models
 
-        self.params: Simulation_Parameters = cast(Simulation_Parameters, params)
+        self.params: Simulation_Parameters | None = params
 
         self.forwardpass: Sequence[ForwardPass] = tuple(
             [model.forwardpass for model in self.forward_models]
         )
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
-        self._jit_forward_pure: Callable = None  # type: ignore
+        self._jit_forward_pure: Callable | None = None
         self.raise_jit_failure: bool = raise_jit_failure
 
     def __repr__(self) -> str:
@@ -51,24 +55,33 @@ class Simulation:
     #     # self.output_features: dict[m_id, Array]
 
     def initialise(self) -> bool:
-        # assert that input features have the same first dimension of "features_shape"
+        # Assert that input features have the same frame dimension
         lengths = [feature.features_shape[-1] for feature in self.input_features]
-        assert len(set(lengths)) == 1, "Input features have different shapes. Exiting."
+        chex.assert_equal(len(set(lengths)), 1, custom_message="Input features have different frame counts")
         self.length = lengths[0]
 
         if self.params is None:
             raise ValueError("No simulation parameters were provided. Exiting.")
+        
+        # Validate parameter ranks
+        chex.assert_rank(self.params.frame_weights, 1)
+        chex.assert_equal_shape([self.params.frame_weights, self.params.frame_mask])
+        
         self.params = Simulation_Parameters.normalize_weights(self.params)
         self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
-        # assert that the number of forward models is equal to the number of forward model weights
-        assert len(self.forward_models) == len(self.params.model_parameters), (
-            "Number of forward models must be equal to number of forward model parameters"
+        
+        # Assert that the number of forward models matches model parameters
+        chex.assert_equal(
+            len(self.forward_models), 
+            len(self.params.model_parameters),
+            custom_message="Number of forward models must equal number of model parameters"
         )
 
         # at this point we need to convert all the input features, parametere etc to jax arrays
         # use cast_to_jax for input features
-        self._input_features: tuple[Input_Features] = cast(
-            tuple[Input_Features], tuple([feature.cast_to_jax() for feature in self.input_features])
+        self._input_features: tuple[Input_Features, ...] = cast(
+            tuple[Input_Features, ...],
+            tuple([feature.cast_to_jax() for feature in self.input_features]),
         )
 
         print("Loaded forward passes")
@@ -290,14 +303,15 @@ class Simulation:
         Pure function for forward computation that is jittable.
 
         Args:
-            params: Simulation parameters
-            input_features: Input features
+            params: Simulation parameters with frame_weights as Float[Array, " n_frames"]
+            input_features: Input features, each with shape (n_residues, n_frames)
             forwardpass: Forward pass functions
 
         Returns:
-            Output features
+            Output features from each forward model
         """
-        # Normalize weights
+        # Validate frame_weights rank
+        chex.assert_rank(params.frame_weights, 1)
 
         # Mask the frame weights
         # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)

@@ -12,15 +12,15 @@ Supported formats:
 
 import os
 import re
-from typing import List, Optional, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
+from beartype.typing import Optional
 from jax import Array
 
 
-def load_HDXer_kints(kint_path: str) -> tuple[Array, list[float]]:
+def load_HDXer_kints(kint_path: str) -> tuple[Array, list[int]]:
     """
     Loads the intrinsic rates from a .dat file.
     Adjsuts the residue indices to be zero-based for termini exclusions
@@ -48,8 +48,8 @@ def load_HDXer_kints(kint_path: str) -> tuple[Array, list[float]]:
 
 
 def load_HDXer_dfrac(
-    filename: str, expected_timepoints: Optional[List[float]] = None
-) -> Tuple[List[List[float]], List[Tuple[int, int]], List[float]]:
+    filename: str, expected_timepoints: Optional[list[float]] = None
+) -> tuple[list[list[float]], list[tuple[int, int]], list[float]]:
     """
     Load HDX data from file, auto-detecting the format.
 
@@ -123,7 +123,7 @@ def load_HDXer_dfrac(
 
 
 def save_dfrac_file(
-    filename: str, data: List[List[float]], timepoints: Optional[List[float]] = None
+    filename: str, data: list[list[float]], timepoints: Optional[list[float]] = None
 ) -> None:
     """
     Save deuteration fraction data in dfrac format.
@@ -157,7 +157,7 @@ def save_dfrac_file(
     print(f"Saved dfrac file: {filename}")
 
 
-def save_segs_file(filename: str, segments: List[Tuple[int, int]]) -> None:
+def save_segs_file(filename: str, segments: list[tuple[int, int]]) -> None:
     """
     Save segment definitions to file.
 
@@ -177,9 +177,9 @@ def save_segs_file(filename: str, segments: List[Tuple[int, int]]) -> None:
 def save_HDXer_segfrac(
     dfrac_filename: str,
     segs_filename: str,
-    data: List[List[float]],
-    segments: List[Tuple[int, int]],
-    timepoints: Optional[List[float]] = None,
+    data: list[list[float]],
+    segments: list[tuple[int, int]],
+    timepoints: Optional[list[float]] = None,
 ) -> None:
     """
     Save both dfrac and segments files.
@@ -216,7 +216,7 @@ def load_segfrac_tonumpy(
     ).to_numpy()
 
 
-def _parse_header(header_line: str) -> Tuple[List[float], str]:
+def _parse_header(header_line: str) -> tuple[list[float], str]:
     """
     Parse header line to extract timepoints and determine format.
 

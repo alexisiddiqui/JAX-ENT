@@ -1,8 +1,10 @@
 from functools import partial
 from multiprocessing import Pool
-from typing import Optional, Sequence, cast
+from collections.abc import Sequence
+from beartype.typing import Optional, cast
 
 import MDAnalysis as mda
+from MDAnalysis import Universe
 import networkx as nx
 import numpy as np
 from MDAnalysis.analysis.hydrogenbonds.hbond_analysis import HydrogenBondAnalysis  # type: ignore
@@ -13,7 +15,7 @@ from jaxent.src.models.config import BV_model_Config, NetHDXConfig
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features, NetworkMetrics
 
 
-def identify_hbond_donors(universe: mda.Universe) -> tuple[list[tuple[int, int]], list[int]]:
+def identify_hbond_donors(universe: Universe) -> tuple[list[tuple[int, int]], list[int]]:
     """
     Identify potential hydrogen bond donors (N-H groups) in the universe.
 
@@ -40,7 +42,7 @@ def identify_hbond_donors(universe: mda.Universe) -> tuple[list[tuple[int, int]]
     return (donors, residue_ids)
 
 
-def identify_hbond_acceptors(universe: mda.Universe) -> list[tuple[int, int]]:
+def identify_hbond_acceptors(universe: Universe) -> list[tuple[int, int]]:
     """
     Identify potential hydrogen bond acceptors (O atoms) in the universe.
 
@@ -70,7 +72,7 @@ def identify_hbond_acceptors(universe: mda.Universe) -> list[tuple[int, int]]:
 
 
 def analyze_hbonds_for_shell(
-    universe: mda.Universe, donor_selection: str, distance: float, angle: float
+    universe: Universe, donor_selection: str, distance: float, angle: float
 ) -> HydrogenBondAnalysis:
     """
     Analyze hydrogen bonds for a specific shell defined by distance and angle cutoffs.
@@ -98,7 +100,7 @@ def analyze_hbonds_for_shell(
 
 
 def analyze_hbonds_for_BV(
-    universe: mda.Universe,
+    universe: Universe,
     donor_selection: str,
     heavy_radius: float,
     o_radius: float,
@@ -196,7 +198,7 @@ def create_contact_matrix_for_frame(
 
 
 def build_hbond_network(
-    ensemble: list[mda.Universe],
+    ensemble: list[Universe],
     config: Optional[NetHDXConfig | BV_model_Config] = None,
     common_residue_ids: Optional[list[int]] = None,
 ) -> NetHDX_input_features:
@@ -289,7 +291,7 @@ def build_hbond_network(
 
 
 def calculate_trajectory_hbonds(
-    universe: mda.Universe, config: NetHDXConfig, common_residue_ids: Optional[list[int]] = None
+    universe: Universe, config: NetHDXConfig, common_residue_ids: Optional[list[int]] = None
 ) -> np.ndarray:
     """
     Calculate hydrogen bonds for all frames across all shells defined in config.
@@ -347,7 +349,7 @@ def calculate_trajectory_hbonds(
 
 
 def calculate_trajectory_hbonds_BV(
-    universe: mda.Universe, config: BV_model_Config, common_residue_ids: Optional[list[int]] = None
+    universe: Universe, config: BV_model_Config, common_residue_ids: Optional[list[int]] = None
 ) -> np.ndarray:
     """
     Calculate hydrogen bonds for all frames across all shells defined in config.
@@ -569,7 +571,7 @@ def parallel_compute_trajectory_metrics(
 
 
 def create_average_network(
-    universe: mda.Universe,
+    universe: Universe,
     config: Optional[NetHDXConfig | BV_model_Config] = None,
     weight_threshold: float = 0,  # Added weight threshold parameter
 ) -> nx.Graph:
