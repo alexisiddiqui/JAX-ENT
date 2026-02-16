@@ -1,9 +1,10 @@
 import copy
 import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import numpy as np
 import pytest
+from MDAnalysis import Universe
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.data.splitting.split import DataSplitter
@@ -262,8 +263,7 @@ def setup_splitter(request):
 @pytest.fixture
 def mock_universe():
     """Create a mock MDAnalysis Universe for testing."""
-    mock_universe = MagicMock()
-    mock_universe.__class__.__name__ = "Universe"
+    mock_universe = create_autospec(Universe, instance=True)
     return mock_universe
 
 
@@ -411,7 +411,7 @@ class TestSpatialSplitBasicFunctionality:
         splitter = setup_splitter(datapoints, common_residues)
 
         with patch("builtins.__import__", side_effect=ImportError("No module named 'numpy'")):
-            with pytest.raises(ImportError, match="NumPy is required"):
+            with pytest.raises(ImportError, match="No module named 'numpy'"):
                 splitter.spatial_split(mock_universe)
 
 

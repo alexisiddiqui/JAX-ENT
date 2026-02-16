@@ -1,7 +1,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
+from beartype.typing import Optional
 
 from jaxent.src.custom_types.config import Settings
 

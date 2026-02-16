@@ -1,9 +1,12 @@
 from dataclasses import dataclass
-from typing import ClassVar, Optional, Sequence
+from collections.abc import Sequence
+from beartype.typing import ClassVar, Optional
 
 import jax.numpy as jnp
+from numpy import ndarray
 from jax import Array
 from jax.tree_util import register_pytree_node
+from jaxtyping import Float
 
 from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.custom_types.key import m_key
@@ -15,9 +18,11 @@ class BV_input_features(Input_Features):
     Concrete implementation of Input_Features for BV input features.
     """
 
-    heavy_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
-    acceptor_contacts: Sequence[Sequence[float]] | Array  # (frames, residues)
-    k_ints: Optional[list] | Optional[Array] = None  # (residues,)
+    # Shape can be 2D (n_residues, n_frames) before averaging, or 1D (n_residues,) after
+    # Also accepts numpy arrays when loading from .npz files
+    heavy_contacts: Float[Array, "n_residues n_frames"] | Float[Array, " n_residues"] | Float[ndarray, "n_residues n_frames"] | Float[ndarray, " n_residues"]
+    acceptor_contacts: Float[Array, "n_residues n_frames"] | Float[Array, " n_residues"] | Float[ndarray, "n_residues n_frames"] | Float[ndarray, " n_residues"]
+    k_ints: Float[Array, " n_residues"] | Float[ndarray, " n_residues"] | None = None
 
     __features__: ClassVar[set[str]] = {"heavy_contacts", "acceptor_contacts"}
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
@@ -27,9 +32,13 @@ class BV_input_features(Input_Features):
         if type(self.heavy_contacts) is not type(self.acceptor_contacts):
             raise TypeError("heavy_contacts and acceptor_contacts must be of the same type")
 
-        if isinstance(self.heavy_contacts, Array):
-            # For JAX arrays: (residues, frames)
-            n_residues, n_frames = self.heavy_contacts.shape
+        if isinstance(self.heavy_contacts, (Array, ndarray)):
+            # Handle both 1D (after averaging) and 2D (before averaging) arrays
+            if self.heavy_contacts.ndim == 1:
+                n_residues = self.heavy_contacts.shape[0]
+                n_frames = 1  # Already averaged
+            else:
+                n_residues, n_frames = self.heavy_contacts.shape
         else:
             # For nested sequences: (residues, frames)
             n_residues = len(self.heavy_contacts)
@@ -45,8 +54,10 @@ class BV_input_features(Input_Features):
 class BV_output_features(Output_Features):
     """Concrete implementation of Output_Features for BV output features."""
 
-    log_Pf: list | Sequence[float] | Array  # (1, residues)
-    k_ints: Optional[list] | Optional[Array] = None
+    # log_Pf can be 1-D (n_residues,) from forward or 2-D (n_residues, n_frames) from predict
+    log_Pf: Float[Array, " n_residues"] | Float[Array, "n_residues n_frames"]
+    # k_ints can be 1-D array, 0-D scalar (NaN placeholder during JIT), or None
+    k_ints: Float[Array, " n_residues"] | Float[Array, ""] | None = None
 
     __features__: ClassVar[set[str]] = {"log_Pf", "k_ints"}
     key: ClassVar[m_key] = m_key("HDX_resPF")
@@ -63,14 +74,15 @@ class BV_output_features(Output_Features):
 class uptake_BV_output_features(Output_Features):
     """Concrete implementation of Output_Features for uptake BV output features."""
 
-    uptake: list[list[float]] | Sequence[Sequence[float]] | Array  # (timepoints, residues)
+    # uptake can be 2-D (n_timepoints, n_residues) or 3-D (batch, n_timepoints, n_residues) when stacked
+    uptake: Float[Array, "n_timepoints n_residues"] | Float[Array, "batch n_timepoints n_residues"]
 
     __features__: ClassVar[set[str]] = {"uptake"}
     key: ClassVar[m_key] = m_key("HDX_peptide")
 
     @property
     def output_shape(self) -> tuple[int, ...]:
-        if isinstance(self.uptake, Array):
+        if isinstance(self.uptake, (Array, ndarray)):
             return self.uptake.shape
         else:
             uptake = jnp.asarray(self.uptake)

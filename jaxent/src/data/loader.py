@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Generic, Sequence
+from collections.abc import Sequence
+from typing import Generic
 
+import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
 from jax.experimental import sparse
+from jaxtyping import Float
 
 from jaxent.src.custom_types import T_ExpD
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+from jaxent.src.custom_types.protocols import ExpDDatapointLike
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
 from jaxent.src.data.splitting.sparse_map import create_sparse_map, create_covariance_mat
@@ -23,10 +27,10 @@ from jaxent.src.interfaces.topology import Partial_Topology
 )
 @dataclass(frozen=True, slots=True)
 class Dataset:
-    data: Sequence[ExpD_Datapoint]
-    y_true: Array
-    residue_feature_ouput_mapping: sparse.BCOO
-    covariance_matrix: Array | None = None # This is the inverse covariance matrix for the dataset
+    data: Sequence[ExpDDatapointLike]
+    y_true: Float[Array, "n_fragments ..."]  # (n_fragments,) or (n_timepoints, n_fragments)
+    residue_feature_ouput_mapping: sparse.BCOO  # shape (n_fragments, n_residues)
+    covariance_matrix: Float[Array, "n_fragments n_fragments"] | None = None  # Inverse covariance matrix
 
 
 class ExpD_Dataloader(Generic[T_ExpD]):
@@ -58,13 +62,15 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         elif isinstance(self.y_true, Array):
             UserWarning("y_true is a jax array. Do not use this for training.")
 
-        # assert keys are all the same
-        assert len(set([data.key for data in self.data])) == 1, (
-            "Keys are not the same. Datasets are comprised of a single type of experimental data."
+        # Assert keys are all the same
+        chex.assert_equal(
+            len(set([data.key for data in self.data])), 1,
+            custom_message="Keys are not the same. Datasets are comprised of a single type of experimental data."
         )
-        # assert that all topology fragments are unique
-        assert len({id(data.top) for data in self.data}) == len(self.data), (
-            "Topology fragments are not unique/missing. Exiting."
+        # Assert that all topology fragments are unique
+        chex.assert_equal(
+            len({id(data.top) for data in self.data}), len(self.data),
+            custom_message="Topology fragments are not unique/missing. Exiting."
         )
         self.top: list[Partial_Topology] = [data.top for data in self.data]
 
@@ -129,12 +135,14 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         # assert len(set(train_indices).intersection(set(val_indices))) == 0, (
         #     "Training and validation datasets have overlapping fragment indices."
         # )
-        # assert that all topology fragments are unique
-        assert len(set(train_indices)) == len(train_data), (
-            "Training topology fragments are not unique/missing. Exiting."
+        # Assert that all topology fragments are unique
+        chex.assert_equal(
+            len(set(train_indices)), len(train_data),
+            custom_message="Training topology fragments are not unique/missing. Exiting."
         )
-        assert len(set(val_indices)) == len(val_data), (
-            "Validation topology fragments are not unique/missing. Exiting."
+        chex.assert_equal(
+            len(set(val_indices)), len(val_data),
+            custom_message="Validation topology fragments are not unique/missing. Exiting."
         )
         # print(f"\nBefore create_covariance_mat:")
         # print(f"  self.covariance_matrix shape: {self.covariance_matrix.shape if self.covariance_matrix is not None else 'None'}")
