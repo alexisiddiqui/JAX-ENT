@@ -110,24 +110,26 @@ def main():
     )
     args = parser.parse_args()
 
-    script_dir = os.path.dirname(__file__)
-    full_dfrac_path = os.path.join(script_dir, args.dfrac_file)
-    full_segs_path = os.path.join(script_dir, args.segs_file)
-    output_dir = os.path.join(script_dir, args.output_dir)
+    # Convert all paths to absolute paths
+    # - If already absolute, use as-is
+    # - If relative, treat as relative to current working directory
+    full_dfrac_path = os.path.abspath(args.dfrac_file)
+    full_segs_path = os.path.abspath(args.segs_file)
+    output_dir = os.path.abspath(args.output_dir)
 
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"--- Loading Experimental Data from {full_dfrac_path} and {full_segs_path} ---")
     segs: np.ndarray = pd.read_csv(
         full_segs_path,
-        sep="\s+",
+        sep=r"\s+",
         comment="#",
         header=None,
     ).to_numpy()
 
     dfrac: np.ndarray = pd.read_csv(
         full_dfrac_path,
-        sep="\s+",
+        sep=r"\s+",
         comment="#",
         header=None,
     ).to_numpy()
