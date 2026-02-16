@@ -440,7 +440,7 @@ if __name__ == "__main__":
         description="Download, extract, and slice HDXer AutoValidation data."
     )
     parser.add_argument(
-        "--interval", type=int, default=1, help="Slicing interval for trajectories (default: 20)"
+        "--interval", type=int, default=20, help="Slicing interval for trajectories (default: 20)"
     )
     args = parser.parse_args()
 
