@@ -1,7 +1,9 @@
 import importlib
 import os
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Generic, Sequence, TypeVar
+from collections.abc import Sequence
+from pathlib import Path
+from beartype.typing import Any, ClassVar, Generic, TypeVar
 
 import jax.numpy as jnp
 import numpy as np
@@ -63,7 +65,7 @@ class AbstractFeatures(ABC):
 
     @classmethod
     def tree_unflatten(
-        cls: type[T_Features], static_data: tuple[Any, ...], arrays: tuple[Array, ...]
+        cls: type[T_Features], static_data: tuple[Any, ...], arrays: tuple[Array | None, ...]
     ) -> T_Features:
         """Unflatten the object from JAX tree operations."""
         dynamic_slots, static_slots = cls._get_grouped_slots()
@@ -122,7 +124,7 @@ class AbstractFeatures(ABC):
         jnp.savez(filepath, **save_dict)
 
     @classmethod
-    def load(cls: type[T_Features], filepath: str) -> T_Features:
+    def load(cls: type[T_Features], filepath: str | Path) -> T_Features:
         """
         Load features from a .npz file.
 
@@ -147,7 +149,14 @@ class AbstractFeatures(ABC):
             # Extract class metadata
             class_module = str(data["__class_module__"].item())
             class_name = str(data["__class_name__"].item())
-            static_data = tuple(data["__static_data__"])
+            static_data_raw = tuple(data["__static_data__"])
+            # Convert any numpy arrays in static_data to JAX arrays for beartype compatibility
+            # Static data can contain arrays like k_ints that were pickled as numpy arrays
+            def convert_static_item(item: Any) -> Any:
+                if isinstance(item, np.ndarray):
+                    return jnp.asarray(item)
+                return item
+            static_data = tuple(convert_static_item(item) for item in static_data_raw)
             dynamic_slots = tuple(data["__dynamic_slots__"])
 
             # Import and get the actual class
@@ -161,12 +170,13 @@ class AbstractFeatures(ABC):
                 )
 
             # Extract arrays in the correct order, handling None values
+            # Convert numpy arrays to JAX arrays for beartype compatibility
             arrays = tuple(
                 data[slot].item()
                 if isinstance(data[slot], np.ndarray)
                 and data[slot].shape == ()
                 and data[slot].item() is None
-                else data[slot]
+                else jnp.asarray(data[slot])
                 for slot in dynamic_slots
             )
 
@@ -244,6 +254,9 @@ class AbstractFeatures(ABC):
                     and loaded_value.item() is None
                 ):
                     features_kwargs[slot_name] = None
+                elif isinstance(loaded_value, np.ndarray):
+                    # Convert numpy arrays to JAX arrays for beartype compatibility
+                    features_kwargs[slot_name] = jnp.asarray(loaded_value)
                 else:
                     features_kwargs[slot_name] = loaded_value
 

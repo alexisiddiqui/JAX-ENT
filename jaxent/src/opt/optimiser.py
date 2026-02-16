@@ -1,6 +1,8 @@
 from functools import partial
-from typing import Any, Callable, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from beartype.typing import Any, Callable, Optional
 
+import chex
 import jax
 import jax.numpy as jnp
 import optax
@@ -222,7 +224,13 @@ class OptaxOptimizer:
         optimisable_funcs: Optional[list[bool] | Array] = None,
         _jit_test_args: Optional[
             tuple[
-                Sequence[ExpD_Dataloader[Any] | Model_Parameters | Output_Features],
+                Sequence[
+                    ExpD_Dataloader[Any]
+                    | Model_Parameters
+                    | Output_Features
+                    | Array
+                    | Simulation_Parameters
+                ],
                 Sequence[JaxEnt_Loss],
                 Sequence[int],
             ]
@@ -458,7 +466,9 @@ class OptaxOptimizer:
     def update_history_compute_ema_loss(
         optimizer: "OptaxOptimizer",
         simulation: InitialisedSimulation,
-        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+        data_targets: tuple[
+            ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters, ...
+        ],
         loss_functions: tuple[JaxEnt_Loss, ...],
         indexes: tuple[int, ...],
         state: OptimizationState,
@@ -493,11 +503,14 @@ class OptaxOptimizer:
         optimizer: "OptaxOptimizer",
         state: OptimizationState,
         simulation: InitialisedSimulation,
-        data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+        data_targets: tuple[
+            ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters,
+            ...,
+        ],
         loss_functions: tuple[JaxEnt_Loss, ...],
         # history: OptimizationHistory,
         indexes: tuple[int, ...],
-    ) -> Tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
+    ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step"""
 
         # Switch to regular learning rate after initial steps
@@ -513,7 +526,7 @@ class OptaxOptimizer:
             )
 
 
-        def loss_fn(params: Simulation_Parameters) -> Tuple[Array, LossComponents]:
+        def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
             return losses.total_train_loss, losses
@@ -591,7 +604,10 @@ class OptaxOptimizer:
 def compute_loss(
     simulation: InitialisedSimulation,
     params: Simulation_Parameters,
-    data_targets: tuple[ExpD_Dataloader | Model_Parameters | Output_Features, ...],
+    data_targets: tuple[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters,
+        ...,
+    ],
     indexes: tuple[int, ...],
     loss_functions: tuple[JaxEnt_Loss, ...],
 ) -> LossComponents:
@@ -613,6 +629,9 @@ def compute_loss(
 
     scaled_train = train_losses * weights * scaling
     scaled_val = val_losses * weights * scaling
+
+    chex.assert_equal_shape([train_losses, val_losses, weights, scaling])
+
 
     # Compute total losses with a single reduction
     total_train = jnp.sum(scaled_train)

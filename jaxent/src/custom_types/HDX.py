@@ -1,6 +1,9 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+from jax import Array
+from numpy import ndarray
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
@@ -13,7 +16,7 @@ class HDX_peptide(ExpD_Datapoint):
     Dataclass that holds the information of a single peptide produced by HDX-MS experiments
     """
 
-    dfrac: list[float]
+    dfrac: list | Sequence[float] | Array | ndarray
     charge: int | None = None
     retention_time: float | None = None
     intensity: float | None = None
