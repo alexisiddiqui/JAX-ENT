@@ -1195,7 +1195,7 @@ class TestBuildRenumberingMapping:
             assert len(key) == 2, "Keys should be (chain_id, new_resid) pairs"
             chain_id, new_resid = key
             assert isinstance(chain_id, str), "Chain ID should be string"
-            assert isinstance(new_resid, np.integer), "New resid should be integer"
+            assert isinstance(new_resid, (int, np.integer)), "New resid should be integer"
 
     def test_renumbering_with_termini_exclusion(self, test_universe):
         """Test renumbering mapping with terminal exclusion"""

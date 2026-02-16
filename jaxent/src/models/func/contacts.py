@@ -1,6 +1,8 @@
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from beartype.typing import Literal
 
 import MDAnalysis as mda
+from MDAnalysis import Universe
 import numpy as np
 from icecream import ic  # Import icecream for debugging
 from MDAnalysis.core.groups import AtomGroup  # type: ignore
@@ -9,7 +11,7 @@ from tqdm import tqdm  # Add tqdm import
 
 
 # def calc_BV_contacts_universe(
-#     universe: mda.Universe,
+#     universe: Universe,
 #     target_atoms: AtomGroup,
 #     contact_selection: Literal["heavy", "oxygen"],
 #     radius: float,
@@ -121,7 +123,7 @@ from tqdm import tqdm  # Add tqdm import
 
 
 def calc_BV_contacts_universe(
-    universe: mda.Universe,
+    universe: Universe,
     target_atoms: AtomGroup,
     contact_selection: Literal["heavy", "oxygen"],
     radius: float,

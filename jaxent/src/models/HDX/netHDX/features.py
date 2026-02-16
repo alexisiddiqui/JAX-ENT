@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from beartype.typing import ClassVar, Optional
 
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
+from jaxtyping import Float, Int
 
 from jaxent.src.custom_types.key import m_key
 
@@ -40,14 +42,14 @@ class NetworkMetrics:
 class NetHDX_input_features:
     """Features representing the hydrogen bond network for each frame"""
 
-    contact_matrices: list[np.ndarray]  # Shape: (n_frames, n_residues, n_residues)
-    residue_ids: Sequence[int]  # Shape: (n_residues,)
+    contact_matrices: Float[Array, "n_frames n_residues n_residues"] | list[np.ndarray]
+    residue_ids: Int[Array, " n_residues"] | Sequence[int]
     network_metrics: Optional[list[NetworkMetrics]] = None  # Shape: (n_frames,)
     __features__: ClassVar[set[str]] = {"contact_matrices"}
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
 
     @property
-    def features_shape(self) -> Tuple[int, ...]:
+    def features_shape(self) -> tuple[int, ...]:
         return (len(self.contact_matrices), len(self.residue_ids), len(self.residue_ids))
 
     def cast_to_jax(self) -> None:
@@ -61,13 +63,13 @@ class NetHDX_input_features:
 class NetHDX_output_features:
     """Output features for netHDX model"""
 
-    log_Pf: list  # (1, residues)
+    log_Pf: Float[Array, " n_residues"]
     k_ints: Optional[list]
 
     key = m_key("HDX_resPF")
 
     @property
-    def output_shape(self) -> Tuple[int, ...]:
+    def output_shape(self) -> tuple[int, ...]:
         return (1, len(self.log_Pf))
 
     def data(self) -> Array:
@@ -78,7 +80,7 @@ class NetHDX_output_features:
 class uptake_NetHDX_output_features:
     """Output features for netHDX model"""
 
-    uptake: list[list[float]] | Sequence[Sequence[float]] | Array  # (1, residues, timepoints)]
+    uptake: Float[Array, "n_timepoints n_residues"]
     k_ints: Optional[list]
 
     key = m_key("HDX_peptide")

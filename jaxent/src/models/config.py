@@ -1,28 +1,22 @@
 from dataclasses import field
-from typing import Protocol
+
+import chex
 
 import jax.numpy as jnp
 from jax import Array
 
 from jaxent.src.custom_types.config import BaseConfig
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.interfaces.simulation import Model_Parameters
+from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 
 
-class Model_Config(Protocol):
-    key: m_key
-
-    @property
-    def forward_parameters(self) -> Model_Parameters: ...
-
-
 class BV_model_Config(BaseConfig):
-    temperature: float = 300
+    temperature: float = 300.0
     bv_bc: Array = jnp.array([0.35])
     bv_bh: Array = jnp.array([2.0])
-    ph: float = 7
+    ph: float = 7.0
     heavy_radius: float = 6.5
     o_radius: float = 2.4
     num_timepoints: int = 0
@@ -81,9 +75,8 @@ class linear_BV_model_Config(BV_model_Config):
             object.__setattr__(self, "bv_bc", self.bv_bc * self.num_timepoints)
             object.__setattr__(self, "bv_bh", self.bv_bh * self.num_timepoints)
 
-        assert self.num_timepoints == len(self.bv_bc) and self.num_timepoints == len(self.bv_bh), (
-            ValueError("Please make sure your timepoint/prior parameters make sense")
-        )
+        chex.assert_equal(self.num_timepoints, len(self.bv_bc))
+        chex.assert_equal(self.num_timepoints, len(self.bv_bh))
 
     @property
     def forward_parameters(self) -> linear_BV_Model_Parameters:
@@ -98,11 +91,11 @@ class linear_BV_model_Config(BV_model_Config):
 class NetHDXConfig(BaseConfig):
     """Configuration for netHDX calculations"""
 
-    temperature: float = 300
-    distance_cutoff: list[float] = field(
+    temperature: float = 300.0
+    distance_cutoff: float | list[float] = field(
         default_factory=lambda: [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5]
     )
-    angle_cutoff: list[float] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    angle_cutoff: float | list[float] = field(default_factory=lambda: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     residue_ignore: tuple[int, int] = (-1, 1)  # Range of residues to ignore relative to donor
     num_timepoints: int = 1
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
@@ -113,8 +106,8 @@ class NetHDXConfig(BaseConfig):
 
     def __init__(
         self,
-        distance_cutoff: list[float] = [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5],
-        angle_cutoff: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        distance_cutoff: float | list[float] = [2.6, 2.7, 2.8, 2.9, 3.1, 3.3, 3.6, 4.2, 5.2, 6.5],
+        angle_cutoff: float | list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         num_timepoints: int = 1,
     ) -> None:
         super().__init__()
@@ -127,8 +120,10 @@ class NetHDXConfig(BaseConfig):
                 angle_cutoff = [angle_cutoff]
             self.angle_cutoff = angle_cutoff
 
-        assert len(list(self.distance_cutoff)) == len(list(self.angle_cutoff)), (
-            "Distance and angle cutoffs must be the same length"
+        chex.assert_equal(
+            len(list(self.distance_cutoff)), 
+            len(list(self.angle_cutoff)),
+            custom_message="Distance and angle cutoffs must be the same length"
         )
         if num_timepoints > 1:
             self.key = m_key("HDX_peptide")

@@ -122,25 +122,25 @@ class TestBVInputFeatures:
     def create_sample_data(self):
         """Create sample data for testing."""
         return {
-            "heavy_contacts": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
-            "acceptor_contacts": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-            "k_ints": [1, 2, 3],
+            "heavy_contacts": jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+            "acceptor_contacts": jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=jnp.float32),
+            "k_ints": jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
         }
 
     def test_initialization_with_lists(self):
-        """Test initialization with regular lists."""
+        """Test initialization with JAX arrays."""
         data = self.create_sample_data()
         features = BV_input_features(**data)
 
-        assert features.heavy_contacts == data["heavy_contacts"]
-        assert features.acceptor_contacts == data["acceptor_contacts"]
-        assert features.k_ints == data["k_ints"]
+        assert jnp.array_equal(features.heavy_contacts, data["heavy_contacts"])
+        assert jnp.array_equal(features.acceptor_contacts, data["acceptor_contacts"])
+        assert jnp.array_equal(features.k_ints, data["k_ints"])
 
     def test_initialization_with_arrays(self):
         """Test initialization with JAX arrays."""
-        heavy_contacts = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
-        acceptor_contacts = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-        k_ints = jnp.array([1, 2, 3])
+        heavy_contacts = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32)
+        acceptor_contacts = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=jnp.float32)
+        k_ints = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
 
         features = BV_input_features(
             heavy_contacts=heavy_contacts, acceptor_contacts=acceptor_contacts, k_ints=k_ints
@@ -181,19 +181,23 @@ class TestBVInputFeatures:
 
     def test_features_shape_empty_data(self):
         """Test features_shape with empty data."""
-        features = BV_input_features(heavy_contacts=[], acceptor_contacts=[])
+        features = BV_input_features(
+            heavy_contacts=jnp.array([], dtype=jnp.float32).reshape(0, 0),
+            acceptor_contacts=jnp.array([], dtype=jnp.float32).reshape(0, 0)
+        )
 
         shape = features.features_shape
         assert shape == (0, 0)
 
-    def test_features_shape_type_mismatch(self):
-        """Test features_shape raises TypeError for mismatched types."""
-        with pytest.raises(TypeError):
-            features = BV_input_features(
-                heavy_contacts=[[1.0, 2.0]],  # List
-                acceptor_contacts=jnp.array([[0.1, 0.2]]),  # Array
-            )
-            _ = features.features_shape
+    def test_features_shape_consistency(self):
+        """Test features_shape with matching types."""
+        # Beartype now prevents type mismatches at initialization
+        # So we just verify that matching types work correctly
+        features = BV_input_features(
+            heavy_contacts=jnp.array([[1.0, 2.0]], dtype=jnp.float32),  # Array
+            acceptor_contacts=jnp.array([[0.1, 0.2]], dtype=jnp.float32),  # Array (matching type)
+        )
+        assert features.features_shape == (1, 2)
 
     def test_feat_pred(self):
         """Test feat_pred property."""
@@ -216,16 +220,16 @@ class TestBVOutputFeatures:
 
     def test_initialization_with_list(self):
         """Test initialization with list."""
-        log_Pf = [1.0, 2.0, 3.0]
+        log_Pf = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
         features = BV_output_features(log_Pf=log_Pf)
 
-        assert features.log_Pf == log_Pf
+        assert jnp.array_equal(features.log_Pf, log_Pf)
         assert features.k_ints is None
 
     def test_initialization_with_array(self):
         """Test initialization with JAX array."""
-        log_Pf = jnp.array([1.0, 2.0, 3.0])
-        k_ints = jnp.array([1, 2])
+        log_Pf = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
+        k_ints = jnp.array([1.0, 2.0], dtype=jnp.float32)
 
         features = BV_output_features(log_Pf=log_Pf, k_ints=k_ints)
 
@@ -234,7 +238,7 @@ class TestBVOutputFeatures:
 
     def test_output_shape(self):
         """Test output_shape property."""
-        log_Pf = [1.0, 2.0, 3.0, 4.0]
+        log_Pf = jnp.array([1.0, 2.0, 3.0, 4.0], dtype=jnp.float32)
         features = BV_output_features(log_Pf=log_Pf)
 
         shape = features.output_shape
@@ -242,13 +246,13 @@ class TestBVOutputFeatures:
 
     def test_y_pred(self):
         """Test y_pred method."""
-        log_Pf = [1.0, 2.0, 3.0]
+        log_Pf = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
         features = BV_output_features(log_Pf=log_Pf)
 
         pred = features.y_pred()
 
         assert isinstance(pred, Array)
-        assert jnp.array_equal(pred, jnp.asarray(log_Pf))
+        assert jnp.array_equal(pred, log_Pf)
 
     # Save/load tests have been moved to test_features_save_load.py for comprehensive testing
 
@@ -258,21 +262,21 @@ class TestUptakeBVOutputFeatures:
 
     def test_initialization_with_nested_list(self):
         """Test initialization with nested list."""
-        uptake = [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]
+        uptake = jnp.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], dtype=jnp.float32)
         features = uptake_BV_output_features(uptake=uptake)
 
-        assert features.uptake == uptake
+        assert jnp.array_equal(features.uptake, uptake)
 
     def test_initialization_with_array(self):
         """Test initialization with JAX array."""
-        uptake = jnp.array([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]])
+        uptake = jnp.array([[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]], dtype=jnp.float32)
         features = uptake_BV_output_features(uptake=uptake)
 
         assert jnp.array_equal(features.uptake, uptake)
 
     def test_output_shape(self):
         """Test output_shape property."""
-        uptake = [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]]  # (1, 2 peptides, 3 timepoints)
+        uptake = jnp.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]], dtype=jnp.float32)  # (1, 2 peptides, 3 timepoints)
         features = uptake_BV_output_features(uptake=uptake)
 
         shape = features.output_shape
@@ -280,13 +284,13 @@ class TestUptakeBVOutputFeatures:
 
     def test_y_pred(self):
         """Test y_pred method."""
-        uptake = [[[1.0, 2.0], [3.0, 4.0]]]
+        uptake = jnp.array([[[1.0, 2.0], [3.0, 4.0]]], dtype=jnp.float32)
         features = uptake_BV_output_features(uptake=uptake)
 
         pred = features.y_pred()
 
         assert isinstance(pred, Array)
-        assert jnp.array_equal(pred, jnp.asarray(uptake))
+        assert jnp.array_equal(pred, uptake)
 
     # Save/load tests have been moved to test_features_save_load.py for comprehensive testing
 
@@ -297,9 +301,9 @@ class TestJAXTreeIntegration:
     def test_bv_input_features_tree_operations(self):
         """Test JAX tree operations for BV_input_features."""
         features = BV_input_features(
-            heavy_contacts=jnp.array([[1.0, 2.0], [3.0, 4.0]]),
-            acceptor_contacts=jnp.array([[0.1, 0.2], [0.3, 0.4]]),
-            k_ints=jnp.array([1, 2]),
+            heavy_contacts=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+            acceptor_contacts=jnp.array([[0.1, 0.2], [0.3, 0.4]], dtype=jnp.float32),
+            k_ints=jnp.array([1.0, 2.0], dtype=jnp.float32),
         )
 
         # Test tree flatten/unflatten
@@ -313,7 +317,7 @@ class TestJAXTreeIntegration:
 
     def test_bv_output_features_tree_operations(self):
         """Test JAX tree operations for BV_output_features."""
-        features = BV_output_features(log_Pf=jnp.array([1.0, 2.0, 3.0]), k_ints=jnp.array([1, 2]))
+        features = BV_output_features(log_Pf=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32), k_ints=jnp.array([1.0, 2.0], dtype=jnp.float32))
 
         arrays, static_data = features.tree_flatten()
         reconstructed = BV_output_features.tree_unflatten(static_data, arrays)
@@ -324,7 +328,7 @@ class TestJAXTreeIntegration:
 
     def test_uptake_output_features_tree_operations(self):
         """Test JAX tree operations for uptake_BV_output_features."""
-        features = uptake_BV_output_features(uptake=jnp.array([[[1.0, 2.0], [3.0, 4.0]]]))
+        features = uptake_BV_output_features(uptake=jnp.array([[[1.0, 2.0], [3.0, 4.0]]], dtype=jnp.float32))
 
         arrays, static_data = features.tree_flatten()
         reconstructed = uptake_BV_output_features.tree_unflatten(static_data, arrays)
@@ -377,7 +381,8 @@ class TestEdgeCases:
     def test_bv_input_features_with_single_residue(self):
         """Test BV_input_features with single residue."""
         features = BV_input_features(
-            heavy_contacts=[[1.0, 2.0, 3.0]], acceptor_contacts=[[0.1, 0.2, 0.3]]
+            heavy_contacts=jnp.array([[1.0, 2.0, 3.0]], dtype=jnp.float32),
+            acceptor_contacts=jnp.array([[0.1, 0.2, 0.3]], dtype=jnp.float32)
         )
 
         assert features.features_shape == (1, 3)
@@ -387,7 +392,7 @@ class TestEdgeCases:
 
     def test_bv_output_features_with_single_residue(self):
         """Test BV_output_features with single residue."""
-        features = BV_output_features(log_Pf=[1.0])
+        features = BV_output_features(log_Pf=jnp.array([1.0], dtype=jnp.float32))
 
         assert features.output_shape == (1, 1)
         pred = features.y_pred()
@@ -395,7 +400,7 @@ class TestEdgeCases:
 
     def test_uptake_features_with_single_values(self):
         """Test uptake_BV_output_features with minimal data."""
-        features = uptake_BV_output_features(uptake=[[[1.0]]])
+        features = uptake_BV_output_features(uptake=jnp.array([[[1.0]]], dtype=jnp.float32))
 
         assert features.output_shape == (1, 1, 1)
         pred = features.y_pred()

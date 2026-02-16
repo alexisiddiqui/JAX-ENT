@@ -1,8 +1,9 @@
 import copy
 import random
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
-import MDAnalysis as mda
+from beartype.typing import Optional
+from MDAnalysis import Universe
 
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import (
@@ -83,7 +84,7 @@ class DataSplitter:
         self,
         dataset: ExpD_Dataloader,
         random_seed: int = 42,
-        ensemble: list[mda.Universe] | None = None,
+        ensemble: list[Universe] | None = None,
         common_residues: set[Partial_Topology] | None = None,
         check_trim: bool = True,
         peptide_trim: int = 2,
@@ -995,7 +996,7 @@ class DataSplitter:
 
     def spatial_split(
         self,
-        universe: mda.Universe,
+        universe: Universe,
         remove_overlap: bool = False,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
@@ -1033,9 +1034,8 @@ class DataSplitter:
         try:
             import numpy as np
         except ImportError:
-            raise ImportError(
-                "NumPy is required for spatial splitting. Install with: pip install numpy"
-            )
+            # Re-raise original ImportError to preserve the original error message
+            raise
 
         print(
             f"Starting spatial split with train_size={self.train_size}, remove_overlap={remove_overlap}"

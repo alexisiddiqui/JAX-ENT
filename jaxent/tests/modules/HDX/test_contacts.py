@@ -2,6 +2,7 @@ import unittest
 
 import MDAnalysis as mda
 import numpy as np
+import beartype.roar
 
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 
@@ -214,8 +215,8 @@ class TestCalcBVContacts(unittest.TestCase):
         np.testing.assert_allclose(contacts, expected_contacts, atol=1e-5)
 
     def test_invalid_selection_raises_error(self):
-        """Test that an invalid contact_selection raises a ValueError."""
-        with self.assertRaises(ValueError):
+        """Test that an invalid contact_selection raises a ValueError or Beartype error."""
+        with self.assertRaises((ValueError, beartype.roar.BeartypeCallHintParamViolation)):
             calc_BV_contacts_universe(
                 self.universe, self.universe.select_atoms("name N"), "invalid_selection", 5.0
             )
