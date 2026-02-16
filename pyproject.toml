@@ -16,6 +16,7 @@ dependencies = [
     "jax==0.4.35",
     "jaxtyping>=0.2.37",
     "matplotlib>=3.10.0",
+    "mdakit-sasa",
     "MDAnalysis>=2.8.0",
     "networkx[default]>=3.4.2",
     "numpy>=2.2.1",
@@ -73,3 +74,6 @@ exclude = ["jaxent/examples/**", "jaxent/docs/**","jaxent/dev/**", "jaxent/depre
 
 [tool.ruff.lint]
 ignore = ["E402"]
+
+[tool.uv.sources]
+mdakit-sasa = { git = "https://github.com/pegerto/mdakit_sasa.git" }

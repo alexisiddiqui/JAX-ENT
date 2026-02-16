@@ -399,7 +399,7 @@ def main():
     )
     parser.add_argument(
         "--scores-csv-path",
-        default="../fitting/jaxENT/_scores__processed_optimise_quick_test_splits__20250915_125135/model_scores.csv",
+        default="../fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260216_224925/_scores__processed__optimise_test_SIGMA_500__20260216_224925/model_scores.csv",
         help="Path to the CSV file containing model scores (output from score_models_ISO_TRI_BI.py).",
     )
     parser.add_argument(

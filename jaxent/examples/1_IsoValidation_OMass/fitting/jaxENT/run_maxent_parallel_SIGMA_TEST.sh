@@ -15,12 +15,12 @@ echo "Working directory: $DIR_WD"
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
 PARALLEL_JOBS=20
-DEFAULT_MAXENT_VALUES_STR="1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100,1000"
+DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,1000"
 
 
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_test_SIGMA_5000"
-N_STEPS=5
+DIR_NAME="_optimise_test_SIGMA_500"
+N_STEPS=500
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -210,6 +210,57 @@ python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
 python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
+
+# New comprehensive analysis pipeline
+echo "Processing optimization results..."
+python "${ANA_DIR}/process_optimisation_results.py" \
+  --results-dir "$OPT_OUTPUT_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+  > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
+
+# Determine the processed data directory name
+# process_optimisation_results.py creates _processed_<basename> as a SIBLING of OPT_OUTPUT_DIR
+BASENAME=$(basename "$OPT_OUTPUT_DIR")
+PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
+
+echo "Scoring models..."
+python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+  > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
+
+# Determine the scores directory name
+# score_models_ISO_TRI_BI.py creates _scores_<basename> INSIDE PROCESSED_DIR
+SCORES_BASENAME=$(basename "$PROCESSED_DIR")
+SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
+
+echo "Analyzing scores with mixed linear model..."
+python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
+  --scores-csv-path "${SCORES_DIR}/model_scores.csv" \
+  --target-metric "recovery_percent" \
+  --filter-mode "both" \
+  --analyze-subsets \
+  > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
+
+# Determine the analysis directory name
+# analyse_scores_mixed_linear_model.py creates _analysis_<scores_parent_basename> as a SIBLING of SCORES_DIR
+# For unfiltered: _analysis__scores_<SCORES_BASENAME>
+# For filtered:   _analysis__scores_<SCORES_BASENAME>_filtered
+ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
+
+# Plot model selection results for both filtered and unfiltered
+echo "Plotting selected models (unfiltered)..."
+python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
+  --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
+  --output-dir "${ANALYSIS_DIR}/plots_selection" \
+  > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"
 echo "Script finished."
+
