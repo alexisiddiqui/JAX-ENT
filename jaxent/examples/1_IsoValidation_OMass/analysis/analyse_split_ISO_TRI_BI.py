@@ -38,9 +38,9 @@ def load_split_data(
 
     # Extract topology and dfrac arrays
     train_top = [dp.top for dp in train_datapoints]
-    train_dfrac = np.array([dp.extract_features() for dp in train_datapoints])
+    train_dfrac = np.vstack([dp.extract_features() for dp in train_datapoints])
     val_top = [dp.top for dp in val_datapoints]
-    val_dfrac = np.array([dp.extract_features() for dp in val_datapoints])
+    val_dfrac = np.vstack([dp.extract_features() for dp in val_datapoints])
 
     return train_top, train_dfrac, val_top, val_dfrac
 
