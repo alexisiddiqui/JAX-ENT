@@ -53,17 +53,26 @@ def load_experimental_data(
                 split_path = split_path_int
         except ValueError:
             pass
+    
+    # Also try zero-padded format (split_002)
+    if not os.path.exists(split_path):
+        try:
+            split_path_padded = os.path.join(datasplit_dir, split_type, f"split_{int(split_idx):03d}")
+            if os.path.exists(split_path_padded):
+                split_path = split_path_padded
+        except ValueError:
+            pass
 
     if not os.path.exists(split_path):
         # Try checking if the split_type directory even exists
         type_dir = os.path.join(datasplit_dir, split_type)
         if not os.path.exists(type_dir):
              raise FileNotFoundError(f"Split type directory not found: {type_dir}")
-        raise FileNotFoundError(f"Data split path not found: {split_path} (checked exact and int variants)")
+        raise FileNotFoundError(f"Data split path not found: {split_path} (checked exact, int, and zero-padded variants)")
     if not os.path.exists(os.path.join(datasplit_dir, "full_dataset_topology.json")):
         raise FileNotFoundError(f"Full dataset topology not found: {os.path.join(datasplit_dir, 'full_dataset_topology.json')}")
     if not os.path.exists(os.path.join(datasplit_dir, "full_dataset_dfrac.csv")):
-        raise FileNotFoundError(f"Full dataset dfrac not found: {os.path.join(datasplit_dir, 'full_dataset_dfrac')}")
+        raise FileNotFoundError(f"Full dataset dfrac not found: {os.path.join(datasplit_dir, 'full_dataset_dfrac.csv')}")
 
     train_data = HDX_peptide.load_list_from_files(
         json_path=os.path.join(split_path, "train_topology.json"),
@@ -398,7 +407,7 @@ def main():
     )
     parser.add_argument(
         "--processed-data-dir",
-        default="../fitting/jaxENT/_processed_optimise_quick_test_splits__20250915_125135",
+        default="../fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260216_224925",
         help="Directory containing processed .npy files from process_optimisation_results.py",
     )
     parser.add_argument(
