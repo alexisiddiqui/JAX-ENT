@@ -1,5 +1,21 @@
 """
-This script analyzes the features distributions relevant for clustering trajectories from multiple ensembles
+[Script Name] analyse_LocalFeatures_PUFs.py
+
+[Brief Description of Functionality]
+Analyzes structural features (contacts, RMSD, SASA, etc.) of MoPrP trajectories to characterize
+and distinguish between different conformational states (Folded, PUF1, PUF2, Unfolded).
+It processes multiple ensembles and computes feature distributions.
+
+Requirements:
+    - Trajectory and Topology files for each ensemble/state.
+    - `jaxent` library for feature calculation.
+
+Usage:
+    # Typically run as part of the analysis pipeline to generate data for clustering
+    python jaxent/examples/2_CrossValidation/analysis/analyse_LocalFeatures_PUFs.py
+
+Output:
+    - Plots and data files containing feature distributions for each state.
 into folded, PUF1, PUF2 and unfolded states.
 
 Multi-ensemble support: Each ensemble should have its own topology and trajectory file pair.
