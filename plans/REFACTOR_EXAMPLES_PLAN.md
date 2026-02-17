@@ -44,6 +44,13 @@ class OptimizationConfig:
     ema_alpha: float = 0.5
     forward_model_scaling: float = 100.0
     clip_value: float | None = None
+    covariance_matrix_path: str | None = None  # e.g. "../../data/_MoPrP_covariance_matrices/Sigma.npz"
+
+@dataclass
+class SweepConfig:
+    """Configuration for 2D parameter sweeps (used by BV objective scripts)."""
+    maxent_values: list[float] = field(default_factory=list)   # e.g. [1, 2, 5, 10, 20, 50]
+    bv_reg_values: list[float] = field(default_factory=list)   # e.g. [0.01, 0.1, 1.0, 10.0]
 
 @dataclass
 class LossConfig:
@@ -52,6 +59,8 @@ class LossConfig:
     regularization_losses: list[dict] = field(default_factory=list)  # [{"name": "...", "weight": 1.0}]
     optimize_bv_params: bool = False
     maxent_scaling: float = 1.0
+
+_REQUIRED_FIELDS = {"ensembles", "results_dir", "features_dir", "datasplit_dir", "num_splits", "convergence_rates"}
 
 @dataclass
 class ExperimentConfig:
@@ -66,20 +75,35 @@ class ExperimentConfig:
     datasplit_dir: str        # e.g. "../fitting/jaxENT/_datasplits"
     clustering_dir: str | None = None
     output_dir: str | None = None
+    state_ratios_json: str | None = None  # e.g. "./analysis/state_ratios.json"
     # Optimization settings (for fitting scripts)
     optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
     loss_configs: dict[str, LossConfig] = field(default_factory=dict)
+    sweep: SweepConfig = field(default_factory=SweepConfig)  # 2D parameter sweep axes
     
     @classmethod
     def from_yaml(cls, path: Path) -> "ExperimentConfig":
-        """Load configuration from YAML file."""
+        """Load configuration from YAML file with validation."""
         with open(path) as f:
             data = yaml.safe_load(f)
+        # Validate required fields
+        missing = _REQUIRED_FIELDS - data.keys()
+        if missing:
+            raise ValueError(f"Missing required config fields: {missing}")
+        # Warn on unknown keys (catches typos like 'dasplit_dir')
+        import dataclasses
+        known = {f.name for f in dataclasses.fields(cls)}
+        unknown = data.keys() - known
+        if unknown:
+            import warnings
+            warnings.warn(f"Unknown config keys (typo?): {unknown}", stacklevel=2)
         # Recursively construct nested dataclasses
         if "optimization" in data:
             data["optimization"] = OptimizationConfig(**data["optimization"])
         if "loss_configs" in data:
             data["loss_configs"] = {k: LossConfig(**v) for k, v in data["loss_configs"].items()}
+        if "sweep" in data:
+            data["sweep"] = SweepConfig(**data["sweep"])
         return cls(**data)
     
     def to_yaml(self, path: Path) -> None:
@@ -153,7 +177,7 @@ All plotting functions accept a `PlotStyle` dataclass instead of hardcoded color
 
 ### 1f. `common/cli.py` — Shared argparse patterns
 
-- `add_common_args(parser)` — adds `--results-dir`, `--output-dir`, `--features-dir`, `--datasplit-dir`, `--ema`, `--absolute-paths`, `--config` (YAML config path)
+- `add_common_args(parser)` — adds `--results-dir`, `--output-dir`, `--features-dir`, `--datasplit-dir`, `--clustering-dir`, `--state-ratios-json`, `--covariance-matrix-path`, `--ema`, `--absolute-paths`, `--config` (YAML config path)
 - `resolve_script_paths(args, script_dir) -> dict` — the repeated relative/absolute path resolution
 
 ### 1g. `common/optimization.py` — Shared optimization/fitting functions
@@ -415,8 +439,10 @@ convergence_rates: [1.0, 0.1, 0.01, 0.001, 0.0001, 1.0e-5, 1.0e-6, 1.0e-7, 1.0e-
 # Paths (relative to experiment directory)
 results_dir: "./fitting/jaxENT/_optimise"
 features_dir: "./fitting/jaxENT/_featurise"
-dasplit_dir: "./fitting/jaxENT/_datasplits"
+datasplit_dir: "./fitting/jaxENT/_datasplits"
+clustering_dir: "./fitting/jaxENT/_clustering"      # optional
 output_dir: "./analysis/_output"
+state_ratios_json: "./analysis/state_ratios.json"    # optional
 
 # Optimization settings (for fitting scripts)
 optimization:
@@ -428,6 +454,12 @@ optimization:
   optimizer: adamw
   ema_alpha: 0.5
   forward_model_scaling: 100.0
+  covariance_matrix_path: "./data/_MoPrP_covariance_matrices/Sigma.npz"  # optional
+
+# 2D parameter sweep (for BV objective scripts, §2l)
+sweep:
+  maxent_values: [1, 2, 5, 10, 20, 50]
+  bv_reg_values: [0.01, 0.1, 1.0, 10.0]
 
 # Loss function configurations
 loss_configs:
@@ -616,13 +648,15 @@ Create test files at `jaxent/tests/examples/`:
   `hdx_uptake_mean_centred_MSE_loss` in `optimise_ISO_TRI_BI_splits_maxENT.py`) that differ from
   `jaxent/src/opt/losses.py`. **Resolution**: Move the 3 example losses into `examples/common/losses.py` and keep the core library unchanged.
 
+- [x] **Config/CLI gaps**: YAML sketch used `dasplit_dir` (typo for `datasplit_dir`) and omitted fields routinely
+  parsed in scripts. **(Resolved)**: fixed typo, added `state_ratios_json`, `covariance_matrix_path`,
+  `SweepConfig` (2D grid axes), `clustering_dir` to `ExperimentConfig`/YAML. Added `from_yaml` validation
+  (required-field check + unknown-key warning). Expanded `add_common_args` in `common/cli.py`.
+
 ## Open findings
 
 - **Packaging**: `jaxent/examples` isn't a package — no `__init__.py`, and `pyproject.toml` only packages `jaxent/src`.
   `import jaxent.examples.common` will fail unless packaging/sys.path is changed.
-- **Config/CLI gaps**: YAML sketch uses `dasplit_dir` (typo for `datasplit_dir`) and omits fields routinely
-  parsed in scripts (clustering dirs, state ratios JSON, covariance toggles, grid axes).
-  `ExperimentConfig.from_yaml` should validate required fields.
 
 ## Next steps
 
@@ -630,5 +664,3 @@ Create test files at `jaxent/tests/examples/`:
    before building `common/`.
 2. Map all loss/optimizer variants across `optimise_fn.py` files and wrappers to a registry/config that preserves
    current covariance/partition behaviour.
-3. Design `ExperimentConfig`/YAML to validate required paths/aux data (clustering, state ratios, grid axes) so
-   failures surface early.
