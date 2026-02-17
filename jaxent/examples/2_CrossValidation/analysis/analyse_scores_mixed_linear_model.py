@@ -1,16 +1,30 @@
 """
-MoPrP Linear Effects Modelling Analysis
-========================================
+[Script Name] analyse_scores_mixed_linear_model.py
 
-Comprehensive linear modelling framework for analyzing optimization metrics:
-- Multiple regression: recovery = β0 + β1*MSE_metrics + β2*Work_metrics + ε
-- Stability analysis across splits and replicates
-- Mixed-effects models with random effects for grouping variables
-- ICC (intra-class correlation) quantification
-- Standardized coefficient plots and comparative visualizations
+[Brief Description of Functionality]
+Performs a comprehensive linear effects modelling analysis on the computed model scores.
+It quantifies the predictive utility and stability of different metrics using:
+- Multiple Regression: Predicting target metric (e.g., recovery_percent) from error and work metrics.
+- Stability Analysis: Assessing variance across split types and ensembles.
+- Mixed-Effects Models: Using random effects for grouping variables (if statsmodels is available).
+- Generates summary tables and comparative visualizations (coefficients, partial R2, stability plots).
 
-This script processes output from MoPrP_Score_Models.py and provides
-insights into metric predictive utility and stability across experimental conditions.
+Requirements:
+    - Scores CSV file (output of `score_models_ISO_TRI_BI.py`).
+    - Python dependencies: pandas, statsmodels, seaborn, matplotlib, sklearn.
+
+Usage:
+    # From pipeline:
+    python analyse_scores_mixed_linear_model.py \\
+      --scores-csv-path "${SCORES_DIR}/model_scores.csv" \\
+      --target-metric "recovery_percent" \\
+      --filter-mode "both" \\
+      --analyze-subsets 
+
+Output:
+    - Analysis results in `_analysis_<basename>` directory.
+    - Summary CSVS (regression results, stability summaries).
+    - Visualization plots (bar charts, scatter plots).
 """
 
 import argparse

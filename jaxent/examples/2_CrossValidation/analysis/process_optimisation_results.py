@@ -1,27 +1,36 @@
-import argparse
-import os
-import re
-import sys
-from typing import Dict, List, Tuple
+"""
+[Script Name] process_optimisation_results.py
 
-import numpy as np
-import pandas as pd
-import jax
-import jax.numpy as jnp
+[Brief Description of Functionality]
+Processes the raw optimization results (HDF5 files) to extract key data for analysis.
+It computes:
+- Predicted protection factors (lnPF) and uptake for each run.
+- KL divergence of frame weights from a uniform prior.
+- Frame weights and validation losses.
+- Cluster ratios based on frame weights and cluster assignments.
 
-# Add the base directory to the path to import JAX-ENT modules
-current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
-sys.path.insert(0, base_dir)
+Models are processed for each ensemble, loss function, split type, and MaxEnt value.
+Results are saved as .npy and .csv files in a structured directory format.
 
-from jaxent.src.utils.hdf import load_optimization_history_from_file
-from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
-import jaxent.src.interfaces.topology as pt
-from jaxent.src.custom_types.HDX import HDX_peptide
-from jaxent.src.models.config import BV_model_Config
-from jaxent.src.custom_types.key import m_key
-from jaxent.src.utils.jax_fn import frame_average_features
+Requirements:
+    - Optimization results directory containing HDF5 files.
+    - Featurized data directory (features_*.npz) and topology files.
+    - Data splits directory.
+    - Clustering results directory (for cluster ratio calculation).
+
+Usage:
+    # From pipeline:
+    python process_optimisation_results.py \\
+      --results-dir "$OPT_OUTPUT_DIR" \\
+      --datasplit-dir "${DIR_WD}/_datasplits" \\
+      --features-dir "${DIR_WD}/_featurise" \\
+      --clustering-dir "${DIR_WD}/../../analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" 
+
+Output:
+    - A `_processed_<basename>` directory (or specified output dir).
+    - Subdirectories for each split type and run ID.
+    - Contains: `pred_ln_pf.npy`, `pred_uptake.npy`, `kl_divergence.npy`, `frame_weights.npy`, `val_loss.npy`, `cluster_ratios.csv`.
+"""
 
 
 from jaxent.src.custom_types.base import ForwardPass

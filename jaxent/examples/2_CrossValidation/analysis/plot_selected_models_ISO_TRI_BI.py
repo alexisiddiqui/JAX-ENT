@@ -1,33 +1,30 @@
 """
-This script plots the recovery scores from the selection analysis performed on each of the metrics provided to analyse_scores_mixed_linear_model.py
+[Script Name] plot_selected_models_ISO_TRI_BI.py
 
-The two sets of plots should be of publication quality suitable for a high-impact journal.
+[Brief Description of Functionality]
+Plots the model selection performance and statistical comparisons between ensembles.
+It visualizes:
+- Recovery scores vs metrics for different ensembles and split types.
+- Statistical significance of differences (p-values, stars).
+- Insignificance plots (-log(1-p)).
+- Comparisons before and after convergence filtering.
 
-Loads in the model_selection_performance_summary.csv  before and after convergence filtering.
+Loads "before" and "after" filtering summary CSVs to generate publication-quality figures.
 
-Plots Recovery Score (y) vs Metric (x) with ensembles hued and split types on separate panels and each score as a different figure.
+Requirements:
+    - Summary CSVs from `analyse_scores_mixed_linear_model.py` (before and after filtering).
+    - Matplotlib and Seaborn.
 
-Plot before, after convergence filtering and the different (Before-After) convergence filtering. using a welchs t-test for each ensembles and annotate the plots with significance stars. 
-Ensure that reccovery axis is always 0-100.
+Usage:
+    # From pipeline:
+    python plot_selected_models_ISO_TRI_BI.py \\
+      --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \\
+      --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \\
+      --output-dir "${ANALYSIS_DIR}/plots_selection" 
 
-
-Then plot the log complement of the p-values -log(1-p) between ensembles for each metric - hue by split with metrics on the x-axis and bayes factor on the y-axis.
-
-Plot both before and after convergence filtering and the difference (Before-After) convergence filtering.   
-
-
-    # Save summary CSV
-    if selection_stats_list:
-        full_stats = pd.concat(selection_stats_list, ignore_index=True)
-        # Reorder columns for readability
-        cols = ['score_metric', 'direction'] + [c for c in full_stats.columns if c not in ['score_metric', 'direction', 'mean', 'std', 'count']] + ['mean', 'std', 'count']
-        full_stats = full_stats[cols]
-        
-        out_path = os.path.join(output_dir, "model_selection_performance_summary.csv")
-        full_stats.to_csv(out_path, index=False)
-        print(f"Saved model selection performance summary to {out_path}")
-
-        
+Output:
+    - PNG plots in the specified output directory.
+    - `model_selection_performance_summary.csv` (aggregated stats).
 """
 
 import argparse
