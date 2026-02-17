@@ -470,10 +470,23 @@ In the refactored `common/` modules, use existing library functions instead of r
 
 | Duplicated Code | Library Replacement |
 |---|---|
-| Manual HDXer `.dat` file parsing in `plot_intrinsic_rates_*.py` | `jaxent.src.utils.HDXer.load_data.load_HDXer_kints()` |
+| Manual HDXer `.dat` file parsing in `plot_intrinsic_rates_*.py` | `jaxent.src.utils.HDXer.load_data.load_HDXer_kints()` (requires update to return topologies) |
 | Manual HDF5 loading (already partially used) | `jaxent.src.utils.hdf.load_optimization_history_from_file()` (keep using) |
 | Manual frame averaging in `process_optimisation_results.py` | `jaxent.src.utils.jax_fn.frame_average_features()` (already used in some copies) |
 | `sys.path.insert(0, base_dir)` hack at top of every script | Proper package import via `jaxent.examples.common` (since jaxent is installed) |
+
+#### Detailed Plan: Fix Featurisation Topology Gap in `load_HDXer_kints`
+
+To enable the replacement above, `load_HDXer_kints` must be updated to return `Partial_Topology` objects.
+
+1. **Modify `jaxent/src/utils/HDXer/load_data.py`**:
+   - Add `chain: str = "A"` parameter to `load_HDXer_kints`.
+   - Update return type to `tuple[Array, list[Partial_Topology]]`.
+   - Use `TopologyFactory.from_single(chain=chain, residue=resid)` for each rate entry.
+
+2. **Update `jaxent/tests/modules/utils/test_HDXer_load_save.py`**:
+   - Assert `topology_list` contains `Partial_Topology` objects.
+   - Verify residue IDs and chain assignments.
 
 ---
 
@@ -586,11 +599,8 @@ Create test files at `jaxent/tests/examples/`:
 
 ## Resolved findings
 
-- ~~Scope mismatch~~: **Resolved** — plan now covers PUF scripts (§2m), 2D BV sweeps (§2l), comparison/viz (§2n),
-  statistical analyses (§2o), and unique utilities (§2p). OMass fitting variants have been removed from codebase.
-  `4_CrossValidation_FunctionalMaxENT/` is explicitly excluded from scope.
-- ~~Special-case 2D sweeps~~: **Resolved** — `common/loading.load_all_optimization_results()` now specifies a
-  `grid_params` argument for 2D result structures (§2l).
+- [x] **Featurisation topology gap**: Scripts build `TopologyFactory` entries from HDXer rates;
+  `load_HDXer_kints()` returns only intrinsic rates. Reusing the library helper as-is drops topology data. **(Resolved in Phase 4 revision)**
 
 ## Open findings
 
@@ -599,8 +609,6 @@ Create test files at `jaxent/tests/examples/`:
 - **Loss function divergence**: Wrappers define covariance-weighted and shape-adjusted losses (e.g.,
   `hdx_uptake_mean_centred_MSE_loss` in `optimise_ISO_TRI_BI_splits_maxENT.py`) that differ from
   `jaxent/src/opt/losses.py`. A simple `LOSS_REGISTRY` mapping to library functions would change behaviour.
-- **Featurisation topology gap**: Scripts build `TopologyFactory` entries from HDXer rates;
-  `load_HDXer_kints()` returns only intrinsic rates. Reusing the library helper as-is drops topology data.
 - **Config/CLI gaps**: YAML sketch uses `dasplit_dir` (typo for `datasplit_dir`) and omits fields routinely
   parsed in scripts (clustering dirs, state ratios JSON, covariance toggles, grid axes).
   `ExperimentConfig.from_yaml` should validate required fields.

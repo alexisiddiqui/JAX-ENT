@@ -1,16 +1,16 @@
 """
 2D Hyperparameter Sweep Recovery Analysis for MoPrP System
 
-This script analyzes conformational state recovery across a 2D grid of:
-- maxent scaling values (x-axis)
-- bv_reg scaling values (y-axis)
-- Multiple error loss functions (columns: MSE, Sigma_MSE, mcMSE)
-- BV regularization functions (rows: L1, L2)
+Function:
+Analyzes conformational state recovery across a 2D grid of MaxEnt and BV regularization scalings:
+- Selects best model per grid point based on validation loss.
+- Computes Jensen-Shannon Divergence (JSD) between learned and target state populations.
+- Generates 2D heatmaps and 1D slices of recovery percentages.
 
-For each (maxent, bv_reg) combination, selects the convergence threshold
-with the lowest validation loss, then analyzes recovery metrics.
-
-Recovery% = (1 - sqrt(JSD)) * 100 (Jensen-Shannon divergence based)
+Requirements:
+- `--results-dir`: Directory containing `results.hdf5` files from 2D sweep.
+- `--clustering-dir`: Directory with `frame_to_cluster.csv` files.
+- `--state-ratios-json`: JSON file with target state ratios.
 """
 
 import argparse
