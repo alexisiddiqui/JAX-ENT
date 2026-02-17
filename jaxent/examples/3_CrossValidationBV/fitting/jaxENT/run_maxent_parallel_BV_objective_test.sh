@@ -20,10 +20,10 @@ DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000"
 
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
 BV_REG_VALUES_STR="0.0"
-BV_REG_VALUES_STR="0.0,0.25,0.5,0.75,1.0"
+BV_REG_VALUES_STR="0.0,0.5,1.0"
 
-DIR_NAME="_optimise_quick_test_test_SIGMA_5000_lr1.0_BV_objectve_scale1.0"
-N_STEPS=5000
+DIR_NAME="_optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0"
+N_STEPS=500
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -220,6 +220,55 @@ echo "Running Loss Analysis..."
 python "${ANA_DIR}/analyse_loss_ISO_TRI_BI_2D_BV.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
+# New comprehensive analysis pipeline
+echo "Processing optimization results..."
+python "${ANA_DIR}/process_optimisation_results.py" \
+  --results-dir "$OPT_OUTPUT_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
+
+# Determine the processed data directory name
+# process_optimisation_results.py creates _processed_<basename> as a SIBLING of OPT_OUTPUT_DIR
+BASENAME=$(basename "$OPT_OUTPUT_DIR")
+PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
+
+echo "Scoring models..."
+python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
+
+# Determine the scores directory name
+# score_models_ISO_TRI_BI.py creates _scores_<basename> INSIDE PROCESSED_DIR
+SCORES_BASENAME=$(basename "$PROCESSED_DIR")
+SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
+
+echo "Analyzing scores with mixed linear model..."
+python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
+  --scores-csv-path "${SCORES_DIR}/model_scores.csv" \
+  --target-metric "recovery_percent" \
+  --filter-mode "both" \
+  --analyze-subsets \
+  > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
+
+# Determine the analysis directory name
+# analyse_scores_mixed_linear_model.py creates _analysis_<scores_parent_basename> as a SIBLING of SCORES_DIR
+# For unfiltered: _analysis__scores_<SCORES_BASENAME>
+# For filtered:   _analysis__scores_<SCORES_BASENAME>_filtered
+ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
+
+# Plot model selection results for both filtered and unfiltered
+echo "Plotting selected models (unfiltered)..."
+python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
+  --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
+  --output-dir "${ANALYSIS_DIR}/plots_selection" \
+  > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"
 echo "Script finished."
