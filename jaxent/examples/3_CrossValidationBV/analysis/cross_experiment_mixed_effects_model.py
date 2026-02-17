@@ -20,9 +20,9 @@ sns.set_context(
 
 # Constants
 EXPERIMENTS = {
-    "TeaA-IsoValidation": "/home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_processed__optimise_FIGURE_SIGMA_5000__20251103_145956",
-    "MoPrP-Reweighting": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_5000__20251120_213245",
-    "MoPrP-RW+BV": "/home/alexi/Documents/JAX-ENT/jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0__20251118_154208"
+    "TeaA-IsoValidation": "jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260216_232705",
+    "MoPrP-Reweighting": "jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_500__20260217_163516",
+    "MoPrP-RW+BV": "jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__20260217_165612"
 }
 
 ENSEMBLE_CLASS_MAPPING = {
