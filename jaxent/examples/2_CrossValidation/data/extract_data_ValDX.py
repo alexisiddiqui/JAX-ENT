@@ -21,40 +21,8 @@ Output:
       containing processed dfracs and segments.
 """
 
-- 1st column: residue number
-- 2nd column: Protection Factor (ln)
-
-This will create three files files:
-- MoPrP_dfrac.dat -> convert times to minutes
-- MoPrP_segments.txt
-- MoPrP_pfactors.dat -> remove 0 or negative values
 
 
-dfrac.dat is a file with a header of the following format:
-
-#	0.5	5.0	 times/min
-0.41879	0.44438
-0.37096	0.45204
-
--> make sure that the dfrac data contains all the timepoints
-
-
-segments.txt is a file with no header of the following format:
-residue_start	residue_end
-
-
-median.pfact is a file with no header of the following format:
-residue_number	ln(PF)
-
--> remove 0 or negative values
-
-raw_dfrac_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/moprp.dexp"
-
-raw_segs_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/moprp.list"
-
-pf_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/median.pfact"
-
-"""
 
 import os
 
