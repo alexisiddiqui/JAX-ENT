@@ -130,13 +130,13 @@ def main():
     parser.add_argument(
         "--cluster_assignments_csv",
         type=str,
-        default="/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters/global_frame_to_cluster_ensemble.csv",
+        default="jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters/global_frame_to_cluster_ensemble.csv",
         help="Path to the CSV file with cluster assignments for each frame.",
     )
     parser.add_argument(
         "--state_ratios_json",
         type=str,
-        default="/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/state_ratios.json",
+        default="jaxent/examples/2_CrossValidation/analysis/state_ratios.json",
         help="Path to the JSON file with target state ratios.",
     )
     args = parser.parse_args()
