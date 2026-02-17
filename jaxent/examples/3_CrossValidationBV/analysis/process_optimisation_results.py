@@ -90,8 +90,8 @@ def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str
         Tuple of (train_data, val_data, test_data, timepoints)
     """
     split_path = os.path.join(datasplit_dir, split_type, f"split_{split_idx:03d}")
-    parent_dir = os.path.dirname(results_dir)
-    full_dataset_path = os.path.join(parent_dir, "_datasplits")
+
+
 
     train_csv_path = os.path.join(split_path, "train_dfrac.csv")
     train_data = HDX_peptide.load_list_from_files(
@@ -109,8 +109,8 @@ def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str
         csv_path=os.path.join(split_path, "val_dfrac.csv"),
     )
     test_data = HDX_peptide.load_list_from_files(
-        json_path=os.path.join(full_dataset_path, "full_dataset_topology.json"),
-        csv_path=os.path.join(full_dataset_path, "full_dataset_dfrac.csv"),
+        json_path=os.path.join(datasplit_dir, "full_dataset_topology.json"),
+        csv_path=os.path.join(datasplit_dir, "full_dataset_dfrac.csv"),
     )
     return train_data, val_data, test_data, np.array(timepoints)
 

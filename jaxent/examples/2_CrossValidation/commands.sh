@@ -76,6 +76,7 @@ python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_real.p
     --segs_file  jaxent/examples/2_CrossValidation/data/_MoPrP/_output/MoPrP_segments.txt \
     --output_dir jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices/
 
+# main jaxent fitting script
 bash jaxent/examples/2_CrossValidation/fitting/jaxENT/run_maxent_parallel_test.sh
 
 
