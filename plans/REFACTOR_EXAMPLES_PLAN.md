@@ -236,6 +236,16 @@ def ensure_output_dir(path: Path) -> Path:
 
 Replaces the fragile `os.path.join(os.path.dirname(__file__), "../../data/...")` patterns.
 
+
+### 1i. `common/losses.py` — Shared example-specific loss functions
+
+Move the example-specific loss functions here to keep the core library clean:
+- `hdx_uptake_mean_centred_MSE_loss`
+- `hdx_uptake_MSE_loss`
+- `hdx_uptake_MAE_loss_vectorized`
+
+These will be registered in `LOSS_REGISTRY` in `common/optimization.py` but defined here.
+
 ## Phase 2: Refactor the most-duplicated script families
 
 Work through each script family, replacing inline logic with calls to `common/`. Priority order based on duplication count:
@@ -521,6 +531,7 @@ For any remaining scripts not covered in Phase 2 (data prep scripts, one-off ana
 - `jaxent/examples/common/plotting.py`
 - `jaxent/examples/common/cli.py`
 - `jaxent/examples/common/optimization.py`
+- `jaxent/examples/common/losses.py`
 - `jaxent/examples/common/paths.py`
 - `jaxent/examples/1_IsoValidation/config.yaml`
 - `jaxent/examples/1_IsoValidation_OMass/config.yaml`
@@ -601,14 +612,14 @@ Create test files at `jaxent/tests/examples/`:
 
 - [x] **Featurisation topology gap**: Scripts build `TopologyFactory` entries from HDXer rates;
   `load_HDXer_kints()` returns only intrinsic rates. Reusing the library helper as-is drops topology data. **(Resolved in Phase 4 revision)**
+- [x] **Loss function divergence**: Wrappers define covariance-weighted and shape-adjusted losses (e.g.,
+  `hdx_uptake_mean_centred_MSE_loss` in `optimise_ISO_TRI_BI_splits_maxENT.py`) that differ from
+  `jaxent/src/opt/losses.py`. **Resolution**: Move the 3 example losses into `examples/common/losses.py` and keep the core library unchanged.
 
 ## Open findings
 
 - **Packaging**: `jaxent/examples` isn't a package — no `__init__.py`, and `pyproject.toml` only packages `jaxent/src`.
   `import jaxent.examples.common` will fail unless packaging/sys.path is changed.
-- **Loss function divergence**: Wrappers define covariance-weighted and shape-adjusted losses (e.g.,
-  `hdx_uptake_mean_centred_MSE_loss` in `optimise_ISO_TRI_BI_splits_maxENT.py`) that differ from
-  `jaxent/src/opt/losses.py`. A simple `LOSS_REGISTRY` mapping to library functions would change behaviour.
 - **Config/CLI gaps**: YAML sketch uses `dasplit_dir` (typo for `datasplit_dir`) and omits fields routinely
   parsed in scripts (clustering dirs, state ratios JSON, covariance toggles, grid axes).
   `ExperimentConfig.from_yaml` should validate required fields.
