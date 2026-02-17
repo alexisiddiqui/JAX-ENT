@@ -1299,7 +1299,9 @@ def plot_results_wrapper(model_result, df, gt_score_type, output_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", default="cross_experiment_analysis")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    default_output_dir = os.path.join(script_dir, "_cross_experiment_analysis")
+    parser.add_argument("--output-dir", default=default_output_dir, help="Directory to save outputs")
     args = parser.parse_args()
     
     os.makedirs(args.output_dir, exist_ok=True)
