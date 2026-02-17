@@ -1,14 +1,19 @@
 """
 MoPrP Score Models Script
 
-This script loads the outputs of MoPrP_Process_Optimisation_results.py and computes various scores and metrics.
-This includes error metrics: MSE(train/val/test), dMSE(train/val/test),
-and Work Metrics: Shape, Density, Fitting, Scale, and KL Divergence(weights|uniform)
+Function:
+Loads the outputs of `process_optimisation_results.py` and computes:
+- Error metrics: MSE (train/val/test) and dMSE (improvement over prior).
+- Thermodynamic Work metrics: Shape, Density, Fitting, Scale, and Magnitude.
+- Recovery percentage: 1 - sqrt(JSD) for state populations.
+- Cross-validation performance across different split types (Spatial, Non-Redundant, etc.).
 
-As the target data is already split into train/val (test is the entire dataset), the error metrics are computed 
-by applying the train/val sparse mapping to the predicted and prior uptake data.
-
-Work metrics are computed based on the entire set of predicted and prior lnPF values.
+Requirements:
+- `--processed-data-dir`: Directory containing outputs from `process_optimisation_results.py`.
+- `--datasplit-dir`: Experimental data splits (from example 2).
+- `--features-dir`: Feature topology files (from example 2).
+- `--clustering-dir`: Cluster assignments (from example 2).
+- `--state-ratios-json`: Target populations (e.g., `analysis/state_ratios.json`).
 """
 
 import argparse

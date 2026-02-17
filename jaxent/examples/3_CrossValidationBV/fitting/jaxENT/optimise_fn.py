@@ -1,3 +1,17 @@
+"""
+Optimization Functions for MoPrP Ensemble Modeling
+
+Function:
+Provides core optimization utilities, including:
+- Data loader creation (`create_data_loaders`) for HDX-MS experiments.
+- Optimization sweep logic (`optimise_sweep`) featuring EMA-based convergence tracking 
+  and oscillation detection.
+- High-level orchestration for 2D sweeps (`run_optimise_ISO_TRI_BI_maxENT_BV_objective`).
+
+Requirements:
+This script acts as a library of functions and is typically called by 
+`optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py`.
+"""
 import os
 from typing import List, Sequence, Tuple, cast
 

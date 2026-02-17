@@ -1,3 +1,19 @@
+"""
+Process MoPrP Optimization Results
+
+Function:
+Processes HDF5 optimization history files to extract:
+- Residue-wise log protection factors (lnPF) and peptide uptake predictions.
+- KL divergence of frame weights relative to a uniform prior.
+- Cluster population ratios based on external clustering assignments.
+Outputs processed data as .npy and .csv files for downstream scoring.
+
+Requirements:
+- `--results-dir`: Directory containing `results.hdf5` files.
+- `--clustering-dir`: Directory with `frame_to_cluster.csv` files (e.g., from example 2).
+- `--features-dir`: Directory with `features_*.npz` and `topology_*.json` (from example 2).
+- `--datasplit-dir`: Directory with data splits (from example 2).
+"""
 import argparse
 import os
 import re

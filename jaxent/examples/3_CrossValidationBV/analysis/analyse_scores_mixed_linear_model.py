@@ -1,16 +1,15 @@
 """
 MoPrP Linear Effects Modelling Analysis
-========================================
 
-Comprehensive linear modelling framework for analyzing optimization metrics:
-- Multiple regression: recovery = β0 + β1*MSE_metrics + β2*Work_metrics + ε
-- Stability analysis across splits and replicates
-- Mixed-effects models with random effects for grouping variables
-- ICC (intra-class correlation) quantification
-- Standardized coefficient plots and comparative visualizations
+Function:
+Performs statistical analysis of optimization metrics using:
+- Multiple regression: recovery = f(MSE, Work metrics).
+- Stability analysis: assesses metric consistency across data splits.
+- Mixed-effects models: quantifies variance components.
+- Generates coefficient plots and ICC (intra-class correlation) summaries.
 
-This script processes output from MoPrP_Score_Models.py and provides
-insights into metric predictive utility and stability across experimental conditions.
+Requirements:
+- `--scores-csv-path`: Path to `model_scores.csv` (output from `score_models_ISO_TRI_BI.py`).
 """
 
 import argparse

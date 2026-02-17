@@ -1,19 +1,16 @@
 """
-2D Hyperparameter Sweep Weights Validation Analysis for MoPrP System
+2D Hyperparameter Sweep Weights Validation for MoPrP System
 
-Analyzes frame weights and statistical properties across a 2D grid of:
-- maxent scaling values (x-axis)
-- bv_reg scaling values (y-axis)
-- Multiple error loss functions (columns: MSE, Sigma_MSE, mcMSE)
-- BV regularization functions (rows: L1, L2)
+Function:
+Analyzes frame weights and statistical properties from 2D parameter sweeps:
+- Computes KL divergence relative to uniform prior (regularization impact).
+- Calculates Effective Sample Size (ESS) to assess ensemble shrinkage.
+- Evaluates weight consistency across data splits using pairwise KLD.
+- Generates 2D heatmaps of ensemble diversity metrics.
 
-For each (maxent, bv_reg) combination, analyzes KL divergence, effective sample size,
-and between-split consistency metrics using final converged weights.
-
-Key metrics:
-- KL divergence vs uniform prior (how non-uniform are the learned weights?)
-- Effective Sample Size (ESS) - how many frames are effectively used?
-- KLD between splits (consistency across CV folds)
+Requirements:
+- `--results-dir`: Directory containing `results.hdf5` files.
+- `--clustering-dir`: Directory with `frame_to_cluster.csv` files.
 """
 
 import argparse
