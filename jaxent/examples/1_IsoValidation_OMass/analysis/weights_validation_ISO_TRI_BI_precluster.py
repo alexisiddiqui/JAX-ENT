@@ -1,6 +1,16 @@
 """
+weights_validation_ISO_TRI_BI_precluster.py
+
+Validates the optimized weights against ground truth (pre-clusters).
 Main Analysis Script - Part 2
 Loads clustering results from CSV files and performs the complete analysis.
+
+Requirements:
+    - Optimization results (results_EMA.hdf5)
+    - Clustering results (_clustering_results/)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/weights_validation_ISO_TRI_BI_precluster.py --results-dir ...
 """
 
 import argparse

@@ -1,9 +1,18 @@
 """
+analyse_split_ISO_TRI_BI.py
+
+Analyzes and plots the data splits (visualization of training/validation sets).
 This script analyses the splits created by the splitdata_ISO.py script for the ISO TRI BI dataset.
 It loads the split data for each replicate and plots the distribution of the number of the splits across the replicates.
 Plotting both the average distribution as well as each replicate individually.
 This incudes heatmaps to show the splits themselves with clear gap visualization
 As well as heatmaps that show the uptake curves for each split with separate colors for train/val.
+
+Requirements:
+    - Split data (fitting/jaxENT/_datasplits/)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_split_ISO_TRI_BI.py
 """
 
 import os

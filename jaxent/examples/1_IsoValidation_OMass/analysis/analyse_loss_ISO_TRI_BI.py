@@ -1,9 +1,17 @@
 """
+analyse_loss_ISO_TRI_BI.py
+
+Analyzes convergence and loss landscapes of the optimization.
 This script loads the optimization histories of the ISO TRI and BI models over both loss functions
 and performs comprehensive analyses including convergence-maxent heatmaps, model scoring,
 and best model selection with bar chart comparisons.
-
 Updated to handle multiple split types and maxent values with convergence rate analysis.
+
+Requirements:
+    - Optimization results directory containing results_EMA.hdf5 files
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_loss_ISO_TRI_BI.py --results-dir ...
 """
 
 import argparse

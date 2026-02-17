@@ -1,3 +1,23 @@
+"""
+[Script Name] optimise_fn.py
+
+[Brief Description of Functionality]
+Helper module containing optimization functions and loss definitions for the CrossValidation example.
+It includes `optimise_sweep` for running optimization loops with EMA smoothing and convergence checks,
+and various loss functions (mcMSE, MSE, Sigma_MSE, MAE, MaxEnt).
+
+Requirements:
+    - JAX, Optax
+    - JAX-ENT library
+
+Usage:
+    Imported by `optimise_ISO_TRI_BI_splits_maxENT.py` and other optimization scripts.
+    Not intended to be run directly.
+
+Output:
+    - Returns optimization state, history, and final parameters.
+"""
+
 import os
 from typing import List, Sequence, Tuple, cast
 
