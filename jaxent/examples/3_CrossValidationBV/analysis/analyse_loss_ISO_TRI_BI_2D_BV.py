@@ -1,18 +1,17 @@
 """
-2D Hyperparameter Sweep Loss Analysis Script for MoPrP System
+2D Hyperparameter Sweep Loss Analysis for MoPrP System
 
-This script loads optimization histories across a 2D grid of:
-- maxent scaling values (x-axis)
-- bv_reg scaling values (y-axis)
+Function:
+Loads optimization histories from 2D hyperparameter sweeps and performs:
+- Convergence heatmaps for training and validation loss.
+- Best model selection based on multi-objective scoring.
+- Recovery and KL divergence analysis for selected models.
+- Exports converged frame weights for downstream validation.
 
-Performs comprehensive analyses including:
-- Convergence-maxent-bvreg heatmaps
-- Model scoring and best model selection
-- Best model comparisons with bar charts
-- JSD-based recovery metrics
-- Cluster proportion analysis
-
-Updated to use 2D hyperparameter sweep structure with publication-ready plotting.
+Requirements:
+- `--results-dir`: Directory containing `results.hdf5` files.
+- `--clustering-dir`: Directory with `frame_to_cluster.csv` files.
+- `--state-ratios-json`: Target state populations.
 """
 
 import argparse

@@ -1,6 +1,15 @@
 """
 Compare HDXer and jaxENT results with publication-ready plots.
-Creates bar plots of recovery % and KL divergence, panelled by experiment and by ensemble.
+
+Function:
+Creates harmonized comparison bar plots between HDXer and jaxENT:
+- Ground truth recovery percentage.
+- KL divergence from uniform prior.
+- Panelled by ensemble and experimental split type.
+
+Requirements:
+- `--hdxer-results`: Path to HDXer `selected_metrics_all.csv`.
+- `--jaxent-results`: Path to jaxENT `selected_metrics_all.csv`.
 """
 
 import os

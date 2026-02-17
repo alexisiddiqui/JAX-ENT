@@ -1,3 +1,17 @@
+"""
+Cross-Experiment Mixed Effects Model Analysis
+
+Function:
+Integrates results across multiple JAX-ENT experiments (IsoValidation, MoPrP-Reweighting, MoPrP-RW+BV) to:
+- Assess the robustness and performance of various metrics (MSE, Work, etc.).
+- Quantify variance components using linear mixed-effects modeling.
+- Identify the most stable and predictive indicators across diverse systems.
+- Generate performance vs. robustness scatter plots and 3D summaries.
+
+Requirements:
+- Paths to long-format GT scores (`gt_scores_long.csv`) from each experiment.
+"""
+
 import argparse
 import os
 import numpy as np
