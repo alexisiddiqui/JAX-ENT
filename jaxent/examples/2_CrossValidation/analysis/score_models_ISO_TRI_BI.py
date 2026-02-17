@@ -1,14 +1,34 @@
 """
-MoPrP Score Models Script
+[Script Name] score_models_ISO_TRI_BI.py
 
-This script loads the outputs of MoPrP_Process_Optimisation_results.py and computes various scores and metrics.
-This includes error metrics: MSE(train/val/test), dMSE(train/val/test),
-and Work Metrics: Shape, Density, Fitting, Scale, and KL Divergence(weights|uniform)
+[Brief Description of Functionality]
+Computes a comprehensive set of scores and metrics for the processed optimization models.
+Metrics include:
+- Error Metrics: MSE and dMSE (Delta MSE over prior) for Train, Validation, and Test sets.
+- Work Metrics: Thermodynamic work values (Shape, Density, Fitting, Scale, Magnitude) derived from lnPF distributions.
+- KL Divergence: Between optimized frame weights and uniform prior.
+- Recovery Percentage: Based on state population recovery relative to target experimental ratios.
 
-As the target data is already split into train/val (test is the entire dataset), the error metrics are computed 
-by applying the train/val sparse mapping to the predicted and prior uptake data.
+It aggregates these scores into a single CSV file for further analysis.
 
-Work metrics are computed based on the entire set of predicted and prior lnPF values.
+Requirements:
+    - Processed data directory (output of `process_optimisation_results.py`).
+    - Data splits directory.
+    - Featurized data directory.
+    - Clustering results directory.
+    - Target state ratios JSON file (`state_ratios.json`).
+
+Usage:
+    # From pipeline:
+    python score_models_ISO_TRI_BI.py \\
+      --processed-data-dir "$PROCESSED_DIR" \\
+      --datasplit-dir "${DIR_WD}/_datasplits" \\
+      --features-dir "${DIR_WD}/_featurise" \\
+      --clustering-dir "${DIR_WD}/../../analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" 
+
+Output:
+    - `model_scores.csv` in a `_scores_<basename>` directory.
+    - Violin plots for each metric in the output directory.
 """
 
 import argparse
