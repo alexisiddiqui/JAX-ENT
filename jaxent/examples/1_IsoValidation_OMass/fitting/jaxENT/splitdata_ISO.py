@@ -1,9 +1,19 @@
 """
-This script splits the data generated from the featurisation process into training and validation sets.
-For now this is just a random split.
+splitdata_ISO.py
+
+Splits the HDX data into training and validation sets using various strategies (Random, Sequence, Spatial, etc.).
 First we must load the dfracs and the segments files - we then create the HDX_peptide data object
 we then load the feature topology and then use this with the data splitting to make the training and validation sets.
 each training/validation set is then saved as data and a topology file so it can be rebuilt.
+
+Requirements:
+    - Featurized data and topology from featurise_ISO_TRI_BI.py
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/splitdata_ISO.py
+
+Output:
+    - Split data directories in fitting/jaxENT/_datasplits/ (e.g., fit_ISO_BI_split_random_0)
 """
 
 import os

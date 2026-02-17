@@ -1,10 +1,24 @@
 """
-Updated MoPrP Analysis Script - Uses JSD-based recovery calculation.
+[Script Name] recovery_analysis_ISO_TRI_BI_precluster.py
 
-This script analyzes the recovery of conformational states in the MoPrP system,
-using Jensen-Shannon divergence to calculate recovery percentages.
+[Brief Description of Functionality]
+Analyzes the recovery of conformational states (Folded, PUF1, PUF2, Unfolded) for the MoPrP system
+using Jensen-Shannon Divergence (JSD). It uses the optimized frame weights to calculate reweighted
+state populations and compares them to target ratios.
+Generates heatmaps of recovery percentage and volcano plots showing the trade-off between
+recovery and fitting error.
 
-Recovery% = (1 - sqrt(JSD)) * 100
+Requirements:
+    - Optimization results (HDF5 files).
+    - Cluster assignments CSV.
+    - `state_ratios.json`.
+
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/recovery_analysis_ISO_TRI_BI_precluster.py \
+        --results_dir ... --cluster_assignments ...
+
+Output:
+    - Recovery heatmaps, volcano plots, and summary CSVs.
 """
 
 import argparse

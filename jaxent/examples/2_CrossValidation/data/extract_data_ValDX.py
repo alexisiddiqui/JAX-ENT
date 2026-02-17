@@ -1,22 +1,26 @@
 """
-This script extracts the data from the dataset for MoPrP.
+[Script Name] extract_data_ValDX.py
 
-The script extracts the dfrac data from the .dexp file and the segments from the .list file
-In addition it also formats .pfact file to just include the relevant residue data.
+[Brief Description of Functionality]
+This script extracts and formats experimental HDX data for the MoPrP dataset (ValDX).
+It processes raw data files (.dexp, .list) to produce clean dfrac (deuterium fraction)
+data and peptide segment information. Additionally, it formats the protection factor
+(.pfact) file to filter for relevant residue data.
 
+Requirements:
+    - Input files in `jaxent/examples/2_CrossValidation/data/`:
+        - `_ValDX.tar` (must be extracted to provide .dexp, .list, .pfact files)
+    - Dependencies: pandas, numpy
 
-.dexp file is a csv file with no header:
-- 1st column: time in hours
-- Other columns: dfrac data for each segment (1-14)
+Usage:
+    # As run in commands.sh:
+    python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
 
-.list file is a csv file with no header:
-- 1st column: peptide index
-- 2nd column: residue start
-- 3rd column: residue end
-- 4th column: peptide sequence
+Output:
+    - Formatted .dat and .txt files in `jaxent/examples/2_CrossValidation/data/_output/`
+      containing processed dfracs and segments.
+"""
 
-
-.pfact file is a csv file with no header:
 - 1st column: residue number
 - 2nd column: Protection Factor (ln)
 

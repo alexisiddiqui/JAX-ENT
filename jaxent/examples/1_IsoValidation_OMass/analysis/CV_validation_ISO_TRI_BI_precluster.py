@@ -1,5 +1,17 @@
 """ """
 
+"""
+CV_validation_ISO_TRI_BI_precluster.py
+
+Cross-validation analysis of the results.
+
+Requirements:
+    - Optimization results (results_EMA.hdf5)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/CV_validation_ISO_TRI_BI_precluster.py --results-dir ...
+"""
+
 import argparse
 import os
 import re
