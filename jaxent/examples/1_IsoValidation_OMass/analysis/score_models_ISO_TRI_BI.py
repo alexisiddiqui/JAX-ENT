@@ -1,15 +1,22 @@
 """
+score_models_ISO_TRI_BI.py
+
+Computes scores (MSE, AIC, etc.) for the optimized models.
 This script loads the outputs of process_optimisation_results.py and computes various scores and metrics.
 This includes error metrics: MSE(train/val/test), dMSE(train/val/test),
 and Work Metrics: Shape, Density, Fitting, Scale, and KL Divergence(weights|uniform)
 
-As the target data is already split into train/val (test is the entire dataset), the error metrics are computed by applying the train/val sparse mapping to the predicted and prior uptake data.
+Requirements:
+    - Processed data directory (_processed_...)
+    - Data splits (_datasplits/)
+    - Features (_featurise/)
+    - Clustering results (_clustering_results/)
 
-Work metrics are computed based on the entire set of predicted and prior lnPF values.
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/score_models_ISO_TRI_BI.py --processed-data-dir ...
 
-/home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/optimise_ISO_TRI_BI_splits_Sigma.py
-^ contains some code to apply the sparse mapping to get the mapped uptake values as well as get the appropriate file paths.
-
+Output:
+    - Scores CSV (model_scores.csv)
 """
 
 import argparse

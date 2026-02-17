@@ -1,10 +1,26 @@
 #!/usr/bin/env python3
 """
-Renumber residues in a PDB file (including multiframe) after subselection.
+[Script Name] renumber_pdb.py
+
+[Brief Description of Functionality]
+Renumbers residues in a PDB file (supports multiframe PDBs) after sub-selecting a specific
+residue range. This is useful for creating cropped PDBs with consistent 1-based indexing
+starting from the first residue of the selection.
+
+Requirements:
+    - MDAnalysis package
+    - Input PDB file
 
 Usage:
-    python renumber_pdb.py --input_pdb input.pdb --output_pdb output.pdb \
-        --selection "resid 123:223" --resi_start 1
+    # Example from crops_pdbs.sh:
+    python renumber_pdb.py \
+        --input_pdb jaxent/examples/2_CrossValidation/data/_MoPrP/2L39.pdb \
+        --output_pdb jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb \
+        --selection "resid 124-224" \
+        --resi_start 1
+
+Output:
+    - A new PDB file with the selected atoms and renumbered residues.
 """
 
 import argparse
