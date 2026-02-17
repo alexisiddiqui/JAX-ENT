@@ -1,12 +1,19 @@
 """
+recovery_analysis_ISO_TRI_BI_precluster.py
+
+Analyzes the recovery of open/closed states using pre-computed clusters.
 Updated Analysis Script - Uses pre-computed clustering results from CSV files.
 
 This script analyzes the %recovery of the ratio of the two conformations used in the IsoValidation process,
 including analysis across different maxent regularization values.
 
-This proceeds by loading pre-computed clustering results from CSV files, then loading optimization results
-and analyzing frame weights. The results are then plotted as bar charts, heatmaps, and volcano plots,
-showing the open state %recovery across convergence thresholds and maxent values.
+Requirements:
+    - Optimization results (results_EMA.hdf5)
+    - Clustering results (_clustering_results/)
+    - Data splits mapping (metadata)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/recovery_analysis_ISO_TRI_BI_precluster.py --results-dir ...
 """
 
 import argparse

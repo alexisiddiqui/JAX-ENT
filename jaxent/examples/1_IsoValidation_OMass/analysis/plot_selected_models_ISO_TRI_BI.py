@@ -1,4 +1,7 @@
 """
+plot_selected_models_ISO_TRI_BI.py
+
+Plots results for the selected "best" models based on scores.
 This script plots the recovery scores from the selection analysis performed on each of the metrics provided to analyse_scores_mixed_linear_model.py
 
 The two sets of plots should be of publication quality suitable for a high-impact journal.
@@ -7,27 +10,11 @@ Loads in the model_selection_performance_summary.csv  before and after convergen
 
 Plots Recovery Score (y) vs Metric (x) with ensembles hued and split types on separate panels and each score as a different figure.
 
-Plot before, after convergence filtering and the different (Before-After) convergence filtering. using a welchs t-test for each ensembles and annotate the plots with significance stars. 
-Ensure that reccovery axis is always 0-100.
+Requirements:
+    - Model selection summary CSV (model_selection_performance_summary.csv)
 
-
-Then plot the log complement of the p-values -log(1-p) between ensembles for each metric - hue by split with metrics on the x-axis and bayes factor on the y-axis.
-
-Plot both before and after convergence filtering and the difference (Before-After) convergence filtering.   
-
-
-    # Save summary CSV
-    if selection_stats_list:
-        full_stats = pd.concat(selection_stats_list, ignore_index=True)
-        # Reorder columns for readability
-        cols = ['score_metric', 'direction'] + [c for c in full_stats.columns if c not in ['score_metric', 'direction', 'mean', 'std', 'count']] + ['mean', 'std', 'count']
-        full_stats = full_stats[cols]
-        
-        out_path = os.path.join(output_dir, "model_selection_performance_summary.csv")
-        full_stats.to_csv(out_path, index=False)
-        print(f"Saved model selection performance summary to {out_path}")
-
-        
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/plot_selected_models_ISO_TRI_BI.py --before-csv ... --after-csv ...
 """
 
 import argparse

@@ -1,5 +1,26 @@
 """
-This script runs featurises the sliced IsoValidation ensembles Iso-BI (filtered) and Iso-TRI (initial) using the JAXENT featurisation methods.
+[Script Name] featurise_CrossVal_MSAss_Filtered.py
+
+[Brief Description of Functionality]
+Featurises the MoPrP trajectories (AF2_MSAss and AF2_filtered) using the Best-Vendruscolo (BV) model.
+This process involves loading the trajectories, a reference topology, and calculating features
+such as heavy atom contacts and H-bond acceptor contacts. It also integrates intrinsic
+exchange rates from HDXer.
+
+Requirements:
+    - Input Trajectories:
+        - `jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc`
+        - `jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc`
+    - Topology: `jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb` (TeaA_ref_open_state.pdb)
+    - HDXer Intrinsic Rates: `_MoPrP/_output/out__train_MoPrP_af_clean_1Intrinsic_rates.dat`
+    - JAX-ENT library installed.
+
+Usage:
+    python jaxent/examples/2_CrossValidation/fitting/jaxENT/featurise_CrossVal_MSAss_Filtered.py
+
+Output:
+    - Featurised data (.npz) and topology (.json) files in `jaxent/examples/2_CrossValidation/fitting/jaxENT/_featurise/`.
+      Files: `features_AF2_MSAss.npz`, `topology_AF2_MSAss.json`, `features_AF2_filtered.npz`, `topology_AF2_filtered.json`.
 """
 
 import os

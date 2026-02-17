@@ -1,7 +1,23 @@
 """
-MoPrP Weights Validation Analysis Script
-Analyzes frame weights from optimization results with MaxEnt regularization.
-Includes clustering-based conformational analysis and heatmap visualizations.
+[Script Name] weights_validation_ISO_TRI_BI_precluster.py
+
+[Brief Description of Functionality]
+Validates the optimized frame weights from MaxEnt optimization.
+It computes:
+- Kullback-Leibler (KL) divergence between initial and optimized weights.
+- Effective Sample Size (ESS) of the reweighted ensemble.
+- Consistency of weights across different splits/replicates.
+Generates heatmaps and distribution plots for these metrics.
+
+Requirements:
+    - Optimization results (HDF5 files).
+
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/weights_validation_ISO_TRI_BI_precluster.py \
+        --results_dir ...
+
+Output:
+    - Validation plots (KL divergence, ESS heatmaps).
 """
 
 import argparse

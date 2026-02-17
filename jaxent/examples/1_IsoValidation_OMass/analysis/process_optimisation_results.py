@@ -1,3 +1,21 @@
+"""
+process_optimisation_results.py
+
+Processes raw optimization outputs into a structured format for scoring/plotting.
+
+Requirements:
+    - Optimization results (results_EMA.hdf5)
+    - Data splits (_datasplits/)
+    - Features (_featurise/)
+    - Clustering results (_clustering_results/)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/process_optimisation_results.py --results-dir ...
+
+Output:
+    - Processed data directory (e.g., _processed_...)
+"""
+
 import argparse
 import os
 import re

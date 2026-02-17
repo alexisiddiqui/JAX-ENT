@@ -1,10 +1,24 @@
 """
-This script loads the optimization histories of models over both loss functions
-and performs comprehensive analyses including convergence-maxent heatmaps, model scoring,
-and best model selection with bar chart comparisons.
+[Script Name] analyse_loss_ISO_TRI_BI.py
 
-Updated to use JSD-based recovery calculation for MoPrP system.
-Integrated with publication-ready plotting style from TeaA analysis.
+[Brief Description of Functionality]
+Analyzes optimization histories from model fitting runs (`optimise_ISO_TRI_BI_splits_maxENT.py`).
+It performs comprehensive analysis of:
+- Convergence vs. MaxEnt scaling (heatmaps).
+- Model scoring (AIC, BIC, validation loss).
+- Selection of "best" models based on scores and convergence.
+Includes publication-ready plotting functionality.
+
+Requirements:
+    - Optimization results HDF5 files in specified input directories.
+
+Usage:
+    # Primarily used as a library by `recovery_analysis...` and `weights_validation...`,
+    # but can be run to generate loss analysis plots.
+
+Output:
+    - Loss analysis plots (heatmaps, line plots).
+    - `best_models.json` identifying top- performing models.
 """
 
 import argparse

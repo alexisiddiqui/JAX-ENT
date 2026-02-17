@@ -1,30 +1,21 @@
 """
-This script computes weighted Sigma (observation noise covariance) matrices
-from ensemble predictions and clustering assignments.
+compute_sigma_synthetic.py
 
-The script:
-1. Loads clustering assignments from ISO_BI ensemble
-2. Computes frame weights to achieve target 40:60 open:closed ratio
-3. Predicts HDX uptake for each frame using BV_model
-4. Computes weighted covariance matrix using cluster-based weights
+Computes covariance matrices (sigma) for the synthetic data using clustering results.
 
-Example usage:
-    python compute_weighted_sigma.py \
-        --clustering_dir ./_clustering_results \
-        --features_dir ./_featurise \
-        --output_dir ./_covariance_matrices
+Requirements:
+    - Clustering results (_clustering_results/)
+    - Featurized data (_featurise/)
 
-    python /home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py \
-        --clustering_dir ../../data/_clustering_results \
-        --features_dir ./_featurise \
-        --ensemble_name ISO_BI \
-        --output_dir ./_covariance_matrices_sigma
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py \\
+        --clustering_dir ... \\
+        --features_dir ... \\
+        --ensemble_name ISO_BI \\
+        --output_dir ...
 
-    python /home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py \
-        --clustering_dir ../../data/_clustering_results \
-        --features_dir ./_featurise \
-        --ensemble_name ISO_TRI \
-        --output_dir ./_covariance_matrices_sigma
+Output:
+    - Sigma matrices in _covariance_matrices_sigma/
 """
 
 import argparse

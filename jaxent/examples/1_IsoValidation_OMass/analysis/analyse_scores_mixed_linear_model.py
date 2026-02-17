@@ -1,6 +1,8 @@
 """
+analyse_scores_mixed_linear_model.py
+
+Statistical analysis of model scores using mixed linear models.
 JAX-ENT Linear Effects Modelling Analysis
-==========================================
 
 Comprehensive linear modelling framework for analyzing optimization metrics:
 - Multiple regression: recovery = β0 + β1*MSE_metrics + β2*Work_metrics + ε
@@ -11,6 +13,12 @@ Comprehensive linear modelling framework for analyzing optimization metrics:
 
 This script processes output from score_models_ISO_TRI_BI.py and provides
 insights into metric predictive utility and stability across experimental conditions.
+
+Requirements:
+    - Model scores CSV (model_scores.csv)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_scores_mixed_linear_model.py --scores-csv-path ...
 """
 
 import argparse
