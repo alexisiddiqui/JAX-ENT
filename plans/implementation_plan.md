@@ -13,13 +13,13 @@ Refactor the `jaxent/examples/` directory to improve code reusability, maintaina
 ## Proposed Changes
 
 The refactoring will be executed in 5 phases.
-
+<!-- 
 ### Phase 0: Packaging and Project Structure
 Convert `jaxent/examples` into a proper Python package.
 #### [MODIFY] [pyproject.toml](file:///Users/alexi/JAX-ENT/pyproject.toml)
 - Update build configuration to include `jaxent.examples`.
 #### [NEW] [__init__.py](file:///Users/alexi/JAX-ENT/jaxent/examples/__init__.py)
-- Create namespace package files.
+- Create namespace package files. -->
 
 ### Phase 1: Create `jaxent/examples/common/` Shared Module
 Create the core shared infrastructure.
@@ -73,18 +73,12 @@ Fix gaps in the core library to support refactoring.
 
 ## Verification Plan
 
-### Automated Verification
-1. **Module Import Test**:
-   ```bash
-   python -c "from jaxent.examples.common import config, loading, analysis, plotting, optimization; print('Common modules imported successfully')"
+   ./venv/bin/python -c "from jaxent.examples.common import config, loading, analysis, plotting, optimization; print('Common modules imported successfully')"
    ```
 2. **Config Loading Test**:
    ```bash
-   python -c "from jaxent.examples.common.config import ExperimentConfig; c = ExperimentConfig.from_yaml('jaxent/examples/2_CrossValidation/config.yaml'); print(c)"
-   ```
-3. **Unit Tests**:
-   - Run existing tests: `python -m pytest jaxent/tests` (Ensure `load_HDXer_kints` change is covered).
-   - Create and run new tests for `common/` modules: `python -m pytest jaxent/tests/examples`.
+   ./venv/bin/python -c "from jaxent.examples.common.config import ExperimentConfig; c = ExperimentConfig.from_yaml('jaxent/examples/2_CrossValidation/config.yaml'); print(c)"
+   
 
 ### Manual Verification
 1. **Regression Testing**:
