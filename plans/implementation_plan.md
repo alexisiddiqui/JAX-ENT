@@ -113,6 +113,8 @@ All three experiments validated successfully:
 
 ### Key Learnings for Phase 2
 
+0. **Verify that scripts actually work** after refactoring - manual verification of each script for each experiment is necessary.
+
 1. **Results directory patterns**: Fitting scripts create timestamped directories. Use `results_prefix` + `find_most_recent_dir()` pattern.
 
 2. **Config completeness**: Color palettes must include all split type names that appear in data (not just abbreviations).
