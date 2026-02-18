@@ -36,6 +36,47 @@ def ensure_output_dir(path: Path | str) -> Path:
     return path
 
 
+def find_most_recent_dir(base_path: Path | str, prefix: str) -> Path | None:
+    """Find the most recent directory matching a prefix pattern.
+
+    Useful for finding timestamped optimization result directories created
+    dynamically by fitting scripts (e.g., ``_optimise_test_SIGMA_500__20260217_175858``).
+
+    Parameters
+    ----------
+    base_path:
+        Directory to search in.
+    prefix:
+        Prefix pattern to match (e.g., ``"_optimise_test_SIGMA_500__"``).
+
+    Returns
+    -------
+    Path to the most recent matching directory (by modification time),
+    or ``None`` if no matches found.
+
+    Examples
+    --------
+    >>> base = Path("jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT")
+    >>> find_most_recent_dir(base, "_optimise_test_SIGMA_500__")
+    Path('.../fitting/jaxENT/_optimise_test_SIGMA_500__20260217_175858')
+    """
+    base_path = Path(base_path)
+    if not base_path.exists():
+        return None
+
+    matching_dirs = [
+        d for d in base_path.iterdir()
+        if d.is_dir() and d.name.startswith(prefix)
+    ]
+
+    if not matching_dirs:
+        return None
+
+    # Sort by modification time, most recent first
+    matching_dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+    return matching_dirs[0]
+
+
 def resolve_script_paths(
     args,
     script_dir: Path | str,

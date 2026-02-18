@@ -90,8 +90,9 @@ class ScoringConfig:
 # ---------------------------------------------------------------------------
 
 _REQUIRED_FIELDS = frozenset(
-    {"ensembles", "results_dir", "features_dir", "datasplit_dir", "num_splits", "convergence_rates"}
+    {"ensembles", "features_dir", "datasplit_dir", "num_splits", "convergence_rates"}
 )
+# Either results_dir or results_prefix must be present (checked separately)
 
 
 @dataclass
@@ -106,6 +107,7 @@ class ExperimentConfig:
 
     # Paths (relative to experiment directory by default)
     results_dir: str = ""
+    results_prefix: str | None = None  # Alternative to results_dir: finds most recent matching directory
     features_dir: str = ""
     datasplit_dir: str = ""
     clustering_dir: str | None = None
@@ -135,6 +137,10 @@ class ExperimentConfig:
         missing = _REQUIRED_FIELDS - data.keys()
         if missing:
             raise ValueError(f"Missing required config fields: {missing}")
+
+        # Either results_dir or results_prefix must be present
+        if not data.get("results_dir") and not data.get("results_prefix"):
+            raise ValueError("Config must specify either 'results_dir' or 'results_prefix'")
 
         # Unknown-key warning (catches typos like 'dasplit_dir')
         known = {f.name for f in dataclasses.fields(cls)}

@@ -21,6 +21,7 @@ dependencies = [
     "networkx[default]>=3.4.2",
     "numpy>=2.2.1",
     "optax>=0.2.4",
+    "pyyaml>=6.0.3",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.1",
     "seaborn>=0.13.2",
