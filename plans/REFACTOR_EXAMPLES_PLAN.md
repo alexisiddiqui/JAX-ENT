@@ -4,7 +4,10 @@
 
 The `jaxent/examples/` directory contains ~93 Python scripts (excluding vendored `_Bradshaw/` code) across 7 experiment directories. Analysis scripts are near-identical copies across experiments, differing only in configuration (ensemble names, color schemes, scoring formulas, regex patterns). This makes maintenance painful: bug fixes applied to one copy don't propagate, and adding a new experiment means duplicating dozens of files. The scripts also underutilize existing library utilities (e.g. `load_HDXer_kints()`, `frame_average_features()`, analysis plot functions).
 
-> **Scope note**: `4_CrossValidation_FunctionalMaxENT/` is excluded from this refactor plan for now. `combined_fixed_effects/` and `predict_traj/` contain standalone scripts without cross-experiment duplication and require documentation only.
+> **Scope note**: `4_CrossValidation_FunctionalMaxENT/` has been **fully moved to `deprecated/`** and is excluded from this refactor plan. Some scripts from experiment 3 also have deprecated copies in `deprecated/3_CrossValidation_BV/`. `combined_fixed_effects/` and `predict_traj/` contain standalone scripts without cross-experiment duplication and require documentation only.
+>
+> **Active experiments**: `1_IsoValidation_OMass`, `2_CrossValidation`, `3_CrossValidationBV`.
+> Duplication counts below refer to **active copies only** unless otherwise noted.
 
 **Goal**: Extract shared logic into a reusable `common/` module so each experiment script becomes a thin config-driven wrapper, while preserving the existing directory structure.
 
@@ -12,6 +15,42 @@ The `jaxent/examples/` directory contains ~93 Python scripts (excluding vendored
 - Old scripts will be moved to `_archive/` subdirectories during transition (not deleted)
 - Divergent scoring formulas will be preserved via config-driven `ScoringConfig` weights (no behavior change)
 - Hardcoded default paths will live in per-experiment `config.py` files, overridable by CLI args
+
+---
+
+## Phase 0: Packaging and Project Structure
+
+> **Decision (2026-02-18)**: Option A approved — make `jaxent/examples` a proper package.
+
+To allow `import jaxent.examples.common`, the examples directory must be treated as a package.
+
+### 0a. Update `pyproject.toml`
+
+The current build config uses `hatchling` as the backend, with `setuptools`-style `package-dir` and `packages.find` pointing at `jaxent/src`. To include `jaxent.examples`, update to explicit package discovery:
+
+```toml
+# Replace the current [tool.setuptools.*] sections with hatch-native config:
+[tool.hatch.build.targets.wheel]
+packages = ["jaxent"]
+```
+
+Alternatively, if keeping `setuptools`-style config:
+
+```toml
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jaxent*"]
+```
+
+> [!NOTE]
+> The current `pyproject.toml` has conflicting config: `[tool.setuptools.packages.find]` with `where = ["jaxent/src"]` and `[tool.setuptools.package-dir]` `"" = "jaxent/src"`, but uses `hatchling` as the build backend. These `setuptools` keys are ignored by `hatchling`. The fix should use `[tool.hatch.build]` config instead. Verify with `pip install -e .` after the change.
+
+### 0b. Create `__init__.py` files
+- `jaxent/examples/__init__.py` (required)
+- `jaxent/examples/common/__init__.py` (required)
+- `jaxent/examples/1_IsoValidation_OMass/__init__.py` (optional, for consistency)
+- `jaxent/examples/2_CrossValidation/__init__.py` (optional)
+- `jaxent/examples/3_CrossValidationBV/__init__.py` (optional)
 
 ---
 
@@ -80,7 +119,10 @@ class ExperimentConfig:
     optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
     loss_configs: dict[str, LossConfig] = field(default_factory=dict)
     sweep: SweepConfig = field(default_factory=SweepConfig)  # 2D parameter sweep axes
-    
+    # Plot and scoring config (optional, used by analysis scripts)
+    style: PlotStyle | None = None
+    scoring: ScoringConfig | None = None
+
     @classmethod
     def from_yaml(cls, path: Path) -> "ExperimentConfig":
         """Load configuration from YAML file with validation."""
@@ -97,6 +139,8 @@ class ExperimentConfig:
         if unknown:
             import warnings
             warnings.warn(f"Unknown config keys (typo?): {unknown}", stacklevel=2)
+        # Filter out unknown keys (after warning) to prevent TypeError
+        data = {k: v for k, v in data.items() if k in known}
         # Recursively construct nested dataclasses
         if "optimization" in data:
             data["optimization"] = OptimizationConfig(**data["optimization"])
@@ -104,6 +148,10 @@ class ExperimentConfig:
             data["loss_configs"] = {k: LossConfig(**v) for k, v in data["loss_configs"].items()}
         if "sweep" in data:
             data["sweep"] = SweepConfig(**data["sweep"])
+        if "style" in data and data["style"] is not None:
+            data["style"] = PlotStyle(**data["style"])
+        if "scoring" in data and data["scoring"] is not None:
+            data["scoring"] = ScoringConfig(**data["scoring"])
         return cls(**data)
     
     def to_yaml(self, path: Path) -> None:
@@ -141,37 +189,56 @@ Each experiment directory will have a `config.yaml` file (see Phase 3).
 
 Consolidate the duplicated loading patterns:
 
-- `load_all_optimization_results(results_dir, config, grid_params=None) -> dict` — the HDF5 result loader currently copy-pasted in every `analyse_loss_*.py` and `process_optimisation_results.py`. When `grid_params` is provided (e.g. `["maxent_scaling", "bv_reg"]`), loads 2D sweep results keyed by both parameters (used by §2l 2D BV sweep scripts)
-- `load_all_optimization_results_with_maxent(results_dir, config, ema=False) -> dict` — the extended loader with maxent regex parsing
-- `load_clustering_results(clustering_dir, ensemble_clustering_map) -> dict` — cluster CSV loader
-- `load_features_and_topology(features_dir, ensemble, feature_map) -> tuple[BV_input_features, list]` — BV feature + topology loader
-- `load_experimental_data(datasplit_dir, split_type, split_idx) -> tuple` — train/val/test data loader
-- `resolve_paths(args, script_dir) -> dict` — the repeated path-resolution logic
+| Function | Active Copies | Source Scripts |
+|----------|:---:|---|
+| `load_all_optimization_results(results_dir, config)` | 5 | `analyse_loss_*.py` (×2), `process_optimisation_results.py` (×3) |
+| `load_all_optimization_results_2d(results_dir, config)` | 3 | `analyse_loss_*_2D_BV.py`, `recovery_analysis_*_2D_BV.py`, `weights_validation_*_2D_BV.py` |
+| `load_all_optimization_results_with_maxent(results_dir, config)` | 6 | `weights_validation_*.py` (×3), `recovery_analysis_*.py` (×3) |
+| `load_clustering_results(clustering_dir, map)` | 6 | 2 signature variants: dict-return (Exp 1) vs DataFrame-return (Exp 2/3) |
+| `load_features_and_topology(features_dir, ensemble)` | 3 | `score_models_*.py` |
+| `load_experimental_data(datasplit_dir, split_type, idx)` | 3 | `score_models_*.py` |
+| `load_HDXer_kints(kint_path)` | 2 | `featurise_*.py` — identical |
+| `extract_maxent_value_from_filename(filename)` | 5+ | regex helper used across many scripts |
 
 These all exist as near-identical copies across scripts today. The key change: they accept `ExperimentConfig` instead of inline parameters.
+
+When `grid_params` is provided (e.g. `["maxent_scaling", "bv_reg"]`), `load_all_optimization_results` loads 2D sweep results keyed by both parameters (used by §2l 2D BV sweep scripts).
 
 ### 1d. `common/analysis.py` — Shared analysis functions
 
 Consolidate the core analysis computations:
 
-- `extract_loss_trajectories(results, split_type) -> pd.DataFrame` — currently duplicated in every `analyse_loss_*.py`
-- `compute_model_scores(df, scoring_config) -> pd.DataFrame` — the `-log10(val_loss)` scoring with configurable penalty weights, replacing the divergent copies in `score_models_*.py`
-- `kl_divergence(p, q, eps=1e-10) -> float` — currently duplicated in `process_optimisation_results.py`
-- `calculate_cluster_ratios(assignments, weights) -> dict` — currently duplicated
-- `calculate_recovery_jsd(pred, prior, exp, sparse_map) -> float` — currently duplicated across `recovery_analysis_*.py`
-- `calculate_mse(pred, exp) -> float` — currently duplicated across `score_models_*.py`
+| Function | Active Copies | Notes |
+|----------|:---:|---|
+| `kl_divergence(p, q, eps)` | **11** | Identical everywhere — most-duplicated function (11 active + 13 deprecated = 24 total) |
+| `effective_sample_size(weights)` | **6** | `1/sum(w²)` — identical everywhere |
+| `extract_loss_trajectories(results, ...)` | 3 (1D) + 1 (2D) | 2D variant adds `bv_reg_function/value` columns |
+| `compute_model_scores(df, scoring_config)` | 3 | Scoring weights differ per experiment → accept `ScoringConfig` |
+| `calculate_cluster_ratios(assignments, weights)` | 6 | Identical |
+| `calculate_recovery_percentage(observed, ground_truth)` | 3+ | Simple ratio comparison |
+| `calculate_recovery_JSD(assignments, weights, target, state_map)` | 3 | JSD-based; Exp 1 uses simpler signature |
+| `calculate_dMSE(pred, exp)` | 3 | In `score_models_*.py` — identical |
+| `calculate_work_metrics(pred, exp)` | 3 | In `score_models_*.py` — identical |
+| `calculate_mse(pred, exp)` | 3 | In `score_models_*.py` — identical |
+| `BV_uptake_ForwardPass_frames` class | 3 | In `process_optimisation_results.py` — identical |
 
 ### 1e. `common/plotting.py` — Shared plotting functions
 
 Consolidate the repeated visualization code:
 
-- `plot_loss_convergence(df, convergence_rates, output_dir, style, split_type=None)` — currently ~100 lines duplicated in every `analyse_loss_*.py`
-- `plot_split_variability(df, convergence_rates, output_dir, style, split_type=None)` — same pattern
-- `plot_final_performance_comparison(df, output_dir, style, split_type=None)` — boxplot comparisons
-- `plot_cross_split_type_comparison(df, convergence_rates, output_dir, style)` — cross-split analysis
-- `plot_split_distribution_heatmap(train_indices, val_indices, ..., output_dir, style)` — from `analyse_split_*.py`
-- `plot_intrinsic_rates_comparison(hdxer_rates, jaxent_rates, ..., output_dir, style)` — from `plot_intrinsic_rates_*.py`
-- `setup_publication_style()` — the repeated `sns.set_style("ticks"); sns.set_context("paper", ...)` block
+| Function | Active Copies | Notes |
+|----------|:---:|---|
+| `setup_publication_style()` | **~12** (inline block) | `sns.set_style("ticks"); sns.set_context(...)` |
+| `plot_loss_convergence(...)` | 3 | ~100 lines each |
+| `plot_score_heatmap(...)` | 3 | Heatmap of scores across maxent × convergence |
+| `plot_recovery_heatmap(...)` | 2 (1D) + 1 (2D grid) | Recovery % heatmaps |
+| `plot_ess_heatmaps(...)` | 2 | ESS across convergence × maxent |
+| `plot_weight_distribution_lines(...)` | 2 | Weight distribution line plots |
+| `plot_volcano_kl_recovery(...)` | 2 | Volcano plots |
+| `create_violin_plots(...)` | 3 | In `score_models_*.py` |
+| `plot_split_distribution_heatmap(...)` | 2 | From `analyse_split_*.py` |
+| `plot_split_variability(...)` | 2 | Same pattern as convergence |
+| `plot_final_performance_comparison(...)` | 2 | Boxplot comparisons |
 
 All plotting functions accept a `PlotStyle` dataclass instead of hardcoded colors/markers.
 
@@ -183,6 +250,22 @@ All plotting functions accept a `PlotStyle` dataclass instead of hardcoded color
 ### 1g. `common/optimization.py` — Shared optimization/fitting functions
 
 Consolidate the duplicated fitting script logic (currently 876+ lines in `optimise_fn.py`):
+
+| Function | Active Copies | Notes |
+|----------|:---:|---|
+| `create_data_loaders(...)` | 3 identical | Sparse map creation + dataloader setup |
+| `optimise_sweep(...)` | 3 identical (~250 lines each) | EMA-based convergence with thresholds |
+| `run_optimise_ISO_TRI_BI_maxENT(...)` | 3 | Differs only in loss combos + param masks |
+| `run_optimise_ISO_TRI_BI_maxENT_BV(...)` | 2 (Exp 2, 3) | Same but optimizes BV params |
+| `run_optimise_ISO_TRI_BI_maxENT_MAE(...)` | 3 | MAE loss variant |
+| `run_optimise_ISO_TRI_BI_maxENT_MAE_Sigma(...)` | 3 | Sigma-weighted MAE variant |
+| `run_optimise_ISO_TRI_BI_maxENT_MAE_Sigma_Sigma(...)` | 2 (Exp 1, 2) | Double-sigma variant |
+| `run_optimise_ISO_TRI_BI_maxENT_BV_objective(...)` | 1 (Exp 3 only) | BV objective variant |
+
+> [!NOTE]
+> Exp 3 adds a `model_parameters_lr_scale: float = 1.0` parameter to all `run_optimise_*` variants that is absent in Exp 1. The unified `run_optimization` must support this.
+
+All `run_optimise_*` variants collapse into a single config-driven function:
 
 ```python
 from typing import Sequence, Tuple, cast, List
@@ -270,11 +353,33 @@ Move the example-specific loss functions here to keep the core library clean:
 
 These will be registered in `LOSS_REGISTRY` in `common/optimization.py` but defined here.
 
+### Build order
+
+Modules should be built in dependency order:
+
+1. `paths.py` — no internal deps
+2. `config.py` — no internal deps
+3. `analysis.py` — pure computation, no internal deps
+4. `loading.py` — depends on `config`, `paths`
+5. `losses.py` — depends on JAX-ENT core only
+6. `plotting.py` — depends on `config` (for `PlotStyle`), `analysis`
+7. `optimization.py` — depends on `config`, `losses`, `loading`
+8. `cli.py` — depends on `config`, `paths`
+9. `__init__.py` — re-exports all above
+
+### Pilot refactoring recommendation
+
+Refactor `analyse_loss_*.py` (2 × 1D + 1 × 2D) first as the pilot because it exercises `loading.py`, `analysis.py`, and `plotting.py` — validating the approach before tackling fitting scripts.
+
+---
+
 ## Phase 2: Refactor the most-duplicated script families
 
 Work through each script family, replacing inline logic with calls to `common/`. Priority order based on duplication count:
 
-### 2a. `analyse_loss_ISO_TRI_BI.py` (exists in 5 experiments)
+### 2a. `analyse_loss_ISO_TRI_BI.py` (2 active 1D copies + 1 active 2D variant)
+
+> **Inventory correction**: Plan originally said "5 experiments" — 2 of those are deprecated. Exp 3 has only the 2D BV variant (`analyse_loss_ISO_TRI_BI_2D_BV.py`), not a 1D copy.
 
 **Before** (~770 lines each, nearly identical):
 - Inline `load_all_optimization_results()`, `extract_loss_trajectories()`, all plot functions, hardcoded config
@@ -293,28 +398,41 @@ def main():
     ...
 ```
 
-### 2b. `analyse_loss_MoPrP.py` (exists in 3 experiments)
-Same pattern as 2a but with MoPrP-specific config (different ensembles, colors).
+### 2b. ~~`analyse_loss_MoPrP.py`~~ (REMOVED — fully deprecated)
 
-### 2c. `score_models_ISO_TRI_BI.py` (exists in 3 experiments)
+> **Inventory correction**: No active copies exist. Both copies are in `deprecated/`. This item is removed from the refactor scope.
+
+### 2c. `score_models_ISO_TRI_BI.py` (3 active copies — count confirmed ✓)
 Replace duplicated scoring logic with `common.analysis.compute_model_scores()`. The divergent scoring formulas between experiment 2 and 3 become different `ScoringConfig` instances.
 
-### 2d. `process_optimisation_results.py` (exists in 3 experiments)
+### 2d. `process_optimisation_results.py` (3 active copies — count confirmed ✓)
 Replace duplicated loading, KL divergence, cluster ratio code with `common/` calls. Keep the custom `BV_uptake_ForwardPass_frames` class in `common/analysis.py` since it's used across experiments.
 
-### 2e. `weights_validation_ISO_TRI_BI_precluster.py` (exists in 4 experiments)
-The diff shows these are nearly identical (1-line difference). Thin wrapper over `common/`.
+### 2e. `weights_validation_ISO_TRI_BI_precluster.py` (2 active 1D + 1 active 2D variant)
 
-### 2f. `recovery_analysis_ISO_TRI_BI_precluster.py` (exists in 4 experiments)
-Same treatment.
+> **Inventory correction**: Plan originally said "4 experiments" — 2 are deprecated. Exp 3 has only the 2D BV variant.
 
-### 2g. `analyse_split_*.py` (exists in 5 experiments)
+The 1D copies are nearly identical (1-line difference). Thin wrapper over `common/`.
+
+### 2f. `recovery_analysis_ISO_TRI_BI_precluster.py` (2 active 1D + 1 active 2D variant)
+
+> **Inventory correction**: Plan originally said "4 experiments" — 2 are deprecated. Exp 3 has only the 2D BV variant.
+
+Same treatment as §2e.
+
+### 2g. `analyse_split_*.py` (2 active copies)
+
+> **Inventory correction**: Plan originally said "5 experiments" — only Exp 1 (`analyse_split_ISO_TRI_BI.py`) and Exp 2 (`analyse_split_CrossVal.py`) have active copies. Exp 3 has none. 1 deprecated copy exists.
+
 Extract heatmap generation into `common/plotting.py`.
 
-### 2h. `plot_intrinsic_rates_simple.py` (exists in 2 experiments)
+### 2h. `plot_intrinsic_rates_simple.py` (1 active copy — Exp 1 only)
+
+> **Inventory correction**: Plan originally said "2 experiments" — only Exp 1 has this script. No cross-experiment dedup needed; can still benefit from using library's `load_HDXer_kints()`.
+
 Replace manual HDXer loading with library's `load_HDXer_kints()` from `jaxent/src/utils/HDXer/load_data.py`.
 
-### 2i. Fitting scripts: `optimise_fn.py` and variants (exists in 3 experiments)
+### 2i. Fitting scripts: `optimise_fn.py` and variants (3 active copies — count confirmed ✓)
 
 **Before** (`optimise_fn.py` in `2_CrossValidation/fitting/jaxENT/`, 876 lines):
 - 5+ near-identical functions: `run_optimise_ISO_TRI_BI_maxENT`, `run_optimise_ISO_TRI_BI_maxENT_BV`, `run_optimise_ISO_TRI_BI_maxENT_MAE`, etc.
@@ -340,44 +458,64 @@ optimization.run_optimization(
 )
 ```
 
-### 2j. Fitting scripts: `featurise_*.py` (exists in 3 experiments)
+> **Review addition (2026-02-18)**: The following per-split runner scripts import from `optimise_fn.py` and are downstream dependents that **must be updated in the same phase**:
+> - `1_IsoValidation_OMass/fitting/jaxENT/optimise_ISO_TRI_BI_splits_Sigma.py`
+> - `2_CrossValidation/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT.py`
+> - `3_CrossValidationBV/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py`
+>
+> These should be refactored to call `common.optimization.run_optimization()` with the appropriate `LossConfig` from `config.yaml`.
+
+### 2j. Fitting scripts: `featurise_*.py` (2 active + 1 variant)
+
+> **Inventory correction**: Plan originally said "3 experiments" — Exp 3 has no featurise script. Active: `featurise_ISO_TRI_BI.py` (Exp 1), `featurise_CrossVal_MSAss_Filtered.py` (Exp 2), plus `featurise_ISO_TRI_BI_SCALING.py` variant (Exp 1).
+
 - Import `load_HDXer_kints()` from `common.loading`
 - Use `paths.resolve_example_path()` instead of hardcoded relative paths
 - Reduce from ~229 lines to ~100 lines
 
-### 2k. Data prep scripts: `splitdata_*.py` (exists in 3 experiments)
+### 2k. Data prep scripts: `splitdata_*.py` (2 active copies)
+
+> **Inventory correction**: Plan originally said "3 experiments" — Exp 3 has no splitdata script. Active: `splitdata_ISO.py` (Exp 1), `splitdata_CrossVal.py` (Exp 2).
+
 - Import `save_split_data()` from `common.loading`
 - Use centralized path management
 
-### 2l. 2D BV sweep scripts (exists in 2 experiments: 3, ignoring 4)
+### 2l. 2D BV sweep scripts (Exp 3 only — 3 scripts, no cross-experiment duplication)
 
 **Scripts**: `analyse_loss_ISO_TRI_BI_2D_BV.py`, `recovery_analysis_ISO_TRI_BI_2D_BV.py`, `weights_validation_ISO_TRI_BI_2D_BV.py`
 
+> **Inventory correction**: These are **Exp 3's only analysis scripts** — it has no 1D variants at all. Do NOT merge these into the 1D scripts; instead, refactor them to use `common/` directly while preserving 2D sweep behavior.
+
 These are 2D-parameter-sweep variants of the 1D families in §2a/2e/2f. They iterate over a grid of `(maxent_scaling, bv_reg)` values and load results keyed by both parameters.
 
-**Refactoring approach**: Merge into the 1D scripts with a `--2d-sweep` / `--grid-params` CLI flag. Extend `common/loading.load_all_optimization_results()` to accept an optional `grid_params` argument for 2D result structures. This keeps a single codebase for both 1D convergence-rate sweeps and 2D parameter sweeps.
+**Refactoring approach**: Refactor these scripts to use `common/` helpers (loading, analysis, plotting) with the 2D sweep configuration from `SweepConfig`. Extend `common/loading.load_all_optimization_results()` to accept an optional `grid_params` argument for 2D result structures.
 
-### 2m. PUF analysis scripts (exists in 3 experiments: 2, 3, ignoring 4)
+### 2m. PUF analysis scripts (Exp 2 only — no cross-experiment duplication)
 
-**Scripts**:
+> **Inventory correction**: Plan originally said "3 experiments (2, 3, ignoring 4)" — Exp 3 has **no PUF scripts**. `analyse_cluster_GlobalFeatures_PUFs.py` has **no active copy** (only in `deprecated/`). Active copies are all in Exp 2 only.
+
+**Active scripts (Exp 2 only):**
 - `analyse_LocalFeatures_PUFs.py` (~2552 lines) — local structural feature analysis
-- `analyse_cluster_GlobalFeatures_PUFs.py` (~1232 lines) — global feature PCA + clustering
 - `cluster_LocalFeatures_PUF.py` (~2018 lines) — PCA + k-means/rules-based clustering
 - `compute_recovery%_PUF.py` — PUF recovery percentage calculation
 
-These are large, CLI-driven scripts with proper `if __name__ == "__main__"` guards and argparse. Main duplication is in hardcoded colour maps, structural-region JSON paths, and path defaults.
+**Removed from scope:**
+- `analyse_cluster_GlobalFeatures_PUFs.py` — fully deprecated, no active copy
 
-**Refactoring approach**: These scripts are too large/specialized to collapse into `common/`. Instead:
-1. Diff cross-experiment copies to verify they are identical (or identify divergences)
-2. If identical: keep one canonical copy in `common/puf_analysis/` and symlink or thin-wrapper from each experiment
-3. If divergent: extract differing config (colours, region JSON paths) into per-experiment `config.yaml`
-4. Add `--config` flag to each script's argparse to load defaults from YAML
+These are large, CLI-driven scripts with proper `if __name__ == "__main__"` guards and argparse. Since they only exist in one experiment, no cross-experiment dedup is needed.
 
-### 2n. Comparison and visualization scripts (exists in 2–3 experiments)
+**Refactoring approach**: Internal cleanup only:
+1. Extract hardcoded colour maps and structural-region JSON paths into `config.yaml`
+2. Add `--config` flag to each script's argparse to load defaults from YAML
+3. Clean up `sys.path` hacks
+
+### 2n. Comparison and visualization scripts (3 active copies each)
 
 **Scripts**:
-- `plot_compare_jaxENT_HDXer.py` (×3, ~704 lines) — bar plots comparing HDXer vs jaxENT results
-- `plot_selected_models_ISO_TRI_BI.py` (×2) — model selection visualization
+- `plot_compare_jaxENT_HDXer.py` (×3 — count confirmed ✓) — bar plots comparing HDXer vs jaxENT results
+- `plot_selected_models_ISO_TRI_BI.py` (×3, not ×2 as originally claimed) — model selection visualization
+
+> **Inventory correction**: `plot_selected_models_ISO_TRI_BI.py` exists in all 3 active experiments, not 2.
 
 **Refactoring approach**:
 1. Diff cross-experiment copies; if identical keep one canonical copy
@@ -387,14 +525,16 @@ These are large, CLI-driven scripts with proper `if __name__ == "__main__"` guar
 ### 2o. Statistical analysis scripts (exists in 1–3 experiments)
 
 **Scripts**:
-- `analyse_scores_mixed_linear_model.py` (×3 copies)
-- `calculate_state_ratios.py` (×3, ~214 lines) — thermodynamic equilibrium calculator
-- `fixed_effects_linear_model_ISO_TRI_BI.py` (×1, **empty file — delete**)
-- `cross_experiment_mixed_effects_model.py` (×1, experiment 3 only — unique, leave as-is)
+- `analyse_scores_mixed_linear_model.py` (×3 copies — count confirmed ✓)
+- `calculate_state_ratios.py` (×1 active, Exp 2 only — not ×3 as claimed; 1 deprecated copy exists)
+- `fixed_effects_linear_model_ISO_TRI_BI.py` — **not found** (may already be deleted or never existed)
+- `cross_experiment_mixed_effects_model.py` (×1, `combined_fixed_effects/` — unique, leave as-is)
+
+> **Inventory correction**: `calculate_state_ratios.py` has only 1 active copy (Exp 2). `fixed_effects_linear_model_ISO_TRI_BI.py` was not found in the filesystem.
 
 **Refactoring approach**:
-1. Delete the empty `fixed_effects_linear_model_ISO_TRI_BI.py`
-2. Diff `calculate_state_ratios.py` copies — if identical, keep one; if not, parameterize (ΔG values, temperature) via CLI args
+1. ~~Delete the empty `fixed_effects_linear_model_ISO_TRI_BI.py`~~ — already absent
+2. `calculate_state_ratios.py` — only 1 copy, no dedup needed; internal cleanup only
 3. Diff `analyse_scores_mixed_linear_model.py` copies — extract experiment-specific formula strings and colour maps into config
 
 ### 2p. Remaining unique/utility scripts (no cross-experiment duplication)
@@ -406,10 +546,24 @@ The following scripts exist only in one experiment and don't need cross-experime
 - `1_IsoValidation_OMass/analysis/combined_cluster_analysis/ratio_recovery_ISO_TRI_BI_maxent.py`
 - `1_IsoValidation_OMass/data/jaxENT_prepare_TeaA_data.py`
 - `1_IsoValidation_OMass/fitting/jaxENT/compute_covariance_matrices.py`
-- `1_IsoValidation_OMass/fitting/jaxENT/compute_cprior.py`
+- ~~`1_IsoValidation_OMass/fitting/jaxENT/compute_cprior.py`~~ — does not exist (removed from plan)
 - `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI_SCALING.py` (consider merging with `featurise_ISO_TRI_BI.py` via a `--scaling` flag)
 - `combined_fixed_effects/plot_kendalls_combined.py`
 - `predict_traj/predict_traj.py`
+
+> **Review addition (2026-02-18)**: The following active scripts were missing from this list and also need `__main__` guards and `sys.path` cleanup:
+>
+> - `1_IsoValidation_OMass/analysis/CV_validation_ISO_TRI_BI_precluster.py` (also has duplicated `kl_divergence` and `effective_sample_size` — replace with `common/analysis.py` imports)
+> - `1_IsoValidation_OMass/data/extract_OpenClosed_clusters.py`
+> - `1_IsoValidation_OMass/data/extract_synthetic_data.py`
+> - `1_IsoValidation_OMass/data/get_HDXer_AutoValidation_data.py`
+> - `1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_real.py`
+> - `1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py`
+> - `1_IsoValidation_OMass/fitting/jaxENT/optimise_ISO_TRI_BI_splits_Sigma.py` (downstream dependent of `optimise_fn.py` — see §2i)
+> - `2_CrossValidation/data/extract_data_ValDX.py`
+> - `2_CrossValidation/data/renumber_pdb.py`
+> - `2_CrossValidation/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT.py` (downstream dependent of `optimise_fn.py` — see §2i)
+> - `3_CrossValidationBV/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` (downstream dependent of `optimise_fn.py` — see §2i)
 
 ---
 
@@ -519,15 +673,18 @@ In the refactored `common/` modules, use existing library functions instead of r
 
 #### Detailed Plan: Fix Featurisation Topology Gap in `load_HDXer_kints`
 
-To enable the replacement above, `load_HDXer_kints` must be updated to return `Partial_Topology` objects.
+> **Review correction (2026-02-18)**: `load_HDXer_kints` currently returns `tuple[Array, list[int]]` (intrinsic rates + bare residue IDs as integers), not "only intrinsic rates" as previously stated. The docstring incorrectly claims it returns `Partial_Topology` objects — this is a stale docstring that should be fixed alongside the upgrade below.
+
+To enable the replacement above, `load_HDXer_kints` must be updated to return actual `Partial_Topology` objects instead of bare residue IDs.
 
 1. **Modify `jaxent/src/utils/HDXer/load_data.py`**:
    - Add `chain: str = "A"` parameter to `load_HDXer_kints`.
-   - Update return type to `tuple[Array, list[Partial_Topology]]`.
-   - Use `TopologyFactory.from_single(chain=chain, residue=resid)` for each rate entry.
+   - Update return type from `tuple[Array, list[int]]` to `tuple[Array, list[Partial_Topology]]`.
+   - Replace `topology_list.append(resid)` with `TopologyFactory.from_single(chain=chain, residue=resid)` for each rate entry.
+   - Fix the stale docstring to match the updated return type.
 
 2. **Update `jaxent/tests/modules/utils/test_HDXer_load_save.py`**:
-   - Assert `topology_list` contains `Partial_Topology` objects.
+   - Assert `topology_list` contains `Partial_Topology` objects (not plain integers).
    - Verify residue IDs and chain assignments.
 
 ---
@@ -542,11 +699,9 @@ For each experiment directory, create an `analysis/_archive/` subdirectory and m
 ```
 
 ### 5b. Delete stale copies
-Remove obviously stale files (files with "copy" or "OLD" suffixes) that are not the canonical versions:
-- `1_IsoValidation_OMass/analysis/score_models_ISO_TRI_BI copy.py`
-- `2_CrossValidation/analysis/cluster_LocalFeatures_PUF_OLD.py`
-- `3_CrossValidationBV/analysis/cluster_LocalFeatures_PUF_OLD.py`
-- `4_CrossValidation_FunctionalMaxENT/analysis/cluster_LocalFeatures_PUF_OLD.py`
+~~Remove obviously stale files (files with "copy" or "OLD" suffixes) that are not the canonical versions:~~
+
+> **Review update (2026-02-18)**: Both files previously listed here (`score_models_ISO_TRI_BI copy.py` and `cluster_LocalFeatures_PUF_OLD.py`) have already been deleted. No action needed. `3_CrossValidationBV/analysis/cluster_LocalFeatures_PUF_OLD.py` and `4_CrossValidation_FunctionalMaxENT/analysis/cluster_LocalFeatures_PUF_OLD.py` are already in `deprecated/` — no action needed.
 
 ### 5c. Add `__main__` guards
 For any remaining scripts not covered in Phase 2 (data prep scripts, one-off analyses), ensure they:
@@ -556,6 +711,7 @@ For any remaining scripts not covered in Phase 2 (data prep scripts, one-off ana
 ---
 
 ## Files to create
+- `jaxent/examples/__init__.py`
 - `jaxent/examples/common/__init__.py`
 - `jaxent/examples/common/config.py`
 - `jaxent/examples/common/loading.py`
@@ -565,60 +721,59 @@ For any remaining scripts not covered in Phase 2 (data prep scripts, one-off ana
 - `jaxent/examples/common/optimization.py`
 - `jaxent/examples/common/losses.py`
 - `jaxent/examples/common/paths.py`
-- `jaxent/examples/1_IsoValidation/config.yaml`
 - `jaxent/examples/1_IsoValidation_OMass/config.yaml`
 - `jaxent/examples/2_CrossValidation/config.yaml`
 - `jaxent/examples/3_CrossValidationBV/config.yaml`
-- `jaxent/examples/4_CrossValidation_FunctionalMaxENT/config.yaml`
+
+> **Note**: `1_IsoValidation/` doesn't exist as a separate directory. `4_CrossValidation_FunctionalMaxENT/` is deprecated — no config.yaml needed.
 - `jaxent/examples/README.md`
 
 ## Files to modify (major refactors)
 
-### Analysis scripts (§2a–2h)
-- All `analyse_loss_ISO_TRI_BI.py` (5 files)
-- All `analyse_loss_MoPrP.py` (3 files)
-- All `score_models_ISO_TRI_BI.py` (3 files)
-- All `process_optimisation_results.py` (3 files)
-- All `weights_validation_*.py` (6 files)
-- All `recovery_analysis_*.py` (5 files)
-- All `analyse_split_*.py` (5 files)
-- All `plot_intrinsic_rates_*.py` (3 files)
+### Analysis scripts (§2a–2h) — corrected active counts
+- `analyse_loss_ISO_TRI_BI.py` — 2 active 1D (Exp 1, 2)
+- ~~`analyse_loss_MoPrP.py`~~ — removed (fully deprecated)
+- `score_models_ISO_TRI_BI.py` — 3 active (Exp 1, 2, 3)
+- `process_optimisation_results.py` — 3 active (Exp 1, 2, 3)
+- `weights_validation_ISO_TRI_BI_precluster.py` — 2 active 1D (Exp 1, 2)
+- `recovery_analysis_ISO_TRI_BI_precluster.py` — 2 active 1D (Exp 1, 2)
+- `analyse_split_*.py` — 2 active (Exp 1, 2)
+- `plot_intrinsic_rates_simple.py` — 1 active (Exp 1 only)
 
-### 2D BV sweep scripts (§2l)
-- All `analyse_loss_ISO_TRI_BI_2D_BV.py` (2 files — experiments 3, 4)
-- All `recovery_analysis_ISO_TRI_BI_2D_BV.py` (2 files)
-- All `weights_validation_ISO_TRI_BI_2D_BV.py` (2 files)
+### 2D BV sweep scripts (§2l) — Exp 3 only
+- `analyse_loss_ISO_TRI_BI_2D_BV.py` — 1 active (Exp 3)
+- `recovery_analysis_ISO_TRI_BI_2D_BV.py` — 1 active (Exp 3)
+- `weights_validation_ISO_TRI_BI_2D_BV.py` — 1 active (Exp 3)
 
-### PUF analysis scripts (§2m)
-- All `analyse_LocalFeatures_PUFs.py` (3 files)
-- All `analyse_cluster_GlobalFeatures_PUFs.py` (3 files)
-- All `cluster_LocalFeatures_PUF.py` (3 files)
-- All `compute_recovery%_PUF.py` (3 files)
+### PUF analysis scripts (§2m) — Exp 2 only
+- `analyse_LocalFeatures_PUFs.py` — 1 active (Exp 2)
+- ~~`analyse_cluster_GlobalFeatures_PUFs.py`~~ — removed (fully deprecated)
+- `cluster_LocalFeatures_PUF.py` — 1 active (Exp 2)
+- `compute_recovery%_PUF.py` — 1 active (Exp 2)
 
 ### Comparison/visualization scripts (§2n)
-- All `plot_compare_jaxENT_HDXer.py` (3 files)
-- All `plot_selected_models_ISO_TRI_BI.py` (2 files)
+- `plot_compare_jaxENT_HDXer.py` — 3 active (Exp 1, 2, 3)
+- `plot_selected_models_ISO_TRI_BI.py` — 3 active (Exp 1, 2, 3)
 
 ### Statistical analysis scripts (§2o)
-- All `analyse_scores_mixed_linear_model.py` (3 files)
-- All `calculate_state_ratios.py` (3 files)
+- `analyse_scores_mixed_linear_model.py` — 3 active (Exp 1, 2, 3)
+- `calculate_state_ratios.py` — 1 active (Exp 2 only)
 
 ### Fitting scripts (§2i–2k)
-- All `optimise_fn.py` variants (3 files, ~876 lines → ~50 lines each)
-- All `optimise_ISO_TRI_BI*.py` variants (7 files)
-- All `featurise_*.py` (3 files, ~229 lines → ~100 lines each)
-- All `splitdata_*.py` (3 files)
+- `optimise_fn.py` — 3 active (Exp 1, 2, 3)
+- `optimise_ISO_TRI_BI*.py` variants — deprecated (in `deprecated/` dirs)
+- `featurise_*.py` — 2 active + 1 variant (Exp 1, 2)
+- `splitdata_*.py` — 2 active (Exp 1, 2)
 
 ## Files to archive (move to `_archive/`)
 - All original versions of the scripts listed in "Files to modify" above
 - Include both `analysis/_archive/` and `fitting/_archive/` subdirectories
 
 ## Files to delete (stale/empty files)
-- `1_IsoValidation_OMass/analysis/score_models_ISO_TRI_BI copy.py`
-- `1_IsoValidation_OMass/analysis/fixed_effects_linear_model_ISO_TRI_BI.py` (empty file, 0 bytes)
-- `2_CrossValidation/analysis/cluster_LocalFeatures_PUF_OLD.py`
-- `3_CrossValidationBV/analysis/cluster_LocalFeatures_PUF_OLD.py`
-- `4_CrossValidation_FunctionalMaxENT/analysis/cluster_LocalFeatures_PUF_OLD.py`
+~~`1_IsoValidation_OMass/analysis/score_models_ISO_TRI_BI copy.py`~~ — already deleted
+~~`2_CrossValidation/analysis/cluster_LocalFeatures_PUF_OLD.py`~~ — already deleted
+
+> **Note**: `fixed_effects_linear_model_ISO_TRI_BI.py` was not found in the filesystem. Other `_OLD.py` files are in `deprecated/` already. No stale files remain to delete.
 
 ---
 
@@ -643,24 +798,30 @@ Create test files at `jaxent/tests/examples/`:
 ## Resolved findings
 
 - [x] **Featurisation topology gap**: Scripts build `TopologyFactory` entries from HDXer rates;
-  `load_HDXer_kints()` returns only intrinsic rates. Reusing the library helper as-is drops topology data. **(Resolved in Phase 4 revision)**
+  `load_HDXer_kints()` returns `tuple[Array, list[int]]` (intrinsic rates + bare residue IDs), not `Partial_Topology` objects. Reusing the library helper as-is drops proper topology data. **(Resolved in Phase 4 revision)** The docstring is also stale and will be fixed.
 - [x] **Loss function divergence**: Wrappers define covariance-weighted and shape-adjusted losses (e.g.,
   `hdx_uptake_mean_centred_MSE_loss` in `optimise_ISO_TRI_BI_splits_maxENT.py`) that differ from
-  `jaxent/src/opt/losses.py`. **Resolution**: Move the 3 example losses into `examples/common/losses.py` and keep the core library unchanged.
+  `jaxent/src/opt/losses.py`. **Resolution**: Pin the 3 example losses in `examples/common/losses.py` as a stability layer (initially re-exporting from core library), decoupling examples from future core library refactoring.
 
 - [x] **Config/CLI gaps**: YAML sketch used `dasplit_dir` (typo for `datasplit_dir`) and omitted fields routinely
   parsed in scripts. **(Resolved)**: fixed typo, added `state_ratios_json`, `covariance_matrix_path`,
   `SweepConfig` (2D grid axes), `clustering_dir` to `ExperimentConfig`/YAML. Added `from_yaml` validation
   (required-field check + unknown-key warning). Expanded `add_common_args` in `common/cli.py`.
 
+- [x] **Inventory verification (script counts)**: Filesystem audit revealed the plan over-counted active scripts
+  by including deprecated copies (Exp 4 fully deprecated, partial Exp 3 deprecated). **(Resolved)**: Updated all
+  §2a–2p headings with corrected active counts. Removed §2b (`analyse_loss_MoPrP.py`) and
+  `analyse_cluster_GlobalFeatures_PUFs.py` from scope. Corrected §2l to not merge 2D→1D (Exp 3 only has 2D).
+  Fixed `plot_selected_models` count from ×2→×3. Corrected `calculate_state_ratios` from ×3→×1.
+
 ## Open findings
 
-- **Packaging**: `jaxent/examples` isn't a package — no `__init__.py`, and `pyproject.toml` only packages `jaxent/src`.
-  `import jaxent.examples.common` will fail unless packaging/sys.path is changed.
+(None — all findings resolved)
 
 ## Next steps
 
-1. Decide how to package examples (add `__init__.py` and adjust `pyproject.toml`, or keep scripts adding `sys.path`)
-   before building `common/`.
-2. Map all loss/optimizer variants across `optimise_fn.py` files and wrappers to a registry/config that preserves
-   current covariance/partition behaviour.
+1. ~~Decide how to package examples~~ → **Resolved**: Option A approved (add `__init__.py` and `pyproject.toml`).
+2. ~~Map all loss/optimizer variants~~ → **Resolved**: See §1g inventory table. 6 `run_optimise_*` variants across 3 experiments differ only in loss combos and param masks. Exp 3 adds `model_parameters_lr_scale`.
+3. Implement Phase 0 (packaging) + Phase 1 modules in build order: `paths` → `config` → `analysis` → `loading` → `losses` → `plotting` → `optimization` → `cli` → `__init__`.
+4. Pilot refactor `analyse_loss_*.py` to validate the approach.
+5. Proceed with remaining Phase 2 families.
