@@ -21,7 +21,7 @@ Convert `jaxent/examples` into a proper Python package.
 #### [NEW] [__init__.py](file:///Users/alexi/JAX-ENT/jaxent/examples/__init__.py)
 - Create namespace package files. -->
 
-### Phase 1: Create `jaxent/examples/common/` Shared Module
+<!-- ### Phase 1: Create `jaxent/examples/common/` Shared Module
 Create the core shared infrastructure.
 #### [NEW] [jaxent/examples/common/](file:///Users/alexi/JAX-ENT/jaxent/examples/common/)
 - `config.py`: Configuration dataclasses (`ExperimentConfig`, `OptimizationConfig`, etc.) with YAML loading.
@@ -31,7 +31,9 @@ Create the core shared infrastructure.
 - `plotting.py`: Shared plotting functions with `PlotStyle` support.
 - `optimization.py`: Unified `run_optimization` function replacing 5+ `optimise_fn.py` variants.
 - `losses.py`: Example-specific loss functions moved from `optimise_fn.py`.
-- `cli.py`: Shared `argparse` setup.
+- `cli.py`: Shared `argparse` setup. -->
+
+# Verify Phase 1: Pilot refactor `analyse_loss_*.py` to validate the approach.
 
 ### Phase 2: Refactor Script Families
 Refactor most-duplicated scripts to use `common/` modules.
