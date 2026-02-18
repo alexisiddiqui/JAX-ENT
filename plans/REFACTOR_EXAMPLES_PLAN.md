@@ -2,7 +2,7 @@
 
 ## Context
 
-The `jaxent/examples/` directory contains ~93 Python scripts (excluding vendored `_Bradshaw/` code) across 7 experiment directories. Analysis scripts are near-identical copies across experiments, differing only in configuration (ensemble names, color schemes, scoring formulas, regex patterns). This makes maintenance painful: bug fixes applied to one copy don't propagate, and adding a new experiment means duplicating dozens of files. The scripts also underutilize existing library utilities (e.g. `load_HDXer_kints()`, `frame_average_features()`, analysis plot functions).
+The `jaxent/examples/` directory contains ~93 ./venv/bin/python  scripts (excluding vendored `_Bradshaw/` code) across 7 experiment directories. Analysis scripts are near-identical copies across experiments, differing only in configuration (ensemble names, color schemes, scoring formulas, regex patterns). This makes maintenance painful: bug fixes applied to one copy don't propagate, and adding a new experiment means duplicating dozens of files. The scripts also underutilize existing library utilities (e.g. `load_HDXer_kints()`, `frame_average_features()`, analysis plot functions).
 
 > **Scope note**: `4_CrossValidation_FunctionalMaxENT/` has been **fully moved to `deprecated/`** and is excluded from this refactor plan. Some scripts from experiment 3 also have deprecated copies in `deprecated/3_CrossValidation_BV/`. `combined_fixed_effects/` and `predict_traj/` contain standalone scripts without cross-experiment duplication and require documentation only.
 >
@@ -65,7 +65,7 @@ Re-export public API.
 
 Extract the repeated configuration into declarative dataclasses with YAML serialization:
 
-```python
+```./venv/bin/python 
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -267,7 +267,7 @@ Consolidate the duplicated fitting script logic (currently 876+ lines in `optimi
 
 All `run_optimise_*` variants collapse into a single config-driven function:
 
-```python
+```./venv/bin/python 
 from typing import Sequence, Tuple, cast, List
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
@@ -324,7 +324,7 @@ This consolidates the 5+ near-identical `run_optimise_ISO_TRI_BI_*` variants in 
 
 ### 1h. `common/paths.py` — Centralized path utilities
 
-```python
+```./venv/bin/python 
 from pathlib import Path
 
 def resolve_example_path(example_name: str, subdir: str = "") -> Path:
@@ -385,7 +385,7 @@ Work through each script family, replacing inline logic with calls to `common/`.
 - Inline `load_all_optimization_results()`, `extract_loss_trajectories()`, all plot functions, hardcoded config
 
 **After** (~40 lines each):
-```python
+```./venv/bin/python 
 from jaxent.examples.common import ExperimentConfig, PlotStyle, loading, analysis, plotting
 
 CONFIG = ExperimentConfig(ensembles=["ISO_TRI", "ISO_BI"], ...)
@@ -440,7 +440,7 @@ Replace manual HDXer loading with library's `load_HDXer_kints()` from `jaxent/sr
 - Only differences: loss function combinations, parameter masks, learning rate schedules
 
 **After** (~50 lines per experiment, config-driven):
-```python
+```./venv/bin/python 
 from jaxent.examples.common import ExperimentConfig, optimization
 
 config = ExperimentConfig.from_yaml("config.yaml")
@@ -780,11 +780,11 @@ For any remaining scripts not covered in Phase 2 (data prep scripts, one-off ana
 ## Verification
 
 After each phase:
-1. Run `python -c "from jaxent.examples.common import config, loading, analysis, plotting, optimization"` to verify module imports
+1. Run `./venv/bin/python  -c "from jaxent.examples.common import config, loading, analysis, plotting, optimization"` to verify module imports
 2. For each refactored script, run it from its original directory and verify output files match (diff PNGs and CSVs against pre-refactor baselines)
-3. Run `python -m pytest` on any existing tests
+3. Run `./venv/bin/python  -m pytest` on any existing tests
 4. Spot-check that the `sys.path` hack removal doesn't break imports by running scripts from different working directories
-5. Test YAML config loading: `python -c "from jaxent.examples.common.config import ExperimentConfig; c = ExperimentConfig.from_yaml('config.yaml'); print(c)"`
+5. Test YAML config loading: `./venv/bin/python  -c "from jaxent.examples.common.config import ExperimentConfig; c = ExperimentConfig.from_yaml('config.yaml'); print(c)"`
 
 ### Unit tests for new modules
 Create test files at `jaxent/tests/examples/`:
