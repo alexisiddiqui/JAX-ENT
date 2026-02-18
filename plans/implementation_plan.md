@@ -136,16 +136,17 @@ Refactor most-duplicated scripts to use `common/` modules.
 - `plot_compare_jaxENT_HDXer.py` & `plot_selected_models_ISO_TRI_BI.py` (Exp 1, 2, 3)
 - `analyse_scores_mixed_linear_model.py` (Exp 1, 2, 3)
 
-#### [MODIFY] Fitting & Data Scripts
-- `optimise_fn.py` (Exp 1, 2, 3) -> Replaced by calls to `common.optimization`.
-- `featurise_*.py` (Exp 1, 2) -> Use `common.loading` and `paths`.
-- `splitdata_*.py` (Exp 1, 2) -> Use `common.loading`.
-
 #### [MODIFY] Exp 3 Specific (2D Sweeps)
 - `analyse_loss_ISO_TRI_BI_2D_BV.py`
 - `weights_validation_ISO_TRI_BI_2D_BV.py`
 - `recovery_analysis_ISO_TRI_BI_2D_BV.py`
 - Refactor to use `common/` while preserving 2D sweep logic (`SweepConfig`).
+
+#### [MODIFY] Fitting & Data Scripts
+- `optimise_fn.py` (Exp 1, 2, 3) -> Replaced by calls to `common.optimization`.
+- `featurise_*.py` (Exp 1, 2) -> Use `common.loading` and `paths`.
+- `splitdata_*.py` (Exp 1, 2) -> Use `common.loading`.
+
 
 ### Phase 3: Configuration
 Create YAML configuration files for each active experiment.
