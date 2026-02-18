@@ -1,0 +1,69 @@
+# Experiment 1: IsoValidation - ISO_TRI and ISO_BI ensembles
+ensembles:
+  - ISO_TRI
+  - ISO_BI
+
+loss_functions:
+  - mcMSE
+  - MSE
+  - Sigma_MSE
+
+num_splits: 3
+
+convergence_rates:
+  - 1.0e-3
+  - 1.0e-4
+  - 1.0e-5
+  - 1.0e-6
+  - 1.0e-7
+  - 1.0e-8
+  - 1.0e-9
+  - 1.0e-10
+
+# Paths (relative to experiment directory)
+results_prefix: "fitting/jaxENT/_optimise_test_SIGMA_500__"  # Finds most recent matching dir
+features_dir: "fitting/jaxENT/_featurise"
+datasplit_dir: "fitting/jaxENT/_datasplits"
+clustering_dir: "data/_clustering_results"
+output_dir: "analysis/_analysis_loss_output"
+
+# Plotting style
+style:
+  ensemble_colors:
+    ISO_BI: "indigo"
+    ISO_TRI: "saddlebrown"
+
+  loss_markers:
+    mcMSE: "o"
+    MSE: "s"
+    Sigma_MSE: "^"
+
+  split_type_colors:
+    r: "fuchsia"
+    s: "black"
+    R3: "green"
+    sequence_cluster: "green"
+    Sp: "grey"
+    spatial: "grey"
+
+  dpi: 300
+  figsize_wide: [16, 6]
+  figsize_square: [10, 10]
+
+# Scoring configuration
+scoring:
+  ensemble_feature_map:
+    ISO_TRI: "ISO_TRI"
+    ISO_BI: "ISO_BI"
+
+  ensemble_clustering_map:
+    ISO_TRI: "ISO_TRI"
+    ISO_BI: "ISO_BI"
+
+  state_mapping:
+    0: "Open"
+    1: "Closed"
+
+  scoring_weights:
+    train_penalty: 1.0
+    kl_penalty: 0.0  # Original bug: computed but never applied
