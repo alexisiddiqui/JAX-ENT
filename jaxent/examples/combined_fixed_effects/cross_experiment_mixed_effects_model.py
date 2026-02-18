@@ -32,8 +32,8 @@ sns.set_context(
     },
 )
 
-# Constants
-EXPERIMENTS = {
+# Default experiment paths
+DEFAULT_EXPERIMENTS = {
     "TeaA-IsoValidation": "jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260216_232705",
     "MoPrP-Reweighting": "jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_500__20260217_163516",
     "MoPrP-RW+BV": "jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__20260217_165612"
@@ -61,9 +61,9 @@ def sanitize_string(val):
     """Sanitize string for statsmodels formula compatibility."""
     return str(val).replace('+', '_').replace('-', '_')
 
-def load_data():
+def load_data(experiments_dict):
     all_data = []
-    for exp_name, path in EXPERIMENTS.items():
+    for exp_name, path in experiments_dict.items():
         csv_path = os.path.join(path, "gt_scores_long.csv")
         if not os.path.exists(csv_path):
             print(f"Warning: {csv_path} not found. Skipping {exp_name}.")
@@ -1302,13 +1302,22 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     default_output_dir = os.path.join(script_dir, "_cross_experiment_analysis")
     parser.add_argument("--output-dir", default=default_output_dir, help="Directory to save outputs")
+    parser.add_argument("--exp-teaa", default=DEFAULT_EXPERIMENTS["TeaA-IsoValidation"], help="Path to TeaA-IsoValidation results")
+    parser.add_argument("--exp-moprp-rw", default=DEFAULT_EXPERIMENTS["MoPrP-Reweighting"], help="Path to MoPrP-Reweighting results")
+    parser.add_argument("--exp-moprp-rwbv", default=DEFAULT_EXPERIMENTS["MoPrP-RW+BV"], help="Path to MoPrP-RW+BV results")
     args = parser.parse_args()
+    
+    experiments = {
+        "TeaA-IsoValidation": args.exp_teaa,
+        "MoPrP-Reweighting": args.exp_moprp_rw,
+        "MoPrP-RW+BV": args.exp_moprp_rwbv
+    }
     
     os.makedirs(args.output_dir, exist_ok=True)
     
     print("Loading data...")
     try:
-        df = load_data()
+        df = load_data(experiments)
     except Exception as e:
         print(f"Error: {e}")
         return
