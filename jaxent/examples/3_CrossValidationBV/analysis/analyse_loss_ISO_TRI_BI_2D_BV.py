@@ -1,1622 +1,213 @@
+#!/usr/bin/env python3
 """
-2D Hyperparameter Sweep Loss Analysis for MoPrP System
+Analyze 2D loss landscapes (MaxEnt × BV regularization) for AF2 models.
 
-Function:
-Loads optimization histories from 2D hyperparameter sweeps and performs:
-- Convergence heatmaps for training and validation loss.
-- Best model selection based on multi-objective scoring.
-- Recovery and KL divergence analysis for selected models.
-- Exports converged frame weights for downstream validation.
-
-Requirements:
-- `--results-dir`: Directory containing `results.hdf5` files.
-- `--clustering-dir`: Directory with `frame_to_cluster.csv` files.
-- `--state-ratios-json`: Target state populations.
+REFACTORED: Reduced from 1622 lines to ~220 by using jaxent.examples.common modules.
+Original archived at: _archive/analyse_loss_ISO_TRI_BI_2D_BV.py.original
 """
 
 import argparse
-import json
-import os
-import re
-import sys
-from typing import Dict, List
+from pathlib import Path
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-import seaborn as sns
 
-# Add base directory to path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
-sys.path.insert(0, base_dir)
-
-from jaxent.src.utils.hdf import load_optimization_history_from_file
-
-# ============================================================================
-# CONFIGURATION SECTION
-# ============================================================================
-
-# Publication-ready style configuration
-sns.set_style("ticks")
-sns.set_context(
-    "paper",
-    rc={
-        "axes.labelsize": 20,
-        "axes.titlesize": 22,
-        "xtick.labelsize": 14,
-        "ytick.labelsize": 10,
-    },
+from jaxent.examples.common.config import ExperimentConfig
+from jaxent.examples.common.loading import (
+    load_all_optimization_results_2d,
+    load_clustering_results,
 )
-
-# Ensemble to clustering subdirectory mapping
-ENSEMBLE_CLUSTERING_MAP = {
-    "AF2_MSAss": "AF2_MSAss",
-    "AF2_filtered": "AF2_Filtered",
-}
-
-# MoPrP ensemble coloring scheme
-ENSEMBLE_COLOURS = {
-    "AF2_MSAss": "RoyalBlue",
-    "AF2_filtered": "Cyan",
-}
-
-# State mapping for MoPrP
-STATE_MAPPING = {
-    0: "Folded",
-    1: "PUF1",
-    2: "PUF2",
-    4: "unfolded",
-}
-
-# Loss function markers
-LOSS_MARKERS = {"mcMSE": "o", "MSE": "s", "Sigma_MSE": "^"}
-
-# Split type coloring scheme
-SPLIT_TYPE_COLOURS = {
-    "sequence_cluster": "green",
-    "spatial": "grey",
-    "random": "fuchsia",
-    "sequence": "black",
-}
-
-SPLIT_NAME_MAPPING = {
-    "sequence_cluster": "Non-Redundant",
-    "spatial": "Spatial",
-    "random": "Random",
-    "sequence": "Sequence",
-}
-
-
-# ============================================================================
-# DATA LOADING FUNCTIONS
-# ============================================================================
-
-
-def load_all_optimization_results_2d(
-    results_dir: str,
-    ensembles: List[str],
-    loss_functions: List[str],
-    bv_reg_functions: List[str],
-    num_splits: int = 3,
-    EMA: bool = False,
-    verbose: bool = True,
-) -> Dict:
-    """
-    Load all optimization results from HDF5 files for 2D hyperparameter sweep.
-    
-    Returns nested dict: results[split_type][ensemble][loss_fn][bv_reg_fn][maxent][bv_reg][split_idx] = history
-    """
-    results = {}
-    if not os.path.exists(results_dir):
-        print(f"Results directory not found: {results_dir}")
-        return results
-
-    split_types = [
-        d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
-    ]
-
-    if verbose:
-        print(f"\nDiscovered split types: {split_types}")
-
-    hdf_pattern = "results_EMA.hdf5" if EMA else "results.hdf5"
-    print(f"Looking for HDF5 files ending with: {hdf_pattern}\n")
-
-    total_files_found = 0
-
-    for split_type in split_types:
-        results[split_type] = {}
-        split_type_dir = os.path.join(results_dir, split_type)
-
-        if verbose:
-            print(f"Processing split type: {split_type}")
-
-        for ensemble in ensembles:
-            results[split_type][ensemble] = {}
-
-            for loss_name in loss_functions:
-                results[split_type][ensemble][loss_name] = {}
-
-                for bv_reg_fn in bv_reg_functions:
-                    results[split_type][ensemble][loss_name][bv_reg_fn] = {}
-
-                    # Filter files matching this combination
-                    all_files = os.listdir(split_type_dir)
-                    files = [
-                        f
-                        for f in all_files
-                        if f.startswith(f"{ensemble}_{loss_name}_{split_type}_split")
-                        and f"bvregfn{bv_reg_fn}" in f
-                        and f.endswith(hdf_pattern)
-                    ]
-
-                    if verbose and len(files) > 0:
-                        print(f"  {ensemble} + {loss_name} + {bv_reg_fn}: Found {len(files)} files")
-
-                    for filename in files:
-                        # Extract maxent, bvreg, split_idx from filename
-                        match = re.search(
-                            r"split(\d{3})_maxent([\d.]+)_bvreg([\d.]+)_bvregfn([A-Za-z0-9]+)",
-                            filename,
-                        )
-                        if match:
-                            split_idx = int(match.group(1))
-                            maxent_val = float(match.group(2))
-                            bvreg_val = float(match.group(3))
-                            bvreg_fn_found = match.group(4)
-
-                            if bvreg_fn_found != bv_reg_fn:
-                                continue
-
-                            if maxent_val not in results[split_type][ensemble][loss_name][bv_reg_fn]:
-                                results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val] = {}
-
-                            if (
-                                bvreg_val
-                                not in results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val]
-                            ):
-                                results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][
-                                    bvreg_val
-                                ] = {}
-
-                            filepath = os.path.join(split_type_dir, filename)
-
-                            try:
-                                history = load_optimization_history_from_file(filepath)
-                                results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][
-                                    bvreg_val
-                                ][split_idx] = history
-                                total_files_found += 1
-                                if verbose:
-                                    print(f"    ✓ Loaded: {filename}")
-                            except Exception as e:
-                                if verbose:
-                                    print(f"    ✗ Failed to load {filename}: {str(e)[:100]}")
-                                results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][
-                                    bvreg_val
-                                ][split_idx] = None
-
-    print(f"\n{'='*60}")
-    print(f"Total HDF5 files loaded: {total_files_found}")
-    print(f"{'='*60}\n")
-
-    return results
-
-
-def extract_loss_trajectories_2d(results: Dict) -> pd.DataFrame:
-    """
-    Extract loss trajectories from 2D hyperparameter sweep results.
-    """
-    data_rows = []
-
-    for split_type in results:
-        for ensemble in results[split_type]:
-            for loss_name in results[split_type][ensemble]:
-                for bv_reg_fn in results[split_type][ensemble][loss_name]:
-                    for maxent_val in results[split_type][ensemble][loss_name][bv_reg_fn]:
-                        for bvreg_val in results[split_type][ensemble][loss_name][bv_reg_fn][
-                            maxent_val
-                        ]:
-                            for split_idx, history in results[split_type][ensemble][loss_name][
-                                bv_reg_fn
-                            ][maxent_val][bvreg_val].items():
-                                if history is None or not history.states:
-                                    continue
-
-                                for step_idx, state in enumerate(history.states):
-                                    if state.losses is not None:
-                                        data_rows.append(
-                                            {
-                                                "split_type": split_type,
-                                                "ensemble": ensemble,
-                                                "loss_function": loss_name,
-                                                "bv_reg_function": bv_reg_fn,
-                                                "maxent_value": maxent_val,
-                                                "bv_reg_value": bvreg_val,
-                                                "split": split_idx,
-                                                "convergence_step": step_idx + 1,
-                                                "train_loss": float(state.losses.train_losses[0]),
-                                                "val_loss": float(state.losses.val_losses[0]),
-                                                "step_number": state.step if hasattr(state, "step") else step_idx,
-                                            }
-                                        )
-
-    return pd.DataFrame(data_rows)
-
-
-# ============================================================================
-# ANALYSIS FUNCTIONS
-# ============================================================================
-
-
-def compute_model_scores(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute model scores as -log10(validation error).
-    """
-    df = df.copy()
-    eps = 1e-300
-    
-    val_loss = df.get("val_loss", pd.Series(dtype=float))
-    val_loss = val_loss.fillna(np.nan).clip(lower=eps)
-    
-    train_loss = df.get("train_loss", pd.Series(dtype=float))
-    train_loss = train_loss.fillna(np.nan).clip(lower=eps)
-    
-    # Base score: negative log10 of validation loss with training contribution
-    base_score = -np.log10(val_loss) - (0.9 * np.log10(train_loss))
-    df["model_score"] = base_score
-    
-    return df
-
-
-def select_best_models_2d(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Select best scoring models for each parameter combination.
-    For each (split_type, ensemble, loss_function, bv_reg_function, split), 
-    find the (maxent, bv_reg, convergence_step) with highest score.
-    
-    NOW: Selects best models SEPARATELY for each bv_reg_function.
-    """
-    df_scored = compute_model_scores(df)
-    
-    # Group by the fixed parameters INCLUDING bv_reg_function and select best
-    best_models = df_scored.loc[
-        df_scored.groupby(
-            ["split_type", "ensemble", "loss_function", "bv_reg_function", "split"]
-        )["model_score"].idxmax()
-    ]
-    
-    return best_models
-
-
-def load_clustering_for_ensemble(ensemble_name: str, clustering_base_dir: str) -> pd.DataFrame:
-    """Load clustering results for a specific ensemble."""
-    if ensemble_name not in ENSEMBLE_CLUSTERING_MAP:
-        raise ValueError(
-            f"Unknown ensemble: {ensemble_name}. Expected one of {list(ENSEMBLE_CLUSTERING_MAP.keys())}"
-        )
-
-    clustering_subdir = ENSEMBLE_CLUSTERING_MAP[ensemble_name]
-    clustering_path = os.path.join(
-        clustering_base_dir, clustering_subdir, f"{clustering_subdir}_frame_to_cluster.csv"
-    )
-
-    if not os.path.exists(clustering_path):
-        raise FileNotFoundError(f"Clustering file not found: {clustering_path}")
-
-    print(f"Loading clustering for {ensemble_name} from: {clustering_path}")
-    cluster_df = pd.read_csv(clustering_path)
-
-    if "cluster_label" not in cluster_df.columns:
-        raise ValueError(f"Expected 'cluster_label' column in {clustering_path}")
-
-    print(f"  Loaded {len(cluster_df)} frames with {cluster_df['cluster_label'].nunique()} unique clusters")
-    return cluster_df
-
-
-def calculate_recovery_JSD(cluster_assignments, weights, target_ratios, state_mapping):
-    """Compute Jensen-Shannon divergence based recovery metric."""
-    state_to_clusters = {}
-    for cluster_id, state_name in state_mapping.items():
-        state_to_clusters.setdefault(state_name, []).append(cluster_id)
-
-    current_proportions = {state: 0.0 for state in target_ratios}
-    for state_name, cluster_ids in state_to_clusters.items():
-        state_mask = cluster_assignments.isin(cluster_ids)
-        current_proportions[state_name] = float(np.sum(weights[state_mask.to_numpy()]))
-
-    states = list(target_ratios.keys())
-    P = np.array([current_proportions.get(s, 0.0) for s in states], dtype=float)
-    Q = np.array([target_ratios.get(s, 0.0) for s in states], dtype=float)
-
-    sumP = P.sum()
-    sumQ = Q.sum()
-    if sumP > 0:
-        P = P / sumP
-    else:
-        return np.nan, current_proportions
-
-    if sumQ > 0:
-        Q = Q / sumQ
-    else:
-        return np.nan, current_proportions
-
-    M = 0.5 * (P + Q)
-
-    def kld(a, b):
-        mask = a > 0
-        return np.sum(a[mask] * np.log2(a[mask] / b[mask]))
-
-    js = 0.5 * (kld(P, M) + kld(Q, M))
-    return float(js), current_proportions
-
-
-def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
-    """Calculate KL divergence between two probability distributions."""
-    p = p / np.sum(p)
-    q = q / np.sum(q)
-    p = np.clip(p, eps, 1.0)
-    q = np.clip(q, eps, 1.0)
-    return float(np.sum(p * np.log(p / q)))
-
-
-def augment_best_models_with_metrics(
-    best_models_df: pd.DataFrame,
-    results: Dict,
-    clustering_data: Dict[str, pd.DataFrame],
-    target_ratios: Dict[str, float],
-) -> pd.DataFrame:
-    """
-    Augment best models with KL divergence and JSD-based recovery metrics.
-    """
-    augmented_rows = []
-
-    for _, row in best_models_df.iterrows():
-        split_type = row["split_type"]
-        ensemble = row["ensemble"]
-        loss_func = row["loss_function"]
-        bv_reg_fn = row["bv_reg_function"]
-        split_idx = int(row["split"])
-        maxent_val = row["maxent_value"]
-        bvreg_val = row["bv_reg_value"]
-        conv_step = int(row["convergence_step"])
-
-        # Navigate nested results structure
-        try:
-            history = results[split_type][ensemble][loss_func][bv_reg_fn][maxent_val][bvreg_val][
-                split_idx
-            ]
-        except (KeyError, TypeError):
-            print(
-                f"Warning: No results for {split_type}/{ensemble}/{loss_func}/{bv_reg_fn}/maxent{maxent_val}/bvreg{bvreg_val}/split{split_idx}"
-            )
-            continue
-
-        if history is None or not hasattr(history, "states") or not history.states:
-            print(
-                f"Warning: No states in history for {split_type}/{ensemble}/{loss_func}/{bv_reg_fn}/maxent{maxent_val}/bvreg{bvreg_val}/split{split_idx}"
-            )
-            continue
-
-        if conv_step <= 0 or conv_step > len(history.states):
-            print(
-                f"Warning: convergence_step {conv_step} out of range for {split_type}/{ensemble}/{loss_func}/{bv_reg_fn}/maxent{maxent_val}/bvreg{bvreg_val}/split{split_idx}"
-            )
-            continue
-
-        state = history.states[conv_step - 1]
-
-        if (
-            hasattr(state, "params")
-            and hasattr(state.params, "frame_weights")
-            and state.params.frame_weights is not None
-        ):
-            weights = np.array(state.params.frame_weights)
-            uniform_prior = np.ones(len(weights)) / len(weights)
-            kl_div = kl_divergence(weights, uniform_prior)
-
-            js_div = np.nan
-            js_distance = np.nan
-            recovery_percent = np.nan
-
-            if ensemble in clustering_data:
-                cluster_df = clustering_data[ensemble]
-                cluster_assignments = cluster_df["cluster_label"]
-
-                if len(weights) == len(cluster_assignments):
-                    normalized_weights = weights / np.sum(weights)
-                    js_div, current_props = calculate_recovery_JSD(
-                        cluster_assignments, normalized_weights, target_ratios, STATE_MAPPING
-                    )
-
-                    if not np.isnan(js_div):
-                        js_distance = np.sqrt(js_div)
-                        recovery_percent = (1.0 - js_distance) * 100.0
-
-            row_dict = row.to_dict()
-            row_dict["kl_divergence"] = kl_div
-            row_dict["js_divergence"] = js_div if not np.isnan(js_div) else 0.0
-            row_dict["js_distance"] = js_distance if not np.isnan(js_distance) else 0.0
-            row_dict["recovery_percent"] = recovery_percent if not np.isnan(recovery_percent) else 0.0
-            augmented_rows.append(row_dict)
-
-    return pd.DataFrame(augmented_rows)
-
-
-def save_weights_for_best_models(
-    best_models_df: pd.DataFrame,
-    results: Dict,
-    output_dir: str,
-) -> None:
-    """
-    Extract frame weights from best models and save as NPZ files.
-    Saves individual replicate weights and their averages per ensemble-loss-split_type combination.
-
-    Args:
-        best_models_df: DataFrame containing best models
-        results: Dictionary of optimization results (2D structure)
-        output_dir: Directory to save weight NPZ files
-    """
-    weights_dir = os.path.join(output_dir, "weights")
-    os.makedirs(weights_dir, exist_ok=True)
-
-    # Group by ensemble, loss_function, bv_reg_function, and split_type
-    grouping = best_models_df.groupby(["ensemble", "loss_function", "bv_reg_function", "split_type"])
-
-    for (ensemble, loss_func, bv_reg_fn, split_type), group_df in grouping:
-        print(f"\n  Processing weights for {ensemble} - {loss_func} - {bv_reg_fn} - {split_type}")
-
-        # Storage for all replicate weights
-        replicate_weights = {}
-        valid_replicates = []
-
-        # Extract weights for each split replicate
-        for _, row in group_df.iterrows():
-            split_idx = int(row["split"])
-            maxent_val = row["maxent_value"]
-            bvreg_val = row["bv_reg_value"]
-            conv_step = int(row["convergence_step"])
-
-            # Safe nested lookup in results
-            try:
-                history = results[split_type][ensemble][loss_func][bv_reg_fn][maxent_val][bvreg_val][
-                    split_idx
-                ]
-            except (KeyError, TypeError):
-                print(f"    Warning: No results for split {split_idx}")
-                continue
-
-            # Validate history and states
-            if history is None or not hasattr(history, "states") or not history.states:
-                print(f"    Warning: Invalid history for split {split_idx}")
-                continue
-
-            # Ensure convergence step exists
-            if conv_step <= 0 or conv_step > len(history.states):
-                print(f"    Warning: convergence_step {conv_step} out of range for split {split_idx}")
-                continue
-
-            state = history.states[conv_step - 1]  # Convert to 0-indexed
-
-            # Extract weights
-            if hasattr(state, "params") and hasattr(state.params, "frame_weights") and state.params.frame_weights is not None:
-                weights = np.array(state.params.frame_weights, dtype=np.float32)
-                # Handle NaN arrays by converting to uniform weights
-                if np.any(np.isnan(weights)):
-                    weights = np.ones_like(weights) / len(weights)
-                replicate_weights[split_idx] = weights
-                valid_replicates.append(split_idx)
-                print(f"    Extracted weights for split {split_idx} (shape: {weights.shape})")
-            else:
-                print(f"    Warning: No frame_weights found for split {split_idx}")
-
-        # Save individual replicate weights
-        if valid_replicates:
-            for split_idx in valid_replicates:
-                weights = replicate_weights[split_idx]
-                filename = f"weights_{ensemble}_{loss_func}_{bv_reg_fn}_{split_type}_split{split_idx:03d}.npz"
-                filepath = os.path.join(weights_dir, filename)
-                np.savez_compressed(filepath, weights=weights)
-                print(f"    Saved: {filename}")
-
-            # Compute and save average weights across replicates
-            avg_weights = np.mean(
-                [replicate_weights[idx] for idx in valid_replicates],
-                axis=0,
-                dtype=np.float32
-            )
-            # Renormalize average weights to sum to 1
-            avg_weights = avg_weights / np.sum(avg_weights)
-            
-            avg_filename = f"weights_{ensemble}_{loss_func}_{bv_reg_fn}_{split_type}_average.npz"
-            avg_filepath = os.path.join(weights_dir, avg_filename)
-            np.savez_compressed(
-                avg_filepath,
-                weights=avg_weights,
-                n_replicates=len(valid_replicates),
-                replicate_indices=np.array(valid_replicates, dtype=np.int32)
-            )
-            print(f"    Saved average: {avg_filename} (from {len(valid_replicates)} replicates)")
-        else:
-            print(f"    No valid weights found for {ensemble} - {loss_func} - {bv_reg_fn} - {split_type}")
-
-    print(f"\nAll weights saved to: {weights_dir}")
-
-
-def save_selected_recovery_and_kl(recovery_df: pd.DataFrame, best_gammas: pd.DataFrame, output_dir: str, atol: float = 1e-8):
-    """
-    For each best gamma (ensemble, split_type, loss_function, bv_reg_function, gamma) find matching rows in recovery_df
-    (per replicate) and save per-replicate CSVs plus a combined CSV and NPZ.
-    Adapted for 2D BV analysis to include bv_reg_function in matching and filenames.
-    """
-    sel_dir = os.path.join(output_dir, "selected_metrics")
-    os.makedirs(sel_dir, exist_ok=True)
-
-    # Work on copies
-    recovery_df = recovery_df.copy()
-    best_gammas = best_gammas.copy()
-
-    # Ensure a numeric 'gamma' column exists in recovery_df (try common alternative names)
-    if "gamma" not in recovery_df.columns:
-        alt = next((c for c in ["maxent_value", "maxent", "gamma_value", "gamma_val"] if c in recovery_df.columns), None)
-        if alt is not None:
-            try:
-                recovery_df["gamma"] = recovery_df[alt].astype(float)
-            except Exception:
-                recovery_df["gamma"] = pd.to_numeric(recovery_df[alt], errors="coerce")
-        else:
-            print("  Warning: recovery_df missing 'gamma' and common alternatives. Cannot match gammas. Skipping save.")
-            return
-
-    # Ensure best_gammas has a numeric 'gamma' column too
-    if "gamma" not in best_gammas.columns:
-        alt_bg = next((c for c in ["maxent_value", "maxent", "gamma_value", "gamma_val"] if c in best_gammas.columns), None)
-        if alt_bg is not None:
-            try:
-                best_gammas["gamma"] = best_gammas[alt_bg].astype(float)
-            except Exception:
-                best_gammas["gamma"] = pd.to_numeric(best_gammas[alt_bg], errors="coerce")
-        else:
-            print("  Warning: best_gammas missing 'gamma' and common alternatives. Skipping save.")
-            return
-
-    # Normalize string columns for robust matching
-    if "ensemble" in recovery_df.columns:
-        recovery_df["_ensemble_str"] = recovery_df["ensemble"].astype(str)
-    else:
-        recovery_df["_ensemble_str"] = ""
-
-    if "split_type" in recovery_df.columns:
-        recovery_df["_split_type_str"] = recovery_df["split_type"].astype(str)
-    else:
-        recovery_df["_split_type_str"] = ""
-
-    if "loss_function" in recovery_df.columns:
-        recovery_df["_loss_func_str"] = recovery_df["loss_function"].astype(str)
-    else:
-        recovery_df["_loss_func_str"] = ""
-
-    # Handle bv_reg_function for 2D analysis
-    has_bv_reg = "bv_reg_function" in recovery_df.columns
-    if has_bv_reg:
-        recovery_df["_bv_reg_str"] = recovery_df["bv_reg_function"].astype(str)
-
-    selected_rows = []
-
-    # Iterate best_gammas robustly
-    for _, bg in best_gammas.iterrows():
-        ensemble = bg.get("ensemble", None)
-        split_type = bg.get("split_type", None)
-        loss_func = bg.get("loss_function", None)
-        bv_reg_fn = bg.get("bv_reg_function", None) if has_bv_reg else None
-        
-        try:
-            best_gamma = float(bg["gamma"])
-        except Exception:
-            print(f"  Warning: invalid gamma in best_gammas row: {bg}. Skipping.")
-            continue
-
-        # Build mask for ensemble and split_type (string compare)
-        mask = np.ones(len(recovery_df), dtype=bool)
-        if ensemble is not None:
-            mask &= (recovery_df["_ensemble_str"] == str(ensemble))
-        if split_type is not None:
-            mask &= (recovery_df["_split_type_str"] == str(split_type))
-        if loss_func is not None and not (pd.isna(loss_func)):
-            mask &= (recovery_df["_loss_func_str"] == str(loss_func))
-        if bv_reg_fn is not None and not (pd.isna(bv_reg_fn)):
-            mask &= (recovery_df["_bv_reg_str"] == str(bv_reg_fn))
-
-        candidates = recovery_df[mask].copy()
-        if candidates.empty:
-            continue
-
-        # Match gamma with tolerance using np.isclose
-        try:
-            candidate_gammas = candidates["gamma"].astype(float).values
-        except Exception:
-            candidate_gammas = pd.to_numeric(candidates["gamma"], errors="coerce").fillna(np.nan).values
-
-        gamma_mask = np.isclose(candidate_gammas, best_gamma, atol=atol, rtol=1e-6)
-        matches = candidates[gamma_mask]
-
-        if matches.empty:
-            continue
-
-        # Save per-match CSVs and collect rows as dicts
-        for idx, match_row in matches.reset_index(drop=True).iterrows():
-            rep = match_row.get("replicate", match_row.get("split", idx))
-            lossf_str = str(loss_func) if (loss_func is not None and not pd.isna(loss_func)) else "na"
-            en_str = str(ensemble) if ensemble is not None else "na"
-            st_str = str(split_type) if split_type is not None else "na"
-            bv_str = str(bv_reg_fn) if (bv_reg_fn is not None and not pd.isna(bv_reg_fn)) else ""
-            
-            # sanitize filename components
-            def _san(s):
-                return "".join(c if c.isalnum() or c in "-_." else "_" for c in str(s))
-            
-            if bv_str:
-                fname = f"selected_metrics_{_san(en_str)}_{_san(st_str)}_{_san(lossf_str)}_{_san(bv_str)}_{_san(rep)}.csv"
-            else:
-                fname = f"selected_metrics_{_san(en_str)}_{_san(st_str)}_{_san(lossf_str)}_{_san(rep)}.csv"
-                
-            path = os.path.join(sel_dir, fname)
-            try:
-                pd.DataFrame([match_row]).to_csv(path, index=False)
-            except Exception as e:
-                print(f"  Error saving {path}: {e}")
-                continue
-
-            # store as dict to ensure combined DataFrame builds correctly
-            selected_rows.append(dict(match_row))
-
-    if len(selected_rows) == 0:
-        print("  No selected recovery rows saved.")
-        return
-
-    # Combined CSV
-    combined = pd.DataFrame(selected_rows)
-    combined_path = os.path.join(sel_dir, "selected_metrics_all.csv")
-    try:
-        combined.to_csv(combined_path, index=False)
-        print(f"  Saved combined CSV: {combined_path}")
-    except Exception as e:
-        print(f"  Error saving combined CSV {combined_path}: {e}")
-
-    # Save NPZ of columns (object dtype safe)
-    npz_path = os.path.join(sel_dir, "selected_metrics_all.npz")
-    try:
-        np.savez_compressed(npz_path, **{c: combined[c].to_numpy(dtype=object) for c in combined.columns})
-        print(f"  Saved combined NPZ: {npz_path}")
-    except Exception as e:
-        print(f"  Error saving NPZ {npz_path}: {e}")
-
-
-# ============================================================================
-# PLOTTING FUNCTIONS
-# ============================================================================
-
-
-def plot_convergence_heatmaps(df: pd.DataFrame, output_dir: str, split_type: str = None):
-    """
-    Plot heatmaps of training and validation error across (maxent, bv_reg) for each loss-bvreg combo.
-    """
-    plt.style.use("seaborn-v0_8-whitegrid")
-
-    if len(df) == 0:
-        print("No data available for convergence heatmaps")
-        return
-
-    split_types = sorted(df["split_type"].unique()) if split_type is None else [split_type]
-
-    for stype in split_types:
-        print(f"  Creating convergence heatmaps for split type: {stype}")
-        split_output_dir = os.path.join(output_dir, stype) if stype else output_dir
-        os.makedirs(split_output_dir, exist_ok=True)
-
-        split_df = df[df["split_type"] == stype] if stype else df
-
-        ensembles = sorted(split_df["ensemble"].unique())
-        loss_functions = sorted(split_df["loss_function"].unique())
-        bv_reg_functions = sorted(split_df["bv_reg_function"].unique())
-
-        for error_type in ["train_loss", "val_loss"]:
-            error_label = "Training Error" if error_type == "train_loss" else "Validation Error"
-
-            fig, axes = plt.subplots(
-                len(bv_reg_functions),
-                len(loss_functions),
-                figsize=(6 * len(loss_functions), 5 * len(bv_reg_functions)),
-                squeeze=False,
-            )
-
-            fig.suptitle(
-                f"{error_label} Heatmap: MaxEnt vs BV Reg{' - ' + stype if stype else ''}",
-                fontsize=22,
-                fontweight="bold",
-            )
-
-            for i, bv_reg_fn in enumerate(bv_reg_functions):
-                for j, loss_func in enumerate(loss_functions):
-                    ax = axes[i, j]
-
-                    # Average across all ensembles and splits for each (maxent, bvreg) combo
-                    combo_df = split_df[
-                        (split_df["loss_function"] == loss_func)
-                        & (split_df["bv_reg_function"] == bv_reg_fn)
-                    ]
-
-                    if len(combo_df) > 0:
-                        # Find the final convergence step for each (maxent, bvreg, split)
-                        final_df = combo_df.loc[
-                            combo_df.groupby(["maxent_value", "bv_reg_value", "split"])[
-                                "convergence_step"
-                            ].idxmax()
-                        ]
-
-                        # Average across splits
-                        pivot_data = final_df.pivot_table(
-                            values=error_type,
-                            index="bv_reg_value",
-                            columns="maxent_value",
-                            aggfunc="mean",
-                        )
-
-                        if not pivot_data.empty:
-                            pivot_data = pivot_data.sort_index(ascending=False)
-                            pivot_data = pivot_data.sort_index(axis=1)
-
-                            sns.heatmap(
-                                np.log10(pivot_data),
-                                annot=False,
-                                cmap="viridis",
-                                cbar_kws={"label": f"log10({error_label})"},
-                                ax=ax,
-                            )
-
-                            ax.set_title(f"{loss_func} + {bv_reg_fn}", fontweight="bold")
-                            ax.set_xlabel("MaxEnt Value", fontweight="bold")
-                            ax.set_ylabel("BV Reg Value", fontweight="bold")
-                            ax.set_xticklabels([f"{float(t.get_text()):.0f}" for t in ax.get_xticklabels()], rotation=45, ha="right")
-                            sns.despine(ax=ax)
-                        else:
-                            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                            ax.set_title(f"{loss_func} + {bv_reg_fn}")
-                    else:
-                        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                        ax.set_title(f"{loss_func} + {bv_reg_fn}")
-
-            plt.tight_layout()
-            filename = (
-                f"{error_type}_convergence_heatmap_{stype}.png"
-                if stype
-                else f"{error_type}_convergence_heatmap.png"
-            )
-            plt.savefig(os.path.join(split_output_dir, filename), dpi=300, bbox_inches="tight")
-            plt.close()
-            print(f"    Saved: {filename}")
-
-
-def plot_model_score_heatmaps(df: pd.DataFrame, output_dir: str, split_type: str = None):
-    """
-    Plot heatmaps of model scores across (maxent, bv_reg).
-    """
-    plt.style.use("seaborn-v0_8-whitegrid")
-
-    df_scored = compute_model_scores(df)
-
-    if len(df_scored) == 0:
-        print("No data available for model score heatmaps")
-        return
-
-    split_types = sorted(df_scored["split_type"].unique()) if split_type is None else [split_type]
-
-    for stype in split_types:
-        print(f"  Creating model score heatmaps for split type: {stype}")
-        split_output_dir = os.path.join(output_dir, stype) if stype else output_dir
-        os.makedirs(split_output_dir, exist_ok=True)
-
-        split_df = df_scored[df_scored["split_type"] == stype] if stype else df_scored
-
-        ensembles = sorted(split_df["ensemble"].unique())
-        loss_functions = sorted(split_df["loss_function"].unique())
-        bv_reg_functions = sorted(split_df["bv_reg_function"].unique())
-
-        for ensemble in ensembles:
-            ensemble_df = split_df[split_df["ensemble"] == ensemble]
-            if ensemble_df.empty:
-                continue
-
-            print(f"    Heatmaps for ensemble: {ensemble}")
-
-            fig, axes = plt.subplots(
-                len(bv_reg_functions),
-                len(loss_functions),
-                figsize=(6 * len(loss_functions), 5 * len(bv_reg_functions)),
-                squeeze=False,
-            )
-
-            fig.suptitle(
-                f"Model Scores (-log10 Val Error){' - ' + stype if stype else ''} - {ensemble}",
-                fontsize=22,
-                fontweight="bold",
-            )
-
-            for i, bv_reg_fn in enumerate(bv_reg_functions):
-                for j, loss_func in enumerate(loss_functions):
-                    ax = axes[i, j]
-
-                    combo_df = ensemble_df[
-                        (ensemble_df["loss_function"] == loss_func)
-                        & (ensemble_df["bv_reg_function"] == bv_reg_fn)
-                    ]
-
-                    if len(combo_df) > 0:
-                        # Get final step scores for each (maxent, bvreg, split)
-                        final_df = combo_df.loc[
-                            combo_df.groupby(["maxent_value", "bv_reg_value", "split"])[
-                                "convergence_step"
-                            ].idxmax()
-                        ]
-
-                        # Average scores across splits
-                        pivot_data = final_df.pivot_table(
-                            values="model_score",
-                            index="bv_reg_value",
-                            columns="maxent_value",
-                            aggfunc="mean",
-                        )
-
-                        if not pivot_data.empty:
-                            pivot_data = pivot_data.sort_index(ascending=False)
-                            pivot_data = pivot_data.sort_index(axis=1)
-
-                            sns.heatmap(
-                                pivot_data,
-                                annot=False,
-                                cmap="RdYlGn",
-                                cbar_kws={"label": "-log10(Val Error)"},
-                                ax=ax,
-                            )
-
-                            ax.set_title(f"{loss_func} + {bv_reg_fn}", fontweight="bold")
-                            ax.set_xlabel("MaxEnt Value", fontweight="bold")
-                            ax.set_ylabel("BV Reg Value", fontweight="bold")
-                            ax.set_xticklabels([f"{float(t.get_text()):.0f}" for t in ax.get_xticklabels()], rotation=45, ha="right")
-                            sns.despine(ax=ax)
-                        else:
-                            ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                            ax.set_title(f"{loss_func} + {bv_reg_fn}")
-                    else:
-                        ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
-                        ax.set_title(f"{loss_func} + {bv_reg_fn}")
-
-            plt.tight_layout()
-            filename = (
-                f"model_score_heatmap_{stype}_{ensemble}.png"
-                if stype
-                else f"model_score_heatmap_{ensemble}.png"
-            )
-            plt.savefig(os.path.join(split_output_dir, filename), dpi=300, bbox_inches="tight")
-            plt.close()
-            print(f"      Saved: {filename}")
-
-
-def plot_loss_convergence(df: pd.DataFrame, output_dir: str, split_type: str = None):
-    """Plot error vs hyperparameters with training and validation error separate."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-    title_suffix = f" - {split_type}" if split_type else ""
-    fig.suptitle(f"Error vs Hyperparameters{title_suffix}", fontsize=22, fontweight="bold")
-
-    split_types = sorted(df["split_type"].unique()) if split_type is None else [split_type]
-
-    for stype in split_types:
-        split_df = df[df["split_type"] == stype] if stype else df
-
-        ensembles = sorted(split_df["ensemble"].unique())
-        loss_functions = sorted(split_df["loss_function"].unique())
-
-        # Get final convergence step for each (ensemble, loss, maxent, bvreg, split)
-        final_df = split_df.loc[
-            split_df.groupby(["ensemble", "loss_function", "maxent_value", "bv_reg_value", "split"])[
-                "convergence_step"
-            ].idxmax()
-        ]
-
-        # Plot training errors (ax1)
-        ax = ax1
-        for ensemble in ensembles:
-            for loss_func in loss_functions:
-                subset = final_df[
-                    (final_df["ensemble"] == ensemble) & (final_df["loss_function"] == loss_func)
-                ]
-
-                if len(subset) > 0:
-                    stats = subset.groupby("maxent_value").agg({"train_loss": ["mean", "std"]}).reset_index()
-                    stats.columns = ["maxent_value", "train_mean", "train_std"]
-
-                    color = ENSEMBLE_COLOURS.get(ensemble, "grey")
-                    marker = LOSS_MARKERS.get(loss_func, "o")
-                    label = f"{ensemble} - {loss_func}"
-
-                    ax.errorbar(
-                        stats["maxent_value"],
-                        stats["train_mean"],
-                        yerr=stats["train_std"],
-                        label=label,
-                        marker=marker,
-                        color=color,
-                        linewidth=2.5,
-                        capsize=4,
-                        markersize=8,
-                        markeredgewidth=1.5,
-                        markeredgecolor="black",
-                    )
-
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("MaxEnt Value", fontweight="bold")
-        ax.set_ylabel("Training Error", fontweight="bold")
-        ax.set_title("Training Error vs MaxEnt", fontweight="bold")
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10, loc="best", frameon=True, fancybox=False, edgecolor="black")
-        sns.despine(ax=ax)
-
-        # Plot validation errors (ax2)
-        ax = ax2
-        for ensemble in ensembles:
-            for loss_func in loss_functions:
-                subset = final_df[
-                    (final_df["ensemble"] == ensemble) & (final_df["loss_function"] == loss_func)
-                ]
-
-                if len(subset) > 0:
-                    stats = subset.groupby("maxent_value").agg({"val_loss": ["mean", "std"]}).reset_index()
-                    stats.columns = ["maxent_value", "val_mean", "val_std"]
-
-                    color = ENSEMBLE_COLOURS.get(ensemble, "grey")
-                    marker = LOSS_MARKERS.get(loss_func, "o")
-                    label = f"{ensemble} - {loss_func}"
-
-                    ax.errorbar(
-                        stats["maxent_value"],
-                        stats["val_mean"],
-                        yerr=stats["val_std"],
-                        label=label,
-                        marker=marker,
-                        color=color,
-                        linewidth=2.5,
-                        capsize=4,
-                        markersize=8,
-                        markeredgewidth=1.5,
-                        markeredgecolor="black",
-                    )
-
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("MaxEnt Value", fontweight="bold")
-        ax.set_ylabel("Validation Error", fontweight="bold")
-        ax.set_title("Validation Error vs MaxEnt", fontweight="bold")
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10, loc="best", frameon=True, fancybox=False, edgecolor="black")
-        sns.despine(ax=ax)
-
-    plt.tight_layout()
-    filename = f"error_vs_hyperparameters_{stype}.png" if stype else "error_vs_hyperparameters.png"
-    plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"    Saved: {filename}")
-
-
-def plot_split_variability(df: pd.DataFrame, output_dir: str, split_type: str = None):
-    """Plot standard deviation across splits."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-    title_suffix = f" - {split_type}" if split_type else ""
-    fig.suptitle(f"Standard Deviation Across Splits{title_suffix}", fontsize=22, fontweight="bold")
-
-    split_types = sorted(df["split_type"].unique()) if split_type is None else [split_type]
-
-    for stype in split_types:
-        split_df = df[df["split_type"] == stype] if stype else df
-
-        ensembles = sorted(split_df["ensemble"].unique())
-        loss_functions = sorted(split_df["loss_function"].unique())
-
-        # Get final convergence step
-        final_df = split_df.loc[
-            split_df.groupby(["ensemble", "loss_function", "maxent_value", "bv_reg_value", "split"])[
-                "convergence_step"
-            ].idxmax()
-        ]
-
-        # Plot training loss std (ax1)
-        ax = ax1
-        for ensemble in ensembles:
-            for loss_func in loss_functions:
-                subset = final_df[
-                    (final_df["ensemble"] == ensemble) & (final_df["loss_function"] == loss_func)
-                ]
-
-                if len(subset) > 0:
-                    std_stats = subset.groupby("maxent_value").agg({"train_loss": "std"}).reset_index()
-                    std_stats.columns = ["maxent_value", "train_std"]
-
-                    color = ENSEMBLE_COLOURS.get(ensemble, "grey")
-                    marker = LOSS_MARKERS.get(loss_func, "o")
-                    label = f"{ensemble} - {loss_func}"
-
-                    ax.plot(
-                        std_stats["maxent_value"],
-                        std_stats["train_std"],
-                        label=label,
-                        marker=marker,
-                        color=color,
-                        linewidth=2.5,
-                        markersize=8,
-                        markeredgewidth=1.5,
-                        markeredgecolor="black",
-                    )
-
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("MaxEnt Value", fontweight="bold")
-        ax.set_ylabel("Training Error Std Dev", fontweight="bold")
-        ax.set_title("Training Error Standard Deviation", fontweight="bold")
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10, loc="best")
-        sns.despine(ax=ax)
-
-        # Plot validation loss std (ax2)
-        ax = ax2
-        for ensemble in ensembles:
-            for loss_func in loss_functions:
-                subset = final_df[
-                    (final_df["ensemble"] == ensemble) & (final_df["loss_function"] == loss_func)
-                ]
-
-                if len(subset) > 0:
-                    std_stats = subset.groupby("maxent_value").agg({"val_loss": "std"}).reset_index()
-                    std_stats.columns = ["maxent_value", "val_std"]
-
-                    color = ENSEMBLE_COLOURS.get(ensemble, "grey")
-                    marker = LOSS_MARKERS.get(loss_func, "o")
-                    label = f"{ensemble} - {loss_func}"
-
-                    ax.plot(
-                        std_stats["maxent_value"],
-                        std_stats["val_std"],
-                        label=label,
-                        marker=marker,
-                        color=color,
-                        linewidth=2.5,
-                        markersize=8,
-                        markeredgewidth=1.5,
-                        markeredgecolor="black",
-                    )
-
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("MaxEnt Value", fontweight="bold")
-        ax.set_ylabel("Validation Error Std Dev", fontweight="bold")
-        ax.set_title("Validation Error Standard Deviation", fontweight="bold")
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=10, loc="best")
-        sns.despine(ax=ax)
-
-    plt.tight_layout()
-    filename = f"split_variability_{stype}.png" if stype else "split_variability.png"
-    plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"    Saved: {filename}")
-
-
-def plot_best_model_comparisons(df: pd.DataFrame, output_dir: str):
-    """Plot bar charts comparing best models with loss-reg pairs as panels."""
-    if df.empty:
-        print("No data for best model comparisons")
-        return
-
-    df = df.copy()
-    df["split_name"] = df["split_type"].map(SPLIT_NAME_MAPPING).fillna(df["split_type"])
-
-    metrics = [
-        ("kl_divergence", "KL Divergence"),
-        ("js_divergence", "JS Divergence"),
-        ("recovery_percent", "Recovery %"),
-        ("train_loss", "Training Loss"),
-        ("val_loss", "Validation Loss"),
-    ]
-
-    for metric, label in metrics:
-        if metric not in df.columns:
-            continue
-
-        # Create subplots for each loss_function + bv_reg_function combination
-        loss_functions = sorted(df["loss_function"].unique())
-        bv_reg_functions = sorted(df["bv_reg_function"].unique())
-        
-        n_panels = len(loss_functions) * len(bv_reg_functions)
-        ncols = len(bv_reg_functions)
-        nrows = len(loss_functions)
-        
-        fig, axes = plt.subplots(nrows, ncols, figsize=(7 * ncols, 6 * nrows), squeeze=False)
-
-        split_names_in_data = df["split_name"].unique()
-        palette = {
-            name: SPLIT_TYPE_COLOURS.get(
-                df[df["split_name"] == name]["split_type"].iloc[0], "grey"
-            )
-            for name in split_names_in_data
-        }
-
-        for row_idx, loss_func in enumerate(loss_functions):
-            for col_idx, bv_reg_fn in enumerate(bv_reg_functions):
-                ax = axes[row_idx, col_idx]
-                combo_df = df[
-                    (df["loss_function"] == loss_func) & (df["bv_reg_function"] == bv_reg_fn)
-                ]
-
-                if not combo_df.empty:
-                    sns.barplot(
-                        data=combo_df,
-                        x="ensemble",
-                        y=metric,
-                        hue="split_name",
-                        ax=ax,
-                        ci="sd",
-                        palette=palette,
-                        edgecolor="black",
-                        linewidth=1.2,
-                    )
-
-                    ax.set_xlabel("Ensemble", fontweight="bold")
-                    ax.set_ylabel(label, fontweight="bold")
-                    ax.set_title(f"{loss_func} + {bv_reg_fn}", fontweight="bold")
-
-                    for tick_label in ax.get_xticklabels():
-                        ensemble_name = tick_label.get_text()
-                        color = ENSEMBLE_COLOURS.get(ensemble_name, "black")
-                        tick_label.set_color(color)
-                        tick_label.set_fontweight("bold")
-
-                    handles, labels_leg = ax.get_legend_handles_labels()
-                    ax.legend(
-                        handles=handles,
-                        labels=labels_leg,
-                        title="Split Type",
-                        title_fontsize=12,
-                        fontsize=10,
-                        frameon=True,
-                        fancybox=False,
-                        edgecolor="black",
-                    )
-
-                    if "loss" in metric:
-                        ax.set_yscale("log")
-
-                    if metric == "recovery_percent":
-                        ax.axhline(y=100, color="red", linestyle="--", linewidth=2, alpha=0.7, zorder=0)
-
-                    sns.despine(ax=ax)
-                else:
-                    ax.set_visible(False)
-
-        plt.suptitle(f"Best Model Comparison: {label}", fontsize=22, fontweight="bold")
-        plt.tight_layout()
-
-        filename = f"best_model_comparison_{metric}.png"
-        plt.savefig(os.path.join(output_dir, filename), dpi=300, bbox_inches="tight")
-        print(f"  Saved: {filename}")
-        plt.close()
-
-
-def plot_cluster_proportions_for_best_models(
-    best_models_df: pd.DataFrame,
-    results: Dict,
-    clustering_data: Dict[str, pd.DataFrame],
-    output_dir: str,
-):
-    """Plot cluster proportions for best models with loss-reg pairs as panels."""
-    if best_models_df.empty:
-        print("No best models data available")
-        return
-
-    print("Extracting cluster proportions for best models...")
-    cluster_data_rows = []
-
-    for _, row in best_models_df.iterrows():
-        split_type = row["split_type"]
-        ensemble = row["ensemble"]
-        loss_func = row["loss_function"]
-        bv_reg_fn = row["bv_reg_function"]
-        split_idx = int(row["split"])
-        maxent_val = row["maxent_value"]
-        bvreg_val = row["bv_reg_value"]
-        conv_step = int(row["convergence_step"])
-
-        try:
-            history = results[split_type][ensemble][loss_func][bv_reg_fn][maxent_val][bvreg_val][
-                split_idx
-            ]
-        except (KeyError, TypeError):
-            continue
-
-        if history is None or not hasattr(history, "states") or not history.states:
-            continue
-
-        if conv_step <= 0 or conv_step > len(history.states):
-            continue
-
-        state = history.states[conv_step - 1]
-
-        if not hasattr(state, "params") or not hasattr(state.params, "frame_weights"):
-            continue
-
-        weights = np.array(state.params.frame_weights)
-
-        if ensemble not in clustering_data:
-            continue
-
-        cluster_df = clustering_data[ensemble]
-        cluster_assignments = cluster_df["cluster_label"].values
-
-        if len(weights) != len(cluster_assignments):
-            continue
-
-        normalized_weights = weights / np.sum(weights)
-
-        unique_clusters = np.unique(cluster_assignments)
-        for cluster_id in unique_clusters:
-            cluster_mask = cluster_assignments == cluster_id
-            proportion = np.sum(normalized_weights[cluster_mask])
-
-            cluster_data_rows.append(
-                {
-                    "ensemble": ensemble,
-                    "loss_function": loss_func,
-                    "bv_reg_function": bv_reg_fn,
-                    "split_type": split_type,
-                    "split": split_idx,
-                    "cluster_label": int(cluster_id),
-                    "proportion": float(proportion),
-                }
-            )
-
-    if not cluster_data_rows:
-        print("No cluster proportion data could be extracted")
-        return
-
-    cluster_prop_df = pd.DataFrame(cluster_data_rows)
-
-    csv_path = os.path.join(output_dir, "best_models_cluster_proportions.csv")
-    cluster_prop_df.to_csv(csv_path, index=False)
-    print(f"Cluster proportions data saved to: {csv_path}")
-
-    cluster_prop_df["proportion_pct"] = cluster_prop_df["proportion"] * 100.0
-
-    ensembles = sorted(cluster_prop_df["ensemble"].unique())
-
-    for ensemble in ensembles:
-        df_ensemble = cluster_prop_df[cluster_prop_df["ensemble"] == ensemble]
-
-        split_types = sorted(df_ensemble["split_type"].unique())
-        loss_functions = sorted(df_ensemble["loss_function"].unique())
-        bv_reg_functions = sorted(df_ensemble["bv_reg_function"].unique())
-
-        # Create grid: rows = split_types, cols = loss_function * bv_reg_function combinations
-        n_loss_reg_combos = len(loss_functions) * len(bv_reg_functions)
-        nrows = len(split_types)
-        ncols = n_loss_reg_combos
-
-        fig, axes = plt.subplots(nrows, ncols, figsize=(6 * ncols, 5 * nrows), squeeze=False)
-
-        all_clusters = sorted(df_ensemble["cluster_label"].unique())
-        n_clusters = len(all_clusters)
-
-        colors = sns.color_palette("tab10", n_colors=max(n_clusters, 10))
-        cluster_colors = {cluster: colors[i % len(colors)] for i, cluster in enumerate(all_clusters)}
-
-        for row_idx, split_type in enumerate(split_types):
-            col_idx = 0
-            for loss_func in loss_functions:
-                for bv_reg_fn in bv_reg_functions:
-                    if col_idx >= ncols:
-                        break
-
-                    ax = axes[row_idx, col_idx]
-
-                    df_combo = df_ensemble[
-                        (df_ensemble["split_type"] == split_type)
-                        & (df_ensemble["loss_function"] == loss_func)
-                        & (df_ensemble["bv_reg_function"] == bv_reg_fn)
-                    ]
-
-                    if df_combo.empty:
-                        ax.set_visible(False)
-                        col_idx += 1
-                        continue
-
-                    stats = (
-                        df_combo.groupby("cluster_label")["proportion_pct"]
-                        .agg(["mean", "sem"])
-                        .reset_index()
-                    )
-
-                    stats = (
-                        stats.set_index("cluster_label")
-                        .reindex(all_clusters, fill_value=0)
-                        .reset_index()
-                    )
-                    stats["sem"] = stats["sem"].fillna(0)
-
-                    x_pos = np.arange(len(all_clusters))
-                    ax.bar(
-                        x_pos,
-                        stats["mean"],
-                        yerr=stats["sem"],
-                        color=[cluster_colors[c] for c in all_clusters],
-                        capsize=4,
-                        edgecolor="black",
-                        linewidth=1.5,
-                        alpha=0.85,
-                    )
-
-                    ax.set_xlabel("Cluster Label", fontsize=11, fontweight="bold")
-                    ax.set_ylabel("Proportion (%)", fontsize=11, fontweight="bold")
-                    ax.set_title(
-                        f"{split_type} - {loss_func} + {bv_reg_fn}",
-                        fontsize=12,
-                        fontweight="bold",
-                        color=ENSEMBLE_COLOURS.get(ensemble, "black"),
-                    )
-                    ax.set_xticks(x_pos)
-                    ax.set_xticklabels([str(c) for c in all_clusters])
-                    ax.set_ylim(0, min(max(stats["mean"].max() * 1.15, 5), 100))
-                    ax.grid(axis="y", alpha=0.3, linestyle="--")
-                    sns.despine(ax=ax)
-
-                    col_idx += 1
-
-        plt.suptitle(
-            f"Cluster Proportions for Best Models - {ensemble}",
-            fontsize=22,
-            fontweight="bold",
-            y=1.00,
-        )
-        plt.tight_layout()
-
-        filename = f"cluster_proportions_best_models_{ensemble}.png"
-        filepath = os.path.join(output_dir, filename)
-        plt.savefig(filepath, dpi=300, bbox_inches="tight")
-        print(f"  Saved: {filename}")
-        plt.close()
-
-
-# ============================================================================
-# MAIN FUNCTION
-# ============================================================================
+from jaxent.examples.common.analysis import (
+    extract_loss_trajectories_2d,
+    compute_model_scores,
+    select_best_models,
+)
+from jaxent.examples.common.plotting import (
+    setup_publication_style,
+    plot_best_model_comparisons,
+)
+from jaxent.examples.common.paths import find_most_recent_dir
 
 
 def main():
-    """Main function for 2D hyperparameter sweep loss analysis."""
+    # Parse arguments
     parser = argparse.ArgumentParser(
-        description="2D hyperparameter sweep loss analysis with best model selection"
+        description="Analyze 2D optimization loss landscapes (MaxEnt × BV regularization)"
+    )
+    parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to experiment config file (default: config.yaml)",
     )
     parser.add_argument(
         "--results-dir",
-        default="../fitting/jaxENT/_optimise_quick_test_SIGMA_50_lr0.1_BV_objectve_20250918_171508",
-        help="Results directory",
+        help="Override results directory from config",
     )
     parser.add_argument(
         "--output-dir",
-        default=None,
-        help="Output directory. If omitted, derived from results-dir.",
-    )
-    parser.add_argument(
-        "--clustering-dir",
-        default="_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters",
-        help="Clustering directory",
-    )
-    parser.add_argument(
-        "--state-ratios-json",
-        default="../analysis/state_ratios.json",
-        help="Path to JSON with target state ratios",
+        help="Override output directory from config",
     )
     parser.add_argument(
         "--ema",
         action="store_true",
-        default=False,
-        help="Use EMA results",
+        help="Use EMA results (default: False)",
     )
     args = parser.parse_args()
 
-    # Parameters
-    ensembles = ["AF2_MSAss", "AF2_filtered"]
-    loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
-    bv_reg_functions = ["L1", "L2"]
+    # Load configuration
+    script_dir = Path(__file__).parent
+    exp_dir = script_dir.parent
+    config_path = exp_dir / args.config
 
-    # Resolve directories
-    script_dir = os.path.dirname(__file__)
-    results_dir = os.path.join(script_dir, args.results_dir)
-    clustering_dir = os.path.join(script_dir, args.clustering_dir)
+    print("=" * 80)
+    print("EXPERIMENT 3: 2D BV Regularization Loss Landscape Analysis (REFACTORED)")
+    print("=" * 80)
+    print(f"Loading config from: {config_path}")
 
+    config = ExperimentConfig.from_yaml(config_path)
+
+    # Apply CLI overrides
+    if args.results_dir:
+        config.results_dir = args.results_dir
+        config.results_prefix = None  # Clear prefix if dir is explicitly provided
     if args.output_dir:
-        output_dir = os.path.join(script_dir, args.output_dir)
+        config.output_dir = args.output_dir
+
+    # Resolve paths - handle results_prefix pattern
+    if config.results_dir:
+        results_dir = exp_dir / config.results_dir
+    elif config.results_prefix:
+        # Find most recent directory matching prefix
+        prefix_parts = config.results_prefix.rsplit("/", 1)
+        if len(prefix_parts) == 2:
+            search_dir = exp_dir / prefix_parts[0]
+            results_dir = find_most_recent_dir(search_dir, prefix_parts[1])
+            if not results_dir:
+                raise FileNotFoundError(
+                    f"No directory found matching prefix: {config.results_prefix}\n"
+                    f"Searched in: {search_dir}"
+                )
+        else:
+            results_dir = find_most_recent_dir(exp_dir, config.results_prefix)
+            if not results_dir:
+                raise FileNotFoundError(
+                    f"No directory found matching prefix: {config.results_prefix}"
+                )
     else:
-        base_name = os.path.basename(os.path.normpath(results_dir))
-        output_dir = os.path.join(script_dir, "_analysis_" + base_name)
+        raise ValueError("Config must specify either results_dir or results_prefix")
 
-    print(f"Results directory: {results_dir}")
-    print(f"Clustering directory: {clustering_dir}")
-    print(f"Output directory: {output_dir}")
-    print(f"EMA flag: {args.ema}")
+    output_dir = exp_dir / (config.output_dir or "analysis/_analysis_loss_output")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load target state ratios
-    state_ratios_path = os.path.join(script_dir, args.state_ratios_json)
-    try:
-        with open(state_ratios_path, "r") as f:
-            ratios_data = json.load(f)
-        target_ratios = {
-            "Folded": ratios_data["fractional_populations"]["folded"]["fraction"],
-            "PUF1": ratios_data["fractional_populations"]["PUF1"]["fraction"],
-            "PUF2": ratios_data["fractional_populations"]["PUF2"]["fraction"],
-            "unfolded": 0,
-        }
-        print("\nTarget state ratios:")
-        for state, ratio in target_ratios.items():
-            print(f"  {state}: {ratio:.3f}")
-    except (FileNotFoundError, KeyError) as e:
-        print(f"Error loading state ratios: {e}")
-        return
+    # Setup plotting style
+    setup_publication_style()
 
-    # Load clustering data
-    print("\nLoading clustering data...")
-    clustering_data = {}
-    for ensemble in ensembles:
-        try:
-            clustering_data[ensemble] = load_clustering_for_ensemble(ensemble, clustering_dir)
-        except Exception as e:
-            print(f"Error loading clustering for {ensemble}: {e}")
-            return
+    # Extract BV reg functions from config or use default
+    bv_reg_functions = ["L1", "L2"]  # Default BV regularization functions
 
-    os.makedirs(output_dir, exist_ok=True)
+    print(f"\nConfiguration:")
+    print(f"  Ensembles: {config.ensembles}")
+    print(f"  Loss functions: {config.loss_functions}")
+    print(f"  BV reg functions: {bv_reg_functions}")
+    print(f"  Number of splits: {config.num_splits}")
+    print(f"  MaxEnt values: {config.sweep.maxent_values if config.sweep else 'default'}")
+    print(f"  BV reg values: {config.sweep.bv_reg_values if config.sweep else 'default'}")
+    print(f"  Results: {results_dir}")
+    print(f"  Output: {output_dir}")
 
-    # Load optimization results
-    print("\nLoading optimization results...")
+    # Load 2D optimization results
+    print("\nLoading 2D optimization results...")
     results = load_all_optimization_results_2d(
-        results_dir=results_dir,
-        ensembles=ensembles,
-        loss_functions=loss_functions,
+        results_dir=str(results_dir),
+        ensembles=config.ensembles,
+        loss_functions=config.loss_functions,
         bv_reg_functions=bv_reg_functions,
+        num_splits=config.num_splits,
         EMA=args.ema,
-        verbose=True,
     )
 
-    # Extract loss trajectories
-    print("\n" + "=" * 60)
-    print("EXTRACTING LOSS TRAJECTORIES")
-    print("=" * 60)
-
-    df = extract_loss_trajectories_2d(results)
-
-    if len(df) == 0:
-        print("No data found!")
+    if not results:
+        print("ERROR: No results loaded!")
         return
 
-    print(f"Extracted {len(df)} data points\n")
+    print(f"Loaded 2D results for split types: {list(results.keys())}")
 
-    # Save full dataset
-    df_path = os.path.join(output_dir, "full_analysis_data.csv")
-    df.to_csv(df_path, index=False)
-    print(f"Dataset saved to: {df_path}\n")
-
-    # Generate plots
-    print("=" * 60)
-    print("GENERATING PLOTS")
-    print("=" * 60)
-
-    print("\nGenerating convergence heatmaps...")
-    plot_convergence_heatmaps(df, output_dir)
-
-    print("\nGenerating model score heatmaps...")
-    plot_model_score_heatmaps(df, output_dir)
-
-    print("\nGenerating error vs hyperparameters plots...")
-    plot_loss_convergence(df, output_dir)
-
-    print("\nGenerating split variability plots...")
-    plot_split_variability(df, output_dir)
-
-    # Best model selection
-    print("\n" + "=" * 60)
-    print("BEST MODEL SELECTION (SEPARATE BY BV REG FUNCTION)")
-    print("=" * 60)
-
-    print("\nSelecting best models (separately for each BV reg function)...")
-    best_models = select_best_models_2d(df)
-    print(f"Selected {len(best_models)} best models\n")
-
-    if len(best_models) > 0:
-        # Augment with metrics
-        print("Computing KL divergence and JSD-based recovery metrics...")
-        best_models_augmented = augment_best_models_with_metrics(
-            best_models, results, clustering_data, target_ratios
-        )
-
-        if len(best_models_augmented) > 0:
-            # Save best models
-            best_models_path = os.path.join(output_dir, "best_models.csv")
-            best_models_augmented.to_csv(best_models_path, index=False)
-            print(f"Best models saved to: {best_models_path}\n")
-
-            # Save selected per-gamma/per-replicate metrics
-            try:
-                save_selected_recovery_and_kl(
-                    recovery_df=best_models_augmented,
-                    best_gammas=best_models_augmented,
-                    output_dir=output_dir,
-                    atol=1e-8,
-                )
-            except Exception as e:
-                print(f"Warning: failed to save selected recovery/kl metrics: {e}")
-
-            # --- NEW: Save concise selected models CSV (one representative per group) ---
-            try:
-                # Choose one representative per split_type, bv_reg_function, ensemble, loss_function
-                grouping_cols = ["split_type", "bv_reg_function", "ensemble", "loss_function"]
-                # ensure model_score present
-                if "model_score" in best_models_augmented.columns:
-                    idx = best_models_augmented.groupby(grouping_cols)["model_score"].idxmax()
-                    selected_models = best_models_augmented.loc[idx].reset_index(drop=True)
-                else:
-                    # fallback: pick first row per group
-                    idx = best_models_augmented.groupby(grouping_cols).head(1).index
-                    selected_models = best_models_augmented.loc[idx].reset_index(drop=True)
-
-                selected_models_path = os.path.join(output_dir, "selected_models.csv")
-                selected_models.to_csv(selected_models_path, index=False)
-                print(f"Selected models summary saved to: {selected_models_path}\n")
-            except Exception as e:
-                print(f"Warning: failed to save selected_models.csv: {e}\n")
-            # --- end NEW ---
-
-            # Generate comparison plots
-            print("Generating best model comparison plots (loss-reg pairs as panels)...")
-            plot_best_model_comparisons(best_models_augmented, output_dir)
-
-            # NEW: Save frame weights
-            print("Extracting and saving frame weights...")
-            save_weights_for_best_models(best_models_augmented, results, output_dir)
-
-            print("\nGenerating cluster proportion plots (loss-reg pairs as panels)...")
-            plot_cluster_proportions_for_best_models(
-                best_models_augmented, results, clustering_data, output_dir
+    # Load clustering data if available
+    clustering_data = {}
+    if config.clustering_dir:
+        clustering_dir = Path(config.clustering_dir)
+        if not clustering_dir.is_absolute():
+            clustering_dir = exp_dir / clustering_dir
+        if clustering_dir.exists():
+            print(f"\nLoading clustering data from {clustering_dir}...")
+            clustering_data = load_clustering_results(
+                str(clustering_dir),
+                config.scoring.ensemble_clustering_map if config.scoring else None,
             )
+        else:
+            print(f"\nWarning: Clustering directory not found: {clustering_dir}")
 
-            # Print summary
-            print("\n" + "=" * 60)
-            print("BEST MODELS SUMMARY (BY BV REG FUNCTION)")
-            print("=" * 60)
+    # Extract 2D loss trajectories
+    print("\n" + "=" * 80)
+    print("Extracting 2D loss trajectories...")
+    print("=" * 80)
 
-            for split_type in sorted(best_models_augmented["split_type"].unique()):
-                print(f"\nSplit Type: {split_type}")
-                split_best = best_models_augmented[best_models_augmented["split_type"] == split_type]
-                
-                for bv_reg_fn in sorted(split_best["bv_reg_function"].unique()):
-                    print(f"\n  BV Reg Function: {bv_reg_fn}")
-                    bv_split_best = split_best[split_best["bv_reg_function"] == bv_reg_fn]
-                    
-                    for _, row in bv_split_best.iterrows():
-                        print(
-                            f"    {row['ensemble']} - {row['loss_function']} - Split {row['split']}: "
-                            f"MaxEnt={row['maxent_value']:.1f}, BV Reg={row['bv_reg_value']:.2f}, "
-                            f"Val Loss={row['val_loss']:.6f}, Recovery={row['recovery_percent']:.1f}%"
-                        )
+    loss_df = extract_loss_trajectories_2d(results)
 
-    print("\n" + "=" * 60)
-    print("ANALYSIS COMPLETED")
-    print(f"Results saved to: {output_dir}")
-    print("=" * 60)
+    if loss_df.empty:
+        print("ERROR: No loss data extracted!")
+        return
+
+    print(f"Extracted {len(loss_df)} trajectory points")
+    print(f"Columns: {list(loss_df.columns)}")
+
+    # Save combined trajectories
+    combined_csv_path = output_dir / "all_loss_trajectories_2d.csv"
+    loss_df.to_csv(combined_csv_path, index=False)
+    print(f"Saved combined loss trajectories: {len(loss_df)} points -> {combined_csv_path}")
+
+    # Compute model scores
+    print("\nComputing model scores...")
+    if config.scoring:
+        loss_df = compute_model_scores(loss_df, config.scoring)
+        print(f"Model scores computed using:")
+        print(f"  Train penalty: {config.scoring.scoring_weights.get('train_penalty', 1.0)}")
+        print(f"  KL penalty: {config.scoring.scoring_weights.get('kl_penalty', 0.0)}")
+
+    # Select best models
+    print("\nSelecting best models...")
+    best_models_df = select_best_models(loss_df)
+
+    if not best_models_df.empty:
+        best_models_csv_path = output_dir / "best_models_2d.csv"
+        best_models_df.to_csv(best_models_csv_path, index=False)
+        print(f"Selected {len(best_models_df)} best models -> {best_models_csv_path}")
+
+        # Display sample of best models
+        print("\nSample of best models:")
+        display_cols = ["ensemble", "loss_function", "bv_reg_function", "split_type",
+                        "maxent_value", "bv_reg_value", "convergence_step",
+                        "train_loss", "val_loss"]
+        available_cols = [c for c in display_cols if c in best_models_df.columns]
+        print(best_models_df[available_cols].head(10).to_string(index=False))
+
+        # Plot best model comparisons
+        print("\nGenerating best model comparison plots...")
+        plot_best_model_comparisons(
+            df=best_models_df,
+            output_dir=str(output_dir),
+            style=config.style,
+        )
+    else:
+        print("WARNING: No best models selected")
+
+    # Generate 2D heatmaps (MaxEnt vs BV reg)
+    print("\nNote: 2D sweep-specific heatmaps (MaxEnt × BV reg) require custom plotting.")
+    print("      Use the saved CSV files to create custom visualizations as needed.")
+
+    print("\n" + "=" * 80)
+    print("ANALYSIS COMPLETE")
+    print("=" * 80)
+    print(f"Output saved to: {output_dir}")
 
 
 if __name__ == "__main__":
