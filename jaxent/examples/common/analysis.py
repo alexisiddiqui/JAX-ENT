@@ -135,40 +135,44 @@ def extract_loss_trajectories_2d(
     """Extract loss trajectories from a 2D sweep result dict.
 
     The results dict is keyed by
-    ``{split_type: {ensemble: {loss_name: {maxent_val: {bv_reg: {split_idx: history}}}}}}``.
+    ``{split_type: {ensemble: {loss_name: {bv_reg_fn: {maxent_val: {bv_reg_val: {split_idx: history}}}}}}}``.
 
-    Returns a DataFrame with additional ``bv_reg_value`` column.
+    Returns a DataFrame with additional ``bv_reg_value`` and ``bv_reg_function`` columns.
     """
     data_rows: list[dict] = []
 
     for split_type, ensembles_data in results.items():
         for ensemble, loss_data in ensembles_data.items():
-            for loss_name, maxent_data in loss_data.items():
-                for maxent_val, bv_data in maxent_data.items():
-                    if not isinstance(bv_data, dict):
+            for loss_name, bv_reg_fn_data in loss_data.items():
+                for bv_reg_fn, maxent_data in bv_reg_fn_data.items():
+                    if not isinstance(maxent_data, dict):
                         continue
-                    for bv_reg, splits_data in bv_data.items():
-                        if not isinstance(splits_data, dict):
+                    for maxent_val, bv_data in maxent_data.items():
+                        if not isinstance(bv_data, dict):
                             continue
-                        for split_idx, history in splits_data.items():
-                            if history is None or not history.states:
+                        for bv_reg_val, splits_data in bv_data.items():
+                            if not isinstance(splits_data, dict):
                                 continue
-                            for step_idx, state in enumerate(history.states):
-                                if state.losses is not None:
-                                    data_rows.append(
-                                        {
-                                            "ensemble": ensemble,
-                                            "loss_function": loss_name,
-                                            "split": split_idx,
-                                            "split_type": split_type,
-                                            "maxent_value": maxent_val,
-                                            "bv_reg_value": bv_reg,
-                                            "convergence_step": step_idx + 1,
-                                            "train_loss": float(state.losses.train_losses[0]),
-                                            "val_loss": float(state.losses.val_losses[0]),
-                                            "step_number": state.step,
-                                        }
-                                    )
+                            for split_idx, history in splits_data.items():
+                                if history is None or not hasattr(history, 'states') or not history.states:
+                                    continue
+                                for step_idx, state in enumerate(history.states):
+                                    if state.losses is not None:
+                                        data_rows.append(
+                                            {
+                                                "ensemble": ensemble,
+                                                "loss_function": loss_name,
+                                                "bv_reg_function": bv_reg_fn,
+                                                "split": split_idx,
+                                                "split_type": split_type,
+                                                "maxent_value": maxent_val,
+                                                "bv_reg_value": bv_reg_val,
+                                                "convergence_step": step_idx + 1,
+                                                "train_loss": float(state.losses.train_losses[0]),
+                                                "val_loss": float(state.losses.val_losses[0]),
+                                                "step_number": state.step,
+                                            }
+                                        )
 
     return pd.DataFrame(data_rows)
 
