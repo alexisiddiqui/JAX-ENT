@@ -77,6 +77,20 @@ def find_most_recent_dir(base_path: Path | str, prefix: str) -> Path | None:
     return matching_dirs[0]
 
 
+def derive_processed_output_dir(results_dir: Path | str) -> Path:
+    """Return the processed-output directory for a given results directory.
+
+    Convention: sibling of *results_dir* named ``_processed_<results_dir_name>``.
+
+    Example
+    -------
+    >>> derive_processed_output_dir("fitting/jaxENT/_optimise_test__20260217")
+    Path('fitting/jaxENT/_processed__optimise_test__20260217')
+    """
+    results_dir = Path(results_dir)
+    return results_dir.parent / ("_processed_" + results_dir.name)
+
+
 def resolve_script_paths(
     args,
     script_dir: Path | str,
