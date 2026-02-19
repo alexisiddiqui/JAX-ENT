@@ -445,7 +445,8 @@ def plot_metric_heatmap(
     )
 
     for stype in split_types:
-        split_output_dir = os.path.join(output_dir, stype) if stype else output_dir
+        stype_safe = stype.replace("/", "_") if stype else stype
+        split_output_dir = os.path.join(output_dir, stype_safe) if stype_safe else output_dir
         os.makedirs(split_output_dir, exist_ok=True)
         split_df = df[df["split_type"] == stype].copy() if stype else df.copy()
 
@@ -522,7 +523,7 @@ def plot_metric_heatmap(
                     ax.set_title(f"{ensemble or ''} — {loss_func or ''}")
 
         plt.tight_layout()
-        filename = f"{metric}_heatmap{'_' + stype if stype else ''}.png"
+        filename = f"{metric}_heatmap{'_' + stype_safe if stype_safe else ''}.png"
         plt.savefig(os.path.join(split_output_dir, filename), dpi=style.dpi, bbox_inches="tight")
         plt.close()
 
