@@ -53,16 +53,16 @@ style:
 # Scoring configuration
 scoring:
   ensemble_feature_map:
-    ISO_TRI: "ISO_TRI"
-    ISO_BI: "ISO_BI"
+    ISO_TRI: "iso_tri"
+    ISO_BI: "iso_bi"
 
   ensemble_clustering_map:
     ISO_TRI: "ISO_TRI"
     ISO_BI: "ISO_BI"
 
   state_mapping:
-    0: "Open"
-    1: "Closed"
+    0: "open"
+    1: "closed"
 
   scoring_weights:
     train_penalty: 1.0
