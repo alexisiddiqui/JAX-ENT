@@ -167,7 +167,7 @@ scoring:
   Step 1 of Phase 2 is fully verified.                               
 
 ---
-
+<!-- 
 ## Step 2: Refactor `process_optimisation_results.py` — all 3 experiments → ~200–250 lines each
 
 **Files:**
@@ -194,8 +194,19 @@ scoring:
 | Extra output files | — | — | `bv_bc.npy`, `bv_bh.npy` |
 | Clustering CSV format | flat CSVs | nested subdirs | nested subdirs (cross-experiment) |
 
-**Validation:** Check that `_processed_*` output directories contain the same `.npy` and `.csv` files as pre-refactor runs.
-
+**Validation:** Check that `_processed_*` output directories contain the same `.npy` and `.csv` files as pre-refactor runs. -->
+                                                                                                                                                                                 
+● All 3 scripts verified against real data:                                                                                                                                      
+                                                                                                                                                                                 
+  ┌──────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐                                      
+  │  Script  │                                                           Result                                                           │                                      
+  ├──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                      
+  │ Script 1 │ Completed — 1512 .npy files, matching old processed dir exactly                                                            │                                      
+  ├──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                      
+  │ Script 2 │ Completed — both AF2_MSAss and AF2_filtered loaded (correct case), AF2_Filtered/ subdir used for clustering                │                                      
+  ├──────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤                                      
+  │ Script 3 │ Completed — 756 bv_bc.npy + 756 bv_bh.npy, run_id format correct (_bvreg0.00_bvregfnL1), all 11 expected files per run dir │                                      
+  └──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘    
 ---
 
 ## Step 3: Refactor `score_models_ISO_TRI_BI.py` — all 3 experiments → ~150–200 lines each
