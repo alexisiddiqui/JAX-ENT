@@ -266,6 +266,28 @@ def load_clustering_results(
 
     clustering_results: Dict = {}
 
+    # Detect Exp1 flat-CSV format: cluster_assignments_<ensemble>.csv files directly
+    # in clustering_dir (as opposed to the nested subdirectory format used by Exp2/3).
+    flat_csv_files = glob.glob(os.path.join(clustering_dir, "cluster_assignments_*.csv"))
+    if flat_csv_files:
+        for csv_path in sorted(flat_csv_files):
+            filename = os.path.basename(csv_path)
+            ensemble_name = filename.replace("cluster_assignments_", "").replace(".csv", "")
+            cluster_df = pd.read_csv(csv_path)
+            # Normalise column name: flat format uses "cluster_assignment" (singular),
+            # whereas the nested format uses "cluster_label".
+            if "cluster_assignment" in cluster_df.columns and "cluster_label" not in cluster_df.columns:
+                cluster_df = cluster_df.rename(columns={"cluster_assignment": "cluster_label"})
+            clustering_results[ensemble_name] = {
+                "cluster_assignments": cluster_df["cluster_label"].values,
+                "frame_data": cluster_df,
+            }
+            print(
+                f"Loaded cluster assignments (flat format) for {ensemble_name}: "
+                f"{len(cluster_df)} frames"
+            )
+        return clustering_results
+
     if ensemble_clustering_map is None:
         # Auto-discover: each subdirectory that contains a *_frame_to_cluster.csv
         for subdir in os.listdir(clustering_dir):
@@ -516,3 +538,126 @@ def save_split_data(
         csv_path=os.path.join(output_dir, "full_dataset_dfrac.csv"),
     )
     print(f"Saved split {split_idx} to {split_path}")
+
+
+# ---------------------------------------------------------------------------
+# Processed run scanning
+# ---------------------------------------------------------------------------
+
+
+def load_processed_run_info(
+    processed_data_dir: str,
+    ensemble_pattern: str,
+) -> Tuple[List[Dict], List[Tuple]]:
+    """Scan processed output directories and extract run metadata.
+
+    Parameters
+    ----------
+    processed_data_dir:
+        Directory containing per-split-type subdirectories, each with
+        processed run sub-directories named by run ID.
+    ensemble_pattern:
+        Compiled-ready regex string with **exactly 5 capture groups** in order:
+        ``(ensemble, loss_name, split_type, split_idx, maxent_value)``.
+
+        Example (Exp1/Exp2)::
+
+            r"(ISO_BI|ISO_TRI)_(mcMSE|MSE|Sigma_MSE)_(.+?)_split(\\d+)_maxent([\\d.]+)"
+
+    Returns
+    -------
+    all_run_info:
+        List of dicts, one per matched run directory.  Keys: ``run_id``,
+        ``full_run_path``, ``ensemble``, ``loss_name``, ``run_split_type``,
+        ``split_idx_str``, ``split_idx``, ``maxent_value``,
+        ``actual_split_type``.
+    unique_configs:
+        Sorted list of ``(ensemble, run_split_type, split_idx_str)`` tuples
+        representing distinct data-loading configurations.
+    """
+    all_run_info: List[Dict] = []
+    if not os.path.exists(processed_data_dir):
+        print(f"Processed data directory not found: {processed_data_dir}")
+        return all_run_info, []
+
+    compiled = re.compile(ensemble_pattern)
+
+    for split_type_dir in os.listdir(processed_data_dir):
+        full_split_type_path = os.path.join(processed_data_dir, split_type_dir)
+        if not os.path.isdir(full_split_type_path):
+            continue
+
+        actual_split_type = split_type_dir if split_type_dir != "_flat" else "flat"
+
+        for run_id in os.listdir(full_split_type_path):
+            full_run_path = os.path.join(full_split_type_path, run_id)
+            if not os.path.isdir(full_run_path):
+                continue
+
+            match = compiled.match(run_id)
+            if not match:
+                continue
+
+            ensemble, loss_name, run_split_type, split_idx_str, maxent_str = match.groups()
+
+            run_info: Dict = {
+                "run_id": run_id,
+                "full_run_path": full_run_path,
+                "ensemble": ensemble,
+                "loss_name": loss_name,
+                "run_split_type": run_split_type,
+                "split_idx_str": split_idx_str,
+                "split_idx": int(split_idx_str),
+                "maxent_value": float(maxent_str),
+                "actual_split_type": actual_split_type,
+            }
+            all_run_info.append(run_info)
+
+    unique_configs = sorted(
+        set((r["ensemble"], r["run_split_type"], r["split_idx_str"]) for r in all_run_info)
+    )
+    return all_run_info, unique_configs
+
+
+# ---------------------------------------------------------------------------
+# Split data loading
+# ---------------------------------------------------------------------------
+
+
+def load_split_data(
+    split_dir: str,
+) -> Tuple[List, np.ndarray, List, np.ndarray]:
+    """Load train and validation data from a split directory.
+
+    Parameters
+    ----------
+    split_dir:
+        Path to a split directory containing ``train_topology.json``,
+        ``train_dfrac.csv``, ``val_topology.json``, and ``val_dfrac.csv``.
+
+    Returns
+    -------
+    ``(train_top, train_dfrac, val_top, val_dfrac)`` where ``*_top`` are lists
+    of ``Partial_Topology`` objects and ``*_dfrac`` are ``np.ndarray`` of
+    shape ``(n_peptides, n_timepoints)``.
+    """
+    from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+    from jaxent.src.custom_types.HDX import HDX_peptide
+
+    train_datapoints = ExpD_Datapoint.load_list_from_files(
+        json_path=os.path.join(split_dir, "train_topology.json"),
+        csv_path=os.path.join(split_dir, "train_dfrac.csv"),
+        datapoint_class=HDX_peptide,
+    )
+    val_datapoints = ExpD_Datapoint.load_list_from_files(
+        json_path=os.path.join(split_dir, "val_topology.json"),
+        csv_path=os.path.join(split_dir, "val_dfrac.csv"),
+        datapoint_class=HDX_peptide,
+    )
+
+    train_top = [dp.top for dp in train_datapoints]
+    train_dfrac = np.array([dp.dfrac for dp in train_datapoints])
+    val_top = [dp.top for dp in val_datapoints]
+    val_dfrac = np.array([dp.dfrac for dp in val_datapoints])
+
+    return train_top, train_dfrac, val_top, val_dfrac

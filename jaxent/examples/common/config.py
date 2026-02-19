@@ -83,6 +83,8 @@ class ScoringConfig:
     ensemble_clustering_map: dict[str, str] = field(default_factory=dict)
     state_mapping: dict[int, str] = field(default_factory=dict)
     scoring_weights: dict[str, float] = field(default_factory=dict)
+    ground_truth_ratios: dict[str, float] = field(default_factory=dict)
+    recovery_metric: str = "jsd"  # "jsd" or "ratio"
 
 
 # ---------------------------------------------------------------------------
