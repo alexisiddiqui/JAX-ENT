@@ -70,3 +70,5 @@ scoring:
   scoring_weights:
     train_penalty: 0.9
     kl_penalty: 0.1
+
+  recovery_metric: jsd

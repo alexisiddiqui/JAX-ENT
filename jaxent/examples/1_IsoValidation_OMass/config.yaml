@@ -67,3 +67,9 @@ scoring:
   scoring_weights:
     train_penalty: 1.0
     kl_penalty: 0.0  # Original bug: computed but never applied
+
+  ground_truth_ratios:
+    open: 0.4
+    closed: 0.6
+
+  recovery_metric: ratio
