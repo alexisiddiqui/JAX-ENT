@@ -32,7 +32,7 @@ Phase 1 established the common-modules architecture and validated it with a 90%+
 > **Note**: `plot_compare_jaxENT_HDXer.py`, `plot_selected_models_ISO_TRI_BI.py`, and `analyse_scores_mixed_linear_model.py` were not explored in this research pass and will be planned separately.
 
 ---
-
+<!-- 
 ## Step 0: Add Missing Common Module Functions
 
 Do this in **one pass** across all modules before touching any script. Reference implementations come from the existing scripts (noted below).
@@ -98,10 +98,43 @@ scoring:
   ground_truth_ratios:
     open: 0.4
     closed: 0.6
-```
+``` -->
+
+● Bash(.venv/bin/python -c "from jaxent.examples.common import analysis, loading, plotting, paths; print('Import OK')" 2>&1)                                                     
+  ⎿  Import OK                                                                                                                                                                 
+                                                                                                                                                                                 
+● Bash(.venv/bin/python -c "                                                                                                                                                     
+      from jaxent.examples.common import analysis, loading, plotting, paths…)
+  ⎿  All functions present                                                                                                                                                       
+                                                                                                                                                                               
+● Bash(.venv/bin/python -c "                                                                                                                                                     
+      from jaxent.examples.common.config import ExperimentConfig…)
+  ⎿  Exp1 config OK — recovery_metric=ratio, ground_truth_ratios={'open': 0.4, 'closed': 0.6}                                                                                    
+     Exp2 config OK — recovery_metric=jsd                                                                                                                                      
+     Exp3 config OK — recovery_metric=jsd                                                                                                                                        
+     Config OK
+                                                                                                                                                                                 
+● All three verification checks pass. Here's a summary of what was completed in Step 0:                                                                                          
+  
+  common/config.py — Added ground_truth_ratios and recovery_metric fields to ScoringConfig                                                                                       
+                                                                                                                                                                               
+  common/paths.py — Added derive_processed_output_dir
+
+  common/analysis.py — Added 13 public + 3 private functions: _is_valid_array, _align_uptake_shape, get_experimental_uptake, calculate_mse, find_best_convergence_threshold,
+  extract_frame_weights_kl, extract_final_weights, extract_final_weights_2d, extract_weights_over_convergence_steps, compute_pairwise_kld_between_splits,
+  compute_pairwise_kld_between_splits_2d, compute_sequential_maxent_kld, analyze_conformational_recovery
+
+  common/loading.py — Extended load_clustering_results with Exp1 flat-CSV detection, added load_processed_run_info and load_split_data
+
+  common/plotting.py — Added 11 functions: create_violin_plots, plot_metric_heatmap, plot_weight_distribution_lines, plot_2d_heatmaps_grid, plot_1d_slices_2d_sweep, and all 6
+  split-analysis plots from analyse_split_ISO_TRI_BI.py
+
+  3 YAML config files — Added recovery_metric (and ground_truth_ratios for Exp1)
+
+  All verifications pass. I won't proceed to Steps 1–5 as instructed.
 
 ---
-
+<!-- 
 ## Step 1: Refactor `analyse_split_*.py` — both scripts → ~20 lines each
 
 **Files:**
@@ -123,7 +156,15 @@ scoring:
    ```
 
 **Differences remaining in script (none — only config):**
-- Experiment-specific default paths (handled by `--split-dir` / `--output-dir` args)
+- Experiment-specific default paths (handled by `--split-dir` / `--output-dir` args) -->
+
+● Both scripts ran cleanly with no errors. Summary:                                                                                                                              
+                                                                                                                                                                                 
+  analyse_split_ISO_TRI_BI.py — processed 5 split types (stratified, sequence, spatial, sequence_cluster, random), 3 splits each, plots saved to _analysis_split_iso_tri_bi/     
+                                                                                                                                                                                 
+  analyse_split_CrossVal.py — same 5 split types, 3 splits each, plots saved to _analysis_split_CrossVal/                                                                        
+                                                                                                                                                                                 
+  Step 1 of Phase 2 is fully verified.                               
 
 ---
 
