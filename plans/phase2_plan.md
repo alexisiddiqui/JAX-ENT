@@ -208,7 +208,7 @@ scoring:
   │ Script 3 │ Completed — 756 bv_bc.npy + 756 bv_bh.npy, run_id format correct (_bvreg0.00_bvregfnL1), all 11 expected files per run dir │                                      
   └──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘    
 ---
-
+<!-- 
 ## Step 3: Refactor `score_models_ISO_TRI_BI.py` — all 3 experiments → ~150–200 lines each
 
 **Files:**
@@ -234,11 +234,25 @@ scoring:
 
 The `ScoringConfig` in `config.yaml` already provides `ensemble_feature_map`, `ensemble_clustering_map`, `state_mapping`, `scoring_weights`.
 
-**Validation:** Compare `model_scores.csv` row counts and column values against pre-refactor baselines.
+**Validation:** Compare `model_scores.csv` row counts and column values against pre-refactor baselines. -->
+● All three scripts ran successfully end-to-end. Here's the verification summary:
+                                                                                                                                                                                 
+  ┌────────────┬────────────────┬─────────────┬──────────────────────────────────────────────────────────┐                                                                       
+  │ Experiment │ Runs processed │ Rows in CSV │                      BV reg columns                      │
+  ├────────────┼────────────────┼─────────────┼──────────────────────────────────────────────────────────┤                                                                       
+  │ Exp1       │ 216            │ 1557        │ —                                                        │                                                                     
+  ├────────────┼────────────────┼─────────────┼──────────────────────────────────────────────────────────┤
+  │ Exp2       │ 252            │ 1845        │ —                                                        │
+  ├────────────┼────────────────┼─────────────┼──────────────────────────────────────────────────────────┤
+  │ Exp3       │ 756            │ 5535        │ bv_reg_function: ['L1'], bv_reg_value: [0.0, 0.5, 1.0] ✓ │
+  └────────────┴────────────────┴─────────────┴──────────────────────────────────────────────────────────┘
+
+  All outputs have the expected columns (work_scale_kj, work_shape_kj, etc.) and violin plots were generated. The only output during runs was pre-existing beartype type-hint
+  warnings from apply_sparse_mapping — these are not new and are not errors.
 
 ---
 
-## Step 4: Refactor `weights_validation_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~100–200 lines each
+<!-- ## Step 4: Refactor `weights_validation_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~100–200 lines each
 
 **Files:**
 - `jaxent/examples/1_IsoValidation_OMass/analysis/weights_validation_ISO_TRI_BI_precluster.py`
@@ -258,7 +272,22 @@ The `ScoringConfig` in `config.yaml` already provides `ensemble_feature_map`, `e
 | Weight extraction | `extract_frame_weights_kl` + `extract_weights_over_convergence_steps` | `extract_frame_weights_kl` (with frame guard) + `extract_final_weights` | `extract_final_weights_2d` + `find_best_convergence_threshold` |
 | Pairwise KLD | `compute_pairwise_kld_between_splits(results, per_step=False)` | `compute_pairwise_kld_between_splits(results, per_step=True)` | `compute_pairwise_kld_between_splits_2d(results)` |
 | Sequential KLD | `compute_sequential_maxent_kld` (Exp1 only) | — | — |
-| Plot type | 1D line + heatmaps | 1D heatmaps | 2D heatmaps + 1D slices |
+| Plot type | 1D line + heatmaps | 1D heatmaps | 2D heatmaps + 1D slices | -->
+
+All three scripts verified end-to-end. Here's the summary:
+                                                     
+  Script 1 — completed, produced: kl_divergence_ess_analysis_maxent_data.csv, kld_between_splits_data.csv, sequential_maxent_kld_data.csv, plus
+  all PNG files (KLD plots, sequential KLD, maxent panels, convergence panels)                                                                    
+  
+  Script 2 — completed, produced:                                                                                                                 
+  - kl_ess_data.csv, kld_between_splits_data.csv, conformational_recovery.csv ✓                                                                 
+  - Per-split-type heatmaps: sequence_cluster/effective_sample_size_heatmap_sequence_cluster.png, spatial/kl_divergence_heatmap_spatial.png,
+  spatial/mean_kld_between_splits_heatmap_spatial.png etc. ✓
+  - conformational_recovery_*.png, weight_distributions_lines_*.png ✓
+
+  Script 3 — completed, produced: weights_2d_sweep_data.csv, kld_between_splits_2d_sweep_data.csv, 2D heatmaps and 1D slice PNGs ✓
+
+Note: ensure that the logging is consistent between the original and refactored methods - the plotting functions in particular.
 
 ---
 

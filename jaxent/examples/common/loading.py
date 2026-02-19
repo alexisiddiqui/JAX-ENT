@@ -548,6 +548,7 @@ def save_split_data(
 def load_processed_run_info(
     processed_data_dir: str,
     ensemble_pattern: str,
+    extra_group_names: List[str] | None = None,
 ) -> Tuple[List[Dict], List[Tuple]]:
     """Scan processed output directories and extract run metadata.
 
@@ -557,12 +558,21 @@ def load_processed_run_info(
         Directory containing per-split-type subdirectories, each with
         processed run sub-directories named by run ID.
     ensemble_pattern:
-        Compiled-ready regex string with **exactly 5 capture groups** in order:
-        ``(ensemble, loss_name, split_type, split_idx, maxent_value)``.
+        Compiled-ready regex string with **at least 5 capture groups** in order:
+        ``(ensemble, loss_name, split_type, split_idx, maxent_value, ...)``.
 
         Example (Exp1/Exp2)::
 
             r"(ISO_BI|ISO_TRI)_(mcMSE|MSE|Sigma_MSE)_(.+?)_split(\\d+)_maxent([\\d.]+)"
+
+        Example (Exp3 with extra groups)::
+
+            r"(AF2_MSAss|AF2_filtered)_..._maxent([\\d.]+)_bvreg([\\d.]+)_bvregfn([A-Za-z0-9]+)"
+
+    extra_group_names:
+        Optional list of names for capture groups beyond the fixed 5.  When
+        provided, the extra captured values are added to each ``run_info`` dict
+        under the given names.  ``None`` (default) means no extra groups.
 
     Returns
     -------
@@ -570,7 +580,7 @@ def load_processed_run_info(
         List of dicts, one per matched run directory.  Keys: ``run_id``,
         ``full_run_path``, ``ensemble``, ``loss_name``, ``run_split_type``,
         ``split_idx_str``, ``split_idx``, ``maxent_value``,
-        ``actual_split_type``.
+        ``actual_split_type``, plus any keys from *extra_group_names*.
     unique_configs:
         Sorted list of ``(ensemble, run_split_type, split_idx_str)`` tuples
         representing distinct data-loading configurations.
@@ -598,7 +608,8 @@ def load_processed_run_info(
             if not match:
                 continue
 
-            ensemble, loss_name, run_split_type, split_idx_str, maxent_str = match.groups()
+            groups = match.groups()
+            ensemble, loss_name, run_split_type, split_idx_str, maxent_str = groups[:5]
 
             run_info: Dict = {
                 "run_id": run_id,
@@ -611,6 +622,9 @@ def load_processed_run_info(
                 "maxent_value": float(maxent_str),
                 "actual_split_type": actual_split_type,
             }
+            if extra_group_names:
+                for name, value in zip(extra_group_names, groups[5:]):
+                    run_info[name] = value
             all_run_info.append(run_info)
 
     unique_configs = sorted(
