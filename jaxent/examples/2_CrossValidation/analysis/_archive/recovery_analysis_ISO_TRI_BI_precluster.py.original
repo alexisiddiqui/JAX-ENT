@@ -24,8 +24,8 @@ Output:
 import argparse
 import json
 import os
+import re
 import sys
-from pathlib import Path
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
@@ -38,14 +38,518 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
-from jaxent.examples.common import analysis, loading, plotting
-from jaxent.examples.common.config import ExperimentConfig
-from jaxent.examples.common.paths import find_most_recent_dir
+from jaxent.src.utils.hdf import load_optimization_history_from_file
+
+# Ensemble to clustering subdirectory mapping
+ENSEMBLE_CLUSTERING_MAP = {
+    "AF2_MSAss": "AF2_MSAss",
+    "AF2_filtered": "AF2_Filtered",  # Note: capital F in the directory name
+}
 
 
-# ---------------------------------------------------------------------------
-# Script-specific inline plotting functions (no common equivalent)
-# ---------------------------------------------------------------------------
+def calculate_recovery_JSD(cluster_assignments, weights, target_ratios, state_mapping):
+    """
+    Compute Jensen-Shannon divergence between observed and target state proportions.
+    Returns JS divergence (float). If invalid, returns np.nan.
+
+    Recovery% = (1 - sqrt(JSD)) * 100
+    """
+    # Invert mapping: state -> cluster ids
+    state_to_clusters = {}
+    for cluster_id, state_name in state_mapping.items():
+        state_to_clusters.setdefault(state_name, []).append(cluster_id)
+
+    # Compute current proportions (weighted)
+    current_proportions = {state: 0.0 for state in target_ratios}
+    for state_name, cluster_ids in state_to_clusters.items():
+        state_mask = cluster_assignments.isin(cluster_ids)
+        current_proportions[state_name] = float(np.sum(weights[state_mask.to_numpy()]))
+
+    # Order states consistently with target_ratios
+    states = list(target_ratios.keys())
+    P = np.array([current_proportions.get(s, 0.0) for s in states], dtype=float)
+    Q = np.array([target_ratios.get(s, 0.0) for s in states], dtype=float)
+
+    # Normalize distributions
+    sumP = P.sum()
+    sumQ = Q.sum()
+    if sumP > 0:
+        P = P / sumP
+    else:
+        return np.nan, current_proportions
+
+    if sumQ > 0:
+        Q = Q / sumQ
+    else:
+        return np.nan, current_proportions
+
+    # Jensen-Shannon divergence (base 2)
+    M = 0.5 * (P + Q)
+
+    def kld(a, b):
+        mask = a > 0
+        return np.sum(a[mask] * np.log2(a[mask] / b[mask]))
+
+    js = 0.5 * (kld(P, M) + kld(Q, M))
+    return float(js), current_proportions
+
+
+def load_clustering_for_ensemble(ensemble_name: str, clustering_base_dir: str) -> pd.DataFrame:
+    """
+    Load clustering results for a specific ensemble.
+
+    Args:
+        ensemble_name: Name of the ensemble (e.g., 'AF2_MSAss', 'AF2_filtered')
+        clustering_base_dir: Base clustering directory (e.g., 'analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters')
+
+    Returns:
+        DataFrame with cluster assignments
+    """
+    if ensemble_name not in ENSEMBLE_CLUSTERING_MAP:
+        raise ValueError(
+            f"Unknown ensemble: {ensemble_name}. Expected one of {list(ENSEMBLE_CLUSTERING_MAP.keys())}"
+        )
+
+    clustering_subdir = ENSEMBLE_CLUSTERING_MAP[ensemble_name]
+    # Path is: clustering_base_dir/AF2_MSAss/AF2_MSAss_frame_to_cluster.csv
+    clustering_path = os.path.join(
+        clustering_base_dir, clustering_subdir, f"{clustering_subdir}_frame_to_cluster.csv"
+    )
+
+    if not os.path.exists(clustering_path):
+        raise FileNotFoundError(f"Clustering file not found: {clustering_path}")
+
+    print(f"Loading clustering for {ensemble_name} from: {clustering_path}")
+    cluster_df = pd.read_csv(clustering_path)
+
+    # Ensure the DataFrame has the expected column (cluster_label)
+    if "cluster_label" not in cluster_df.columns:
+        raise ValueError(f"Expected 'cluster_label' column in {clustering_path}")
+
+    print(
+        f"  Loaded {len(cluster_df)} frames with {cluster_df['cluster_label'].nunique()} unique clusters"
+    )
+
+    return cluster_df
+
+
+def load_all_optimization_results_with_maxent(
+    results_dir: str,
+    ensembles: List[str],
+    loss_functions: List[str],
+    num_splits: int = 3,
+    maxent_values: List[float] = None,
+    EMA: bool = False,
+) -> Dict:
+    """Load all optimization results from HDF5 files, including maxent values."""
+    results = {}
+    if not os.path.exists(results_dir):
+        print(f"Results directory not found: {results_dir}")
+        return results
+
+    split_types = [
+        d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
+    ]
+
+    hdf_pattern = "results_EMA.hdf5" if EMA else "results.hdf5"
+
+    for split_type in split_types:
+        results[split_type] = {}
+        split_type_dir = os.path.join(results_dir, split_type)
+
+        for ensemble in ensembles:
+            results[split_type][ensemble] = {}
+
+            for loss_name in loss_functions:
+                results[split_type][ensemble][loss_name] = {}
+
+                pattern = f"{ensemble}_{loss_name}_{split_type}_split"
+                files = [
+                    f
+                    for f in os.listdir(split_type_dir)
+                    if f.startswith(pattern) and f.endswith(hdf_pattern)
+                ]
+
+                for filename in files:
+                    match = re.search(r"split(\d{3})_maxent(\d+(?:\.\d+)?)", filename)
+                    if match:
+                        split_idx = int(match.group(1))
+                        maxent_val = float(match.group(2))
+
+                        if maxent_val not in results[split_type][ensemble][loss_name]:
+                            results[split_type][ensemble][loss_name][maxent_val] = {}
+
+                        filepath = os.path.join(split_type_dir, filename)
+
+                        try:
+                            history = load_optimization_history_from_file(filepath)
+                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
+                                history
+                            )
+                            print(f"Loaded: {filepath}")
+                        except Exception as e:
+                            print(f"Failed to load {filepath}: {e}")
+                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = None
+
+    return results
+
+
+def analyze_conformational_recovery_jsd(
+    clustering_data: Dict[str, pd.DataFrame],
+    results_dict: Dict,
+    target_ratios: Dict[str, float],
+    state_mapping: Dict[int, str],
+) -> pd.DataFrame:
+    """
+    Analyze conformational recovery using JSD-based method.
+
+    Args:
+        clustering_data: Dict mapping ensemble names to their cluster DataFrames
+        results_dict: Optimization results containing frame weights
+        target_ratios: Target state proportions
+        state_mapping: Mapping from cluster ID to state name
+
+    Returns:
+        DataFrame with recovery analysis results
+    """
+    recovery_data = []
+
+    for ensemble_name, cluster_df in clustering_data.items():
+        print(f"Analyzing recovery for {ensemble_name}...")
+
+        cluster_assignments = cluster_df["cluster_label"]
+        n_frames = len(cluster_assignments)
+
+        # Calculate unweighted (original) recovery
+        uniform_weights = np.ones(n_frames) / n_frames
+        js_div_orig, current_props_orig = calculate_recovery_JSD(
+            cluster_assignments, uniform_weights, target_ratios, state_mapping
+        )
+
+        if not np.isnan(js_div_orig):
+            recovery_orig = (1.0 - np.sqrt(js_div_orig)) * 100.0
+        else:
+            recovery_orig = 0.0
+
+        recovery_data.append(
+            {
+                "ensemble": ensemble_name,
+                "loss_function": "Original",
+                "split_type": "N/A",
+                "split": "N/A",
+                "maxent_value": 0.0,
+                "convergence_step": "N/A",
+                "js_divergence": js_div_orig if not np.isnan(js_div_orig) else 0.0,
+                "js_distance": np.sqrt(js_div_orig) if not np.isnan(js_div_orig) else 0.0,
+                "recovery_percent": recovery_orig,
+                **{f"{state}_current": current_props_orig[state] for state in target_ratios},
+                **{f"{state}_target": target_ratios[state] for state in target_ratios},
+                "total_frames": n_frames,
+            }
+        )
+
+        # Analyze with optimized frame weights
+        for split_type in results_dict:
+            if ensemble_name in results_dict[split_type]:
+                for loss_name in results_dict[split_type][ensemble_name]:
+                    for maxent_val in results_dict[split_type][ensemble_name][loss_name]:
+                        for split_idx, history in results_dict[split_type][ensemble_name][
+                            loss_name
+                        ][maxent_val].items():
+                            if history is not None and history.states:
+                                for step_idx, state in enumerate(history.states):
+                                    if (
+                                        hasattr(state.params, "frame_weights")
+                                        and state.params.frame_weights is not None
+                                    ):
+                                        frame_weights = np.array(state.params.frame_weights)
+
+                                        if (
+                                            len(frame_weights) == n_frames
+                                            and np.sum(frame_weights) > 0
+                                        ):
+                                            # Normalize weights
+                                            normalized_weights = frame_weights / np.sum(
+                                                frame_weights
+                                            )
+
+                                            # Calculate JSD-based recovery
+                                            js_div, current_props = calculate_recovery_JSD(
+                                                cluster_assignments,
+                                                normalized_weights,
+                                                target_ratios,
+                                                state_mapping,
+                                            )
+
+                                            if not np.isnan(js_div):
+                                                recovery_pct = (1.0 - np.sqrt(js_div)) * 100.0
+                                            else:
+                                                recovery_pct = 0.0
+
+                                            recovery_data.append(
+                                                {
+                                                    "ensemble": ensemble_name,
+                                                    "loss_function": loss_name,
+                                                    "split_type": split_type,
+                                                    "split": split_idx,
+                                                    "maxent_value": maxent_val,
+                                                    "convergence_step": step_idx,
+                                                    "js_divergence": js_div
+                                                    if not np.isnan(js_div)
+                                                    else 0.0,
+                                                    "js_distance": np.sqrt(js_div)
+                                                    if not np.isnan(js_div)
+                                                    else 0.0,
+                                                    "recovery_percent": recovery_pct,
+                                                    **{
+                                                        f"{state}_current": current_props[state]
+                                                        for state in target_ratios
+                                                    },
+                                                    **{
+                                                        f"{state}_target": target_ratios[state]
+                                                        for state in target_ratios
+                                                    },
+                                                    "total_frames": n_frames,
+                                                }
+                                            )
+                                        else:
+                                            if len(frame_weights) != n_frames:
+                                                print(
+                                                    f"    Frame count mismatch: {len(frame_weights)} vs {n_frames}"
+                                                )
+
+    return pd.DataFrame(recovery_data)
+
+
+def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
+    """
+    Calculate KL divergence between two probability distributions.
+
+    Args:
+        p: First probability distribution (frame_weights)
+        q: Second probability distribution (uniform prior)
+        eps: Small value to avoid log(0)
+
+    Returns:
+        KL divergence KL(p||q)
+    """
+    # Normalize to ensure they sum to 1
+    p = p / np.sum(p)
+    q = q / np.sum(q)
+
+    # Add small epsilon to avoid log(0)
+    p = np.clip(p, eps, 1.0)
+    q = np.clip(q, eps, 1.0)
+
+    # Calculate KL divergence: KL(p||q) = Σ p(i) * log(p(i)/q(i))
+    return np.sum(p * np.log(p / q))
+
+
+def effective_sample_size(weights: np.ndarray) -> float:
+    """
+    Calculate Effective Sample Size (ESS) as 1/sum(weights^2).
+
+    Args:
+        weights: Frame weights (should be normalized to sum to 1)
+
+    Returns:
+        Effective sample size
+    """
+    # Normalize weights to sum to 1
+    normalized_weights = weights / np.sum(weights)
+
+    # Calculate ESS = 1 / sum(w_i^2)
+    ess = 1.0 / np.sum(normalized_weights**2)
+
+    return ess
+
+
+def extract_frame_weights_kl_with_maxent(
+    results: Dict, clustering_data: Dict[str, pd.DataFrame]
+) -> pd.DataFrame:
+    """
+    Extract frame weights and calculate KL divergence and ESS including maxent values.
+
+    Args:
+        results: Dictionary containing optimization histories.
+        clustering_data: Dictionary mapping ensemble names to clustering DataFrames
+
+    Returns:
+        DataFrame containing KL divergence and ESS values for analysis.
+    """
+    data_rows = []
+
+    for split_type in results:
+        for ensemble in results[split_type]:
+            # Get the number of frames for this ensemble
+            if ensemble not in clustering_data:
+                continue
+            n_frames = len(clustering_data[ensemble])
+
+            for loss_name in results[split_type][ensemble]:
+                for maxent_val in results[split_type][ensemble][loss_name]:
+                    for split_idx, history in results[split_type][ensemble][loss_name][
+                        maxent_val
+                    ].items():
+                        if history is not None and history.states:
+                            for step_idx, state in enumerate(history.states):
+                                if (
+                                    hasattr(state.params, "frame_weights")
+                                    and state.params.frame_weights is not None
+                                ):
+                                    frame_weights = np.array(state.params.frame_weights)
+                                    if len(frame_weights) == 0 or np.sum(frame_weights) == 0:
+                                        continue
+
+                                    if len(frame_weights) != n_frames:
+                                        continue
+
+                                    uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
+                                    try:
+                                        kl_div = kl_divergence(frame_weights, uniform_prior)
+                                        ess = effective_sample_size(frame_weights)
+
+                                        data_rows.append(
+                                            {
+                                                "split_type": split_type,
+                                                "ensemble": ensemble,
+                                                "loss_function": loss_name,
+                                                "maxent_value": maxent_val,
+                                                "split": split_idx,
+                                                "step": step_idx,
+                                                "convergence_threshold_step": step_idx,
+                                                "kl_divergence": float(kl_div),
+                                                "effective_sample_size": float(ess),
+                                                "num_frames": len(frame_weights),
+                                                "step_number": state.step
+                                                if hasattr(state, "step")
+                                                else step_idx,
+                                            }
+                                        )
+                                    except Exception as e:
+                                        print(
+                                            f"Failed to calculate KL/ESS for {split_type}/{ensemble}_{loss_name}_maxent{maxent_val}_split{split_idx}, step {step_idx}: {e}"
+                                        )
+                                        continue
+    return pd.DataFrame(data_rows)
+
+
+def plot_recovery_jsd_heatmap(
+    recovery_df: pd.DataFrame, convergence_rates: List[float], output_dir: str
+):
+    """Plot heatmaps of JSD-based recovery across convergence thresholds and maxent values."""
+    plt.style.use("seaborn-v0_8-whitegrid")
+
+    recovery_df["convergence_step"] = pd.to_numeric(
+        recovery_df["convergence_step"], errors="coerce"
+    )
+
+    split_types = recovery_df[recovery_df["split_type"] != "N/A"]["split_type"].unique()
+
+    for split_type in split_types:
+        print(f"  Creating recovery heatmaps for split type: {split_type}")
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        split_df = recovery_df[recovery_df["split_type"] == split_type]
+
+        ensembles = sorted(split_df[split_df["loss_function"] != "Original"]["ensemble"].unique())
+        loss_functions = sorted(
+            split_df[split_df["loss_function"] != "Original"]["loss_function"].unique()
+        )
+
+        if not ensembles or not loss_functions:
+            print(f"    No data to plot for split type {split_type}")
+            continue
+
+        fig, axes = plt.subplots(
+            len(ensembles),
+            len(loss_functions),
+            figsize=(8 * len(loss_functions), 6 * len(ensembles)),
+            squeeze=False,
+        )
+
+        fig.suptitle(
+            f"JSD-Based Recovery Heatmaps - {split_type} splits",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        for i, ensemble in enumerate(ensembles):
+            for j, loss_func in enumerate(loss_functions):
+                ax = axes[i, j]
+
+                combo_df = split_df[
+                    (split_df["ensemble"] == ensemble) & (split_df["loss_function"] == loss_func)
+                ]
+
+                if len(combo_df) > 0:
+                    maxent_vals = sorted(combo_df["maxent_value"].unique())
+                    conv_steps = sorted(combo_df["convergence_step"].unique())
+                    conv_steps = [s for s in conv_steps if s > 0]
+
+                    pivot_data = combo_df.pivot_table(
+                        values="recovery_percent",
+                        index="maxent_value",
+                        columns="convergence_step",
+                        aggfunc="mean",
+                    )
+
+                    if not pivot_data.empty:
+                        pivot_data = pivot_data[[c for c in conv_steps if c in pivot_data.columns]]
+                        pivot_data = pivot_data.sort_index(ascending=False)
+
+                        col_labels = []
+                        for step in pivot_data.columns:
+                            if step < len(convergence_rates):
+                                col_labels.append(f"{convergence_rates[int(step) - 1]:.0e}")
+                            else:
+                                col_labels.append(f"Step {step}")
+
+                        sns.heatmap(
+                            pivot_data,
+                            annot=True,
+                            fmt=".1f",
+                            cmap="RdYlGn",
+                            vmin=0,
+                            vmax=100,
+                            cbar_kws={"label": "Recovery (%)"},
+                            ax=ax,
+                        )
+
+                        ax.set_title(f"{ensemble} - {loss_func}")
+                        ax.set_xlabel("Convergence Threshold")
+                        ax.set_ylabel("MaxEnt Value")
+                        ax.set_xticklabels(col_labels, rotation=45, ha="right")
+                        ax.set_yticklabels([f"{v:.0f}" for v in pivot_data.index], rotation=0)
+                    else:
+                        ax.text(
+                            0.5,
+                            0.5,
+                            "No data available",
+                            ha="center",
+                            va="center",
+                            transform=ax.transAxes,
+                        )
+                        ax.set_title(f"{ensemble} - {loss_func}")
+                else:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No data available",
+                        ha="center",
+                        va="center",
+                        transform=ax.transAxes,
+                    )
+                    ax.set_title(f"{ensemble} - {loss_func}")
+
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(split_output_dir, "recovery_jsd_heatmap.png"),
+            dpi=300,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
 
 
 def plot_volcano_kl_recovery(kl_ess_df, recovery_df, convergence_rates, output_dir):
@@ -684,22 +1188,17 @@ def plot_volcano_kl_recovery_averaged(kl_ess_df, recovery_df, convergence_rates,
     print(f"Averaged volcano plot dataset saved to: {averaged_df_path}")
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
 def main():
     """Main function to run the MoPrP recovery analysis."""
     parser = argparse.ArgumentParser(description="MoPrP recovery analysis with JSD-based metrics.")
     parser.add_argument(
         "--results-dir",
-        default=None,
+        default="../fitting/jaxENT/_optimise_quick_test_splits__20250918_171508",
         help="Results directory",
     )
     parser.add_argument(
         "--clustering-dir",
-        default=None,
+        default="_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters",
         help="Clustering directory containing AF2_MSAss and AF2_Filtered subdirectories",
     )
     parser.add_argument(
@@ -708,95 +1207,72 @@ def main():
         help="Output directory. If omitted, derived from results-dir.",
     )
     parser.add_argument(
+        "--state-ratios-json",
+        default="../analysis/state_ratios.json",
+        help="Path to JSON with target state ratios",
+    )
+    parser.add_argument(
         "--ema",
         action="store_true",
         default=False,
         help="Use EMA results",
     )
-    parser.add_argument(
-        "--config",
-        default=None,
-        help="Path to config.yaml. Defaults to ../config.yaml relative to this script.",
-    )
-    parser.add_argument(
-        "--absolute-paths",
-        action="store_true",
-        default=False,
-        help="Interpret --results-dir / --output-dir as absolute paths.",
-    )
     args = parser.parse_args()
 
-    script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-    exp_dir = script_dir.parent
+    # Define parameters
+    ensembles = ["AF2_MSAss", "AF2_filtered"]
+    loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
+    maxent_values = [
+        1,
+        2,
+        5,
+        10,
+        50,
+        100,
+        500,
+        1000,
+        10000,
+        100000,
+        1000000,
+        10000000,
+        100000000,
+        1000000000,
+    ]
+    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
-    config_path = Path(args.config) if args.config else script_dir / ".." / "config.yaml"
-    cfg = ExperimentConfig.from_yaml(config_path)
+    # State mapping for MoPrP
+    state_mapping = {
+        0: "Folded",
+        1: "PUF1",
+        2: "PUF2",
+        4: "unfolded",
+    }
 
-    convergence_rates = cfg.convergence_rates
+    # Resolve directories
+    script_dir = os.path.dirname(__file__)
+    results_dir = os.path.join(script_dir, args.results_dir)
+    clustering_dir = os.path.join(script_dir, args.clustering_dir)
 
-    state_mapping = cfg.scoring.state_mapping
-
-    # Resolve results directory
-    if args.results_dir:
-        results_dir = (
-            Path(args.results_dir)
-            if args.absolute_paths
-            else (script_dir / args.results_dir).resolve()
-        )
-    elif cfg.results_prefix:
-        prefix_path = Path(cfg.results_prefix)
-        base_path = exp_dir / prefix_path.parent
-        prefix = prefix_path.name
-        found = find_most_recent_dir(base_path, prefix)
-        if found is None:
-            raise FileNotFoundError(
-                f"No directory matching prefix '{prefix}' found in {base_path}"
-            )
-        results_dir = found
-    elif cfg.results_dir:
-        results_dir = exp_dir / cfg.results_dir
-    else:
-        raise ValueError("Provide --results-dir or set results_prefix/results_dir in config.")
-
-    results_dir = str(results_dir)
-
-    # Resolve clustering directory
-    if args.clustering_dir:
-        clustering_dir = (
-            args.clustering_dir
-            if args.absolute_paths
-            else str((script_dir / args.clustering_dir).resolve())
-        )
-    elif cfg.clustering_dir:
-        clustering_dir = str(exp_dir / cfg.clustering_dir)
-    else:
-        raise ValueError("Provide --clustering-dir or set clustering_dir in config.")
-
-    # Resolve output directory
     if args.output_dir:
-        output_dir = (
-            args.output_dir
-            if args.absolute_paths
-            else str((script_dir / args.output_dir).resolve())
-        )
+        output_dir = os.path.join(script_dir, args.output_dir)
     else:
         base_name = os.path.basename(os.path.normpath(results_dir))
-        output_dir = str(script_dir / f"_analysis{base_name}")
+        output_dir = os.path.join(script_dir, "_analysis" + base_name)
 
     print(f"Results directory: {results_dir}")
     print(f"Clustering directory: {clustering_dir}")
     print(f"Output directory: {output_dir}")
     print(f"EMA flag: {args.ema}")
 
-    # Load target ratios from state_ratios.json
-    state_ratios_path = exp_dir / cfg.state_ratios_json
+    # Load target ratios
+    state_ratios_path = os.path.join(script_dir, args.state_ratios_json)
     try:
-        with open(state_ratios_path) as f:
+        with open(state_ratios_path, "r") as f:
             ratios_data = json.load(f)
         target_ratios = {
             "Folded": ratios_data["fractional_populations"]["folded"]["fraction"],
-            "PUF1":   ratios_data["fractional_populations"]["PUF1"]["fraction"],
-            "PUF2":   ratios_data["fractional_populations"]["PUF2"]["fraction"],
+            "PUF1": ratios_data["fractional_populations"]["PUF1"]["fraction"],
+            "PUF2": ratios_data["fractional_populations"]["PUF2"]["fraction"],
             "unfolded": 0,
         }
         print("\nTarget state ratios:")
@@ -808,21 +1284,21 @@ def main():
 
     # Load clustering data for each ensemble
     print("\nLoading clustering data...")
-    clustering_data = loading.load_clustering_results(
-        clustering_dir, cfg.scoring.ensemble_clustering_map
-    )
-
-    if not clustering_data:
-        print("Error: Could not load clustering data.")
-        return
+    clustering_data = {}
+    for ensemble in ensembles:
+        try:
+            clustering_data[ensemble] = load_clustering_for_ensemble(ensemble, clustering_dir)
+        except Exception as e:
+            print(f"Error loading clustering for {ensemble}: {e}")
+            return
 
     # Load optimization results
     print("\nLoading optimization results...")
-    results = loading.load_all_optimization_results_with_maxent(
+    results = load_all_optimization_results_with_maxent(
         results_dir=results_dir,
-        ensembles=cfg.ensembles,
-        loss_functions=cfg.loss_functions,
-        num_splits=cfg.num_splits,
+        ensembles=ensembles,
+        loss_functions=loss_functions,
+        maxent_values=maxent_values,
         EMA=args.ema,
     )
 
@@ -834,8 +1310,8 @@ def main():
     print("ANALYZING CONFORMATIONAL RECOVERY WITH JSD")
     print("=" * 60)
 
-    recovery_df = analysis.analyze_conformational_recovery(
-        clustering_data, results, target_ratios, state_mapping, metric="jsd", best_step_only=False
+    recovery_df = analyze_conformational_recovery_jsd(
+        clustering_data, results, target_ratios, state_mapping
     )
 
     if len(recovery_df) > 0:
@@ -848,17 +1324,14 @@ def main():
 
         # Generate recovery plots
         print("\nGenerating recovery plots...")
-        plotting.plot_metric_heatmap(
-            recovery_df, "recovery_percent", convergence_rates, output_dir,
-            cmap="RdYlGn", columns_col="convergence_step"
-        )
+        plot_recovery_jsd_heatmap(recovery_df, convergence_rates, output_dir)
 
         # Extract KL divergence and ESS
         print("\n" + "=" * 60)
         print("EXTRACTING KL DIVERGENCE AND ESS")
         print("=" * 60)
 
-        kl_ess_df = analysis.extract_frame_weights_kl(results)
+        kl_ess_df = extract_frame_weights_kl_with_maxent(results, clustering_data)
 
         if len(kl_ess_df) > 0:
             print(f"\nExtracted {len(kl_ess_df)} KL divergence and ESS data points")
@@ -867,10 +1340,6 @@ def main():
             kl_ess_path = os.path.join(output_dir, "kl_divergence_ess_data.csv")
             kl_ess_df.to_csv(kl_ess_path, index=False)
             print(f"KL divergence and ESS data saved to: {kl_ess_path}")
-
-            # Rename step column for backward compat with inline volcano plots
-            if "step" in kl_ess_df.columns and "convergence_threshold_step" not in kl_ess_df.columns:
-                kl_ess_df = kl_ess_df.rename(columns={"step": "convergence_threshold_step"})
 
             # Generate volcano plots
             print("\nGenerating volcano plots...")
@@ -886,7 +1355,7 @@ def main():
         print("RECOVERY SUMMARY")
         print("=" * 60)
 
-        for ensemble in cfg.ensembles:
+        for ensemble in ensembles:
             print(f"\n{ensemble}:")
             ensemble_data = recovery_df[recovery_df["ensemble"] == ensemble]
 
