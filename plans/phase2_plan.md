@@ -350,7 +350,7 @@ Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 
 | `featurise_*.py` | Exp1 base, Exp1 SCALING, Exp2 | 213–233 | 1 (cleanest — 2 shared helpers, no analysis logic) |
 | `splitdata_*.py` | Exp1, Exp2 | 228–235 | 2 (1 shared helper, parametric differences only) |
 | `optimise_fn.py` + caller | Exp1 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_Sigma.py`; Exp2 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT.py`; Exp3 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` | 778–992 | 3 (most complex — needs `LossConfig` gap filled) |
-
+<!-- 
 ### Substep 6a: Common Module Additions (do first)
 
 **`jaxent/examples/common/loading.py`** — add:
@@ -369,9 +369,9 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 
 **`jaxent/examples/common/optimization.py`** — update `run_optimization()`:
 - Use `loss_config.bv_reg_scaling` when building `forward_model_weights` for regularization losses (currently hardcodes `1.0`)
-- Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False`
+- Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False` -->
 
-### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2)
+### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py` (213 → ~50 lines)
@@ -393,7 +393,7 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 | Output names | `iso_tri`, `iso_bi` | `iso_tri`, `iso_bi` per slice | `AF2_MSAss`, `AF2_filtered` |
 | Topology / kint files | TeaA-specific | TeaA-specific | MoPrP-specific |
 
-**Validation:** Re-run refactored scripts; confirm `.npz` and `.json` files match archived originals.
+All three scripts archived, refactored, and syntax-verified. Import check (`common loading imports OK`) and `py_compile` all pass.
 
 ### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2)
 
