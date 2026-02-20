@@ -371,7 +371,7 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 - Use `loss_config.bv_reg_scaling` when building `forward_model_weights` for regularization losses (currently hardcodes `1.0`)
 - Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False` -->
 
-### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2) ✓
+<!-- ### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py` (213 → ~50 lines)
@@ -393,9 +393,9 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 | Output names | `iso_tri`, `iso_bi` | `iso_tri`, `iso_bi` per slice | `AF2_MSAss`, `AF2_filtered` |
 | Topology / kint files | TeaA-specific | TeaA-specific | MoPrP-specific |
 
-All three scripts archived, refactored, and syntax-verified. Import check (`common loading imports OK`) and `py_compile` all pass.
+All three scripts archived, refactored, and syntax-verified. Import check (`common loading imports OK`) and `py_compile` all pass. -->
 
-### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2)
+### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/splitdata_ISO.py` (228 → ~80 lines)
@@ -417,7 +417,7 @@ All three scripts archived, refactored, and syntax-verified. Import check (`comm
 | Peptide count | `len(segs)` | `len(segs) - 2` (drops terminal 2) |
 | `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` |
 
-**Validation:** Re-run refactored scripts; confirm train/val CSV files match archived originals.
+**Validation:** Re-ran both archived original and refactored scripts with `PYTHONHASHSEED=0`; byte-for-byte identical outputs confirmed. Observed differences in an initial run were due to Python's random hash seed varying between process invocations (non-determinism in `set` iteration order), not a code regression. ✓
 
 ### Substep 6d: Refactor `optimise_fn.py` + Caller Scripts (Exp 1, 2, 3)
 

@@ -25,7 +25,88 @@ import pandas as pd
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.HDX import HDX_peptide
-from jaxent.examples.common.loading import run_data_splits
+from jaxent.src.data.loader import ExpD_Dataloader
+from jaxent.src.data.splitting.split import DataSplitter
+
+
+def run_data_splits(
+    num_splits: int,
+    output_dir: str,
+    HDX_data: list[HDX_peptide],
+    feature_topology: list[pt.Partial_Topology],
+    split_type: str = "random",
+    remove_overlap: bool = True,
+    universe: mda.Universe | None = None,  # Added universe parameter
+) -> None:
+    """
+    Run multiple data splits and save each to its own folder
+
+    Args:
+        num_splits: Number of different splits to generate
+        output_dir: Base directory to save all splits
+        HDX_data: list of HDX_peptide objects
+        feature_topology: list of Partial_Topology objects for features
+        split_type: Type of split to perform
+        remove_overlap: Whether to remove overlapping residues between train and val sets
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    for split_idx in range(num_splits):
+        print(f"\n=== Running split {split_idx + 1}/{num_splits} for type {split_type} ===")
+
+        # Create split-specific folder
+        split_dir: str = os.path.join(output_dir, f"split_{split_idx:03d}")
+        os.makedirs(split_dir, exist_ok=True)
+
+        # Create dataloader and splitter with different random seed for each split
+        HDX_dataloader: ExpD_Dataloader = ExpD_Dataloader(data=HDX_data)
+        splitter: DataSplitter = DataSplitter(
+            train_size=0.5,
+            dataset=HDX_dataloader,
+            common_residues=set(feature_topology),
+            peptide_trim=1,
+            centrality=False,
+            check_trim=True,
+            random_seed=42 * split_idx,  # Different seed for each split
+        )
+
+        # Select the splitting method based on split_type
+        if split_type == "random":
+            train_data, val_data = splitter.random_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence":
+            train_data, val_data = splitter.sequence_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence_cluster":
+            train_data, val_data = splitter.sequence_cluster_split(
+                remove_overlap=remove_overlap, n_clusters=25
+            )
+        elif split_type == "stratified":
+            train_data, val_data = splitter.stratified_split(remove_overlap=remove_overlap)
+        elif split_type == "spatial":
+            if universe is None:
+                raise ValueError("MDAnalysis Universe must be provided for spatial split.")
+            train_data, val_data = splitter.spatial_split(
+                universe=universe, remove_overlap=remove_overlap
+            )
+        else:
+            raise ValueError(f"Unknown split type: {split_type}")
+
+        print(f"Train data size: {len(train_data)}")
+        print(f"Validation data size: {len(val_data)}")
+
+        # Save training data
+        # save_split_data(train_data, split_dir, "train")
+        ExpD_Datapoint.save_list_to_files(
+            train_data,
+            json_path=os.path.join(split_dir, "train_topology.json"),
+            csv_path=os.path.join(split_dir, "train_dfrac.csv"),
+        )
+        # Save validation data
+        ExpD_Datapoint.save_list_to_files(
+            val_data,
+            json_path=os.path.join(split_dir, "val_topology.json"),
+            csv_path=os.path.join(split_dir, "val_dfrac.csv"),
+        )
+        print(f"Split {split_idx + 1} saved to {split_dir}")
 
 
 def main() -> None:
@@ -101,6 +182,9 @@ def main() -> None:
     split_types = ["random", "sequence", "sequence_cluster", "stratified", "spatial"]
     remove_overlap = True  # Or configure as needed
 
+    # Load MDAnalysis Universe for spatial split
+    import MDAnalysis as mda
+
     # Define the path to the closed state topology and a representative trajectory
     # These paths are relative to the 'splitdata_ISO.py' script
     traj_base_dir = os.path.join(
@@ -130,7 +214,7 @@ def main() -> None:
         run_data_splits(
             num_splits=num_splits,
             output_dir=split_output_dir,
-            hdx_data=HDX_data,
+            HDX_data=HDX_data,
             feature_topology=feature_topology,
             split_type=split_type,
             remove_overlap=remove_overlap,
