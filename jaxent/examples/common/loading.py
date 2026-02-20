@@ -16,6 +16,17 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
+import jax.numpy as jnp
+import MDAnalysis as mda
+from jax import Array
+
+import jaxent.src.interfaces.topology as pt
+from jaxent.src.custom_types.config import FeaturiserSettings
+from jaxent.src.data.splitting.split import DataSplitter
+from jaxent.src.featurise import run_featurise
+from jaxent.src.interfaces.builder import Experiment_Builder
+from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 
@@ -675,3 +686,225 @@ def load_split_data(
     val_dfrac = np.array([dp.dfrac for dp in val_datapoints])
 
     return train_top, train_dfrac, val_top, val_dfrac
+
+
+# ---------------------------------------------------------------------------
+# Featurisation helpers
+# ---------------------------------------------------------------------------
+
+
+def load_HDXer_kints(kint_path: str) -> tuple[Array, list[pt.Partial_Topology]]:
+    """Load intrinsic rates from a 2-column .dat file.
+
+    Parses lines of the form ``<resid> <rate>`` (whitespace-separated),
+    ignoring blank lines and ``#``-prefixed comments.
+
+    Returns
+    -------
+    (kints, topology_list)
+        ``kints`` is a ``jnp.array`` of exchange rates; ``topology_list`` is a
+        list of single-residue ``Partial_Topology`` objects (chain ``'A'``).
+    """
+    rates = []
+    topology_list = []
+    with open(kint_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) != 2:
+                continue
+            resid, rate = int(parts[0]), float(parts[1])
+            rates.append(rate)
+            # Assuming chain 'A' as a default for intrinsic rates if not specified in the file
+            topology_list.append(pt.TopologyFactory.from_single(chain="A", residue=resid))
+    kints = jnp.array(rates)
+    return kints, topology_list
+
+
+def featurise_trajectory(
+    trajectory_path: str,
+    topology_path: str,
+    output_dir: str,
+    output_name: str,
+    bv_config,
+    featuriser_settings: FeaturiserSettings,
+    kint_data: tuple[Array, list[pt.Partial_Topology]],
+) -> tuple[str, str]:
+    """Featurise a single trajectory and save the results.
+
+    Parameters
+    ----------
+    trajectory_path:
+        Path to the MD trajectory file.
+    topology_path:
+        Path to the topology/reference PDB file.
+    output_dir:
+        Directory to save output ``.npz`` and ``.json`` files.
+    output_name:
+        Base name for output files (e.g. ``'iso_tri'``, ``'AF2_MSAss'``).
+    bv_config:
+        ``BV_model_Config`` instance.
+    featuriser_settings:
+        ``FeaturiserSettings`` instance.
+    kint_data:
+        ``(kints_array, kint_topology_list)`` as returned by
+        :func:`load_HDXer_kints`.
+
+    Returns
+    -------
+    (features_path, topology_save_path)
+    """
+    print(f"Featurising trajectory: {trajectory_path}")
+
+    universe = mda.Universe(topology_path, trajectory_path)
+
+    ensemble = Experiment_Builder(
+        universes=[universe],
+        forward_models=[BV_model(bv_config)],
+    )
+
+    features, feature_topology = run_featurise(
+        ensemble=ensemble,
+        config=featuriser_settings,
+    )
+
+    # Extract first element (single universe/model)
+    features, feature_topology = features[0], feature_topology[0]
+
+    print(f"Featurised trajectory: {trajectory_path}")
+    print(f"Heavy contacts length: {len(features.heavy_contacts)}")
+    print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
+    print(f"Kints length: {len(features.k_ints)}")
+
+    _kints, _kint_topology = kint_data
+    _kint_topology = pt.TopologyFactory.merge(_kint_topology)
+
+    for top in feature_topology:
+        if not pt.PairwiseTopologyComparisons.intersects(top, _kint_topology):
+            raise ValueError(
+                f"Topology {top} does not intersect with kint topology {_kint_topology}. "
+                "Ensure that the kint topology matches the feature topology."
+            )
+
+    features = BV_input_features(
+        heavy_contacts=features.heavy_contacts,
+        acceptor_contacts=features.acceptor_contacts,
+        k_ints=_kints,
+    )
+
+    features_path = os.path.join(output_dir, f"features_{output_name}.npz")
+    features.save(features_path)
+    print(f"Saved {output_name} features to: {features_path}")
+
+    topology_save_path = os.path.join(output_dir, f"topology_{output_name}.json")
+    pt.PTSerialiser.save_list_to_json(feature_topology, topology_save_path)
+    print(f"Saved {output_name} topology to: {topology_save_path}")
+
+    return features_path, topology_save_path
+
+
+# ---------------------------------------------------------------------------
+# Data splitting runner
+# ---------------------------------------------------------------------------
+
+
+def run_data_splits(
+    num_splits: int,
+    output_dir: str,
+    hdx_data: List,
+    feature_topology: List[pt.Partial_Topology],
+    split_type: str = "random",
+    remove_overlap: bool = True,
+    universe=None,
+    *,
+    peptide_trim: int = 1,
+    min_split_size: int | None = None,
+    n_clusters: int = 25,
+) -> None:
+    """Run multiple data splits and save each to its own folder.
+
+    Parameters
+    ----------
+    num_splits:
+        Number of different splits to generate.
+    output_dir:
+        Base directory to save all splits (sub-directories created automatically).
+    hdx_data:
+        List of ``HDX_peptide`` objects.
+    feature_topology:
+        List of ``Partial_Topology`` objects for features.
+    split_type:
+        One of ``"random"``, ``"sequence"``, ``"sequence_cluster"``,
+        ``"stratified"``, ``"spatial"``.
+    remove_overlap:
+        Whether to remove overlapping residues between train and val sets.
+    universe:
+        ``MDAnalysis.Universe`` required for ``"spatial"`` split type.
+    peptide_trim:
+        Passed to ``DataSplitter``.  Exp1 default ``1``; Exp2 uses ``2``.
+    min_split_size:
+        Passed to ``DataSplitter`` only when not ``None``.  Exp2 uses ``4``.
+    n_clusters:
+        Number of clusters for ``"sequence_cluster"`` split.  Exp1 default
+        ``25``; Exp2 uses ``7``.
+    """
+    from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+    from jaxent.src.data.loader import ExpD_Dataloader
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for split_idx in range(num_splits):
+        print(f"\n=== Running split {split_idx + 1}/{num_splits} for type {split_type} ===")
+
+        split_dir = os.path.join(output_dir, f"split_{split_idx:03d}")
+        os.makedirs(split_dir, exist_ok=True)
+
+        hdx_dataloader = ExpD_Dataloader(data=hdx_data)
+        splitter_kwargs: Dict = dict(
+            train_size=0.5,
+            dataset=hdx_dataloader,
+            common_residues=set(feature_topology),
+            peptide_trim=peptide_trim,
+            centrality=False,
+            check_trim=True,
+            random_seed=42 * split_idx,
+        )
+        if min_split_size is not None:
+            splitter_kwargs["min_split_size"] = min_split_size
+        splitter = DataSplitter(**splitter_kwargs)
+
+        if split_type == "random":
+            train_data, val_data = splitter.random_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence":
+            train_data, val_data = splitter.sequence_split(remove_overlap=remove_overlap)
+        elif split_type == "sequence_cluster":
+            train_data, val_data = splitter.sequence_cluster_split(
+                remove_overlap=remove_overlap, n_clusters=n_clusters
+            )
+        elif split_type == "stratified":
+            train_data, val_data = splitter.stratified_split(remove_overlap=remove_overlap)
+        elif split_type == "spatial":
+            if universe is None:
+                raise ValueError("MDAnalysis Universe must be provided for spatial split.")
+            train_data, val_data = splitter.spatial_split(
+                universe=universe, remove_overlap=remove_overlap
+            )
+        else:
+            raise ValueError(f"Unknown split type: {split_type}")
+
+        print(f"Train data size: {len(train_data)}")
+        print(f"Validation data size: {len(val_data)}")
+
+        ExpD_Datapoint.save_list_to_files(
+            train_data,
+            json_path=os.path.join(split_dir, "train_topology.json"),
+            csv_path=os.path.join(split_dir, "train_dfrac.csv"),
+        )
+        ExpD_Datapoint.save_list_to_files(
+            val_data,
+            json_path=os.path.join(split_dir, "val_topology.json"),
+            csv_path=os.path.join(split_dir, "val_dfrac.csv"),
+        )
+        print(f"Split {split_idx + 1} saved to {split_dir}")

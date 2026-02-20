@@ -56,6 +56,8 @@ class LossConfig:
     regularization_losses: list[dict] = field(default_factory=list)
     optimize_bv_params: bool = False
     maxent_scaling: float = 1.0
+    bv_reg_scaling: float = 1.0      # Weight for BV regularization loss term (Exp3 sweep)
+    normalize_bv_reg: bool = True     # Set False → normalise_loss_functions[-1] = 0.0
 
 
 # ---------------------------------------------------------------------------

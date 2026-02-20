@@ -376,12 +376,26 @@ def run_optimization(
     n_frames = features.features_shape[1]
 
     # Build Simulation_Parameters
+    n_reg = len(loss_config.regularization_losses)
+    if n_reg > 0:
+        _fwd_weights = (
+            [maxent_scaling]
+            + [1.0] * (n_loss_slots - 1 - n_reg)
+            + [loss_config.bv_reg_scaling] * n_reg
+        )
+    else:
+        _fwd_weights = [maxent_scaling] + [1.0] * (n_loss_slots - 1)
+
+    _norm_fns = jnp.ones(n_loss_slots)
+    if not loss_config.normalize_bv_reg and n_reg > 0:
+        _norm_fns = _norm_fns.at[-1].set(0.0)
+
     parameters = Simulation_Parameters(
         frame_weights=jnp.ones(n_frames) / n_frames,
         frame_mask=jnp.ones(n_frames),
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([maxent_scaling] + [1.0] * (n_loss_slots - 1)),
-        normalise_loss_functions=jnp.ones(n_loss_slots),
+        forward_model_weights=jnp.array(_fwd_weights),
+        normalise_loss_functions=_norm_fns,
         forward_model_scaling=jnp.ones(n_loss_slots) * forward_model_scaling,
     )
 
