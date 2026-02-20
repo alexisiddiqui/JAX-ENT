@@ -290,7 +290,7 @@ All three scripts verified end-to-end. Here's the summary:
 Note: ensure that the logging is consistent between the original and refactored methods - the plotting functions in particular.
 
 ---
-
+<!-- 
 ## Step 5: Refactor `recovery_analysis_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~80–150 lines each
 
 **Files:**
@@ -316,9 +316,164 @@ recovery_df = analysis.analyze_conformational_recovery(
 | `best_step_only` | `False` | `False` | `True` |
 | Plot function | `plot_metric_heatmap(cmap='PiYG', metric='open_recovery')` | `plot_metric_heatmap(cmap='RdYlGn', metric='recovery_percent')` | `plot_2d_heatmaps_grid` + `plot_1d_slices_2d_sweep` |
 
-Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 already use JSD.
+Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 already use JSD. -->
+● All 3 scripts run successfully end-to-end. Summary of what was fixed during verification:
 
+  Fixes applied:
+  1. plotting.py — plot_metric_heatmap sanitizes stype (e.g. "N/A") by replacing / with _ before using it in directory names
+  and filenames. The baseline row added by analyze_conformational_recovery has split_type = "N/A" which contains a literal /.
+  2. Script 1 — plot_volcano_kl_recovery baseline lookup fell back to open_recovery if open_ratio column is absent (common
+  function doesn't produce that column for metric='ratio'). Same guard added to the summary print statement.
+  3. Script 3 — Removed the two validation_loss plot calls (plot_2d_heatmaps_grid + plot_1d_slices_2d_sweep) as specified in
+  the plan — the common function doesn't produce that column with best_step_only=True.
+
+  Expected CSVs confirmed present:
+
+  ┌────────┬─────────────────────────────────────────────────────────────────────────────────────┐
+  │ Script │                                        CSVs                                         │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ Exp1   │ conformational_recovery_maxent_data.csv, kl_divergence_ess_analysis_maxent_data.csv │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ Exp2   │ recovery_jsd_data.csv, kl_divergence_ess_data.csv                                   │
+  ├────────┼─────────────────────────────────────────────────────────────────────────────────────┤
+  │ Exp3   │ recovery_2d_sweep_data.csv                                                          │
+  └────────┴─────────────────────────────────────────────────────────────────────────────────────┘
 ---
+
+
+## Step 6: Refactor Fitting & Data Scripts — `featurise_*.py`, `splitdata_*.py`, `optimise_fn.py` + caller scripts
+
+**Files in scope:**
+
+| Script family | Files | Lines (each) | Priority |
+|---|---|---|---|
+| `featurise_*.py` | Exp1 base, Exp1 SCALING, Exp2 | 213–233 | 1 (cleanest — 2 shared helpers, no analysis logic) |
+| `splitdata_*.py` | Exp1, Exp2 | 228–235 | 2 (1 shared helper, parametric differences only) |
+| `optimise_fn.py` + caller | Exp1 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_Sigma.py`; Exp2 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT.py`; Exp3 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` | 778–992 | 3 (most complex — needs `LossConfig` gap filled) |
+
+### Substep 6a: Common Module Additions (do first)
+
+**`jaxent/examples/common/loading.py`** — add:
+
+| Function | Source | Notes |
+|---|---|---|
+| `load_HDXer_kints(kint_path)` | Identical in all featurise scripts | Parses 2-col `.dat` file → `(jnp.array of rates, list[Partial_Topology])`, chain='A' |
+| `featurise_trajectory(trajectory_path, topology_path, output_dir, output_name, bv_config, featuriser_settings, kint_data)` | Identical in all featurise scripts | Creates `mda.Universe`, runs `Experiment_Builder` + `run_featurise`, replaces k_ints, saves `.npz`/`.json` |
+| `run_data_splits(num_splits, output_dir, hdx_data, feature_topology, split_type, remove_overlap, universe, *, peptide_trim=1, min_split_size=None, n_clusters=25)` | Near-identical in both splitdata scripts | Parametrize `peptide_trim` (1 vs 2), `min_split_size` (None vs 4), `n_clusters` (25 vs 7) |
+
+**`jaxent/examples/common/config.py`** — extend `LossConfig` dataclass:
+```python
+bv_reg_scaling: float = 1.0      # Weight for BV regularization loss term (Exp3 sweep)
+normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_functions[-1]=0
+```
+
+**`jaxent/examples/common/optimization.py`** — update `run_optimization()`:
+- Use `loss_config.bv_reg_scaling` when building `forward_model_weights` for regularization losses (currently hardcodes `1.0`)
+- Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False`
+
+### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2)
+
+**Files:**
+- `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py` (213 → ~50 lines)
+- `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI_SCALING.py` (233 → ~80 lines)
+- `2_CrossValidation/fitting/jaxENT/featurise_CrossVal_MSAss_Filtered.py` (231 → ~50 lines)
+
+**Approach:**
+1. Archive originals to `fitting/jaxENT/_archive/`
+2. Remove `load_HDXer_kints` and `featurise_trajectory` (now in `common/loading.py`)
+3. Each script becomes: imports + experiment-specific `main()` only
+
+**Differences that stay per-script:**
+
+| Aspect | Exp1 base | Exp1 SCALING | Exp2 |
+|---|---|---|---|
+| Timepoints | `[0.167, 1.0, 10.0, 60.0, 120.0]` min | same | 15 timepoints (0.08–1440 min) |
+| Trajectories | `iso_tri` + `iso_bi` (2 fixed files) | loops `sliced_N` subdirs | AF2_MSAss + AF2_filtered cluster dirs |
+| `FeaturiserSettings.name` | `"ISO"` | `"ISO"` | `"CrossVal"` |
+| Output names | `iso_tri`, `iso_bi` | `iso_tri`, `iso_bi` per slice | `AF2_MSAss`, `AF2_filtered` |
+| Topology / kint files | TeaA-specific | TeaA-specific | MoPrP-specific |
+
+**Validation:** Re-run refactored scripts; confirm `.npz` and `.json` files match archived originals.
+
+### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2)
+
+**Files:**
+- `1_IsoValidation_OMass/fitting/splitdata_ISO.py` (228 → ~80 lines)
+- `2_CrossValidation/fitting/splitdata_CrossVal.py` (235 → ~80 lines)
+
+**Approach:**
+1. Archive originals to `fitting/_archive/`
+2. Remove `run_data_splits` (now in `common/loading.py`)
+3. Each script becomes: imports + experiment-specific `main()`
+
+**Differences that stay per-script:**
+
+| Aspect | Exp1 | Exp2 |
+|---|---|---|
+| `peptide_trim` | `1` | `2` |
+| `min_split_size` | `None` | `4` |
+| `n_clusters` (seq_cluster) | `25` | `7` |
+| HDX source file | `mixed_60-40_artificial_expt_resfracs_TeaA_dfrac.dat` | `MoPrP_dfrac.dat` |
+| Peptide count | `len(segs)` | `len(segs) - 2` (drops terminal 2) |
+| `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` |
+
+**Validation:** Re-run refactored scripts; confirm train/val CSV files match archived originals.
+
+### Substep 6d: Refactor `optimise_fn.py` + Caller Scripts (Exp 1, 2, 3)
+
+**Files to archive:**
+- `1_IsoValidation_OMass/fitting/jaxENT/optimise_fn.py` (801 lines) → `fitting/jaxENT/_archive/`
+- `2_CrossValidation/fitting/jaxENT/optimise_fn.py` (895 lines) → `fitting/jaxENT/_archive/`
+- `3_CrossValidationBV/fitting/jaxENT/optimise_fn.py` (992 lines) → `fitting/jaxENT/_archive/`
+
+**Caller scripts to update:**
+- `1_IsoValidation_OMass/fitting/jaxENT/optimise_ISO_TRI_BI_splits_Sigma.py` (778 → ~280 lines)
+- `2_CrossValidation/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT.py` (777 → ~280 lines)
+- `3_CrossValidationBV/fitting/jaxENT/optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` (856 → ~320 lines)
+
+**Pattern change in each caller script** — replace the `from optimise_fn import run_optimise_ISO_TRI_BI_maxENT` + direct call with:
+```python
+from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.config import LossConfig, OptimizationConfig
+
+loss_config = LossConfig(
+    primary_loss=LOSS_NAME_MAP[loss_name],   # e.g. "hdx_uptake_mean_centred_MSE_loss"
+    regularization_losses=[],
+    maxent_scaling=maxent_value,
+)
+opt_config = OptimizationConfig(
+    n_steps=n_steps, learning_rate=learning_rate,
+    initial_learning_rate=initial_learning_rate, initial_steps=initial_steps,
+    optimizer="adam",    # Note: override default "adamw"
+    ema_alpha=ema_alpha, forward_model_scaling=forward_model_scaling,
+    convergence_rates=[1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8],  # override default
+    covariance_matrix_path=cov_matrix_path,
+)
+run_optimization(
+    train_data=train_data, val_data=val_data, prior_data=prior_dataset,
+    features=features, forward_model=bv_model, model_parameters=model_parameters,
+    feature_top=feature_top, loss_config=loss_config, opt_config=opt_config,
+    name=run_name, output_dir=output_dir,
+)
+```
+
+**Differences remaining per-script:**
+
+| Aspect | Exp1 | Exp2 | Exp3 |
+|---|---|---|---|
+| Ensembles | `["ISO_TRI", "ISO_BI"]` | `["AF2_filtered", "AF2_MSAss"]` | `["AF2_filtered", "AF2_MSAss"]` |
+| Feature name format | `ensemble.lower()` | `ensemble` unchanged | `ensemble` unchanged |
+| Cov matrix path | `_covariance_matrices_sigma/ISO_BI_Sigma_weighted.npz` | `../../data/_MoPrP_covariance_matrices/Sigma.npz` | same as Exp2 |
+| BV reg sweep | — | — | Yes: adds `bv_reg_value` loop + `LossConfig(regularization_losses=[{"name": "model_params_L1_loss"}], bv_reg_scaling=bv_reg_value, normalize_bv_reg=False)` |
+| `model_parameters_lr_scale` | — | — | Yes: `opt_config.model_parameters_lr_scale=model_parameters_lr_scale` |
+| Timing instrumentation | Present in original `optimise_fn.py`; omit in refactored version (not in `common/`, consistent with Exp2/3) | — | — |
+
+**Validation:** For each experiment run a minimal sweep:
+```bash
+.venv/bin/python optimise_ISO_TRI_BI_splits_Sigma.py --maxent-range 5,5 --n-replicates 1 --split-types stratified
+```
+Verify `.hdf5` and `_EMA.hdf5` files are created in the expected timestamped output subdirectory.
+
 
 ## Verification Plan (Each Step)
 
