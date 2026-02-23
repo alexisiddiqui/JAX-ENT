@@ -20,6 +20,7 @@ from jaxent.src.opt.losses import (
     hdx_uptake_sigma_MSE_loss,
     maxent_convexKL_loss,
     maxent_L2_loss,
+    model_params_L1_loss,
     model_params_L2_loss,
 )
 
@@ -42,6 +43,7 @@ LOSS_REGISTRY: dict[str, JaxEnt_Loss] = {
     # Regularisation losses
     "maxent_convexKL_loss": maxent_convexKL_loss,
     "maxent_L2_loss": maxent_L2_loss,
+    "model_params_L1_loss": model_params_L1_loss,
     "model_params_L2_loss": model_params_L2_loss,
 }
 
