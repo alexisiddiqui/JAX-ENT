@@ -103,6 +103,7 @@ def optimise_sweep(
     ema_params = None
     steps_since_threshold_start = 0
     optimizer.history = OptimizationHistory()
+    save_state = None
 
     try:
         previous_loss = None
@@ -251,22 +252,28 @@ def optimise_sweep(
                         f"Moving to relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold:.2e}"
                     )
     except Exception as e:
-        raise RuntimeError(
-            f"Optimization failed due to an error: {e}. Returning best state from history.",
+        error_msg = f"Optimization failed due to an error: {e}. Returning best state from history."
+        error_details = [
             "\n" * 10,
             "Simulation parameters at failure: ",
-            _simulation.params,
+            str(_simulation.params),
             "\n" * 10,
-            "Latest save state at failure: ",
-            save_state.params,
-            "\n" * 10,
+        ]
+        if save_state is not None:
+            error_details.extend([
+                "Latest save state at failure: ",
+                str(save_state.params),
+                "\n" * 10,
+            ])
+        error_details.extend([
             "Latest EMA params state at failure: ",
-            ema_params,
+            str(ema_params),
             "\n" * 10,
             "Opt State parameters at failure: ",
-            opt_state.params,
+            str(opt_state.params),
             "\n" * 10,
-        )
+        ])
+        raise RuntimeError(error_msg + "".join(str(d) for d in error_details))
 
     print(
         "\n" * 10,
@@ -410,9 +417,9 @@ def run_optimization(
         sim.initialise()
 
         # Build optimizer with appropriate parameter masks
-        partition_masks = None
+        partition_masks = {Optimisable_Parameters.frame_weights}
         if loss_config.optimize_bv_params:
-            partition_masks = {Optimisable_Parameters.frame_weights, Optimisable_Parameters.model_parameters}
+            partition_masks.add(Optimisable_Parameters.model_parameters)
 
         optimizer = OptaxOptimizer(
             learning_rate=learning_rate,
@@ -421,6 +428,7 @@ def run_optimization(
             optimizer="adam",
             initial_learning_rate=initial_learning_rate,
             initial_steps=initial_steps,
+            model_parameters_lr_scale=model_parameters_lr_scale,
         )
         opt_state = optimizer.initialise(model=sim)
 
