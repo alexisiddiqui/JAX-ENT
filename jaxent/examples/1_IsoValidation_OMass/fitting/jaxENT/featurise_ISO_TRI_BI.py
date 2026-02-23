@@ -27,8 +27,8 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
 
 def main():
     # Define trajectories and topology
-    tri_modal_trajectory = "sliced_trajectories/TeaA_filtered_sliced.xtc"
-    bi_modal_trajectory = "sliced_trajectories/TeaA_initial_sliced.xtc"
+    bi_modal_trajectory = "sliced_trajectories/TeaA_filtered_sliced.xtc"   # filtered = BI (874 frames)
+    tri_modal_trajectory = "sliced_trajectories/TeaA_initial_sliced.xtc"    # initial = TRI (2225 frames)
     topology = "TeaA_ref_closed_state.pdb"  # TeaA_ref_open_state.pdb
 
     hdxer_kint_path = "../../data/out__train_TeaA_auto_VAL_1Intrinsic_rates.dat"
