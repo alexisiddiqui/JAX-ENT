@@ -55,14 +55,14 @@ def main() -> None:
     # Load dfrac and segments data
     dfrac: np.ndarray = pd.read_csv(
         os.path.join(HDX_dir, dfrac_file),
-        sep="\s+",
+        sep=r"\s+",
         comment="#",
         header=None,
     ).to_numpy()
 
     segs: np.ndarray = pd.read_csv(
         os.path.join(HDX_dir, segs_file),
-        sep="\s+",
+        sep=r"\s+",
         comment="#",
         header=None,
     ).to_numpy()
