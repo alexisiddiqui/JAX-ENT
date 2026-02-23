@@ -428,7 +428,6 @@ def run_optimization(
             optimizer="adam",
             initial_learning_rate=initial_learning_rate,
             initial_steps=initial_steps,
-            model_parameters_lr_scale=model_parameters_lr_scale,
         )
         opt_state = optimizer.initialise(model=sim)
 
