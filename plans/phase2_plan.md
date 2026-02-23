@@ -395,7 +395,7 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 
 All three scripts archived, refactored, and syntax-verified. Import check (`common loading imports OK`) and `py_compile` all pass. -->
 
-### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2) ✓
+<!-- ### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/splitdata_ISO.py` (228 → ~80 lines)
@@ -415,7 +415,7 @@ All three scripts archived, refactored, and syntax-verified. Import check (`comm
 | `n_clusters` (seq_cluster) | `25` | `7` |
 | HDX source file | `mixed_60-40_artificial_expt_resfracs_TeaA_dfrac.dat` | `MoPrP_dfrac.dat` |
 | Peptide count | `len(segs)` | `len(segs) - 2` (drops terminal 2) |
-| `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` |
+| `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` | -->
 
 **Validation:** Re-ran both archived original and refactored scripts with `PYTHONHASHSEED=0`; byte-for-byte identical outputs confirmed. Observed differences in an initial run were due to Python's random hash seed varying between process invocations (non-determinism in `set` iteration order), not a code regression. ✓
 
