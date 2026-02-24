@@ -409,7 +409,7 @@ def run_optimization(
     # Build data_to_fit tuple
     data_targets_list = [loader, parameters]
     if loss_config.regularization_losses:
-        data_targets_list.append(prior_data)
+        data_targets_list.append(parameters)
 
     # Create simulation
     sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)

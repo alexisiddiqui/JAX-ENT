@@ -34,9 +34,9 @@ sns.set_context(
 
 # Default experiment paths
 DEFAULT_EXPERIMENTS = {
-    "TeaA-IsoValidation": "jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260216_232705",
-    "MoPrP-Reweighting": "jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_500__20260217_163516",
-    "MoPrP-RW+BV": "jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__20260217_165612"
+    "TeaA-IsoValidation": "jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_processed__optimise_test_SIGMA_500__20260223_215731/_analysis__scores__processed__optimise_test_SIGMA_500__20260223_215731/plots_selection",
+    "MoPrP-Reweighting": "jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_500__20260223_212645/_analysis__scores__processed__optimise_quick_test_FIGURE_SIGMA_500__20260223_212645/plots_selection",
+    "MoPrP-RW+BV": "jaxent/examples/2_CrossValidation/fitting/jaxENT/_processed__optimise_quick_test_FIGURE_SIGMA_500__20260223_212645/_analysis__scores__processed__optimise_quick_test_FIGURE_SIGMA_500__20260223_212645/plots_selection"
 }
 
 ENSEMBLE_CLASS_MAPPING = {
