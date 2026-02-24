@@ -1639,15 +1639,16 @@ def hdx_uptake_eye_MSE_loss(
         # Average loss across timepoints
         return jnp.asarray(total_loss) / y_true.shape[1]
 
-    eye_mat = jnp.eye(dataset.train.y_true.shape[0])
-
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+    train_eye = jnp.eye(dataset.train.y_true.shape[0])
+    train_eye = train_eye / jnp.linalg.norm(train_eye)
+    val_eye = jnp.eye(dataset.val.y_true.shape[0])
+    val_eye = val_eye / jnp.linalg.norm(val_eye)
 
     # Compute train and validation losses
     train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
+        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, train_eye
     )
-    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, val_eye)
 
     return train_loss, val_loss
 
