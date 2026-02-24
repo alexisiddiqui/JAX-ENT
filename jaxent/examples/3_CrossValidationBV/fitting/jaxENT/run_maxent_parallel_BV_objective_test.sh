@@ -240,7 +240,7 @@ python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
   --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
-  --state-ratios-json "${ANA_DIR}/state_ratios.json" \
+  --state-ratios-json "${DIR_WD}/../../analysis/state_ratios.json" \
   > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
 
 # Determine the scores directory name
