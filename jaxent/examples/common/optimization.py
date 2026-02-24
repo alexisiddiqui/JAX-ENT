@@ -7,6 +7,7 @@ Replaces 5+ near-identical ``run_optimise_*`` variants and the duplicated
 
 from __future__ import annotations
 
+import json
 import os
 from typing import List, Sequence, Tuple, cast
 
@@ -347,6 +348,8 @@ def run_optimization(
         ema_alpha = opt_config.ema_alpha
         forward_model_scaling = opt_config.forward_model_scaling
         model_parameters_lr_scale = opt_config.model_parameters_lr_scale
+        if opt_config.convergence_rates is not None:
+            convergence = opt_config.convergence_rates
         if opt_config.covariance_matrix_path and cov_matrix is None:
             import numpy as np
             cov_data = np.load(opt_config.covariance_matrix_path)
@@ -421,11 +424,12 @@ def run_optimization(
         if loss_config.optimize_bv_params:
             partition_masks.add(Optimisable_Parameters.model_parameters)
 
+        optimizer_type = opt_config.optimizer if opt_config is not None else "adam"
         optimizer = OptaxOptimizer(
             learning_rate=learning_rate,
             parameter_partition_masks=partition_masks,
             clip_value=None,
-            optimizer="adam",
+            optimizer=optimizer_type,
             initial_learning_rate=initial_learning_rate,
             initial_steps=initial_steps,
         )
@@ -447,6 +451,19 @@ def run_optimization(
 
         # Save results
         os.makedirs(output_dir, exist_ok=True)
+        
+        # 1. Save config as JSON
+        config_dict = {
+            "loss_config": loss_config.__dict__,
+        }
+        if opt_config is not None:
+            config_dict["opt_config"] = opt_config.__dict__
+        
+        config_path = os.path.join(output_dir, f"{name}_config.json")
+        with open(config_path, "w") as f:
+            json.dump(config_dict, f, indent=2, sort_keys=True)
+            
+        # 2. Save HDF5 Histories
         output_path = os.path.join(output_dir, f"{name}_results.hdf5")
         save_optimization_history_to_file(filename=output_path, history=optimizer.history)
         output_path_ema = os.path.join(output_dir, f"{name}_results_EMA.hdf5")
