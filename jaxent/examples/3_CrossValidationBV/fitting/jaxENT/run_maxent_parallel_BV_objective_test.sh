@@ -20,7 +20,7 @@ DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000"
 
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
 BV_REG_VALUES_STR="0.0"
-BV_REG_VALUES_STR="0.0,0.5,1.0"
+BV_REG_VALUES_STR="0.0,1.0"
 
 DIR_NAME="_optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0"
 N_STEPS=500
@@ -240,6 +240,7 @@ python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
   --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --state-ratios-json "${ANA_DIR}/state_ratios.json" \
   > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
 
 # Determine the scores directory name
