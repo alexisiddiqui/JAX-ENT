@@ -32,7 +32,7 @@ Phase 1 established the common-modules architecture and validated it with a 90%+
 > **Note**: `plot_compare_jaxENT_HDXer.py`, `plot_selected_models_ISO_TRI_BI.py`, and `analyse_scores_mixed_linear_model.py` were not explored in this research pass and will be planned separately.
 
 ---
-<!-- 
+
 ## Step 0: Add Missing Common Module Functions
 
 Do this in **one pass** across all modules before touching any script. Reference implementations come from the existing scripts (noted below).
@@ -98,7 +98,7 @@ scoring:
   ground_truth_ratios:
     open: 0.4
     closed: 0.6
-``` -->
+```
 
 ● Bash(.venv/bin/python -c "from jaxent.examples.common import analysis, loading, plotting, paths; print('Import OK')" 2>&1)                                                     
   ⎿  Import OK                                                                                                                                                                 
@@ -134,7 +134,7 @@ scoring:
   All verifications pass. I won't proceed to Steps 1–5 as instructed.
 
 ---
-<!-- 
+
 ## Step 1: Refactor `analyse_split_*.py` — both scripts → ~20 lines each
 
 **Files:**
@@ -156,7 +156,7 @@ scoring:
    ```
 
 **Differences remaining in script (none — only config):**
-- Experiment-specific default paths (handled by `--split-dir` / `--output-dir` args) -->
+- Experiment-specific default paths (handled by `--split-dir` / `--output-dir` args)
 
 ● Both scripts ran cleanly with no errors. Summary:                                                                                                                              
                                                                                                                                                                                  
@@ -167,7 +167,7 @@ scoring:
   Step 1 of Phase 2 is fully verified.                               
 
 ---
-<!-- 
+
 ## Step 2: Refactor `process_optimisation_results.py` — all 3 experiments → ~200–250 lines each
 
 **Files:**
@@ -194,7 +194,7 @@ scoring:
 | Extra output files | — | — | `bv_bc.npy`, `bv_bh.npy` |
 | Clustering CSV format | flat CSVs | nested subdirs | nested subdirs (cross-experiment) |
 
-**Validation:** Check that `_processed_*` output directories contain the same `.npy` and `.csv` files as pre-refactor runs. -->
+**Validation:** Check that `_processed_*` output directories contain the same `.npy` and `.csv` files as pre-refactor runs.
                                                                                                                                                                                  
 ● All 3 scripts verified against real data:                                                                                                                                      
                                                                                                                                                                                  
@@ -208,7 +208,7 @@ scoring:
   │ Script 3 │ Completed — 756 bv_bc.npy + 756 bv_bh.npy, run_id format correct (_bvreg0.00_bvregfnL1), all 11 expected files per run dir │                                      
   └──────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘    
 ---
-<!-- 
+
 ## Step 3: Refactor `score_models_ISO_TRI_BI.py` — all 3 experiments → ~150–200 lines each
 
 **Files:**
@@ -252,7 +252,7 @@ The `ScoringConfig` in `config.yaml` already provides `ensemble_feature_map`, `e
 
 ---
 
-<!-- ## Step 4: Refactor `weights_validation_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~100–200 lines each
+## Step 4: Refactor `weights_validation_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~100–200 lines each
 
 **Files:**
 - `jaxent/examples/1_IsoValidation_OMass/analysis/weights_validation_ISO_TRI_BI_precluster.py`
@@ -290,7 +290,7 @@ All three scripts verified end-to-end. Here's the summary:
 Note: ensure that the logging is consistent between the original and refactored methods - the plotting functions in particular.
 
 ---
-<!-- 
+
 ## Step 5: Refactor `recovery_analysis_ISO_TRI_BI_precluster.py` — 2×1D + 1×2D → ~80–150 lines each
 
 **Files:**
@@ -316,7 +316,7 @@ recovery_df = analysis.analyze_conformational_recovery(
 | `best_step_only` | `False` | `False` | `True` |
 | Plot function | `plot_metric_heatmap(cmap='PiYG', metric='open_recovery')` | `plot_metric_heatmap(cmap='RdYlGn', metric='recovery_percent')` | `plot_2d_heatmaps_grid` + `plot_1d_slices_2d_sweep` |
 
-Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 already use JSD. -->
+Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 already use JSD.
 ● All 3 scripts run successfully end-to-end. Summary of what was fixed during verification:
 
   Fixes applied:
@@ -350,7 +350,7 @@ Add `recovery_metric: ratio` to Exp1's `ScoringConfig` in `config.yaml`; Exp2/3 
 | `featurise_*.py` | Exp1 base, Exp1 SCALING, Exp2 | 213–233 | 1 (cleanest — 2 shared helpers, no analysis logic) |
 | `splitdata_*.py` | Exp1, Exp2 | 228–235 | 2 (1 shared helper, parametric differences only) |
 | `optimise_fn.py` + caller | Exp1 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_Sigma.py`; Exp2 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT.py`; Exp3 `optimise_fn.py` + `optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` | 778–992 | 3 (most complex — needs `LossConfig` gap filled) |
-<!-- 
+
 ### Substep 6a: Common Module Additions (do first)
 
 **`jaxent/examples/common/loading.py`** — add:
@@ -369,9 +369,9 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 
 **`jaxent/examples/common/optimization.py`** — update `run_optimization()`:
 - Use `loss_config.bv_reg_scaling` when building `forward_model_weights` for regularization losses (currently hardcodes `1.0`)
-- Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False` -->
+- Set `normalise_loss_functions[-1] = 0.0` when `loss_config.normalize_bv_reg is False`
 
-<!-- ### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2) ✓
+### Substep 6b: Refactor `featurise_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py` (213 → ~50 lines)
@@ -395,7 +395,7 @@ normalize_bv_reg: bool = True    # Set False for BV reg term → normalise_loss_
 
 All three scripts archived, refactored, and syntax-verified. Import check (`common loading imports OK`) and `py_compile` all pass. -->
 
-<!-- ### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2) ✓
+### Substep 6c: Refactor `splitdata_*.py` (Exp 1 & 2) ✓
 
 **Files:**
 - `1_IsoValidation_OMass/fitting/splitdata_ISO.py` (228 → ~80 lines)
@@ -415,7 +415,7 @@ All three scripts archived, refactored, and syntax-verified. Import check (`comm
 | `n_clusters` (seq_cluster) | `25` | `7` |
 | HDX source file | `mixed_60-40_artificial_expt_resfracs_TeaA_dfrac.dat` | `MoPrP_dfrac.dat` |
 | Peptide count | `len(segs)` | `len(segs) - 2` (drops terminal 2) |
-| `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` | -->
+| `fragment_name` | `"TeaISO"` | `"MoPrPCrossVal"` |
 
 **Validation:** Re-ran both archived original and refactored scripts with `PYTHONHASHSEED=0`; byte-for-byte identical outputs confirmed. Observed differences in an initial run were due to Python's random hash seed varying between process invocations (non-determinism in `set` iteration order), not a code regression. ✓
 
