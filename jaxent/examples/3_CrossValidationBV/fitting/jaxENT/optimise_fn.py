@@ -688,8 +688,8 @@ def run_optimise_ISO_TRI_BI_maxENT_BV_objective(
 
         optimizer = OptaxOptimizer(
             learning_rate=learning_rate,
-            # parameter_partition_masks={Optimisable_Parameters.frame_weights, Optimisable_Parameters.model_parameters},
-            parameter_partition_masks={Optimisable_Parameters.frame_weights},
+            parameter_partition_masks={Optimisable_Parameters.frame_weights, Optimisable_Parameters.model_parameters},
+            # parameter_partition_masks={Optimisable_Parameters.frame_weights},
 
             clip_value=None,
             optimizer="adam",
