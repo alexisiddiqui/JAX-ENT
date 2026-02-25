@@ -57,7 +57,7 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.examples.common.optimization import run_optimization
-from jaxent.examples.common.config import LossConfig
+from jaxent.examples.common.config import LossConfig, OptimizationConfig
 
 
 # Loss name to registry key mapping (replaces get_loss_function)
@@ -265,6 +265,18 @@ def run_maxent_sweep(
                             bv_reg_scaling=bv_reg_value,
                             normalize_bv_reg=False,
                         )
+                        opt_config = OptimizationConfig(
+                            n_steps=n_steps,
+                            learning_rate=learning_rate,
+                            initial_learning_rate=initial_learning_rate,
+                            initial_steps=initial_steps,
+                            ema_alpha=ema_alpha,
+                            forward_model_scaling=forward_model_scaling,
+                            convergence_rates=convergence_rates,
+                            model_parameters_lr_scale=model_parameters_lr_scale,
+                            optimizer="adam",
+                        )
+                        
                         run_optimization(
                             train_data=train_data,
                             val_data=val_data,
@@ -275,17 +287,10 @@ def run_maxent_sweep(
                             feature_top=feature_top,
                             convergence=convergence_rates,
                             loss_config=loss_config,
-                            maxent_scaling=maxent_value,
-                            n_steps=n_steps,
+                            opt_config=opt_config,
                             name=run_name,
                             output_dir=output_dir,
-                            learning_rate=learning_rate,
-                            initial_learning_rate=initial_learning_rate,
-                            initial_steps=initial_steps,
-                            ema_alpha=ema_alpha,
-                            forward_model_scaling=forward_model_scaling,
                             cov_matrix=cov_matrix_data,
-                            model_parameters_lr_scale=model_parameters_lr_scale,
                         )
 
                         run_elapsed = time.time() - run_start_time
