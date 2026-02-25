@@ -13,7 +13,7 @@ Refactor the `jaxent/examples/` directory to improve code reusability, maintaina
 ## Proposed Changes
 
 The refactoring will be executed in 5 phases.
-<!-- 
+
 ### Phase 0: Packaging and Project Structure
 Convert `jaxent/examples` into a proper Python package.
 #### [MODIFY] [pyproject.toml](file:///Users/alexi/JAX-ENT/pyproject.toml)
@@ -21,7 +21,7 @@ Convert `jaxent/examples` into a proper Python package.
 #### [NEW] [__init__.py](file:///Users/alexi/JAX-ENT/jaxent/examples/__init__.py)
 - Create namespace package files. -->
 
-<!-- ### Phase 1: Create `jaxent/examples/common/` Shared Module
+ ### Phase 1: Create `jaxent/examples/common/` Shared Module
 Create the core shared infrastructure.
 #### [NEW] [jaxent/examples/common/](file:///Users/alexi/JAX-ENT/jaxent/examples/common/)
 - `config.py`: Configuration dataclasses (`ExperimentConfig`, `OptimizationConfig`, etc.) with YAML loading.
@@ -31,7 +31,7 @@ Create the core shared infrastructure.
 - `plotting.py`: Shared plotting functions with `PlotStyle` support.
 - `optimization.py`: Unified `run_optimization` function replacing 5+ `optimise_fn.py` variants.
 - `losses.py`: Example-specific loss functions moved from `optimise_fn.py`.
-- `cli.py`: Shared `argparse` setup. -->
+- `cli.py`: Shared `argparse` setup. 
 
 # ✅ Phase 1: Pilot Refactor Complete
 
