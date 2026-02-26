@@ -14,8 +14,8 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=20
-DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,1000"
+PARALLEL_JOBS=5
+DEFAULT_MAXENT_VALUES_STR="1,10,100,1000"
 
 
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
