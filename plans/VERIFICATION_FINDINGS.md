@@ -7,7 +7,7 @@ This document summarizes the plot verification for the refactored analysis scrip
 1. **`analyse_loss_*.py`**: 🔴 **DIFFERENT**
    - **Archived**: Generated `error_vs_convergence.png`, `final_performance_comparison.png`, `split_variability.png`, and a series of maxent/convergence heatmaps.
    - **Refactored**: ONLY generates the heatmaps (`train_loss_convergence_maxent_heatmap`, `val_loss_convergence_maxent_heatmap`, `model_score_heatmap`). 
-   - **Explanation**: The 1D plotting functions (`plot_loss_convergence` and `plot_split_variability`) were intentionally removed during Phase 1 refactoring because they were missing in the new `common.plotting` module (as documented in `REFACTOR_EXAMPLES_PLAN.md`).
+   - **Explanation regarding `plot_loss_convergence` and `plot_split_variability`**: Yes, these methods **do exist** inside the original archived file (`_archive/analyse_loss_ISO_TRI_BI.py.original`). However, during the Phase 1 refactoring, they were intentionally NOT ported over to the shared `jaxent.examples.common.plotting` module. Because the refactored script now relies exclusively on `common.plotting` for its visualization logic, and those specific functions were left behind, the refactored script no longer generates the 1D convergence or split variability plots.
 
 2. **`analyse_split_*.py`**: 🟢 **IDENTICAL**
    - **Archived**: Generated `peptide_split_distribution.png`, `enhanced_peptide_split_heatmap.png`, `gap_analysis.png`, and various `uptake_*.png` heatmaps.
@@ -22,8 +22,9 @@ This document summarizes the plot verification for the refactored analysis scrip
    - **Refactored**: Calls `plotting.create_violin_plots()` which perfectly mirrors the original logic. 
 
 5. **`weights_validation_*.py`**: 🔴 **DIFFERENT / INCOMPLETE**
-   - **Archived**: Generated numerous KLD plots and weight distribution panels.
-   - **Refactored**: Generates `weight_distributions_convergence_panels_*.png`, `weight_distributions_maxent_panels_*.png`, and KLD plots. However, the exact plot output shapes and quantity differed in testing. The original file also contained commented-out stubs (`[Additional plotting functions would go here - copying from original script]`), suggesting it was an incomplete refactoring attempt copied into `_archive`.
+   - **Archived**: Generated numerous KLD plots and weight distribution panels. Specifically, it defined and called `plot_weight_distribution_lines`, `plot_kld_between_splits`, `plot_sequential_maxent_kld`, `plot_weight_distribution_maxent_panels`, and `plot_weight_distribution_convergence_panels`.
+   - **Refactored**: Generates `weight_distributions_convergence_panels_*.png`, `weight_distributions_maxent_panels_*.png`, and KLD plots. 
+   - **Explanation of Differences**: The refactored version completely omits the `plot_weight_distribution_lines` function, resulting in fewer output plots (the non-panelized individual weight distributions are no longer generated). Furthermore, rather than extracting these drawing functions into the `common.plotting` module as intended by the refactoring plan, the script awkwardly re-implements the 4 remaining plotting functions directly within the file itself. The presence of commented-out stubs like `# [Additional plotting functions would go here...` in the archived file suggests this script was in the middle of a messy, incomplete refactoring phase when it was copied over.
 
 6. **`plot_compare_jaxENT_HDXer.py`**: ⚪ **N/A**
    - **Status**: Not yet refactored.
