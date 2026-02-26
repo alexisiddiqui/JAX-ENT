@@ -151,3 +151,68 @@ def compute_sequential_maxent_kld(weights_data) -> pd.DataFrame:
                 )
 
     return pd.DataFrame(sequential_kld_data)
+
+
+def compute_pairwise_kld_between_splits_2d(results: dict) -> pd.DataFrame:
+    """
+    Compute pairwise KLD between splits for each (maxent, bv_reg) combination
+    in a 2D hyperparameter sweep result dictionary.
+    """
+    print("Computing pairwise KLD between splits (2D sweep)...")
+    kld_rows = []
+
+    for split_type in results:
+        for ensemble in results[split_type]:
+            for loss_func in results[split_type][ensemble]:
+                for bv_reg_fn in results[split_type][ensemble][loss_func]:
+                    for maxent_val in results[split_type][ensemble][loss_func][bv_reg_fn]:
+                        for bvreg_val in results[split_type][ensemble][loss_func][bv_reg_fn][maxent_val]:
+                            weights_list = []
+                            
+                            for split_idx, history in results[split_type][ensemble][loss_func][bv_reg_fn][maxent_val][bvreg_val].items():
+                                if history is None or not hasattr(history, "states") or not history.states:
+                                    continue
+
+                                final_state = history.states[-1]
+                                if (
+                                    hasattr(final_state, "params")
+                                    and hasattr(final_state.params, "frame_weights")
+                                    and final_state.params.frame_weights is not None
+                                ):
+                                    w = np.asarray(final_state.params.frame_weights)
+                                    if len(w) == 0 or np.sum(w) <= 0:
+                                        continue
+
+                                    w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
+                                    if np.sum(w) > 0:
+                                        w = w / np.sum(w)
+                                        weights_list.append(w)
+
+                            if len(weights_list) < 2:
+                                continue
+
+                            # Compute pairwise symmetric KLD
+                            pair_klds = _sym_kld_pairs(weights_list)
+
+                            if len(pair_klds) > 0:
+                                mean_kld = float(np.mean(pair_klds))
+                                std_kld = float(np.std(pair_klds))
+                                sem_kld = float(std_kld / np.sqrt(len(pair_klds)))
+
+                                kld_rows.append(
+                                    {
+                                        "ensemble": ensemble,
+                                        "split_type": split_type,
+                                        "loss_function": loss_func,
+                                        "bv_reg_function": bv_reg_fn,
+                                        "maxent_value": maxent_val,
+                                        "bv_reg_value": bvreg_val,
+                                        "mean_kld_between_splits": mean_kld,
+                                        "std_kld_between_splits": std_kld,
+                                        "sem_kld_between_splits": sem_kld,
+                                        "n_pairs": len(pair_klds),
+                                        "n_splits": len(weights_list),
+                                    }
+                                )
+
+    return pd.DataFrame(kld_rows)

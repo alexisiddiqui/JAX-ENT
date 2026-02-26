@@ -232,4 +232,4 @@ def apply_sparse_mapping(
         Mapped features with shape (n_fragments,)
     """
     # Use matrix multiplication for proper broadcasting
-    return sparse_map.todense() @ features
+    return jnp.squeeze(sparse_map.todense() @ features)

@@ -28,7 +28,12 @@ from .weights import (
     extract_final_weights_2d,
     extract_weights_over_convergence_steps,
 )
-from .pairwise_kld import _sym_kld_pairs, compute_pairwise_kld_between_splits, compute_sequential_maxent_kld
+from .pairwise_kld import (
+    _sym_kld_pairs, 
+    compute_pairwise_kld_between_splits, 
+    compute_sequential_maxent_kld,
+    compute_pairwise_kld_between_splits_2d
+)
 
 __all__ = [
     "kl_divergence",
@@ -55,4 +60,5 @@ __all__ = [
     "_sym_kld_pairs",
     "compute_pairwise_kld_between_splits",
     "compute_sequential_maxent_kld",
+    "compute_pairwise_kld_between_splits_2d",
 ]
