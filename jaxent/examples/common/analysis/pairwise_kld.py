@@ -81,3 +81,73 @@ def compute_pairwise_kld_between_splits(
         kld_rows.append(row)
 
     return pd.DataFrame(kld_rows)
+
+
+def compute_sequential_maxent_kld(weights_data) -> pd.DataFrame:
+    """
+    Compute KLD between sequential maxent values for each ensemble, split_type, loss, and split combination.
+    Equivalent to the legacy function of the same name.
+    """
+    print("Computing KLD between sequential maxent values...")
+    sequential_kld_data = []
+
+    # Convert to DataFrame for easier grouping
+    weights_df = pd.DataFrame(weights_data)
+
+    if "weights" not in weights_df.columns:
+         return pd.DataFrame(sequential_kld_data)
+
+    # Group by ensemble, split_type, loss_function, and split
+    for (ensemble, split_type, loss_func, split_idx), group in weights_df.groupby(
+        ["ensemble", "split_type", "loss_function", "split"]
+    ):
+        # Sort by maxent_value for proper sequential comparison
+        group_sorted = group.sort_values("maxent_value")
+        maxent_values = group_sorted["maxent_value"].values
+        weights_list = group_sorted["weights"].tolist()
+
+        if len(maxent_values) < 2:
+            continue
+
+        # For each maxent (except the first), compute KLD with previous maxent
+        for i in range(len(maxent_values)):
+            current_maxent = maxent_values[i]
+            current_weights = np.asarray(weights_list[i])
+
+            if i == 0:
+                # Compare first (lowest) maxent to uniform distribution
+                n_frames = len(current_weights)
+                uniform_weights = np.ones(n_frames) / n_frames
+
+                kld_to_previous = kl_divergence(current_weights, uniform_weights)
+                previous_maxent = None
+                comparison_type = "vs_uniform"
+            else:
+                # Compare to previous maxent
+                previous_maxent = maxent_values[i - 1]
+                previous_weights = np.asarray(weights_list[i - 1])
+
+                # Ensure both weight arrays have the same length
+                min_len = min(len(current_weights), len(previous_weights))
+                current_weights_trimmed = current_weights[:min_len]
+                previous_weights_trimmed = previous_weights[:min_len]
+
+                kld_to_previous = kl_divergence(current_weights_trimmed, previous_weights_trimmed)
+                comparison_type = "vs_previous_maxent"
+
+            if not pd.isna(kld_to_previous):
+                sequential_kld_data.append(
+                    {
+                        "ensemble": ensemble,
+                        "split_type": split_type,
+                        "split_name": split_type,
+                        "loss_function": loss_func,
+                        "split_idx": split_idx,
+                        "current_maxent": current_maxent,
+                        "previous_maxent": previous_maxent,
+                        "kld_to_previous": float(kld_to_previous),
+                        "comparison_type": comparison_type,
+                    }
+                )
+
+    return pd.DataFrame(sequential_kld_data)

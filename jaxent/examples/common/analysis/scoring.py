@@ -64,3 +64,52 @@ def select_best_models(df: pd.DataFrame) -> pd.DataFrame:
             "model_score"
         ].idxmax()
     ]
+
+
+def calculate_work_metrics(pred_lnpf: np.ndarray, 
+                           prior_lnpf: np.ndarray, 
+                           T: float = 300.0) -> dict:
+    """
+    Computes thermodynamic work metrics (Shape, Density, Fitting, Scale) based on 
+    Log Protection Factors (lnPF) derived from the 'calc_pmf' logic.
+    
+    Args:
+        pred_lnpf (np.array): Shape (n_residues,). Natural log of protection factors from the fitted model.
+        prior_lnpf (np.array): Shape (n_residues,). Natural log of protection factors from the prior.
+        T (float): Temperature in Kelvin. Default is 300.
+        
+    Returns:
+        dict: Dictionary containing the computed metrics in kJ/mol.
+    """
+    R = 8.314  # J/(mol K)
+    
+    def get_thermo_props(lnpf_array):
+        avg_logPF = np.mean(lnpf_array)
+        delta_phi = np.abs(lnpf_array - avg_logPF)
+        H = R * T * delta_phi
+        q = np.abs(np.exp(-delta_phi))
+        Z = np.sum(q)
+        Pi = q * Z
+        S = -R * Pi * np.log(Pi + 1e-16)
+        G = H - (T * S)
+        return avg_logPF, H, S, G
+
+    mu_pred, H_pred, S_pred, G_pred = get_thermo_props(pred_lnpf)
+    mu_prior, H_prior, S_prior, G_prior = get_thermo_props(prior_lnpf)
+    
+    work_scale_j = R * T * np.abs(mu_pred - mu_prior)
+    work_shape_j = np.mean(np.abs(H_pred - H_prior))
+    work_density_j = T * np.mean(np.abs(S_pred - S_prior))
+    work_fitting_j = np.mean(np.abs(G_pred - G_prior))
+    
+    work_fitting_f = work_scale_j + work_density_j 
+    work_magnitude_j = work_shape_j - work_scale_j
+
+    return {
+        "work_scale_kj": work_scale_j / 1000.0,
+        "work_shape_kj": work_shape_j / 1000.0,
+        "work_density_kj": work_density_j / 1000.0,
+        "work_fitting_kj": work_fitting_f / 1000.0,
+        "work_magnitude_kj": work_magnitude_j / 1000.0,
+        "work_opt_kj": work_fitting_j / 1000.0 
+    }
