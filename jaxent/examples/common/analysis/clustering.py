@@ -191,8 +191,13 @@ def analyze_conformational_recovery(
                 entry["bv_reg_value"] = bv_reg_val
 
             for state_name in target_ratios:
-                entry[f"{state_name}_current"] = current_props.get(state_name, 0.0)
-                entry[f"{state_name}_target"] = target_ratios.get(state_name, 0.0)
+                obs = current_props.get(state_name, 0.0)
+                truth = target_ratios.get(state_name, 0.0)
+                entry[f"{state_name}_current"] = obs
+                entry[f"{state_name}_target"] = truth
+                # Backward-compatible aliases for legacy plotting scripts
+                entry[f"{state_name}_ratio"] = obs
+                entry[f"{state_name}_recovery"] = min(200.0, (obs / truth) * 100.0) if truth > 0 else 0.0
 
             recovery_data.append(entry)
 
@@ -233,8 +238,13 @@ def analyze_conformational_recovery(
             "total_frames": n_frames,
         }
         for state_name in target_ratios:
-            entry[f"{state_name}_current"] = current_props.get(state_name, 0.0)
-            entry[f"{state_name}_target"] = target_ratios.get(state_name, 0.0)
+            obs = current_props.get(state_name, 0.0)
+            truth = target_ratios.get(state_name, 0.0)
+            entry[f"{state_name}_current"] = obs
+            entry[f"{state_name}_target"] = truth
+            # Backward-compatible aliases for legacy plotting scripts
+            entry[f"{state_name}_ratio"] = obs
+            entry[f"{state_name}_recovery"] = min(200.0, (obs / truth) * 100.0) if truth > 0 else 0.0
 
         recovery_data.append(entry)
 
