@@ -12,6 +12,7 @@ _DEFAULT_STYLE = PlotStyle(
         "R3": "green",
         "sequence_cluster": "green",
         "Sp": "grey",
+        "random": "#9467bd",
     },
     split_name_mapping={
         "r": "Random",
@@ -20,6 +21,7 @@ _DEFAULT_STYLE = PlotStyle(
         "sequence_cluster": "Non-Redundant",
         "Sp": "Spatial",
         "spatial": "Spatial",
+        "random": "Random",
     },
 )
 
