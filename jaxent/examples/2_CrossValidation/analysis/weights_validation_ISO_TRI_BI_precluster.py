@@ -376,6 +376,14 @@ def main():
     final_df = analysis.extract_final_weights(results)
     print(f"Extracted {len(final_df)} final weight distributions")
 
+    # Extract weights over convergence steps for panel plots
+    print("\n" + "=" * 60)
+    print("EXTRACTING CONVERGENCE WEIGHTS")
+    print("=" * 60)
+    
+    conv_df = analysis.extract_weights_over_convergence_steps(results)
+    print(f"Extracted {len(conv_df)} convergence weights distributions")
+
     # Compute pairwise KLD between splits (per convergence step)
     print("\n" + "=" * 60)
     print("COMPUTING KLD BETWEEN SPLITS")
@@ -388,6 +396,19 @@ def main():
             kld_path = os.path.join(output_dir, "kld_between_splits_data.csv")
             kld_df.to_csv(kld_path, index=False)
             print(f"KLD between splits data saved to: {kld_path}")
+
+    # Sequential MaxEnt KLD
+    print("\n" + "=" * 60)
+    print("COMPUTING SEQUENTIAL MAXENT KLD")
+    print("=" * 60)
+
+    seq_kld_df = pd.DataFrame()
+    if not final_df.empty:
+        seq_kld_df = analysis.compute_sequential_maxent_kld(final_df)
+        if not seq_kld_df.empty:
+            seq_kld_path = os.path.join(output_dir, "sequential_maxent_kld_data.csv")
+            seq_kld_df.to_csv(seq_kld_path, index=False)
+            print(f"Sequential MaxEnt KLD data saved to: {seq_kld_path}")
 
     # Conformational recovery
     print("\n" + "=" * 60)
@@ -433,7 +454,17 @@ def main():
     print("=" * 60)
 
     if not final_df.empty:
-        plotting.plot_weight_distribution_lines(final_df, output_dir)
+        plotting.plot_weight_distribution_lines(final_df, output_dir, SPLIT_NAME_MAPPING)
+
+    if not conv_df.empty:
+        plotting.plot_weight_distribution_maxent_panels(conv_df, output_dir, SPLIT_NAME_MAPPING)
+        plotting.plot_weight_distribution_convergence_panels(conv_df, output_dir, SPLIT_NAME_MAPPING)
+        
+    if not kld_df.empty:
+        plotting.plot_kld_between_splits(kld_df, output_dir, SPLIT_NAME_MAPPING)
+
+    if not seq_kld_df.empty:
+        plotting.plot_sequential_maxent_kld(seq_kld_df, output_dir, SPLIT_NAME_MAPPING)
 
     if not recovery_df.empty:
         plot_conformational_recovery_scatter(recovery_df, output_dir)
