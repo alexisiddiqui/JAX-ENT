@@ -24,6 +24,8 @@ from jaxent.examples.common.analysis import (
 from jaxent.examples.common.plotting import (
     setup_publication_style,
     plot_best_model_comparisons,
+    plot_loss_convergence_2d,
+    plot_split_variability_2d,
 )
 from jaxent.examples.common.paths import find_most_recent_dir
 
@@ -203,6 +205,23 @@ def main():
     # Generate 2D heatmaps (MaxEnt vs BV reg)
     print("\nNote: 2D sweep-specific heatmaps (MaxEnt × BV reg) require custom plotting.")
     print("      Use the saved CSV files to create custom visualizations as needed.")
+
+    # Generate 1D convergence plots and split variability for 2D sweeps over MaxEnt
+    print("\nGenerating loss convergence 1D plots...")
+    plot_loss_convergence_2d(
+        df=loss_df,
+        output_dir=str(output_dir),
+        style=config.style,
+        split_type="all", # Since we combined all df previously, wait, this needs to be split grouped ideally
+    )
+
+    print("Generating split variability plots...")
+    plot_split_variability_2d(
+        df=loss_df,
+        output_dir=str(output_dir),
+        style=config.style,
+        split_type="all",
+    )
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE")
