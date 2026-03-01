@@ -30,18 +30,7 @@ sys.path.insert(0, base_dir)
 from jaxent.examples.common import analysis, loading, plotting
 from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.paths import find_most_recent_dir
-
-# Publication-ready style
-sns.set_style("ticks")
-sns.set_context(
-    "paper",
-    rc={
-        "axes.labelsize": 14,
-        "axes.titlesize": 16,
-        "xtick.labelsize": 12,
-        "ytick.labelsize": 12,
-    },
-)
+from jaxent.examples.common.plotting import _DEFAULT_STYLE, setup_publication_style
 
 # Ensemble → clustering file mapping
 ENSEMBLE_CLUSTERING_MAP = {
@@ -55,24 +44,6 @@ STATE_MAPPING = {
     1: "PUF1",
     2: "PUF2",
     4: "unfolded",
-}
-
-split_type_colours = {
-    "random": "#9467bd",
-}
-
-split_name_mapping = {
-    "random": "Random",
-}
-
-SPLIT_NAME_MAPPING = {
-    "r": "Random",
-    "s": "Sequence",
-    "R3": "Non-Redundant",
-    "sequence_cluster": "Non-Redundant",
-    "Sp": "Spatial",
-    "spatial": "Spatial",
-    "random": "Random",
 }
 
 
@@ -194,8 +165,8 @@ def plot_conformational_recovery_scatter(recovery_df, output_dir):
 
             for split_type in split_types:
                 st_data = el_data[el_data["split_type"] == split_type]
-                color = split_type_colours.get(split_type, "#9467bd")
-                label = split_name_mapping.get(split_type, split_type)
+                color = _DEFAULT_STYLE.split_type_colors.get(split_type, "#9467bd")
+                label = _DEFAULT_STYLE.split_name_mapping.get(split_type, split_type)
 
                 ax.scatter(
                     st_data["maxent_value"],
@@ -246,6 +217,8 @@ def plot_conformational_recovery_scatter(recovery_df, output_dir):
 
 
 def main():
+    setup_publication_style()
+
     parser = argparse.ArgumentParser(
         description="Exp2 weights validation: KL/ESS analysis and conformational recovery."
     )
@@ -464,17 +437,17 @@ def main():
     print("=" * 60)
 
     if not final_df.empty:
-        plotting.plot_weight_distribution_lines(final_df, output_dir, SPLIT_NAME_MAPPING)
+        plotting.plot_weight_distribution_lines(final_df, output_dir, _DEFAULT_STYLE.split_name_mapping)
 
     if not conv_df.empty:
-        plotting.plot_weight_distribution_maxent_panels(conv_df, output_dir, SPLIT_NAME_MAPPING)
-        plotting.plot_weight_distribution_convergence_panels(conv_df, output_dir, SPLIT_NAME_MAPPING)
+        plotting.plot_weight_distribution_maxent_panels(conv_df, output_dir, _DEFAULT_STYLE.split_name_mapping)
+        plotting.plot_weight_distribution_convergence_panels(conv_df, output_dir, _DEFAULT_STYLE.split_name_mapping)
         
     if not kld_df.empty:
-        plotting.plot_kld_between_splits(kld_df, output_dir, SPLIT_NAME_MAPPING)
+        plotting.plot_kld_between_splits(kld_df, output_dir, _DEFAULT_STYLE.split_name_mapping)
 
     if not seq_kld_df.empty:
-        plotting.plot_sequential_maxent_kld(seq_kld_df, output_dir, SPLIT_NAME_MAPPING)
+        plotting.plot_sequential_maxent_kld(seq_kld_df, output_dir, _DEFAULT_STYLE.split_name_mapping)
 
     if not recovery_df.empty:
         plot_conformational_recovery_scatter(recovery_df, output_dir)
