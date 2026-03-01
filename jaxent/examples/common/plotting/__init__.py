@@ -11,6 +11,7 @@ from .heatmaps import plot_convergence_maxent_heatmaps, plot_metric_heatmap
 from .scores import plot_model_score_heatmaps, create_violin_plots
 from .comparisons import plot_best_model_comparisons
 from .distributions import plot_weight_distribution_lines
+from .convergence import plot_loss_convergence, plot_split_variability, plot_loss_convergence_2d, plot_split_variability_2d
 from .sweeps import plot_2d_heatmaps_grid, plot_1d_slices_2d_sweep
 from .splits import plot_split_distributions, plot_enhanced_split_heatmap, plot_split_heatmap
 from .uptake import plot_uptake_heatmap, plot_combined_uptake_comparison
@@ -25,6 +26,10 @@ __all__ = [
     "create_violin_plots",
     "plot_best_model_comparisons",
     "plot_weight_distribution_lines",
+    "plot_loss_convergence",
+    "plot_split_variability",
+    "plot_loss_convergence_2d",
+    "plot_split_variability_2d",
     "plot_2d_heatmaps_grid",
     "plot_1d_slices_2d_sweep",
     "plot_split_distributions",
