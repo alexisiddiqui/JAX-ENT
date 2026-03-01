@@ -65,6 +65,16 @@ split_name_mapping = {
     "random": "Random",
 }
 
+SPLIT_NAME_MAPPING = {
+    "r": "Random",
+    "s": "Sequence",
+    "R3": "Non-Redundant",
+    "sequence_cluster": "Non-Redundant",
+    "Sp": "Spatial",
+    "spatial": "Spatial",
+    "random": "Random",
+}
+
 
 def _create_ensemble_loss_key(ensemble, loss_function):
     return f"{ensemble}_{loss_function}"
