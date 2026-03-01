@@ -1,16 +1,13 @@
 #!/bin/bash
-# Comprehensive Analysis Pipeline for MoPrP Cross-Validation
+# Comprehensive Analysis Pipeline for 3_CrossValidationBV
 
-# Set working directory to the script's location
 cd "$(dirname "$0")" || exit
 
-# Default paths - Adjust based on your actual run
 ANA_DIR="analysis"
 DIR_WD="$(pwd)/fitting/jaxENT"
-# Example optimization output directory - CHANGE THIS to matches your actual output
-OPT_OUTPUT_DIR="${DIR_WD}/_optimise_quick_test_FIGURE_SIGMA_500__20260226_014310" 
+# Example optimization output directory - CHANGE THIS to match your actual output
+OPT_OUTPUT_DIR="${DIR_WD}/_optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__20260226_011952"
 
-# Create logs directory
 mkdir -p "${OPT_OUTPUT_DIR}/logs"
 
 echo "Using Optimization Output Directory: $OPT_OUTPUT_DIR"
@@ -22,10 +19,9 @@ python "${ANA_DIR}/process_optimisation_results.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
-  --clustering-dir "${DIR_WD}/../../analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
   > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
 
-# Determine processed directory (created by script)
 BASENAME=$(basename "$OPT_OUTPUT_DIR")
 PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
 
@@ -40,10 +36,10 @@ python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
   --processed-data-dir "$PROCESSED_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
-  --clustering-dir "${DIR_WD}/../../analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --state-ratios-json "${DIR_WD}/../../analysis/state_ratios.json" \
   > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
 
-# Determine scores directory (created by script)
 SCORES_BASENAME=$(basename "$PROCESSED_DIR")
 SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
 
@@ -61,7 +57,6 @@ python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
   --analyze-subsets \
   > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
 
-# Determine analysis directory
 ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
 
 # 4. Plot Selected Models
