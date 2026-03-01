@@ -26,6 +26,8 @@ from jaxent.examples.common.plotting import (
     plot_convergence_maxent_heatmaps,
     plot_model_score_heatmaps,
     plot_best_model_comparisons,
+    plot_loss_convergence,
+    plot_split_variability,
 )
 from jaxent.examples.common.paths import find_most_recent_dir
 
@@ -182,8 +184,23 @@ def main():
             split_type=split_type,
         )
 
-        # Note: Additional plotting functions (loss convergence, split variability)
-        # can be added to common/plotting.py as needed
+        print("  Generating loss convergence 1D plots...")
+        plot_loss_convergence(
+            df=loss_df,
+            convergence_rates=config.convergence_rates,
+            output_dir=str(output_dir),
+            style=config.style,
+            split_type=split_type,
+        )
+
+        print("  Generating split variability plots...")
+        plot_split_variability(
+            df=loss_df,
+            convergence_rates=config.convergence_rates,
+            output_dir=str(output_dir),
+            style=config.style,
+            split_type=split_type,
+        )
 
     # Combine all data and select best models
     if all_loss_data:
