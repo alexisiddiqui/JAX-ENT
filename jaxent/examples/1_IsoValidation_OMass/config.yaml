@@ -30,8 +30,8 @@ output_dir: "analysis/_analysis_loss_output"
 # Plotting style
 style:
   ensemble_colors:
-    ISO_BI: "indigo"
-    ISO_TRI: "saddlebrown"
+    ISO_BI: "navy"
+    ISO_TRI: "dodgerblue"
 
   loss_markers:
     mcMSE: "o"
@@ -45,6 +45,16 @@ style:
     sequence_cluster: "green"
     Sp: "grey"
     spatial: "grey"
+    _flat: "orange"
+
+  split_name_mapping:
+    r: "Random"
+    s: "Sequence"
+    R3: "Non-Redundant"
+    sequence_cluster: "Non-Redundant"
+    Sp: "Spatial"
+    spatial: "Spatial"
+    _flat: "Flat"
 
   dpi: 300
   figsize_wide: [16, 6]
