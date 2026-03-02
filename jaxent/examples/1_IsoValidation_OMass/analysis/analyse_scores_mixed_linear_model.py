@@ -111,7 +111,23 @@ def main() -> None:
         absolute_paths=args.absolute_paths,
     )
 
+    print("=" * 80)
+    print("JAX-ENT Linear Effects Modelling Analysis")
+    print("=" * 80)
+    print(f"Resolved scores_csv_path: {scores_csv_path}")
+    print(f"Base output dir: {base_output_dir}")
+    print(f"Target metric: {args.target_metric}")
+    print(f"Filter mode: {args.filter_mode}")
+    print("-" * 80)
+
     df_master = pd.read_csv(scores_csv_path)
+    print(f"\nLoaded {len(df_master)} rows from {scores_csv_path}")
+    print("\nDataFrame info:")
+    df_master.info()
+    print("\nDataFrame head:")
+    print(df_master.head())
+    print("-" * 80)
+
     modes = [False, True] if args.filter_mode == "both" else [args.filter_mode == "filtered"]
 
     for filter_best in modes:
