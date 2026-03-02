@@ -31,8 +31,8 @@ state_ratios_json: "analysis/state_ratios.json"
 # Plotting style
 style:
   ensemble_colors:
-    AF2_filtered: "Cyan"
     AF2_MSAss: "RoyalBlue"
+    AF2_filtered: "Cyan"
 
   loss_markers:
     mcMSE: "o"
@@ -46,6 +46,17 @@ style:
     sequence_cluster: "green"
     Sp: "grey"
     spatial: "grey"
+    _flat: "orange"
+
+  split_name_mapping:
+    r: "Random"
+    s: "Sequence"
+    random: "Random"
+    R3: "Non-Redundant"
+    sequence_cluster: "Non-Redundant"
+    Sp: "Spatial"
+    spatial: "Spatial"
+    _flat: "Flat"
 
   dpi: 300
   figsize_wide: [16, 6]

@@ -47,8 +47,8 @@ state_ratios_json: "../2_CrossValidation/analysis/state_ratios.json"
 # Plotting style
 style:
   ensemble_colors:
-    AF2_filtered: "Cyan"
     AF2_MSAss: "RoyalBlue"
+    AF2_filtered: "Cyan"
 
   loss_markers:
     mcMSE: "o"
@@ -56,10 +56,35 @@ style:
     Sigma_MSE: "^"
 
   split_type_colors:
+    r: "fuchsia"
+    s: "black"
     random: "fuchsia"
+    R3: "green"
+    Sp: "grey"
+    _flat: "orange"
     sequence: "black"
     sequence_cluster: "green"
     spatial: "grey"
+
+  split_name_mapping:
+    r: "Random"
+    s: "Sequence"
+    random: "Random"
+    R3: "Non-Redundant"
+    sequence: "Sequence"
+    sequence_cluster: "Non-Redundant"
+    Sp: "Spatial"
+    spatial: "Spatial"
+    _flat: "Flat"
+
+  mse_hatch: "///"
+  work_hatch: "\\\\"
+  mse_facecolor: "white"
+  work_facecolor: "xkcd:neon yellow"
+  mse_text_color: "grey"
+  work_text_color: "black"
+  mse_alpha: 0.9
+  work_alpha: 0.7
 
   dpi: 300
   figsize_wide: [16, 6]

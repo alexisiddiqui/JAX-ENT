@@ -72,6 +72,14 @@ class PlotStyle:
     loss_markers: dict[str, str] = field(default_factory=dict)
     split_type_colors: dict[str, str] = field(default_factory=dict)
     split_name_mapping: dict[str, str] = field(default_factory=dict)
+    mse_hatch: str | None = None
+    work_hatch: str | None = None
+    mse_facecolor: str | None = None
+    work_facecolor: str | None = None
+    mse_text_color: str | None = None
+    work_text_color: str | None = None
+    mse_alpha: float = 0.9
+    work_alpha: float = 0.7
     dpi: int = 300
     figsize_wide: tuple[int, int] = (16, 6)
     figsize_square: tuple[int, int] = (10, 10)

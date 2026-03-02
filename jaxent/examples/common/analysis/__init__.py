@@ -34,6 +34,16 @@ from .pairwise_kld import (
     compute_sequential_maxent_kld,
     compute_pairwise_kld_between_splits_2d
 )
+from .mlm import (
+    prepare_metric_columns,
+    multiple_regression_analysis,
+    stability_analysis_by_ensemble,
+    stability_analysis_by_split,
+    mixed_effects_analysis,
+    compute_model_selection_performance,
+    compute_correlations,
+    run_analysis_on_subset,
+)
 
 __all__ = [
     "kl_divergence",
@@ -61,4 +71,12 @@ __all__ = [
     "compute_pairwise_kld_between_splits",
     "compute_sequential_maxent_kld",
     "compute_pairwise_kld_between_splits_2d",
+    "prepare_metric_columns",
+    "multiple_regression_analysis",
+    "stability_analysis_by_ensemble",
+    "stability_analysis_by_split",
+    "mixed_effects_analysis",
+    "compute_model_selection_performance",
+    "compute_correlations",
+    "run_analysis_on_subset",
 ]
