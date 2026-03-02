@@ -24,6 +24,15 @@ from .recovery import (
 from .splits import plot_split_distributions, plot_enhanced_split_heatmap, plot_split_heatmap
 from .uptake import plot_uptake_heatmap, plot_combined_uptake_comparison
 from .gaps import plot_gap_analysis
+from .mlm import (
+    plot_coefficient_comparison,
+    plot_partial_r2_comparison,
+    plot_stability_comparison,
+    plot_eta_and_ftest,
+    plot_scatter_and_distributions,
+    plot_model_selection_performance,
+    plot_correlations_bar_charts,
+)
 
 __all__ = [
     "setup_publication_style",
@@ -57,4 +66,11 @@ __all__ = [
     "plot_uptake_heatmap",
     "plot_combined_uptake_comparison",
     "plot_gap_analysis",
+    "plot_coefficient_comparison",
+    "plot_partial_r2_comparison",
+    "plot_stability_comparison",
+    "plot_eta_and_ftest",
+    "plot_scatter_and_distributions",
+    "plot_model_selection_performance",
+    "plot_correlations_bar_charts",
 ]
