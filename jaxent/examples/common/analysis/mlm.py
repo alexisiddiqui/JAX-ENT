@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import traceback
 import warnings
 from typing import Optional
 
@@ -552,17 +553,30 @@ def run_analysis_on_subset(
     if "loss_function" in df_clean.columns:
         print(f"Loss functions: {df_clean['loss_function'].unique()}")
 
+    error_metrics = [col for col in df_clean.columns if "mse" in col.lower()]
+    work_metrics = [col for col in df_clean.columns if "work_" in col.lower()]
+    cluster_metrics = [col for col in df_clean.columns if col.startswith("cluster_")]
+    print("\nIdentified metric groups:")
+    print(f"  Error metrics: {error_metrics}")
+    print(f"  Work metrics: {work_metrics}")
+    print(f"  Cluster metrics: {cluster_metrics}")
+
     exclude_cols = {target_metric, "convergence_value", "maxent_value", "split_idx", "bv_reg_value"}
     predictor_cols = [
         col
         for col in df_clean.select_dtypes(include=np.number).columns
         if col not in exclude_cols and df_clean[col].nunique() > 1
     ]
-    print(f"Selected predictor metrics: {predictor_cols}")
+    print(f"\nSelected predictor metrics: {predictor_cols}")
     if not predictor_cols:
+        print("\nNo predictors found, skipping analysis.")
         return
 
+    print("\nApplying transformations and normalization...")
     df_clean, stats_predictors = prepare_metric_columns(df_clean, predictor_cols)
+
+    print("\n2. Multiple Regression Analysis (on Percentile Data)")
+    print("-" * 80)
 
     df_reg = df_clean.copy()
     reg_predictors = list(stats_predictors)
@@ -570,131 +584,236 @@ def run_analysis_on_subset(
         dummies = pd.get_dummies(df_reg["split_type"], prefix="split", drop_first=True).astype(int)
         df_reg = pd.concat([df_reg, dummies], axis=1)
         reg_predictors.extend(dummies.columns.tolist())
+        print(f"Included split_type dummies in regression: {dummies.columns.tolist()}")
 
     regression_results: dict[str, dict] = {}
     for ensemble in sorted(df_clean["ensemble"].dropna().unique()):
         df_ens = df_reg[df_reg["ensemble"] == ensemble].copy()
         if df_ens.empty:
             continue
+        print(f"\n{ensemble} (n={len(df_ens)}):")
         results = multiple_regression_analysis(df_ens, target_metric, reg_predictors)
         if results:
             regression_results[ensemble] = results
+            print(f"  Full model R\u00b2: {results['model']['r2_full']:.4f}")
+            for pred in reg_predictors:
+                if pred in results:
+                    print(
+                        f"    {pred}: \u03b2={results[pred]['beta_standardized']:.4f}, "
+                        f"partial R\u00b2={results[pred]['partial_r2']:.4f}, "
+                        f"p={results[pred]['pvalue']:.4e}"
+                    )
 
+    print("\n3. Stability Analysis (Effect of Split Type within Ensembles)")
+    print("-" * 80)
     stability_ensemble_df = stability_analysis_by_ensemble(df_clean, target_metric, stats_predictors)
-    stability_split_df = stability_analysis_by_split(df_clean, target_metric, stats_predictors, output_dir)
-    mixed_effects_analysis(df_clean, target_metric, stats_predictors)
+    for ensemble in sorted(df_clean["ensemble"].dropna().unique()):
+        ens_rows = stability_ensemble_df[stability_ensemble_df["ensemble"] == ensemble] if not stability_ensemble_df.empty else pd.DataFrame()
+        if ens_rows.empty:
+            continue
+        print(f"\n{ensemble}:")
+        for _, row in ens_rows.iterrows():
+            print(
+                f"  {row['metric']}: Stability Index={row.get('stability_index', float('nan')):.4f}, "
+                f"CV={row.get('cv_across_splits', float('nan')):.4f}"
+            )
 
+    print("\n3b. Stability Analysis (Effect of Ensemble within Split Types)")
+    print("-" * 80)
+    stability_split_df = stability_analysis_by_split(df_clean, target_metric, stats_predictors, output_dir)
+    if not stability_split_df.empty:
+        for split_type in sorted(stability_split_df["split_type"].dropna().unique()):
+            split_rows = stability_split_df[stability_split_df["split_type"] == split_type]
+            print(f"\n{split_type}:")
+            for _, row in split_rows.iterrows():
+                print(
+                    f"  {row['metric']}: Stability Index={row.get('stability_index', float('nan')):.4f}, "
+                    f"CV={row.get('cv_across_splits', float('nan')):.4f}, "
+                    f"F={row.get('f_statistic', float('nan')):.2f}"
+                )
+        print("\nSaving Swapped Stability Summaries...")
+        for split_type in sorted(stability_split_df["split_type"].dropna().unique()):
+            safe_name = "".join(c for c in str(split_type) if c.isalnum() or c in ("_", "-"))
+            path = os.path.join(output_dir, f"summary_stability_swapped_{safe_name}.csv")
+            if os.path.exists(path):
+                print(f"  Saved {path}")
+
+    grouping_var = None
+    if "split_type" in df_clean.columns and df_clean["split_type"].nunique() > 1:
+        grouping_var = "split_type"
+    elif "ensemble" in df_clean.columns and df_clean["ensemble"].nunique() > 1:
+        grouping_var = "ensemble"
+
+    mixed_df = mixed_effects_analysis(df_clean, target_metric, stats_predictors)
+    if grouping_var:
+        print(f"\n4. Mixed-Effects Models (grouping by {grouping_var})")
+        print("-" * 80)
+        if mixed_df is not None and not mixed_df.empty:
+            for ensemble in sorted(df_clean["ensemble"].dropna().unique()):
+                ens_rows = mixed_df[mixed_df["ensemble"] == ensemble]
+                if ens_rows.empty:
+                    continue
+                print(f"\n{ensemble}:")
+                for _, row in ens_rows.iterrows():
+                    print(
+                        f"  {row['metric']}: ICC={row.get('icc', float('nan')):.4f}, "
+                        f"fixed effect \u03b2={row.get('fixed_effect', float('nan')):.4f}"
+                    )
+
+    print("\n5. Creating Summary Tables")
+    print("-" * 80)
     for ensemble in sorted(regression_results.keys()):
         summary_table = _create_summary_table(regression_results, stability_ensemble_df, ensemble, reg_predictors)
+        print(f"\n{ensemble}:")
+        print(summary_table.to_string(index=False))
         table_path = os.path.join(output_dir, f"summary_table_{ensemble}.csv")
         summary_table.to_csv(table_path, index=False)
+        print(f"Saved to {table_path}")
+
+    print("\n6. Creating Visualizations")
+    print("-" * 80)
 
     ensemble_colors, split_colors, split_name_mapping = _resolve_style_maps(style)
 
-    plot_coefficient_comparison(
-        regression_results,
-        output_dir,
-        ensemble_colors=ensemble_colors,
-        style=style,
-        predictor_cols=reg_predictors,
-    )
-    plot_partial_r2_comparison(
-        regression_results,
-        output_dir,
-        ensemble_colors=ensemble_colors,
-        style=style,
-        predictor_cols=reg_predictors,
-    )
+    try:
+        plot_coefficient_comparison(
+            regression_results,
+            output_dir,
+            ensemble_colors=ensemble_colors,
+            style=style,
+            predictor_cols=reg_predictors,
+        )
+        plot_partial_r2_comparison(
+            regression_results,
+            output_dir,
+            ensemble_colors=ensemble_colors,
+            style=style,
+            predictor_cols=reg_predictors,
+        )
 
-    plot_stability_comparison(
-        stability_ensemble_df,
-        output_dir,
-        ensemble_colors=ensemble_colors,
-        split_colors=split_colors,
-        split_name_mapping=split_name_mapping,
-        suffix="",
-        style=style,
-    )
-    plot_eta_and_ftest(
-        stability_ensemble_df,
-        output_dir,
-        ensemble_colors=ensemble_colors,
-        split_colors=split_colors,
-        split_name_mapping=split_name_mapping,
-        suffix="",
-        style=style,
-    )
-
-    if not stability_split_df.empty:
         plot_stability_comparison(
-            stability_split_df,
+            stability_ensemble_df,
             output_dir,
             ensemble_colors=ensemble_colors,
             split_colors=split_colors,
             split_name_mapping=split_name_mapping,
-            suffix="_swapped",
+            suffix="",
             style=style,
         )
         plot_eta_and_ftest(
-            stability_split_df,
+            stability_ensemble_df,
             output_dir,
             ensemble_colors=ensemble_colors,
             split_colors=split_colors,
             split_name_mapping=split_name_mapping,
-            suffix="_swapped",
+            suffix="",
             style=style,
         )
 
-    markers = marker_list or _DEFAULT_MARKERS
-    for metric in predictor_cols:
-        plot_scatter_and_distributions(
-            df_clean,
-            metric,
-            output_dir,
-            ensemble_colors=ensemble_colors,
-            style=style,
-            marker_list=markers,
-            target_metric=target_metric,
-        )
-
-    selection_summary_df, selection_by_split_df = compute_model_selection_performance(
-        df_clean,
-        predictor_cols,
-        target_metric,
-    )
-    if not selection_summary_df.empty:
-        selection_summary_df.to_csv(
-            os.path.join(output_dir, "model_selection_performance_summary.csv"),
-            index=False,
-        )
-    if not selection_by_split_df.empty:
-        selection_by_split_df.to_csv(
-            os.path.join(output_dir, "model_selection_performance_by_split.csv"),
-            index=False,
-        )
-        for metric in predictor_cols:
-            plot_model_selection_performance(
-                selection_by_split_df,
-                metric,
+        if not stability_split_df.empty:
+            plot_stability_comparison(
+                stability_split_df,
                 output_dir,
                 ensemble_colors=ensemble_colors,
                 split_colors=split_colors,
                 split_name_mapping=split_name_mapping,
+                suffix="_swapped",
                 style=style,
-                target_metric=target_metric,
+            )
+            plot_eta_and_ftest(
+                stability_split_df,
+                output_dir,
+                ensemble_colors=ensemble_colors,
+                split_colors=split_colors,
+                split_name_mapping=split_name_mapping,
+                suffix="_swapped",
+                style=style,
             )
 
-    corr_df = compute_correlations(df_clean, stats_predictors, target_metric)
-    if not corr_df.empty:
-        corr_df.to_csv(os.path.join(output_dir, "correlations_summary.csv"), index=False)
-        for split_type in corr_df["split_type"].dropna().unique():
-            plot_correlations_bar_charts(
-                corr_df,
-                split_type,
+        markers = marker_list or _DEFAULT_MARKERS
+        for metric in predictor_cols:
+            plot_scatter_and_distributions(
+                df_clean,
+                metric,
                 output_dir,
                 ensemble_colors=ensemble_colors,
                 style=style,
+                marker_list=markers,
+                target_metric=target_metric,
             )
+
+        selection_summary_df, selection_by_split_df = compute_model_selection_performance(
+            df_clean,
+            predictor_cols,
+            target_metric,
+        )
+        if not selection_summary_df.empty:
+            selection_summary_df.to_csv(
+                os.path.join(output_dir, "model_selection_performance_summary.csv"),
+                index=False,
+            )
+        if not selection_by_split_df.empty:
+            selection_by_split_df.to_csv(
+                os.path.join(output_dir, "model_selection_performance_by_split.csv"),
+                index=False,
+            )
+            for metric in predictor_cols:
+                plot_model_selection_performance(
+                    selection_by_split_df,
+                    metric,
+                    output_dir,
+                    ensemble_colors=ensemble_colors,
+                    split_colors=split_colors,
+                    split_name_mapping=split_name_mapping,
+                    style=style,
+                    target_metric=target_metric,
+                )
+
+        corr_df = compute_correlations(df_clean, stats_predictors, target_metric)
+        if not corr_df.empty:
+            corr_df.to_csv(os.path.join(output_dir, "correlations_summary.csv"), index=False)
+            for split_type in corr_df["split_type"].dropna().unique():
+                plot_correlations_bar_charts(
+                    corr_df,
+                    split_type,
+                    output_dir,
+                    ensemble_colors=ensemble_colors,
+                    style=style,
+                )
+
+    except Exception as e:
+        print(f"Error creating visualizations: {e}")
+        traceback.print_exc()
+
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    print("=" * 80)
+    for ensemble in sorted(regression_results.keys()):
+        print(f"\n{ensemble}:")
+        print("  Predictive Metrics (Partial R\u00b2):")
+        for metric in reg_predictors:
+            if ensemble in regression_results and metric in regression_results[ensemble]:
+                partial_r2 = regression_results[ensemble][metric].get("partial_r2", float("nan"))
+                beta = regression_results[ensemble][metric].get("beta_standardized", float("nan"))
+                pval = regression_results[ensemble][metric].get("pvalue", float("nan"))
+                sig = "***" if pval < 0.001 else "**" if pval < 0.01 else "*" if pval < 0.05 else "ns"
+                print(f"    {metric}: R\u00b2={partial_r2:.4f}, \u03b2={beta:.4f} {sig}")
+        print("  Stability (across splits):")
+        if not stability_ensemble_df.empty:
+            for metric in stats_predictors:
+                ens_rows = stability_ensemble_df[
+                    (stability_ensemble_df["ensemble"] == ensemble)
+                    & (stability_ensemble_df["metric"] == metric)
+                ]
+                if not ens_rows.empty:
+                    row = ens_rows.iloc[0]
+                    stab_idx = row.get("stability_index", float("nan"))
+                    cv = row.get("cv_across_splits", float("nan"))
+                    print(f"    {metric}: Stability Index={stab_idx:.4f}, CV={cv:.4f}")
+
+    print("\n" + "=" * 80)
+    print(f"All results saved to: {output_dir}")
+    print("=" * 80)
 
 
 __all__ = [
