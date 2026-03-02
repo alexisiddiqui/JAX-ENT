@@ -13,7 +13,14 @@ from .comparisons import plot_best_model_comparisons
 from .distributions import plot_weight_distribution_lines, plot_weight_distribution_maxent_panels, plot_weight_distribution_convergence_panels
 from .convergence import plot_loss_convergence, plot_split_variability, plot_loss_convergence_2d, plot_split_variability_2d
 from .kld import plot_kld_between_splits, plot_sequential_maxent_kld
-from .sweeps import plot_2d_heatmaps_grid, plot_1d_slices_2d_sweep
+from .sweeps import plot_2d_heatmaps_grid, plot_1d_slices_2d_sweep, plot_best_hyperparameters
+from .volcano import plot_volcano_kl_recovery, plot_volcano_kl_recovery_averaged
+from .recovery import (
+    plot_metric_vs_regularization_strength,
+    plot_metric_maxent_comparison,
+    plot_recovery_vs_regularization_strength,
+    plot_maxent_comparison,
+)
 from .splits import plot_split_distributions, plot_enhanced_split_heatmap, plot_split_heatmap
 from .uptake import plot_uptake_heatmap, plot_combined_uptake_comparison
 from .gaps import plot_gap_analysis
@@ -37,6 +44,13 @@ __all__ = [
     "plot_split_variability_2d",
     "plot_2d_heatmaps_grid",
     "plot_1d_slices_2d_sweep",
+    "plot_best_hyperparameters",
+    "plot_volcano_kl_recovery",
+    "plot_volcano_kl_recovery_averaged",
+    "plot_metric_vs_regularization_strength",
+    "plot_metric_maxent_comparison",
+    "plot_recovery_vs_regularization_strength",
+    "plot_maxent_comparison",
     "plot_split_distributions",
     "plot_enhanced_split_heatmap",
     "plot_split_heatmap",

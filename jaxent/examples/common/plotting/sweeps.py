@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -207,5 +208,133 @@ def plot_1d_slices_2d_sweep(
             plt.savefig(
                 os.path.join(split_output_dir, f"1d_slice_maxent_{ensemble}_{metric}.png"),
                 dpi=300, bbox_inches="tight",
+            )
+            plt.close(fig)
+
+
+
+def plot_best_hyperparameters(
+    recovery_df: pd.DataFrame,
+    output_dir: str,
+    metric: str = "recovery_percent",
+):
+    """Plot a summary showing the best (maxent, bv_reg) combination for each loss-reg pairing."""
+    plt.style.use("seaborn-v0_8-whitegrid")
+
+    df = recovery_df[recovery_df["loss_function"] != "Original"].copy()
+
+    if len(df) == 0:
+        print("No data available for best hyperparameters plot")
+        return
+
+    split_types = sorted(df["split_type"].unique())
+
+    for split_type in split_types:
+        print(f"Creating best hyperparameters summary for {split_type}...")
+        split_output_dir = os.path.join(output_dir, split_type)
+        os.makedirs(split_output_dir, exist_ok=True)
+
+        split_df = df[df["split_type"] == split_type]
+
+        ensembles = sorted(split_df["ensemble"].unique())
+
+        for ensemble in ensembles:
+            ensemble_df = split_df[split_df["ensemble"] == ensemble]
+
+            loss_functions = sorted(ensemble_df["loss_function"].unique())
+            bv_reg_functions = sorted(ensemble_df["bv_reg_function"].unique())
+
+            fig, axes = plt.subplots(
+                len(bv_reg_functions),
+                len(loss_functions),
+                figsize=(5 * len(loss_functions), 4 * len(bv_reg_functions)),
+                squeeze=False,
+            )
+
+            fig.suptitle(
+                f"Best Hyperparameters by {metric} - {ensemble} - {split_type}",
+                fontsize=16,
+                fontweight="bold",
+            )
+
+            for i, bv_reg_fn in enumerate(bv_reg_functions):
+                for j, loss_fn in enumerate(loss_functions):
+                    ax = axes[i, j]
+
+                    combo_df = ensemble_df[
+                        (ensemble_df["loss_function"] == loss_fn)
+                        & (ensemble_df["bv_reg_function"] == bv_reg_fn)
+                    ]
+
+                    if len(combo_df) > 0:
+                        best_idx = combo_df[metric].idxmax()
+                        best_row = combo_df.loc[best_idx]
+
+                        maxent_vals = combo_df["maxent_value"].unique()
+                        bvreg_vals = combo_df["bv_reg_value"].unique()
+
+                        for maxent_val in maxent_vals:
+                            for bvreg_val in bvreg_vals:
+                                subset = combo_df[
+                                    (combo_df["maxent_value"] == maxent_val)
+                                    & (combo_df["bv_reg_value"] == bvreg_val)
+                                ]
+                                if len(subset) > 0:
+                                    avg_metric = subset[metric].mean()
+                                    color = "red" if (
+                                        maxent_val == best_row["maxent_value"]
+                                        and bvreg_val == best_row["bv_reg_value"]
+                                    ) else "blue"
+                                    size = 200 if color == "red" else 100
+                                    marker = "*" if color == "red" else "o"
+
+                                    ax.scatter(
+                                        maxent_val,
+                                        bvreg_val,
+                                        s=size,
+                                        c=color,
+                                        marker=marker,
+                                        alpha=0.7,
+                                        edgecolors="black",
+                                        linewidth=1,
+                                    )
+
+                                    ax.text(
+                                        maxent_val,
+                                        bvreg_val,
+                                        f"{avg_metric:.1f}%",
+                                        ha="center",
+                                        va="center",
+                                        fontsize=8,
+                                    )
+
+                        ax.set_xscale("log")
+                        ax.set_xlabel("MaxEnt Value (log scale)")
+                        ax.set_ylabel("BV Reg Value")
+                        ax.set_title(
+                            f"{loss_fn} + {bv_reg_fn}\nBest: MaxEnt={best_row['maxent_value']:.1f}, "
+                            f"BVReg={best_row['bv_reg_value']:.2f}"
+                        )
+                        ax.grid(True, alpha=0.3)
+
+                        red_patch = mpatches.Patch(color="red", label="Best")
+                        blue_patch = mpatches.Patch(color="blue", label="Other")
+                        ax.legend(handles=[red_patch, blue_patch], loc="best")
+                    else:
+                        ax.text(
+                            0.5,
+                            0.5,
+                            "No data",
+                            ha="center",
+                            va="center",
+                            transform=ax.transAxes,
+                        )
+                        ax.set_title(f"{loss_fn} + {bv_reg_fn}")
+
+            plt.tight_layout()
+            plt.savefig(
+                os.path.join(split_output_dir, f"best_hyperparameters_{ensemble}.png"),
+                dpi=300,
+                bbox_inches="tight",
             )
             plt.close(fig)
