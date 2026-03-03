@@ -13,16 +13,16 @@ cp jaxent/examples/1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/
 
 python /homes/hussain/dragon315/dragon315_Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/data/get_HDXer_AutoValidation_data.py
 
-python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/splitdata_ISO.py
 
+python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py
 python jaxent/examples/1_IsoValidation_OMass/analysis/plot_intrinsic_rates_simple.py
 
-python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_split_ISO_TRI_BI.py
 
 python jaxent/examples/1_IsoValidation_OMass/data/extract_synthetic_data.py
 
 
-python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py
+python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/splitdata_ISO.py
+python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_split_ISO_TRI_BI.py
 
 python jaxent/examples/1_IsoValidation_OMass/data/extract_OpenClosed_clusters.py
 

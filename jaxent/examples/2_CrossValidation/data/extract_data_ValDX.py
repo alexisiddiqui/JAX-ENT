@@ -1,56 +1,28 @@
 """
-This script extracts the data from the dataset for MoPrP.
+[Script Name] extract_data_ValDX.py
 
-The script extracts the dfrac data from the .dexp file and the segments from the .list file
-In addition it also formats .pfact file to just include the relevant residue data.
+[Brief Description of Functionality]
+This script extracts and formats experimental HDX data for the MoPrP dataset (ValDX).
+It processes raw data files (.dexp, .list) to produce clean dfrac (deuterium fraction)
+data and peptide segment information. Additionally, it formats the protection factor
+(.pfact) file to filter for relevant residue data.
 
+Requirements:
+    - Input files in `jaxent/examples/2_CrossValidation/data/`:
+        - `_ValDX.tar` (must be extracted to provide .dexp, .list, .pfact files)
+    - Dependencies: pandas, numpy
 
-.dexp file is a csv file with no header:
-- 1st column: time in hours
-- Other columns: dfrac data for each segment (1-14)
+Usage:
+    # As run in commands.sh:
+    python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
 
-.list file is a csv file with no header:
-- 1st column: peptide index
-- 2nd column: residue start
-- 3rd column: residue end
-- 4th column: peptide sequence
-
-
-.pfact file is a csv file with no header:
-- 1st column: residue number
-- 2nd column: Protection Factor (ln)
-
-This will create three files files:
-- MoPrP_dfrac.dat -> convert times to minutes
-- MoPrP_segments.txt
-- MoPrP_pfactors.dat -> remove 0 or negative values
-
-
-dfrac.dat is a file with a header of the following format:
-
-#	0.5	5.0	 times/min
-0.41879	0.44438
-0.37096	0.45204
-
--> make sure that the dfrac data contains all the timepoints
-
-
-segments.txt is a file with no header of the following format:
-residue_start	residue_end
-
-
-median.pfact is a file with no header of the following format:
-residue_number	ln(PF)
-
--> remove 0 or negative values
-
-raw_dfrac_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/moprp.dexp"
-
-raw_segs_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/moprp.list"
-
-pf_path = "/home/alexi/Documents/ValDX/figure_scripts/jaxent_cross_validation/MoPrP/MoPrP/median.pfact"
-
+Output:
+    - Formatted .dat and .txt files in `jaxent/examples/2_CrossValidation/data/_output/`
+      containing processed dfracs and segments.
 """
+
+
+
 
 import os
 

@@ -1,6 +1,19 @@
 """
-Compare HDXer and jaxENT results with publication-ready plots.
-Creates bar plots of recovery % and KL divergence, panelled by experiment and by ensemble.
+[Script Name] plot_compare_jaxENT_HDXer.py
+
+[Brief Description of Functionality]
+Compares validation metrics (Recovery %, KL Divergence) between jaxENT and HDXer results.
+Generates publication-quality comparison bar plots, panelled by experiment type and ensemble.
+
+Requirements:
+    - CSV files containing metrics from both jaxENT and HDXer analyses.
+    - Seaborn and Matplotlib for plotting.
+
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/plot_compare_jaxENT_HDXer.py
+
+Output:
+    - Comparison figures (PDF/PNG).
 """
 
 import os

@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
 """
-Clustering script for molecular dynamics trajectory analysis.
+[Script Name] cluster_LocalFeatures_PUF.py
 
-This script performs PCA and clustering (K-means or rules-based) on previously calculated
-structural features from the analyse_LocalFeatures_PUFs.py script.
+[Brief Description of Functionality]
+Performs Principal Component Analysis (PCA) and clustering (K-means or rule-based) on the structural
+features computed from MoPrP trajectories. This assigns each frame in the trajectories to a
+specific conformational state (cluster), enabling subsequent reweighting and recovery analysis.
+
+Requirements:
+    - Helper module `analyse_LocalFeatures_PUFs` (to load/compute features).
+    - Scikit-learn (for PCA and K-Means).
+
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py
+
+Output:
+    - CSV files containing cluster assignments for each frame.
+    - PCA plots visualizing the state separation.
 
 It reads in:
 - Feature data (.npy files)
