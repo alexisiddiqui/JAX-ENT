@@ -33,6 +33,14 @@ from .mlm import (
     plot_model_selection_performance,
     plot_correlations_bar_charts,
 )
+from .selected_models import (
+    plot_score_panel,
+    plot_minimax_panel,
+    plot_rank_panel,
+    plot_fixed_effects,
+    plot_aggregated_analysis,
+    plot_p_values,
+)
 
 __all__ = [
     "setup_publication_style",
@@ -73,4 +81,10 @@ __all__ = [
     "plot_scatter_and_distributions",
     "plot_model_selection_performance",
     "plot_correlations_bar_charts",
+    "plot_score_panel",
+    "plot_minimax_panel",
+    "plot_rank_panel",
+    "plot_fixed_effects",
+    "plot_aggregated_analysis",
+    "plot_p_values",
 ]
