@@ -1,0 +1,113 @@
+# Experiment 3: CrossValidationBV - 2D sweep over maxent and BV regularization
+ensembles:
+  - AF2_filtered
+  - AF2_MSAss
+
+loss_functions:
+  - mcMSE
+  - MSE
+  - Sigma_MSE
+
+num_splits: 3
+
+convergence_rates:
+  - 1.0e-3
+  - 1.0e-4
+  - 1.0e-5
+  - 1.0e-6
+  - 1.0e-7
+  - 1.0e-8
+  - 1.0e-9
+  - 1.0e-10
+
+# 2D sweep parameters
+sweep:
+  maxent_values:
+    - 0.0
+    - 1.0
+    - 5.0
+    - 10.0
+    - 50.0
+    - 100.0
+    - 500.0
+    - 1000.0
+  bv_reg_values:
+    - 0.0
+    - 0.5
+    - 1.0
+
+# Paths (relative to experiment directory)
+results_prefix: "fitting/jaxENT/_optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__"  # Finds most recent matching dir
+features_dir: "fitting/jaxENT/_featurise"
+datasplit_dir: "fitting/jaxENT/_datasplits"
+clustering_dir: "../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters"
+output_dir: "analysis/_analysis_loss_output"
+state_ratios_json: "../2_CrossValidation/analysis/state_ratios.json"
+
+# Plotting style
+style:
+  ensemble_colors:
+    AF2_MSAss: "RoyalBlue"
+    AF2_filtered: "Cyan"
+
+  loss_markers:
+    mcMSE: "o"
+    MSE: "s"
+    Sigma_MSE: "^"
+
+  split_type_colors:
+    r: "fuchsia"
+    s: "black"
+    random: "fuchsia"
+    R3: "green"
+    Sp: "grey"
+    _flat: "orange"
+    sequence: "black"
+    sequence_cluster: "green"
+    spatial: "grey"
+
+  split_name_mapping:
+    r: "Random"
+    s: "Sequence"
+    random: "Random"
+    R3: "Non-Redundant"
+    sequence: "Sequence"
+    sequence_cluster: "Non-Redundant"
+    Sp: "Spatial"
+    spatial: "Spatial"
+    _flat: "Flat"
+
+  mse_hatch: "///"
+  work_hatch: "\\\\"
+  mse_facecolor: "white"
+  work_facecolor: "xkcd:neon yellow"
+  mse_text_color: "grey"
+  work_text_color: "black"
+  mse_alpha: 0.9
+  work_alpha: 0.7
+
+  dpi: 300
+  figsize_wide: [16, 6]
+  figsize_square: [10, 10]
+
+# Scoring configuration
+scoring:
+  ensemble_feature_map:
+    AF2_filtered: "AF2_filtered"
+    AF2_MSAss: "AF2_MSAss"
+
+  ensemble_clustering_map:
+    AF2_filtered: "AF2_Filtered"
+    AF2_MSAss: "AF2_MSAss"
+
+  state_mapping:
+    0: "Folded"
+    1: "PUF1"
+    2: "PUF2"
+    4: "unfolded"
+
+  scoring_weights:
+    train_penalty: 0.9
+    kl_penalty: 0.1
+
+  recovery_metric: jsd

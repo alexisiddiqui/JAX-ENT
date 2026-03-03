@@ -1,10 +1,21 @@
 """ """
 
+"""
+CV_validation_ISO_TRI_BI_precluster.py
+
+Cross-validation analysis of the results.
+
+Requirements:
+    - Optimization results (results_EMA.hdf5)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/CV_validation_ISO_TRI_BI_precluster.py --results-dir ...
+"""
+
 import argparse
 import os
-import re
-import sys
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict
 
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
@@ -13,13 +24,9 @@ import pandas as pd
 import seaborn as sns
 from MDAnalysis.analysis import rms
 
-# Add the base directory to the path to import the HDF5 utilities
-current_dir = os.path.dirname(os.path.abspath(__file__))
-base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
-sys.path.insert(0, base_dir)
-
-# Import the HDF5 loading functions from the provided script
-from jaxent.src.utils.hdf import load_optimization_history_from_file
+from jaxent.examples.common import analysis, loading
+from jaxent.examples.common.config import ExperimentConfig
+from jaxent.examples.common.paths import find_most_recent_dir
 
 # Set publication-ready style
 sns.set_style("ticks")
@@ -45,101 +52,6 @@ split_type_colours = {
     "nonredundant": "green",
     "spatial": "grey",
 }
-
-
-def load_clustering_results(clustering_dir):
-    """
-    Load clustering results from CSV files created by clustering_analysis.py.
-
-    Args:
-        clustering_dir (str): Directory containing clustering CSV files
-
-    Returns:
-        dict: Dictionary containing clustering results by ensemble
-    """
-    if not os.path.exists(clustering_dir):
-        raise FileNotFoundError(f"Clustering directory not found: {clustering_dir}")
-
-    clustering_results = {}
-
-    # Load metadata first
-    metadata_path = os.path.join(clustering_dir, "clustering_metadata.csv")
-    if os.path.exists(metadata_path):
-        metadata_df = pd.read_csv(metadata_path)
-        metadata = metadata_df.iloc[0].to_dict()
-        print(
-            f"Loaded clustering metadata: RMSD threshold = {metadata.get('rmsd_threshold', 'Unknown')}"
-        )
-    else:
-        print("Warning: clustering_metadata.csv not found")
-        metadata = {}
-
-    # Load summary statistics
-    summary_path = os.path.join(clustering_dir, "clustering_summary.csv")
-    if os.path.exists(summary_path):
-        summary_df = pd.read_csv(summary_path)
-        print("Clustering Summary:")
-        for _, row in summary_df.iterrows():
-            ensemble = row["ensemble"]
-            print(
-                f"  {ensemble}: {row['clustered_frames']}/{row['total_frames']} frames clustered "
-                f"({row['clustering_efficiency'] * 100:.1f}%)"
-            )
-    else:
-        print("Warning: clustering_summary.csv not found")
-
-    # Find all cluster assignment files
-    cluster_files = [
-        f
-        for f in os.listdir(clustering_dir)
-        if f.startswith("cluster_assignments_") and f.endswith(".csv")
-    ]
-
-    for cluster_file in cluster_files:
-        # Extract ensemble name from filename
-        ensemble_name = cluster_file.replace("cluster_assignments_", "").replace(".csv", "")
-
-        # Load cluster assignments
-        cluster_path = os.path.join(clustering_dir, cluster_file)
-        cluster_df = pd.read_csv(cluster_path)
-
-        # Load corresponding RMSD values
-        rmsd_file = f"rmsd_values_{ensemble_name}.csv"
-        rmsd_path = os.path.join(clustering_dir, rmsd_file)
-        if os.path.exists(rmsd_path):
-            rmsd_df = pd.read_csv(rmsd_path)
-        else:
-            print(f"Warning: RMSD file not found for {ensemble_name}")
-            rmsd_df = pd.DataFrame()
-
-        # Store results in the same format as original clustering function
-        clustering_results[ensemble_name] = {
-            "cluster_assignments": cluster_df["cluster_assignment"].values,
-            "rmsd_values": cluster_df[["rmsd_open", "rmsd_closed"]].values,
-            "frame_data": cluster_df,
-            "rmsd_data": rmsd_df,
-            "metadata": metadata,
-        }
-
-        print(f"Loaded clustering results for {ensemble_name}: {len(cluster_df)} frames")
-
-    return clustering_results
-
-
-def extract_maxent_value_from_filename(filename: str) -> Optional[float]:
-    """
-    Extract maxent value from filename.
-
-    Args:
-        filename: HDF5 filename containing maxent value
-
-    Returns:
-        Maxent value or None if not found
-    """
-    match = re.search(r"maxent(\d+(?:\.\d+)?)", filename)
-    if match:
-        return float(match.group(1))
-    return None
 
 
 def compute_rmsd_to_references(trajectory_path, topology_path, reference_paths):
@@ -212,35 +124,6 @@ def cluster_by_rmsd(rmsd_values, rmsd_threshold=1.0):
     return cluster_assignments
 
 
-def calculate_cluster_ratios(cluster_assignments, frame_weights=None):
-    """
-    Calculate ratios of clusters based on assignments and optional frame weights.
-
-    Args:
-        cluster_assignments (np.ndarray): Cluster assignments
-        frame_weights (np.ndarray, optional): Frame weights from optimization
-
-    Returns:
-        dict: Cluster ratios
-    """
-    if frame_weights is None:
-        frame_weights = np.ones(len(cluster_assignments))
-
-    # Normalize frame weights
-    frame_weights = frame_weights / np.sum(frame_weights)
-
-    # Calculate weighted ratios
-    ratios = {}
-    unique_clusters = np.unique(cluster_assignments)
-
-    for cluster in unique_clusters:
-        if cluster >= 0:  # Skip invalid clusters (-1)
-            mask = cluster_assignments == cluster
-            ratios[f"cluster_{cluster}"] = np.sum(frame_weights[mask])
-
-    return ratios
-
-
 def calculate_recovery_percentage(observed_ratios, ground_truth_ratios):
     """
     Calculate recovery percentage of conformational ratios.
@@ -273,151 +156,6 @@ def calculate_recovery_percentage(observed_ratios, ground_truth_ratios):
         recovery["closed_recovery"] = 0.0
 
     return recovery
-
-
-def load_all_optimization_results_with_maxent(
-    results_dir: str,
-    ensembles: List[str] = ["ISO_TRI", "ISO_BI"],
-    loss_functions: List[str] = ["mcMSE", "MSE"],
-    num_splits: int = 3,
-    maxent_values: List[float] = None,
-    EMA: bool = False,
-) -> Dict:
-    """
-    Load all optimization results from HDF5 files, including maxent values.
-
-    Args:
-        results_dir: Directory containing subdirectories for each split type.
-        ensembles: List of ensemble names.
-        loss_functions: List of loss function names.
-        num_splits: Number of data splits per type.
-        maxent_values: List of expected maxent values (if None, will discover from files).
-
-    Returns:
-        Dictionary with results organized by split_type, ensemble, loss, maxent, and split.
-    """
-    results = {}
-    if not os.path.exists(results_dir):
-        print(f"Results directory not found: {results_dir}")
-        return results
-
-    split_types = [
-        d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
-    ]
-
-    if EMA:
-        hdf_pattern = "results_EMA.hdf5"
-    else:
-        hdf_pattern = "results.hdf5"
-
-    for split_type in split_types:
-        results[split_type] = {}
-        split_type_dir = os.path.join(results_dir, split_type)
-
-        for ensemble in ensembles:
-            results[split_type][ensemble] = {}
-
-            for loss_name in loss_functions:
-                results[split_type][ensemble][loss_name] = {}
-
-                # Discover all files for this ensemble/loss combination
-                pattern = f"{ensemble}_{loss_name}_{split_type}_split"
-                files = [
-                    f
-                    for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith(hdf_pattern)
-                ]
-
-                for filename in files:
-                    # Extract split index and maxent value
-                    match = re.search(r"split(\d{3})_maxent(\d+(?:\.\d+)?)", filename)
-                    if match:
-                        split_idx = int(match.group(1))
-                        maxent_val = float(match.group(2))
-
-                        # Initialize nested dict if needed
-                        if maxent_val not in results[split_type][ensemble][loss_name]:
-                            results[split_type][ensemble][loss_name][maxent_val] = {}
-
-                        filepath = os.path.join(split_type_dir, filename)
-
-                        try:
-                            history = load_optimization_history_from_file(filepath)
-                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                history
-                            )
-                            print(f"Loaded: {filepath}")
-                        except Exception as e:
-                            print(f"Failed to load {filepath}: {e}")
-                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = None
-                    else:
-                        # Handle files without maxent value (original optimization)
-                        match = re.search(r"split(\d{3})", filename)
-                        if match:
-                            split_idx = int(match.group(1))
-                            maxent_val = 0.0  # Use 0 for no maxent regularization
-
-                            if maxent_val not in results[split_type][ensemble][loss_name]:
-                                results[split_type][ensemble][loss_name][maxent_val] = {}
-
-                            filepath = os.path.join(split_type_dir, filename)
-
-                            try:
-                                history = load_optimization_history_from_file(filepath)
-                                results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                    history
-                                )
-                                print(f"Loaded (no maxent): {filepath}")
-                            except Exception as e:
-                                print(f"Failed to load {filepath}: {e}")
-                                results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                    None
-                                )
-
-    return results
-
-
-def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
-    """
-    Calculate KL divergence between two probability distributions.
-
-    Args:
-        p: First probability distribution (frame_weights)
-        q: Second probability distribution (uniform prior)
-        eps: Small value to avoid log(0)
-
-    Returns:
-        KL divergence KL(p||q)
-    """
-    # Normalize to ensure they sum to 1
-    p = p / np.sum(p)
-    q = q / np.sum(q)
-
-    # Add small epsilon to avoid log(0)
-    p = np.clip(p, eps, 1.0)
-    q = np.clip(q, eps, 1.0)
-
-    # Calculate KL divergence: KL(p||q) = Σ p(i) * log(p(i)/q(i))
-    return np.sum(p * np.log(p / q))
-
-
-def effective_sample_size(weights: np.ndarray) -> float:
-    """
-    Calculate Effective Sample Size (ESS) as 1/sum(weights^2).
-
-    Args:
-        weights: Frame weights (should be normalized to sum to 1)
-
-    Returns:
-        Effective sample size
-    """
-    # Normalize weights to sum to 1
-    normalized_weights = weights / np.sum(weights)
-
-    # Calculate ESS = 1 / sum(w_i^2)
-    ess = 1.0 / np.sum(normalized_weights**2)
-
-    return ess
 
 
 # NEW: Collective Variable Analysis Functions (adapted from HDXer script)
@@ -551,12 +289,23 @@ def compute_collective_variable_from_clustering(clustering_results):
     for ensemble_name, cluster_data in clustering_results.items():
         print(f"Processing CV data for {ensemble_name}...")
 
-        # Extract RMSD values from clustering results
-        rmsd_values = cluster_data["rmsd_values"]  # Should be (n_frames, 2) array
+        # Extract RMSD values from clustering results (supports legacy + common loader formats)
+        if "rmsd_values" in cluster_data:
+            rmsd_values = np.asarray(cluster_data["rmsd_values"])
+        elif (
+            "frame_data" in cluster_data
+            and isinstance(cluster_data["frame_data"], pd.DataFrame)
+            and {"rmsd_open", "rmsd_closed"}.issubset(cluster_data["frame_data"].columns)
+        ):
+            rmsd_values = cluster_data["frame_data"]["rmsd_open"], cluster_data["frame_data"]["rmsd_closed"]
+            rmsd_values = np.column_stack(rmsd_values)
+        else:
+            print(f"Warning: Missing RMSD data for {ensemble_name}, skipping CV computation")
+            continue
 
-        if rmsd_values.shape[1] != 2:
+        if rmsd_values.ndim != 2 or rmsd_values.shape[1] != 2:
             print(
-                f"Warning: Expected 2 RMSD columns for {ensemble_name}, got {rmsd_values.shape[1]}"
+                f"Warning: Expected 2 RMSD columns for {ensemble_name}, got {getattr(rmsd_values, 'shape', None)}"
             )
             continue
 
@@ -1182,7 +931,7 @@ def analyze_conformational_recovery_with_maxent(clustering_results, results_dict
         print(f"  {ensemble_name}: {len(clustered_assignments)} clustered frames")
 
         # Calculate unweighted (original) ratios
-        original_ratios = calculate_cluster_ratios(cluster_assignments)
+        original_ratios = analysis.calculate_cluster_ratios(cluster_assignments)
         original_recovery = calculate_recovery_percentage(original_ratios, ground_truth_ratios)
 
         recovery_data.append(
@@ -1225,7 +974,7 @@ def analyze_conformational_recovery_with_maxent(clustering_results, results_dict
                                             and np.sum(frame_weights) > 0
                                         ):
                                             # Calculate weighted ratios directly since both arrays have same length
-                                            weighted_ratios = calculate_cluster_ratios(
+                                            weighted_ratios = analysis.calculate_cluster_ratios(
                                                 cluster_assignments, frame_weights
                                             )
                                             weighted_recovery = calculate_recovery_percentage(
@@ -1272,59 +1021,6 @@ def analyze_conformational_recovery_with_maxent(clustering_results, results_dict
                                                 )
 
     return pd.DataFrame(recovery_data)
-
-
-def extract_frame_weights_kl_with_maxent(results: Dict) -> pd.DataFrame:
-    """
-    Extract frame weights and calculate KL divergence and ESS including maxent values.
-    """
-    data_rows = []
-
-    for split_type in results:
-        for ensemble in results[split_type]:
-            for loss_name in results[split_type][ensemble]:
-                for maxent_val in results[split_type][ensemble][loss_name]:
-                    for split_idx, history in results[split_type][ensemble][loss_name][
-                        maxent_val
-                    ].items():
-                        if history is not None and history.states:
-                            for step_idx, state in enumerate(history.states):
-                                if (
-                                    hasattr(state.params, "frame_weights")
-                                    and state.params.frame_weights is not None
-                                ):
-                                    frame_weights = np.array(state.params.frame_weights)
-                                    if len(frame_weights) == 0 or np.sum(frame_weights) == 0:
-                                        continue
-
-                                    uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
-                                    try:
-                                        kl_div = kl_divergence(frame_weights, uniform_prior)
-                                        ess = effective_sample_size(frame_weights)
-
-                                        data_rows.append(
-                                            {
-                                                "split_type": split_type,
-                                                "ensemble": ensemble,
-                                                "loss_function": loss_name,
-                                                "maxent_value": maxent_val,
-                                                "split": split_idx,
-                                                "step": step_idx,
-                                                "convergence_threshold_step": step_idx,
-                                                "kl_divergence": float(kl_div),
-                                                "effective_sample_size": float(ess),
-                                                "num_frames": len(frame_weights),
-                                                "step_number": state.step
-                                                if hasattr(state, "step")
-                                                else step_idx,
-                                            }
-                                        )
-                                    except Exception as e:
-                                        print(
-                                            f"Failed to calculate KL/ESS for {split_type}/{ensemble}_{loss_name}_maxent{maxent_val}_split{split_idx}, step {step_idx}: {e}"
-                                        )
-                                        continue
-    return pd.DataFrame(data_rows)
 
 
 def plot_cv_convergence_maxent_heatmaps(
@@ -2198,51 +1894,30 @@ def add_convergence_cv_analysis(cv_weights_data, convergence_rates, output_dir):
 
 
 def main():
-    """
-    Main function to run the complete analysis including maxent values and CV analysis.
-    """
-    # Define parameters
-    ensembles = ["ISO_TRI", "ISO_BI"]
-    loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
-    num_splits = 3
-    maxent_values = [
-        1,
-        2,
-        5,
-        10,
-        50,
-        100,
-        500,
-        1000,
-        10000,
-        100000,
-        1000000,
-        10000000,
-        100000000,
-        1000000000,
-    ]
-    # keep the same default convergence_rates as before
-    convergence_rates = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
-
-    # --- NEW: parse CLI args (behaviour mirrors the other script) ---
+    """Main function to run the complete analysis including maxent values and CV analysis."""
     parser = argparse.ArgumentParser(
         description="CV validation analysis: set results/output dirs and EMA flag. Paths are interpreted relative to the script unless --absolute-paths is given."
     )
     parser.add_argument(
         "--results-dir",
-        default="../fitting/jaxENT/_optimise_quick_test_splits__20250915_125135",
-        help="Results directory (relative to script dir by default)",
+        default=None,
+        help="Results directory. If omitted, auto-discovered from config results_prefix.",
     )
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Output directory (relative to script dir by default). If omitted, derived from results-dir basename prefixed with '_analysis'.",
+        help="Output directory. If omitted, derived from config or results-dir basename.",
     )
     parser.add_argument(
         "--ema",
         action="store_true",
         default=False,
         help="Use EMA results (results_EMA.hdf5). Default: False",
+    )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to config.yaml. Defaults to ../config.yaml relative to this script.",
     )
     parser.add_argument(
         "--absolute-paths",
@@ -2252,93 +1927,101 @@ def main():
     )
     args = parser.parse_args()
 
-    script_dir = os.path.dirname(__file__)
-    if args.absolute_paths:
-        results_dir = args.results_dir
-        print("Using absolute paths for results/output.")
-    else:
-        results_dir = os.path.join(script_dir, args.results_dir)
-        print("Using paths relative to script directory.")
+    script_dir = Path(__file__).resolve().parent
+    exp_dir = script_dir.parent
 
-    # Determine output_dir:
+    config_path = Path(args.config) if args.config else script_dir / ".." / "config.yaml"
+    cfg = ExperimentConfig.from_yaml(config_path)
+
+    if args.results_dir:
+        results_dir = (
+            Path(args.results_dir)
+            if args.absolute_paths
+            else (script_dir / args.results_dir).resolve()
+        )
+    elif cfg.results_prefix:
+        prefix_path = Path(cfg.results_prefix)
+        found = find_most_recent_dir(exp_dir / prefix_path.parent, prefix_path.name)
+        if found is None:
+            raise FileNotFoundError(
+                f"No directory matching prefix '{prefix_path.name}' found in {exp_dir / prefix_path.parent}"
+            )
+        results_dir = Path(found)
+    elif cfg.results_dir:
+        results_dir = (exp_dir / cfg.results_dir).resolve()
+    else:
+        raise ValueError("Provide --results-dir or set results_prefix/results_dir in config.")
+
     if args.output_dir:
-        if args.absolute_paths:
-            output_dir = args.output_dir
-        else:
-            output_dir = os.path.join(script_dir, args.output_dir)
+        output_dir = (
+            Path(args.output_dir)
+            if args.absolute_paths
+            else (script_dir / args.output_dir).resolve()
+        )
+    elif cfg.output_dir:
+        output_dir = (exp_dir / cfg.output_dir).resolve()
     else:
-        base_name = os.path.basename(os.path.normpath(results_dir))
-        out_name = "_analysis" + base_name
-        if args.absolute_paths:
-            parent = os.path.dirname(os.path.normpath(results_dir))
-            output_dir = os.path.join(parent, out_name)
-        else:
-            output_dir = os.path.join(script_dir, out_name)
+        output_dir = script_dir / f"_analysis{results_dir.name}"
 
+    clustering_dir = (
+        (exp_dir / cfg.clustering_dir).resolve()
+        if cfg.clustering_dir
+        else (script_dir / "../data/_clustering_results").resolve()
+    )
+
+    ensembles = cfg.ensembles
+    loss_functions = cfg.loss_functions
+    num_splits = cfg.num_splits
+    convergence_rates = cfg.convergence_rates
     ema_flag = args.ema
-    # --- END NEW ARGUMENT RESOLUTION ---
 
-    # Define clustering directory (kept relative to script)
-    clustering_dir = os.path.join(os.path.dirname(__file__), "../data/_clustering_results")
-
-    # Check if required directories and files exist
-    if not os.path.exists(results_dir):
+    if not results_dir.exists():
         raise FileNotFoundError(f"Results directory not found: {results_dir}")
-
-    if not os.path.exists(clustering_dir):
+    if not clustering_dir.exists():
         raise FileNotFoundError(
-            f"Clustering directory not found: {clustering_dir}. "
-            "Please run clustering_analysis.py first."
+            f"Clustering directory not found: {clustering_dir}. Please run clustering_analysis.py first."
         )
 
     print("Starting Complete JAX-ENT Analysis with MaxEnt Values and CV Analysis...")
+    print(f"Config file: {config_path}")
     print(f"Results directory: {results_dir}")
     print(f"Clustering directory: {clustering_dir}")
     print(f"Output directory: {output_dir}")
     print(f"Ensembles: {ensembles}")
     print(f"Loss functions: {loss_functions}")
     print(f"Number of splits: {num_splits}")
-    print(f"MaxEnt values: {maxent_values}")
+    print(f"Convergence rates: {convergence_rates}")
     print("-" * 60)
 
-    # Load clustering results
     print("Loading clustering results...")
-    clustering_results = load_clustering_results(clustering_dir)
+    clustering_results = loading.load_clustering_results(str(clustering_dir))
 
-    # Load all optimization results with maxent (pass EMA flag)
     print("Loading optimization results with maxent values...")
-    results = load_all_optimization_results_with_maxent(
-        results_dir=results_dir,
+    results = loading.load_all_optimization_results_with_maxent(
+        results_dir=str(results_dir),
         ensembles=ensembles,
         loss_functions=loss_functions,
         num_splits=num_splits,
-        maxent_values=maxent_values,
         EMA=ema_flag,
     )
 
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
 
-    # Part 1: KL Divergence Analysis with MaxEnt
     print("\n" + "=" * 60)
     print("PART 1: KL DIVERGENCE AND ESS ANALYSIS WITH MAXENT")
     print("=" * 60)
 
-    # Extract KL divergences and ESS
     print("Extracting frame weights and calculating KL divergences and ESS...")
-    kl_ess_df = extract_frame_weights_kl_with_maxent(results)
+    kl_ess_df = analysis.extract_frame_weights_kl(results)
 
     if len(kl_ess_df) > 0:
         print(
             f"Extracted {len(kl_ess_df)} KL divergence and ESS data points from optimization histories"
         )
-
-        # Save the KL divergence and ESS dataset
         kl_ess_df_path = os.path.join(output_dir, "kl_divergence_ess_analysis_maxent_data.csv")
         kl_ess_df.to_csv(kl_ess_df_path, index=False)
         print(f"KL divergence and ESS dataset saved to: {kl_ess_df_path}")
 
-    # Part 2: Conformational Recovery Analysis with MaxEnt
     print("\n" + "=" * 60)
     print("PART 2: CONFORMATIONAL RECOVERY ANALYSIS WITH MAXENT")
     print("=" * 60)
@@ -2350,16 +2033,13 @@ def main():
         recovery_df = analyze_conformational_recovery_with_maxent(clustering_results, results)
 
         if len(recovery_df) > 0:
-            # Save the recovery dataset
             recovery_df_path = os.path.join(output_dir, "conformational_recovery_maxent_data.csv")
             recovery_df.to_csv(recovery_df_path, index=False)
             print(f"Conformational recovery dataset saved to: {recovery_df_path}")
 
-            # Print summary statistics
             print("\nConformational Recovery Summary with MaxEnt:")
             print("-" * 40)
 
-            # Summary by maxent value
             maxent_summary = (
                 recovery_df[recovery_df["loss_function"] != "Original"]
                 .groupby(["split_type", "ensemble", "loss_function", "maxent_value"])
@@ -2382,21 +2062,18 @@ def main():
     else:
         print("No clustering results available. Skipping conformational recovery analysis.")
 
-    # Part 3: NEW - Collective Variable Analysis using Pre-computed Clustering
     print("\n" + "=" * 60)
     print("PART 3: COLLECTIVE VARIABLE (CV) ANALYSIS FROM PRE-COMPUTED CLUSTERING")
     print("=" * 60)
 
     try:
         if clustering_results:
-            # Compute collective variable from pre-computed clustering data
             print("Computing collective variable from pre-computed clustering results...")
             cv_data = compute_collective_variable_from_clustering(clustering_results)
 
             if cv_data:
                 print("✓ CV computation from clustering completed successfully!")
 
-                # Save CV data
                 cv_results = []
                 for ensemble_name, data in cv_data.items():
                     for i, cv_val in enumerate(data["cv_values"]):
@@ -2413,24 +2090,19 @@ def main():
                 cv_df.to_csv(os.path.join(output_dir, "cv_data.csv"), index=False)
                 print(f"CV data saved to: {os.path.join(output_dir, 'cv_data.csv')}")
 
-                # Compute weighted CV distributions
                 print("Computing weighted CV distributions...")
                 cv_weights_data = compute_cv_weighted_distributions(results, cv_data, n_cv_bins=50)
 
                 if cv_weights_data:
                     print(f"Computed CV weight distributions for {len(cv_weights_data)} conditions")
-
-                    # Create ORIGINAL CV distribution visualizations
                     print("Creating original CV distribution heatmaps...")
                     plot_cv_distribution_heatmaps(cv_weights_data, output_dir, n_cv_bins=50)
 
-                    # *** ADD THE NEW CONVERGENCE/MAXENT CV ANALYSIS HERE ***
                     print(
                         "Creating additional CV analysis with convergence rates and maxent values..."
                     )
                     add_convergence_cv_analysis(cv_weights_data, convergence_rates, output_dir)
 
-                    # Compute CV KLD between splits
                     print("Computing CV KLD between splits...")
                     cv_kld_df = compute_cv_kld_between_splits(cv_weights_data, cv_data)
 
@@ -2440,7 +2112,6 @@ def main():
                             os.path.join(output_dir, "cv_kld_between_splits.csv"), index=False
                         )
 
-                    # Compute CV sequential maxent KLD
                     print("Computing CV KLD between sequential maxent values...")
                     cv_sequential_kld_df = compute_cv_sequential_maxent_kld(
                         cv_weights_data, cv_data
@@ -2454,10 +2125,8 @@ def main():
                             os.path.join(output_dir, "cv_sequential_maxent_kld.csv"), index=False
                         )
 
-                    # Create CV KLD analysis plots
                     plot_cv_kld_analysis(cv_kld_df, cv_sequential_kld_df, output_dir)
 
-                    # Save CV weights data summary
                     cv_weights_summary = []
                     for item in cv_weights_data:
                         summary_item = {

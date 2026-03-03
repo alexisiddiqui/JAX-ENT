@@ -1,6 +1,18 @@
 """
-Clustering Analysis Script - Part 1
+extract_OpenClosed_clusters.py
+
+Extracts clusters representing Open and Closed states for validation comparisons.
+Used to define the ground truth states for the validation of the reweighting.
 Performs RMSD calculation and clustering, saves results as CSV files.
+
+Requirements:
+    - Valid MDAnalysis universe (generated in data/get_HDXer_AutoValidation_data.py)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/data/extract_OpenClosed_clusters.py
+
+Output:
+    - Cluster assignment CSVs in data/_clustering_results/
 """
 
 import os

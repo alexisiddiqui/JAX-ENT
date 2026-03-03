@@ -1,14 +1,19 @@
 """
-This script is used to get the HDXer AutoValidation data from the zenodo repository: https://zenodo.org/records/3629554
-This is from the paper:
-Interpretation of HDX Data by Maximum-Entropy Reweighting of Simulated Structural Ensembles
-https://doi.org/10.1016/j.bpj.2020.02.005
+get_HDXer_AutoValidation_data.py
+
+Downloads and prepares the initial dataset, slicing trajectories to generate the "Bradshaw" dataset if not present.
+It slices the trajectories to generate those from the google drive link.
+Create the bi-modal trajectory through simple RMSD assignment of the sliced, combined trajectory (TeaA_initial_sliced.xtc)
+
+Requirements:
+    - _Bradshaw directory (optional download from Zenodo/Drive)
+    - HDXer environment (if slicing is required)
 
 Usage:
-    python get_HDXer_AutoValidation_data.py [--interval N]
+    python jaxent/examples/1_IsoValidation_OMass/data/get_HDXer_AutoValidation_data.py [--interval N]
 
-Arguments:
-    --interval N   Slicing interval for trajectories (default: 100)
+Output:
+    - Sliced trajectories in data/_Bradshaw/... or data/sliced_20/
 """
 
 import os
