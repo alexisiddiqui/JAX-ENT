@@ -1399,8 +1399,7 @@ def extract_weights_over_convergence_steps(results):
     return convergence_weights_data
 
 
-# [Additional plotting functions would go here - copying from original script]
-# For now, I'll include the main function which ties everything together
+# [Additional plotting functions go here]
 
 
 def main():
