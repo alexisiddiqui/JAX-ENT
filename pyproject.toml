@@ -1,6 +1,6 @@
 [project]
 name = "jaxent"
-version = "0.4.1"
+version = "0.5.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -10,6 +10,7 @@ requires-python = ">=3.11"
 dependencies = [
     "beartype>=0.22.9",
     "chex>=0.1.88",
+    "gdown>=5.2.1",
     "h5py>=3.14.0",
     "hdxrate>=0.2.2",
     "icecream>=2.1.4",
