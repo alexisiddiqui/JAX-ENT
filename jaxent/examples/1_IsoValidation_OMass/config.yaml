@@ -30,8 +30,10 @@ output_dir: "analysis/_analysis_loss_output"
 # Plotting style
 style:
   ensemble_colors:
-    ISO_BI: "navy"
-    ISO_TRI: "dodgerblue"
+    ISO_BI: "saddlebrown"
+    ISO_TRI: "indigo"
+    AF2_MSAss: "RoyalBlue"
+    AF2_filtered: "Cyan"
 
   loss_markers:
     mcMSE: "o"
