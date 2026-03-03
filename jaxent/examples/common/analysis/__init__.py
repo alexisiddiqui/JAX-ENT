@@ -44,6 +44,23 @@ from .mlm import (
     compute_correlations,
     run_analysis_on_subset,
 )
+from .selected_models import (
+    SCORE_METRIC_COLORS,
+    _metric_color_cache,
+    _metric_palette_cycle,
+    get_metric_color,
+    p_to_stars,
+    ttest_from_stats,
+    calculate_kendalls_w,
+    get_metric_order,
+    load_and_process_data,
+    aggregate_df,
+    compute_minimax_df,
+    run_fixed_effects_for_score,
+    run_fixed_effects_analysis,
+    calculate_concordance_maps,
+    save_gt_scores,
+)
 
 __all__ = [
     "kl_divergence",
@@ -79,4 +96,19 @@ __all__ = [
     "compute_model_selection_performance",
     "compute_correlations",
     "run_analysis_on_subset",
+    "SCORE_METRIC_COLORS",
+    "_metric_color_cache",
+    "_metric_palette_cycle",
+    "get_metric_color",
+    "p_to_stars",
+    "ttest_from_stats",
+    "calculate_kendalls_w",
+    "get_metric_order",
+    "load_and_process_data",
+    "aggregate_df",
+    "compute_minimax_df",
+    "run_fixed_effects_for_score",
+    "run_fixed_effects_analysis",
+    "calculate_concordance_maps",
+    "save_gt_scores",
 ]
