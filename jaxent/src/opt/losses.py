@@ -1639,15 +1639,16 @@ def hdx_uptake_eye_MSE_loss(
         # Average loss across timepoints
         return jnp.asarray(total_loss) / y_true.shape[1]
 
-    eye_mat = jnp.eye(dataset.train.y_true.shape[0])
-
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+    train_eye = jnp.eye(dataset.train.y_true.shape[0])
+    train_eye = train_eye / jnp.linalg.norm(train_eye)
+    val_eye = jnp.eye(dataset.val.y_true.shape[0])
+    val_eye = val_eye / jnp.linalg.norm(val_eye)
 
     # Compute train and validation losses
     train_loss = compute_loss(
-        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
+        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, train_eye
     )
-    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat)
+    val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, val_eye)
 
     return train_loss, val_loss
 
@@ -1780,3 +1781,171 @@ def HDX_uptake_convex_KL_loss(
     val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
 
     return train_loss, val_loss
+
+
+def hdx_uptake_mean_centred_eye_MSE_loss(
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the mean-centered, covariance-weighted MSE loss for HDX uptake.
+    Uses a normalised identity matrix as the weighting matrix.
+
+    Both predictions and targets are centered around their means before
+    computing the weighted squared residual: 0.5 * r^T @ W @ r.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    predictions = model.outputs[prediction_index]
+
+    def compute_loss(sparse_mapping, y_true, cov_matrix):
+        total_loss = 0.0
+        for timepoint_idx in range(y_true.shape[1]):
+            true_uptake_timepoint = y_true[:, timepoint_idx, 0]
+            true_uptake_timepoint = true_uptake_timepoint - jnp.mean(true_uptake_timepoint)
+
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            pred_mapped = pred_mapped - jnp.mean(pred_mapped)
+
+            residual = pred_mapped - true_uptake_timepoint
+            weighted_residual = jnp.dot(cov_matrix, residual)
+            timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
+            total_loss += timepoint_loss
+
+        return jnp.asarray(total_loss) / y_true.shape[1]
+
+    eye_mat = jnp.eye(dataset.train.y_true.shape[0])
+    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+
+    train_loss = compute_loss(
+        dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
+    )
+
+    eye_mat_val = jnp.eye(dataset.val.y_true.shape[0])
+    eye_mat_val = eye_mat_val / jnp.linalg.norm(eye_mat_val)
+
+    val_loss = compute_loss(
+        dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat_val
+    )
+
+    return train_loss, val_loss
+
+
+def hdx_uptake_mean_centred_sigma_MSE_loss(
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
+) -> tuple[Array, Array]:
+    """
+    Calculate the mean-centered, covariance-weighted MSE loss for HDX uptake.
+    Uses the actual inverse covariance matrix (precision matrix) from the dataset.
+
+    Both predictions and targets are centered around their means before
+    computing the weighted squared residual: 0.5 * r^T @ Σ⁻¹ @ r.
+
+    Args:
+        model: Simulation object containing model outputs
+        dataset: Experimental dataset containing true uptake values
+        prediction_index: Index of the prediction to use
+
+    Returns:
+        Tuple of train and validation losses
+    """
+    predictions = model.outputs[prediction_index]
+
+    def compute_loss(sparse_mapping, y_true, cov_matrix):
+        total_loss = 0.0
+        for timepoint_idx in range(y_true.shape[1]):
+            true_uptake_timepoint = y_true[:, timepoint_idx, 0]
+            true_uptake_timepoint = true_uptake_timepoint - jnp.mean(true_uptake_timepoint)
+
+            pred_uptake_timepoint = predictions.uptake[timepoint_idx]
+            pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake_timepoint)
+            pred_mapped = pred_mapped - jnp.mean(pred_mapped)
+
+            residual = pred_mapped - true_uptake_timepoint
+            weighted_residual = jnp.dot(cov_matrix, residual)
+            timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
+            total_loss += timepoint_loss
+
+        return jnp.asarray(total_loss) / y_true.shape[1]
+
+    train_loss = compute_loss(
+        dataset.train.residue_feature_ouput_mapping,
+        dataset.train.y_true,
+        dataset.train.covariance_matrix,
+    )
+    val_loss = compute_loss(
+        dataset.val.residue_feature_ouput_mapping,
+        dataset.val.y_true,
+        dataset.val.covariance_matrix,
+    )
+
+    return train_loss, val_loss
+
+
+# ---------------------------------------------------------------------------
+# Loss Registry
+# ---------------------------------------------------------------------------
+
+#: Registry mapping short names to loss functions.
+#:
+#: Naming convention:
+#:   - **L2**  – simple element-wise squared-error losses (no covariance weighting)
+#:   - **MSE** – covariance-weighted squared-error losses (r^T @ W @ r form)
+#:
+#: Prefixes:
+#:   - ``mc`` – mean-centered (predictions and targets centered before comparison)
+#:   - ``Sigma_`` – uses actual inverse covariance matrix from the dataset
+#:   - (no prefix for MSE) – uses normalised identity as weight matrix
+LOSS_REGISTRY: dict[str, object] = {
+    # --- Simple L2 losses (no covariance weighting) ---
+    "L2": hdx_uptake_l2_loss,
+    "mcL2": hdx_uptake_mean_centred_l2_loss,
+    # --- Covariance-weighted MSE losses ---
+    "MSE": hdx_uptake_eye_MSE_loss,
+    "mcMSE": hdx_uptake_mean_centred_eye_MSE_loss,
+    "Sigma_MSE": hdx_uptake_sigma_MSE_loss,
+    "mcSigma_MSE": hdx_uptake_mean_centred_sigma_MSE_loss,
+    # --- Other uptake losses ---
+    "MAE": hdx_uptake_MAE_loss,
+    "mcMAE": hdx_uptake_mean_centred_MAE_loss,
+    "monotonicity": hdx_uptake_monotonicity_loss,
+    # --- Protection factor losses ---
+    "pf_L2": hdx_pf_l2_loss,
+    "pf_MAE": hdx_pf_mae_loss,
+    "pf_KLD": hdx_pf_kld_loss,
+    # --- Regularisation losses ---
+    "maxent_KL": maxent_convexKL_loss,
+    "maxent_JSD": maxent_JSD_loss,
+    "maxent_L2": maxent_L2_loss,
+    "maxent_L1": maxent_L1_loss,
+    "maxent_ESS": maxent_ESS_loss,
+    "minent_ESS": minent_ESS_loss,
+    "model_params_L2": model_params_L2_loss,
+    "model_params_L1": model_params_L1_loss,
+}
+
+
+def get_loss_function(name: str):
+    """Look up a loss function by its short registry name.
+
+    Args:
+        name: One of the keys in ``LOSS_REGISTRY``.
+
+    Returns:
+        The corresponding loss function.
+
+    Raises:
+        ValueError: If *name* is not found in the registry.
+    """
+    if name not in LOSS_REGISTRY:
+        raise ValueError(
+            f"Unknown loss function: {name!r}. "
+            f"Available: {sorted(LOSS_REGISTRY.keys())}"
+        )
+    return LOSS_REGISTRY[name]

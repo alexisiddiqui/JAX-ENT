@@ -1,8 +1,41 @@
+"""
+process_optimisation_results.py
+
+Processes the raw optimization results (HDF5 files) to extract key data for analysis.
+It computes:
+- Predicted protection factors (lnPF) and uptake for each run.
+- KL divergence of frame weights from a uniform prior.
+- Frame weights and validation losses.
+- Cluster ratios based on frame weights and cluster assignments.
+
+Models are processed for each ensemble, loss function, split type, and MaxEnt value.
+Results are saved as .npy and .csv files in a structured directory format.
+
+Requirements:
+    - Optimization results directory containing HDF5 files.
+    - Featurized data directory (features_*.npz) and topology files.
+    - Data splits directory.
+    - Clustering results directory (for cluster ratio calculation).
+
+Usage:
+    # From pipeline:
+    python process_optimisation_results.py \\
+      --results-dir "$OPT_OUTPUT_DIR" \\
+      --datasplit-dir "${DIR_WD}/_datasplits" \\
+      --features-dir "${DIR_WD}/_featurise" \\
+      --clustering-dir "${DIR_WD}/../../analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters"
+
+Output:
+    - A `_processed_<basename>` directory (or specified output dir).
+    - Subdirectories for each split type and run ID.
+    - Contains: `pred_ln_pf.npy`, `pred_uptake.npy`, `kl_divergence.npy`, `frame_weights.npy`, `val_loss.npy`, `cluster_ratios.csv`.
+"""
+
 import argparse
 import os
-import re
 import sys
-from typing import Dict, List, Tuple
+from pathlib import Path
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -14,312 +47,18 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
-from jaxent.src.utils.hdf import load_optimization_history_from_file
-from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_output_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
-import jaxent.src.interfaces.topology as pt
-from jaxent.src.custom_types.HDX import HDX_peptide
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.utils.jax_fn import frame_average_features
 
+# common modules
+from jaxent.examples.common import analysis, loading, paths
+from jaxent.examples.common.paths import derive_processed_output_dir, resolve_script_paths
+from jaxent.examples.common.optimization import BV_uptake_ForwardPass_frames
 
-from jaxent.src.custom_types.base import ForwardPass
-from jaxent.src.models.HDX.BV.features import (
-    uptake_BV_output_features,
-)
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
-
-
-
-class BV_uptake_ForwardPass_frames(
-    ForwardPass[BV_input_features, uptake_BV_output_features, BV_Model_Parameters]
-):
-    def __call__(
-        self, input_features: BV_input_features, parameters: BV_Model_Parameters
-    ) -> uptake_BV_output_features:
-        # Extract model parameters
-        bc, bh = parameters.bv_bc, parameters.bv_bh
-        # Convert inputs to JAX arrays
-        heavy_contacts = jnp.asarray(input_features.heavy_contacts)
-        acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
-        # print("heavy_contacts", heavy_contacts.shape)
-        # print("acceptor_contacts", acceptor_contacts.shape)
-        kints = jnp.asarray(input_features.k_ints)
-        # print("kints", kints.shape)
-        time_points = parameters.timepoints.reshape(-1)
-        # print("timepoint shape", time_points.shape)
-        # Compute protection factors
-        log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
-        # print("logpf", log_pf)
-
-        pf = jnp.exp(log_pf)
-
-        # Vectorized computation of uptake for each timepoint
-        def compute_uptake_for_timepoint(timepoint):
-            # Reshape kints to allow broadcasting over frames
-            kints_reshaped = kints.reshape(-1, 1)
-            # Calculate uptake for each residue: Df_i = 1 - exp(-kint_i * timepoint/ Pf_i)
-            # Shapes: (res, 1) * scalar / (res, frames) -> (res, frames)
-            uptake = 1 - jnp.exp(-kints_reshaped * timepoint / pf)
-            return uptake
-
-        # Compute uptake for each timepoint
-        uptake_per_timepoint = jax.vmap(compute_uptake_for_timepoint)(time_points)
-        # print("uptake_per_timepoint", uptake_per_timepoint.shape)
-        # raise NotImplementedError("stop here")
-        # Return the list of timepoint-wise residue-wise uptake arrays
-        return uptake_BV_output_features(uptake_per_timepoint)
-
-
-def load_experimental_data(results_dir: str, datasplit_dir: str, split_type: str, split_idx: int) -> Tuple[List[HDX_peptide], List[HDX_peptide], List[HDX_peptide], np.ndarray]:
-    """
-    Load train, validation, and full (test) experimental data for a given split, and extract timepoints.
-
-    Args:
-        datasplit_dir: Base directory containing data splits.
-        split_type: Type of split (e.g., 'random', 'sequence').
-        split_idx: Index of the split.
-
-    Returns:
-        Tuple of (train_data, val_data, test_data, timepoints)
-    """
-    split_path = os.path.join(datasplit_dir, split_type, f"split_{split_idx:03d}")
-    parent_dir = os.path.dirname(results_dir)
-    full_dataset_path = os.path.join(parent_dir, "_datasplits")
-
-    train_csv_path = os.path.join(split_path, "train_dfrac.csv")
-    train_data = HDX_peptide.load_list_from_files(
-        json_path=os.path.join(split_path, "train_topology.json"),
-        csv_path=train_csv_path,
-    )
-
-    # Extract timepoints from the header of the training CSV file
-    df_train = pd.read_csv(train_csv_path)
-    required_cols = ["datapoint_type", "feature_length"]
-    timepoints = [float(col) for col in df_train.columns if col not in required_cols]
-
-    val_data = HDX_peptide.load_list_from_files(
-        json_path=os.path.join(split_path, "val_topology.json"),
-        csv_path=os.path.join(split_path, "val_dfrac.csv"),
-    )
-    test_data = HDX_peptide.load_list_from_files(
-        json_path=os.path.join(full_dataset_path, "full_dataset_topology.json"),
-        csv_path=os.path.join(full_dataset_path, "full_dataset_dfrac.csv"),
-    )
-    return train_data, val_data, test_data, np.array(timepoints)
-
-
-
-
-def load_all_optimization_results_with_maxent(
-    results_dir: str,
-    ensembles: List[str],
-    loss_functions: List[str],
-    num_splits: int,
-    EMA: bool = False,
-) -> Dict:
-    """
-    Load all optimization results from HDF5 files, including maxent values.
-
-    Args:
-        results_dir: Directory containing subdirectories for each split type.
-        ensembles: List of ensemble names.
-        loss_functions: List of loss function names.
-        num_splits: Number of data splits per type.
-        EMA: If True, load EMA results (results_EMA.hdf5).
-
-    Returns:
-        Dictionary with results organized by split_type, ensemble, loss, maxent, and split.
-    """
-    results = {}
-    if not os.path.exists(results_dir):
-        print(f"Results directory not found: {results_dir}")
-        return results
-
-    split_types = [
-        d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))
-    ]
-    if not split_types:
-        # Handle flat structure if no split type subdirectories are found
-        split_types = ["_flat"] # Use a placeholder for the loop
-
-    if EMA:
-        hdf_pattern = "results_EMA.hdf5"
-    else:
-        hdf_pattern = "results.hdf5"
-
-    for split_type in split_types:
-        results[split_type] = {}
-        
-        if split_type == "_flat":
-            split_type_dir = results_dir
-        else:
-            split_type_dir = os.path.join(results_dir, split_type)
-
-        if not os.path.exists(split_type_dir):
-            print(f"Split type directory not found: {split_type_dir}")
-            continue
-
-        for ensemble in ensembles:
-            results[split_type][ensemble] = {}
-
-            for loss_name in loss_functions:
-                results[split_type][ensemble][loss_name] = {}
-
-                # Discover all files for this ensemble/loss combination
-                if split_type == "_flat":
-                    pattern = f"{ensemble}_{loss_name}_split"
-                else:
-                    pattern = f"{ensemble}_{loss_name}_{split_type}_split"
-                
-                files = [
-                    f
-                    for f in os.listdir(split_type_dir)
-                    if f.startswith(pattern) and f.endswith(hdf_pattern)
-                ]
-
-                for filename in files:
-                    # Extract split index and maxent value
-                    match = re.search(r"split(\d{3})_maxent(\d+(?:\.\d+)?)", filename)
-                    if match:
-                        split_idx = int(match.group(1))
-                        maxent_val = float(match.group(2))
-
-                        # Initialize nested dict if needed
-                        if maxent_val not in results[split_type][ensemble][loss_name]:
-                            results[split_type][ensemble][loss_name][maxent_val] = {}
-
-                        filepath = os.path.join(split_type_dir, filename)
-
-                        try:
-                            history = load_optimization_history_from_file(filepath)
-                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                history
-                            )
-                            print(f"Loaded: {filepath}")
-                        except Exception as e:
-                            print(f"Failed to load {filepath}: {e}")
-                            results[split_type][ensemble][loss_name][maxent_val][split_idx] = None
-                    else:
-                        # Handle files without maxent value (original optimization)
-                        match = re.search(r"split(\d{3})", filename)
-                        if match:
-                            split_idx = int(match.group(1))
-                            maxent_val = 0.0  # Use 0 for no maxent regularization
-
-                            if maxent_val not in results[split_type][ensemble][loss_name]:
-                                results[split_type][ensemble][loss_name][maxent_val] = {}
-
-                            filepath = os.path.join(split_type_dir, filename)
-
-                            try:
-                                history = load_optimization_history_from_file(filepath)
-                                results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                    history
-                                )
-                                print(f"Loaded (no maxent): {filepath}")
-                            except Exception as e:
-                                print(f"Failed to load {filepath}: {e}")
-                                results[split_type][ensemble][loss_name][maxent_val][split_idx] = (
-                                    None
-                                )
-    if "_flat" in results and not results["_flat"]:
-        del results["_flat"] # Remove placeholder if no files were found in flat structure
-    return results
-
-def load_clustering_results(clustering_dir: str) -> Dict:
-    """
-    Load clustering results from nested subdirectories (MoPrP structure).
-    
-    Expected structure:
-    - AF2_MSAss/AF2_MSAss_frame_to_cluster.csv
-    - AF2_Filtered/AF2_Filtered_frame_to_cluster.csv
-
-    Args:
-        clustering_dir (str): Directory containing clustering subdirectories
-
-    Returns:
-        dict: Dictionary containing clustering results by ensemble
-    """
-    if not os.path.exists(clustering_dir):
-        print(f"Clustering directory not found: {clustering_dir}")
-        return {}
-
-    clustering_results = {}
-    
-    # Mapping of ensemble names to their subdirectory and filename
-    ensemble_map = {
-        "AF2_MSAss": ("AF2_MSAss", "AF2_MSAss_frame_to_cluster.csv"),
-        "AF2_filtered": ("AF2_Filtered", "AF2_Filtered_frame_to_cluster.csv"),
-    }
-
-    for ensemble_name, (subdir, filename) in ensemble_map.items():
-        cluster_path = os.path.join(clustering_dir, subdir, filename)
-        
-        if os.path.exists(cluster_path):
-            cluster_df = pd.read_csv(cluster_path)
-            clustering_results[ensemble_name] = {
-                "cluster_assignments": cluster_df["cluster_label"].values,
-                "frame_data": cluster_df,
-            }
-            print(f"Loaded cluster assignments for {ensemble_name}: {len(cluster_df)} frames")
-        else:
-            print(f"Warning: Clustering file not found for {ensemble_name} at {cluster_path}")
-
-    return clustering_results
-
-def kl_divergence(p: np.ndarray, q: np.ndarray, eps: float = 1e-10) -> float:
-    """
-    Calculate KL divergence between two probability distributions.
-
-    Args:
-        p: First probability distribution (frame_weights)
-        q: Second probability distribution (uniform prior)
-        eps: Small value to avoid log(0)
-
-    Returns:
-        KL divergence KL(p||q)
-    """
-    # Normalize to ensure they sum to 1
-    p = p / np.sum(p)
-    q = q / np.sum(q)
-
-    # Add small epsilon to avoid log(0)
-    p = np.clip(p, eps, 1.0)
-    q = np.clip(q, eps, 1.0)
-
-    # Calculate KL divergence: KL(p||q) = Σ p(i) * log(p(i)/q(i))
-    return np.sum(p * np.log(p / q))
-
-def calculate_cluster_ratios(cluster_assignments: np.ndarray, frame_weights: np.ndarray = None) -> Dict[str, float]:
-    """
-    Calculate ratios of clusters based on assignments and optional frame weights.
-
-    Args:
-        cluster_assignments (np.ndarray): Cluster assignments
-        frame_weights (np.ndarray, optional): Frame weights from optimization
-
-    Returns:
-        dict: Cluster ratios
-    """
-    if frame_weights is None:
-        frame_weights = np.ones(len(cluster_assignments))
-    
-    # Normalize frame weights
-    if np.sum(frame_weights) == 0:
-        return {} # Return empty if no weights
-
-    # Calculate weighted ratios
-    ratios = {}
-    unique_clusters = np.unique(cluster_assignments)
-
-    for cluster in unique_clusters:
-        if cluster >= 0:  # Skip invalid clusters (-1)
-            mask = cluster_assignments == cluster
-            ratios[f"cluster_{cluster}"] = np.sum(frame_weights[mask])
-
-    return ratios
 
 def main():
     parser = argparse.ArgumentParser(
@@ -366,32 +105,19 @@ def main():
 
     # Define parameters (should match those used in optimization)
     ensembles = ["AF2_MSAss", "AF2_filtered"]
+    ensemble_feature_map = {"AF2_MSAss": "AF2_MSAss", "AF2_filtered": "AF2_filtered"}
+    ensemble_clustering_map = {"AF2_MSAss": "AF2_MSAss", "AF2_filtered": "AF2_Filtered"}
     loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     num_splits = 3
     convergence_rates = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
     # Resolve paths
-    script_dir = os.path.dirname(__file__)
-    if args.absolute_paths:
-        results_dir = args.results_dir
-        clustering_dir = args.clustering_dir
-        features_dir = args.features_dir
-        datasplit_dir = args.datasplit_dir
-    else:
-        results_dir = os.path.abspath(os.path.join(script_dir, args.results_dir))
-        clustering_dir = os.path.abspath(os.path.join(script_dir, args.clustering_dir))
-        features_dir = os.path.abspath(os.path.join(script_dir, args.features_dir))
-        datasplit_dir = os.path.abspath(os.path.join(script_dir, args.datasplit_dir))
-
-    if args.output_dir:
-        if args.absolute_paths:
-            output_base_dir = args.output_dir
-        else:
-            output_base_dir = os.path.abspath(os.path.join(script_dir, args.output_dir))
-    else:
-        base_name = os.path.basename(os.path.normpath(results_dir))
-        output_base_dir = os.path.join(os.path.dirname(results_dir), f"_processed_{base_name}")
-    
+    resolved = resolve_script_paths(args, Path(__file__).parent)
+    results_dir    = resolved["results_dir"]
+    clustering_dir = resolved["clustering_dir"]
+    features_dir   = resolved["features_dir"]
+    datasplit_dir  = resolved["datasplit_dir"]
+    output_base_dir = resolved.get("output_dir") or str(derive_processed_output_dir(results_dir))
     os.makedirs(output_base_dir, exist_ok=True)
 
     print(f"Resolved results_dir: {results_dir}")
@@ -404,11 +130,11 @@ def main():
 
     # Load cluster assignments
     print("Loading cluster assignments...")
-    clustering_results = load_clustering_results(clustering_dir)
+    clustering_results = loading.load_clustering_results(clustering_dir, ensemble_clustering_map)
 
     # Load all optimization results
     print("Loading optimization results...")
-    all_optim_results = load_all_optimization_results_with_maxent(
+    all_optim_results = loading.load_all_optimization_results_with_maxent(
         results_dir=results_dir,
         ensembles=ensembles,
         loss_functions=loss_functions,
@@ -428,31 +154,19 @@ def main():
                 results_by_ensemble[ensemble] = {}
             results_by_ensemble[ensemble][split_type] = loss_data
 
-    # Mapping of ensemble names to feature file names (case-sensitive for MoPrP)
-    ensemble_feature_map = {
-        "AF2_MSAss": "AF2_MSAss",
-        "AF2_filtered": "AF2_filtered",
-    }
-
     # Process each optimization run, iterating by ensemble first
     print("\nProcessing each optimization run...")
     for ensemble, split_type_data in results_by_ensemble.items():
         # Load features and topology for the current ensemble (once per ensemble)
-        # Use the ensemble feature map to get the correct case-sensitive name
-        feature_name = ensemble_feature_map.get(ensemble, ensemble.lower())
-        feature_path = os.path.join(features_dir, f"features_{feature_name}.npz")
-        topology_path = feature_path.replace("features_", "topology_").replace(".npz", ".json")
-
-        if not os.path.exists(feature_path) or not os.path.exists(topology_path):
-            print(f"  Skipping {ensemble}: Features or topology not found at {feature_path} / {topology_path}")
+        try:
+            features, feature_top = loading.load_features_and_topology(features_dir, ensemble, ensemble_feature_map)
+        except FileNotFoundError as e:
+            print(f"  Skipping {ensemble}: {e}")
             continue
-        
+
         print(f"\nLoading features for ensemble: {ensemble}")
-        features = BV_input_features.load(feature_path)
-        feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
 
         # --- Get timepoints from data ---
-        # Find a representative split_idx to load one data file
         first_split_idx = None
         first_split_type = None
         for split_type_from_loop, loss_data in split_type_data.items():
@@ -466,13 +180,13 @@ def main():
                     break
             if first_split_idx is not None:
                 break
-        
+
         if first_split_idx is None:
             print(f"  No run data found for ensemble {ensemble}. Skipping.")
             continue
 
         exp_split_type = first_split_type if first_split_type != '_flat' else "random"
-        _, _, _, timepoints_from_data = load_experimental_data(results_dir, datasplit_dir, exp_split_type, first_split_idx)
+        _, _, _, timepoints_from_data = loading.load_experimental_data(results_dir, datasplit_dir, exp_split_type, first_split_idx)
         num_timepoints = len(timepoints_from_data)
         print(f"  Inferred {num_timepoints} timepoints from data file: {timepoints_from_data}")
 
@@ -484,32 +198,23 @@ def main():
         bv_config_uptake = BV_model_Config(num_timepoints=num_timepoints, timepoints=jnp.array(timepoints_from_data))
         bv_model_uptake = BV_model(config=bv_config_uptake)
 
-
         # --- Compute frame-wise predictions (once per ensemble) ---
         print(f"  Computing frame-wise predictions for {ensemble}...")
 
-        # Get the forward pass functions from the models
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
         forward_pass_uptake = BV_uptake_ForwardPass_frames()
 
-        # Run forward pass with initial model parameters to get framewise predictions
-        # These are expensive operations, so we do them only once per ensemble
         framewise_output_lnpf = forward_pass_lnpf(features, bv_model_lnpf.params)
-        # jit_Guard.clear_all_caches()
         framewise_output_uptake = forward_pass_uptake(features, bv_model_uptake.params)
-        # jit_Guard.clear_all_caches()
 
-        # These outputs are PyTrees containing all prediction data on a per-frame basis
-        
         # --- Compute Prior Predictions (from uniform weights) ---
         print(f"  Computing prior predictions for {ensemble}...")
         n_frames = features.features_shape[1]
         uniform_frame_weights = jnp.ones(n_frames) / n_frames
-        
-        # The prior is the ensemble average using uniform weights
+
         prior_lnpf_output = frame_average_features(framewise_output_lnpf, uniform_frame_weights)
         prior_uptake_output = frame_average_features(framewise_output_uptake, uniform_frame_weights)
-        
+
         prior_ln_pf = prior_lnpf_output.log_Pf
         prior_uptake = prior_uptake_output.uptake
 
@@ -529,18 +234,16 @@ def main():
                 for maxent_val, splits_data in maxent_data.items():
                     for split_idx, history in splits_data.items():
                         run_id = f"{ensemble}_{loss_name}_{split_type if split_type != '_flat' else 'flat'}_split{split_idx:03d}_maxent{maxent_val:.1f}"
-                        
+
                         if history is None or not history.states:
                             print(f"    Skipping {run_id}: No history found.")
                             continue
 
-                        # Save the met convergence rates to a file for this run
                         met_convergence_rates = []
                         for i in range(len(history.states)):
                             if i < len(convergence_rates):
                                 met_convergence_rates.append(convergence_rates[i])
 
-                        # Create a directory for the run and save convergence thresholds
                         run_output_dir_for_run = os.path.join(current_output_dir, run_id)
                         os.makedirs(run_output_dir_for_run, exist_ok=True)
                         with open(os.path.join(run_output_dir_for_run, "convergence_thresholds.txt"), "w") as f:
@@ -570,11 +273,10 @@ def main():
                 print(f"  No valid runs found for ensemble {ensemble} and split_type {split_type}. Skipping.")
                 continue
 
-            # Filter out runs with missing parameters before batching
             valid_run_infos = [
-                info for info in run_infos 
-                if (info["params"] is not None and 
-                    info["params"].frame_weights is not None and 
+                info for info in run_infos
+                if (info["params"] is not None and
+                    info["params"].frame_weights is not None and
                     info["params"].model_parameters is not None)
             ]
 
@@ -582,7 +284,6 @@ def main():
                 print(f"  No runs with complete parameters for ensemble {ensemble} and split_type {split_type}. Skipping.")
                 continue
 
-            # --- Process and Save Individual Results ---
             # Group runs by run_id
             runs_to_process = {}
             for info in valid_run_infos:
@@ -590,11 +291,11 @@ def main():
                 if run_id not in runs_to_process:
                     runs_to_process[run_id] = []
                 runs_to_process[run_id].append(info)
-            
+
             print(f"  Processing {len(runs_to_process)} runs for {ensemble}/{split_type}...")
 
             for run_id, infos in runs_to_process.items():
-                
+
                 all_pred_ln_pf = []
                 all_pred_uptake = []
                 all_kl_div = []
@@ -602,61 +303,54 @@ def main():
                 all_cluster_ratios = []
                 all_val_losses = []
 
-                # The infos are already sorted by convergence because of how they were added.
                 for info in infos:
                     params = info["params"]
                     losses = info["losses"]
                     convergence = info["convergence"]
 
-                    # --- Efficiently calculate reweighted predictions ---
                     frame_weights = jnp.array(params.frame_weights)
-                    
+
                     pred_lnpf_output = frame_average_features(framewise_output_lnpf, frame_weights)
                     pred_uptake_output = frame_average_features(framewise_output_uptake, frame_weights)
 
                     pred_ln_pf = pred_lnpf_output.log_Pf
                     pred_uptake = pred_uptake_output.uptake
-                    
+
                     all_pred_ln_pf.append(pred_ln_pf)
                     all_pred_uptake.append(pred_uptake)
                     all_frame_weights.append(frame_weights)
 
-                    # Extract frame weights and KL-divergence
                     kl_div = 0.0
                     if len(frame_weights) > 0 and np.sum(frame_weights) > 0:
                         uniform_prior = np.ones(len(frame_weights)) / len(frame_weights)
-                        kl_div = kl_divergence(np.array(frame_weights), uniform_prior)
+                        kl_div = analysis.kl_divergence(np.array(frame_weights), uniform_prior)
                     all_kl_div.append(kl_div)
-                    
-                    # Extract validation loss
+
                     val_loss = np.nan
                     if losses is not None and hasattr(losses, 'val_losses') and losses.val_losses is not None:
                         try:
-                            # Take the first element of val_losses
                             val_loss = float(losses.val_losses[0])
                         except (IndexError, TypeError, ValueError):
                             pass
                     all_val_losses.append(val_loss)
 
-                    # Compute cluster population ratios
                     cluster_ratios = {}
                     if ensemble in clustering_results:
                         cluster_assignments = clustering_results[ensemble]["cluster_assignments"]
                         if len(frame_weights) == len(cluster_assignments):
-                            cluster_ratios = calculate_cluster_ratios(cluster_assignments, np.array(frame_weights))
+                            cluster_ratios = analysis.calculate_cluster_ratios(cluster_assignments, np.array(frame_weights))
                         else:
                             print(f"    Warning: Frame weights length mismatch for {run_id} at convergence {convergence}. Skipping cluster ratios.")
                     else:
                         print(f"    Warning: No clustering results for {ensemble}. Skipping cluster ratios.")
-                    
+
                     cr_with_conv = {"convergence": convergence}
                     cr_with_conv.update(cluster_ratios)
                     all_cluster_ratios.append(cr_with_conv)
 
                 # Save combined results
                 run_output_dir = os.path.join(current_output_dir, run_id)
-                # Directory already created when convergence_thresholds.txt was saved
-                
+
                 if all_pred_ln_pf:
                     np.save(os.path.join(run_output_dir, "pred_ln_pf.npy"), np.stack(all_pred_ln_pf))
                 if all_pred_uptake:
@@ -665,18 +359,15 @@ def main():
                     np.save(os.path.join(run_output_dir, "kl_divergence.npy"), np.array(all_kl_div))
                 if all_frame_weights:
                     np.save(os.path.join(run_output_dir, "frame_weights.npy"), np.stack(all_frame_weights))
-                
+
                 if all_val_losses:
                     np.save(os.path.join(run_output_dir, "val_loss.npy"), np.array(all_val_losses))
-                
-                # Priors are constant for the run, save them once
+
                 np.save(os.path.join(run_output_dir, "prior_ln_pf.npy"), np.array(prior_ln_pf))
                 np.save(os.path.join(run_output_dir, "prior_uptake.npy"), np.array(prior_uptake))
 
-                # Save cluster ratios to CSV
                 if all_cluster_ratios:
                     cluster_df = pd.DataFrame(all_cluster_ratios)
-                    # Reorder columns to have 'convergence' first
                     cols = ['convergence'] + [col for col in cluster_df.columns if col != 'convergence']
                     cluster_df = cluster_df[cols]
                     cluster_df.to_csv(os.path.join(run_output_dir, "cluster_ratios.csv"), index=False)
