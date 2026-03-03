@@ -1,4 +1,19 @@
 """
+[Script Name] calculate_state_ratios.py
+
+[Brief Description of Functionality]
+Calculates target state ratios (Folded, PUF1, PUF2, Unfolded) for MoPrP based on thermodynamic
+stability data (Delta G) from literature (JBC publication). It converts Delta G values to
+fractional populations and saves them to a JSON file.
+
+Requirements:
+    - `state_ratios.json` (will be created/updated)
+
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/calculate_state_ratios.py
+
+Output:
+    - `state_ratios.json`: JSON file containing the calculated fractional populations for each state.
 
 data obtained from: https://doi.org/10.1074/jbc.M115.677575
 

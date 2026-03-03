@@ -36,10 +36,12 @@ class OptimiserSettings:
     name: str
     n_steps: int = 100
     tolerance: float = 1e-2
-    convergence: float = 1e-5
+    convergence: float | list[float] = 1e-5
     learning_rate: float = 1e-4
     optimiser_type: str = "adam"
     loss_constants: LossConstants = LossConstants(GAMMA=0.1, LAMBDA=0.1, PHI=0.1, PSI=0.1)
+    ema_alpha: float = 0.5
+    min_steps_per_threshold: int = 2
 
 
 class Optimisable_Parameters(Enum):
