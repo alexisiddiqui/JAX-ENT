@@ -1,129 +1,36 @@
 """
-This script runs featurises the sliced IsoValidation ensembles Iso-BI (filtered) and Iso-TRI (initial) using the JAXENT featurisation methods.
+[Script Name] featurise_CrossVal_MSAss_Filtered.py
+
+[Brief Description of Functionality]
+Featurises the MoPrP trajectories (AF2_MSAss and AF2_filtered) using the Best-Vendruscolo (BV) model.
+This process involves loading the trajectories, a reference topology, and calculating features
+such as heavy atom contacts and H-bond acceptor contacts. It also integrates intrinsic
+exchange rates from HDXer.
+
+Requirements:
+    - Input Trajectories:
+        - `jaxent/examples/2_CrossValidation/data/_cluster_MoPrP/clusters/all_clusters.xtc`
+        - `jaxent/examples/2_CrossValidation/data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc`
+    - Topology: `jaxent/examples/2_CrossValidation/data/MoPrP_max_plddt_4334.pdb` (TeaA_ref_open_state.pdb)
+    - HDXer Intrinsic Rates: `_MoPrP/_output/out__train_MoPrP_af_clean_1Intrinsic_rates.dat`
+    - JAX-ENT library installed.
+
+Usage:
+    python jaxent/examples/2_CrossValidation/fitting/jaxENT/featurise_CrossVal_MSAss_Filtered.py
+
+Output:
+    - Featurised data (.npz) and topology (.json) files in `jaxent/examples/2_CrossValidation/fitting/jaxENT/_featurise/`.
+      Files: `features_AF2_MSAss.npz`, `topology_AF2_MSAss.json`, `features_AF2_filtered.npz`, `topology_AF2_filtered.json`.
 """
 
 import os
 import time
 
 import jax.numpy as jnp
-import MDAnalysis as mda
-from jax import Array
 
-import jaxent.src.interfaces.topology as pt
+from jaxent.examples.common.loading import load_HDXer_kints, featurise_trajectory
 from jaxent.src.custom_types.config import FeaturiserSettings
-from jaxent.src.featurise import run_featurise
-from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_model_Config
-
-
-def load_HDXer_kints(kint_path: str) -> tuple[Array, list[pt.Partial_Topology]]:
-    """
-    Loads the intrinsic rates from a .dat file.
-    Adjsuts the residue indices to be zero-based for termini exclusions
-
-    Returns:
-        kints: jax.numpy array of rates
-        topology_list: list of Partial_Topology objects with resids
-    """
-    rates = []
-    topology_list = []
-    with open(kint_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            if len(parts) != 2:
-                continue
-            resid, rate = int(parts[0]), float(parts[1])
-            rates.append(rate)
-            # Assuming chain 'A' as a default for intrinsic rates if not specified in the file
-            topology_list.append(pt.TopologyFactory.from_single(chain="A", residue=resid))
-    kints = jnp.array(rates)
-    return kints, topology_list
-
-
-def featurise_trajectory(
-    trajectory_path,
-    topology_path,
-    output_dir,
-    output_name,
-    bv_config,
-    featuriser_settings,
-    kint_data,
-):
-    """
-    Featurise a single trajectory and save the results.
-
-    Args:
-        trajectory_path (str): Path to the trajectory file
-        topology_path (str): Path to the topology file
-        output_dir (str): Directory to save output files
-        output_name (str): Base name for output files (e.g., 'iso_tri', 'iso_bi')
-        bv_config: BV model configuration
-        featuriser_settings: Featuriser settings
-
-    Returns:
-        tuple: (features_path, topology_path) of saved files
-    """
-    print(f"Featurising trajectory: {trajectory_path}")
-
-    # Create universe
-    universe = mda.Universe(topology_path, trajectory_path)
-
-    # Create ensemble
-    ensemble = Experiment_Builder(
-        universes=[universe],
-        forward_models=[BV_model(bv_config)],
-    )
-
-    # Run featurisation
-    features, feature_topology = run_featurise(
-        ensemble=ensemble,
-        config=featuriser_settings,
-    )
-
-    # Extract first element (since we have single universe/model)
-    features, feature_topology = features[0], feature_topology[0]
-
-    print(f"Featurised trajectory: {trajectory_path}")
-    # print lengths of features
-    print(f"Heavy contacts length: {len(features.heavy_contacts)}")
-    print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
-    print(f"Kints length: {len(features.k_ints)}")
-
-    _kints, _kint_topology = kint_data
-
-    _kint_topology = pt.TopologyFactory.merge(_kint_topology)
-
-    for top in feature_topology:
-        if not pt.PairwiseTopologyComparisons.intersects(top, _kint_topology):
-            raise ValueError(
-                f"Topology {top} does not intersect with kint topology {_kint_topology}. "
-                "Ensure that the kint topology matches the feature topology."
-            )
-
-    features = BV_input_features(
-        heavy_contacts=features.heavy_contacts,
-        acceptor_contacts=features.acceptor_contacts,
-        k_ints=_kints,
-    )
-
-    # breakpoint()
-    features_path = os.path.join(output_dir, f"features_{output_name}.npz")
-    features.save(features_path)
-    print(f"Saved {output_name} features to: {features_path}")
-
-    # Save topology
-    topology_save_path = os.path.join(output_dir, f"topology_{output_name}.json")
-    pt.PTSerialiser.save_list_to_json(
-        feature_topology,
-        topology_save_path,
-    )
-    print(f"Saved {output_name} topology to: {topology_save_path}")
-
-    return features_path, topology_save_path
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
 
 
 def main():

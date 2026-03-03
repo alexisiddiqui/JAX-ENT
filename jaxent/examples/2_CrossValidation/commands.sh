@@ -61,16 +61,25 @@ python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
     --json_feature_spec jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
     --json_rules_spec jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
 
+python jaxent/examples/2_CrossValidation/analysis/compute_recovery%_PUF.py
+
 
 python jaxent/examples/2_CrossValidation/fitting/jaxENT/featurise_CrossVal_MSAss_Filtered.py
 
 
 python jaxent/examples/2_CrossValidation/fitting/jaxENT/splitdata_CrossVal.py
 
+python jaxent/examples/2_CrossValidation/analysis/analyse_split_CrossVal.py
+
 python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_real.py \
     --dfrac_file jaxent/examples/2_CrossValidation/data/_MoPrP/_output/MoPrP_dfrac.dat \
     --segs_file  jaxent/examples/2_CrossValidation/data/_MoPrP/_output/MoPrP_segments.txt \
     --output_dir jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices/
 
+# main jaxent fitting script
 bash jaxent/examples/2_CrossValidation/fitting/jaxENT/run_maxent_parallel_test.sh
 
+
+# for comparison to HDXer (manuscript only)
+
+python jaxent/examples/2_CrossValidation/analysis/plot_compare_jaxENT_HDXer.py

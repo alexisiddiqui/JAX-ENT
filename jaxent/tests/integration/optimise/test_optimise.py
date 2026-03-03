@@ -442,6 +442,98 @@ def test_uptake_optimiser():
     jax.clear_caches()  # Add this line
 
 
+def test_optimise_sweep_new_features():
+    """Test the _optimise function with new features (list convergence, EMA)."""
+    # Set up the same environment
+    bv_config = BV_model_Config()
+    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
+
+    inst_path = get_inst_path(base_dir)
+    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
+    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
+    test_universe = Universe(str(topology_path), str(trajectory_path))
+    universes = [test_universe]
+    models = [BV_model(bv_config)]
+    ensemble = Experiment_Builder(universes, models)
+
+    features, feature_topology = run_featurise(ensemble, featuriser_settings)
+    BV_features = features[0]
+    trajectory_length = BV_features.features_shape[1]
+
+    params = Simulation_Parameters(
+        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
+        frame_mask=jnp.ones(trajectory_length),
+        model_parameters=[bv_config.forward_parameters],
+        forward_model_weights=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
+        normalise_loss_functions=jnp.ones(1),
+    )
+
+    simulation = Simulation(forward_models=models, input_features=features, params=params)
+    simulation.initialise()
+
+    # Create fake experimental dataset
+    top_segments = pt.mda_TopologyAdapter.find_common_residues(
+        universes, exclude_selection="(resname PRO or resid 1) "
+    )[0]
+    
+    # Simple setup for fake data
+    # We need matching topology for features
+    
+    exp_data = [
+        HDX_protection_factor(protection_factor=10.0, top=top)
+        for i, top in enumerate(feature_topology[0], start=1)
+    ]
+    dataset = ExpD_Dataloader(data=exp_data)
+    
+    # Create simple sparse map for testing (using exp_data for all splits to simplify setup)
+    # We need to ensure we have a valid mapping. Using create_sparse_map is safer.
+    
+    # Re-use logic from test_underscore_optimiser to get valid splits/maps if needed, 
+    # but here we can just mock a single dataset for _optimise
+    
+    # Let's do minimum setup to get a valid sparse map
+    sparse_mapping = create_sparse_map(features[0], feature_topology[0], exp_data)
+    dataset.train = Dataset(
+        data=exp_data,
+        y_true=jnp.array([data.extract_features() for data in exp_data]),
+        residue_feature_ouput_mapping=sparse_mapping,
+    )
+    # We can use same for validation to keep it simple
+    dataset.val = dataset.train
+    dataset.test = dataset.train
+
+    optimizer = OptaxOptimizer(optimizer="adam")
+    opt_state = optimizer.initialise(simulation, [True], _jit_test_args=None)
+
+    # Test with LIST convergence and EMA params
+    n_steps = 20
+    tolerance = 1e-6
+    convergence = [1e-2, 1e-4] # List of thresholds
+    indexes = [0]
+    loss_functions = [hdx_pf_l2_loss]
+    
+    result_simulation, result_optimizer = _optimise(
+        simulation,
+        [dataset],
+        n_steps,
+        tolerance,
+        convergence, # Passing list here
+        indexes,
+        loss_functions,
+        opt_state,
+        optimizer,
+        ema_alpha=0.1, # Custom EMA alpha
+        min_steps_per_threshold=2 # Custom threshold steps
+    )
+
+    assert result_simulation is not None
+    assert result_optimizer is not None
+    
+    print("_optimise with new features completed successfully")
+    jax.clear_caches()
+
+
 if __name__ == "__main__":
     import jax
 
@@ -450,4 +542,5 @@ if __name__ == "__main__":
     os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     # test_underscore_optimiser()
     # test_quick_optimiser()
-    test_uptake_optimiser()
+    # test_uptake_optimiser()
+    test_optimise_sweep_new_features()

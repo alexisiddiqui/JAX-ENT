@@ -1,14 +1,18 @@
 """
+jaxENT_prepare_TeaA_data.py
 
+Prepares TeaA specific data for JAX-ENT processing.
+Processes PDBs and trajectories to ensure compatibility with JAX-ENT featurization.
 This script is used to trim the trajectory files for the TeaA system to only include structures that are less than 1 Å (Calpha RMSD) from either the open or closed state reference structures.
 
-output_dir = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/TeaA/quick_auto_validation_results"
+Requirements:
+    - TeaA dataset (PDBs, trajectories)
 
-open_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb"
-closed_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
-topology_path = open_path
-trajectory_path = "/home/alexi/Documents/JAX-ENT/notebooks/AutoValidation/_Bradshaw/Reproducibility_pack_v2/data/trajectories/sliced_trajectories/TeaA_initial_sliced.xtc"
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/data/jaxENT_prepare_TeaA_data.py
 
+Output:
+    - Prepared data for TeaA in specified directories.
 """
 
 import os

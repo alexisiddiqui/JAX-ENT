@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
 """
-Calculates the mean recovery percentage of conformational states based on clustering assignments.
+[Script Name] compute_recovery%_PUF.py
 
-This script reads clustering data, which assigns each frame of a molecular dynamics trajectory
-to a specific cluster. It then maps these clusters to predefined conformational states (e.g., Folded, PUF1, PUF2).
+[Brief Description of Functionality]
+Calculates the mean "recovery percentage" of conformational states (Folded, PUF1, PUF2, Unfolded)
+based on clustering assignments from MD trajectories. It compares the observed state proportions
+(from clustering) to target proportions (from `state_ratios.json`) to assess how well the
+ensemble captures the expected thermodynamic populations.
 
-Using a target ratio for each state (defined in a JSON file), the script calculates the
-current proportion of each state found in the clustering data. The "recovery percentage" is
-then calculated for each state, defined as:
+Requirements:
+    - Cluster assignments CSV file (from `cluster_LocalFeatures_PUF.py`).
+    - `state_ratios.json` (from `calculate_state_ratios.py`).
 
-    (current_proportion / target_proportion) * 100
+Usage:
+    python jaxent/examples/2_CrossValidation/analysis/compute_recovery%_PUF.py \
+        --cluster_assignments_csv path/to/assignments.csv \
+        --state_ratios_json path/to/state_ratios.json
 
-This provides a measure of how well the observed conformational sampling matches the expected
-thermodynamic populations.
-
-The script assumes a uniform weighting for each frame unless a weights file is provided.
+Output:
+    - Prints recovery statistics to stdout.
 """
 
 import argparse
@@ -130,13 +134,13 @@ def main():
     parser.add_argument(
         "--cluster_assignments_csv",
         type=str,
-        default="/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters/global_frame_to_cluster_ensemble.csv",
+        default="jaxent/examples/2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters/global_frame_to_cluster_ensemble.csv",
         help="Path to the CSV file with cluster assignments for each frame.",
     )
     parser.add_argument(
         "--state_ratios_json",
         type=str,
-        default="/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/analysis/state_ratios.json",
+        default="jaxent/examples/2_CrossValidation/analysis/state_ratios.json",
         help="Path to the JSON file with target state ratios.",
     )
     args = parser.parse_args()

@@ -1,6 +1,16 @@
 """
+plot_compare_jaxENT_HDXer.py
+
+Compares JAX-ENT results with HDXer benchmark results.
 Compare HDXer and jaxENT results with publication-ready plots.
 Creates bar plots of recovery % and KL divergence, panelled by experiment and by ensemble.
+
+Requirements:
+    - JAX-ENT optimization results
+    - HDXer results (.dat or .csv)
+
+Usage:
+    python jaxent/examples/1_IsoValidation_OMass/analysis/plot_compare_jaxENT_HDXer.py
 """
 
 import os

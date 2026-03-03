@@ -21,18 +21,17 @@ dependencies = [
     "networkx[default]>=3.4.2",
     "numpy>=2.2.1",
     "optax>=0.2.4",
+    "pyyaml>=6.0.3",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.1",
     "seaborn>=0.13.2",
+    "statsmodels>=0.14.6",
 ]
 [project.scripts]
 jaxent-featurise = "jaxent.cli.featurise:main"
 jaxent-predict = "jaxent.cli.predict:main"
 jaxent-forward = "jaxent.cli.forward:main"
 jaxent-kCluster = "jaxent.cli.efficient_k_cluster:main"
-
-[tool.setuptools.packages.find]
-where = ["jaxent/src"]
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -43,11 +42,50 @@ pythonpath = [
 ]
 
 
-[tool.setuptools.package-dir]
-"" = "jaxent/src"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# ============================================================================
+# HATCHLING BUILD CONFIGURATION
+# ============================================================================
+
+[tool.hatch.build.targets.wheel]
+# Include the jaxent package with all submodules
+packages = ["jaxent"]
+
+# Exclude directories that should not be packaged
+exclude = [
+    # Test and development directories
+    "jaxent/tests",
+    "jaxent/tests/**",
+    "jaxent/dev",
+    "jaxent/dev/**",
+    "jaxent/deprecated",
+    "jaxent/deprecated/**",
+    "jaxent/scripts",
+    "jaxent/scripts/**",
+    # Python cache and build artifacts (also in .gitignore)
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/.DS_Store",
+]
+
+[tool.hatch.build.targets.sdist]
+# Source distribution includes everything except build artifacts
+exclude = [
+    # Build artifacts and caches
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/.DS_Store",
+    "*.egg-info",
+    "dist/",
+    "build/",
+    ".git/",
+    ".github/",
+]
 
 [dependency-groups]
 dev = [
