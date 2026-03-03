@@ -21,53 +21,53 @@ source .venv/bin/activate
 uv pip install -e .  # you dont need extra flags for the examples to work
 ```
 
-[Optional]: Download the '_Bradshaw' folder from the latest 'ValDXer_500' directory in the google drive link above into the 'data' folder.
+[Optional]: Use the `unpack_iso_validation_data.py` script below to automatically download and prepare the required validation datasets.
 
-## Workflow (based on commands.sh)
+## Workflow (based on alpha-commands.sh)
 
-1. **Get and Prepare Validation Data**
+1. **Prepare Validation Data**
    ```bash
-   python jaxent/examples/1_IsoValidation_OMass/data/get_HDXer_AutoValidation_data.py
+   python jaxent/examples/1_IsoValidation_OMass/unpack_iso_validation_data.py
    ```
-   *Downloads/prepares the initial dataset.*
+   *Downloads and unpacks the quick testing data package (approx. 275MB when unpacked).*
 
-2. **Split Data**
-   ```bash
-   python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/splitdata_ISO.py
-   ```
-   *Splits the data into training and validation sets.*
-
-3. **Plot Intrinsic Rates (Simple)**
-   ```bash
-   python jaxent/examples/1_IsoValidation_OMass/analysis/plot_intrinsic_rates_simple.py
-   ```
-   *Plots simple intrinsic rates.*
-
-4. **Analyse Splits**
-   ```bash
-   python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_split_ISO_TRI_BI.py
-   ```
-   *Analyses the generated data splits (ISO, TRI, BI).*
-
-5. **Extract Synthetic Data**
+2. **Extract Synthetic Data**
    ```bash
    python jaxent/examples/1_IsoValidation_OMass/data/extract_synthetic_data.py
    ```
-   *Extracts synthetic HDX data.*
+   *Extracts synthetic HDX data for the validation study.*
 
-6. **Featurise Ensembles**
+3. **Featurise Ensembles**
    ```bash
    python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py
    ```
-   *Featurises ISO, TRI, and BI ensembles.*
+   *Generates descriptors and features for the ISO, TRI, and BI ensembles.*
+
+4. **Plot Intrinsic Rates (Simple)**
+   ```bash
+   python jaxent/examples/1_IsoValidation_OMass/analysis/plot_intrinsic_rates_simple.py
+   ```
+   *Visualizes the intrinsic exchange rates used in the forward model.*
+
+5. **Split Data**
+   ```bash
+   python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/splitdata_ISO.py
+   ```
+   *Creates training and validation data splits for cross-validation.*
+
+6. **Analyse Splits**
+   ```bash
+   python jaxent/examples/1_IsoValidation_OMass/analysis/analyse_split_ISO_TRI_BI.py
+   ```
+   *Evaluates the coverage and characteristics of the generated data splits.*
 
 7. **Extract Open/Closed Clusters**
    ```bash
    python jaxent/examples/1_IsoValidation_OMass/data/extract_OpenClosed_clusters.py
    ```
-   *Extracts clusters representing Open and Closed states.*
+   *Identifies and extracts conformational clusters representing distinct molecular states.*
 
-8. **Compute Sigma (Covariance Matrices) for Synthetic Data**
+8. **Compute Sigma (Covariance Matrices)**
    ```bash
    # For ISO_BI
    python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/compute_sigma_synthetic.py \
@@ -83,17 +83,25 @@ uv pip install -e .  # you dont need extra flags for the examples to work
        --ensemble_name ISO_TRI \
        --output_dir jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_covariance_matrices_sigma
    ```
+   *Computes covariance matrices (Sigma) for the synthetic ensembles to account for ensemble uncertainty.*
 
-9. **Run Optimisation (MaxEnt Parallel)**
+9. **Run Optimisation and Comprehensive Analysis**
    ```bash
-   # This is for testing only - the full run TBC
+   # Note: This runs several configurations in parallel using background jobs.
    bash jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/run_maxent_parallel_SIGMA_TEST.sh
    ```
+   *Runs a parallel MaxEnt optimization sweep followed by an automated analysis pipeline.*
+
+   ### Analysis Pipeline Discussion
+   The `run_maxent_parallel_SIGMA_TEST.sh` script doesn't just perform the fitting; it automatically executes a series of analysis modules:
+   - **Recovery Analysis**: Determines how accurately the optimization recovers the known target populations (e.g., 60/40 mix of Open/Closed states).
+   - **Weights Validation**: Inspects the final ensemble weights, ensuring they respect the MaxEnt regularization and reporting the resulting Shannon entropy.
+   - **CV Validation**: Aggregates performance metrics (MSE, $R^2$) across all cross-validation splits to ensure model robustness.
+   - **Model Scoring & Selection**: Processes the results through a **Mixed Linear Model** (MLM) framework to statistically rank different hyperparameter combinations (loss functions, split types, $\lambda$ values).
+   - **Process & Plot**: Finally, it scores all models and generates summary plots (e.g., population recovery vs. regularization strength) to facilitate final model selection.
 
 10. **Compare with HDXer (Manuscript Comparison)**
     ```bash
     python jaxent/examples/1_IsoValidation_OMass/analysis/plot_compare_jaxENT_HDXer.py
     ```
-
-
-
+    *Generates final comparison figures against the original HDXer implementation as described in the accompanying manuscript.*

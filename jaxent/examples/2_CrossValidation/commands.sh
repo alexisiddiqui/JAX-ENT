@@ -6,14 +6,7 @@
 # extract _MoPrP.tar
 
 tar -xvf jaxent/examples/2_CrossValidation/data/_MoPrP.tar -C jaxent/examples/2_CrossValidation/data/
-
-# extract _ValDX.tar
-python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
-
-python jaxent/examples/2_CrossValidation/analysis/calculate_state_ratios.py
-
 # get reference PDBs for NMR structures
-
 bash jaxent/examples/2_CrossValidation/data/get_NMR_PDBs.sh
 
 python jaxent/examples/2_CrossValidation/data/renumber_pdb.py \
@@ -28,6 +21,11 @@ python jaxent/examples/2_CrossValidation/data/renumber_pdb.py \
     --output_pdb jaxent/examples/2_CrossValidation/data/_MoPrP/2L1H_renum.pdb \
     --selection "resid 119-231" \
     --resi_start 1
+
+# extract _ValDX.tar
+python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
+
+
 
 # to create clustering map
 
@@ -60,6 +58,10 @@ python jaxent/examples/2_CrossValidation/analysis/cluster_LocalFeatures_PUF.py \
     --save_pdbs \
     --json_feature_spec jaxent/examples/2_CrossValidation/analysis/MoPrP_unfolding_spec.json \
     --json_rules_spec jaxent/examples/2_CrossValidation/analysis/MoPrP_rules_spec.json
+
+
+
+python jaxent/examples/2_CrossValidation/analysis/calculate_state_ratios.py
 
 python jaxent/examples/2_CrossValidation/analysis/compute_recovery%_PUF.py
 
