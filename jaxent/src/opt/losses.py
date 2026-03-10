@@ -25,25 +25,23 @@ def hdx_pf_l2_loss(
     predictions = (
         model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
 
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
-    train_loss = jnp.mean((pred_pf - true_pf) ** 2)
+    train_loss = jnp.mean((train_pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
 
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
-
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
 
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
     # Calculate the L2 loss
-    val_loss = jnp.mean((pred_pf - true_pf) ** 2)
+    val_loss = jnp.mean((val_pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
 
@@ -61,25 +59,23 @@ def hdx_pf_l1_loss(
     predictions = (
         model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
 
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
-    train_loss = jnp.mean((pred_pf - true_pf) ** 1)
+    train_loss = jnp.mean((train_pred_pf - true_pf) ** 1)
     # print(loss)
     # average the loss over the length of the dataset
 
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
-
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
 
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
     # Calculate the L2 loss
-    val_loss = jnp.mean((pred_pf - true_pf) ** 2)
+    val_loss = jnp.mean((val_pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
 
@@ -99,24 +95,23 @@ def hdx_pf_mae_loss(
     predictions = (
         model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
 
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # print(predictions[0].log_Pf)
     # Calculate the L2 loss
-    train_loss = jnp.mean(jnp.abs(pred_pf - true_pf) ** 1)
+    train_loss = jnp.mean(jnp.abs(train_pred_pf - true_pf) ** 1)
     # print(loss)
     # average the loss over the length of the dataset
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
 
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
 
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
     # Calculate the L2 loss
-    val_loss = jnp.mean(jnp.abs(pred_pf - true_pf) ** 1)
+    val_loss = jnp.mean(jnp.abs(val_pred_pf - true_pf) ** 1)
 
     # average the loss over the length of the dataset
 
@@ -135,38 +130,36 @@ def hdx_pf_kld_loss(
     predictions = (
         model.outputs
     )  # TODO: find a way to move the forward call to outside the loss function
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
 
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)  # Flatten to 1D
 
     # Normalise the protection factors
-    pred_pf = jnp.exp(pred_pf) + epsilon
-    pred_pf = pred_pf / jnp.sum(pred_pf)
+    train_pred_pf = jnp.exp(train_pred_pf) + epsilon
+    train_pred_pf = train_pred_pf / jnp.sum(train_pred_pf)
 
     true_pf = jnp.exp(true_pf) + epsilon
     true_pf = true_pf / jnp.sum(true_pf)
 
     # Calculate the KLD loss
     train_loss = optax.losses.convex_kl_divergence(
-        log_predictions=jnp.log(pred_pf), targets=true_pf
+        log_predictions=jnp.log(train_pred_pf), targets=true_pf
     )
 
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)  # Flatten to 1D
-
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
 
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
     # Normalise the protection factors
-    pred_pf = jnp.exp(pred_pf) + epsilon
-    pred_pf = pred_pf / jnp.sum(pred_pf)
+    val_pred_pf = jnp.exp(val_pred_pf) + epsilon
+    val_pred_pf = val_pred_pf / jnp.sum(val_pred_pf)
 
     true_pf = jnp.exp(true_pf) + epsilon
     true_pf = true_pf / jnp.sum(true_pf)
 
     # Calculate the KLD loss
-    val_loss = optax.losses.convex_kl_divergence(log_predictions=jnp.log(pred_pf), targets=true_pf)
+    val_loss = optax.losses.convex_kl_divergence(log_predictions=jnp.log(val_pred_pf), targets=true_pf)
 
     return train_loss, val_loss
 
@@ -192,21 +185,21 @@ def hdx_pf_work_density_loss(
 
     predictions = model.outputs
 
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+
     # Train
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)
 
-    S_pred = compute_entropy(pred_pf)
+    S_pred = compute_entropy(train_pred_pf)
     S_true = compute_entropy(true_pf)
     train_loss = T * jnp.mean(jnp.abs(S_pred - S_true)) / 1000.0
 
     # Val
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.val.y_true.reshape(-1)
 
-    S_pred = compute_entropy(pred_pf)
+    S_pred = compute_entropy(val_pred_pf)
     S_true = compute_entropy(true_pf)
     val_loss = T * jnp.mean(jnp.abs(S_pred - S_true)) / 1000.0
 
@@ -224,21 +217,21 @@ def hdx_pf_work_scale_loss(
 
     predictions = model.outputs
 
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+
     # Train
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)
 
-    mu_pred = jnp.mean(pred_pf)
+    mu_pred = jnp.mean(train_pred_pf)
     mu_true = jnp.mean(true_pf)
     train_loss = R * T * jnp.abs(mu_pred - mu_true) / 1000.0
 
     # Val
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.val.y_true.reshape(-1)
 
-    mu_pred = jnp.mean(pred_pf)
+    mu_pred = jnp.mean(val_pred_pf)
     mu_true = jnp.mean(true_pf)
     val_loss = R * T * jnp.abs(mu_pred - mu_true) / 1000.0
 
@@ -262,21 +255,21 @@ def hdx_pf_work_shape_loss(
 
     predictions = model.outputs
 
+    pred_pf_raw = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
+
     # Train
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf)
+    train_pred_pf = apply_sparse_mapping(dataset.train.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.train.y_true.reshape(-1)
 
-    H_pred = compute_enthalpy(pred_pf)
+    H_pred = compute_enthalpy(train_pred_pf)
     H_true = compute_enthalpy(true_pf)
     train_loss = jnp.mean(jnp.abs(H_pred - H_true)) / 1000.0
 
     # Val
-    pred_pf = jnp.array(predictions[prediction_index].log_Pf).reshape(-1)
-    pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf)
+    val_pred_pf = apply_sparse_mapping(dataset.val.residue_feature_ouput_mapping, pred_pf_raw)
     true_pf = dataset.val.y_true.reshape(-1)
 
-    H_pred = compute_enthalpy(pred_pf)
+    H_pred = compute_enthalpy(val_pred_pf)
     H_true = compute_enthalpy(true_pf)
     val_loss = jnp.mean(jnp.abs(H_pred - H_true)) / 1000.0
 
