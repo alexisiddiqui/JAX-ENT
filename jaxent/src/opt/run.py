@@ -200,7 +200,7 @@ def _optimise(
                 steps_since_threshold_start = 0
                 # _history.add_state(save_state)
                 # break
-            if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
+            if (current_loss.item() < tolerance) or jnp.isnan(current_loss).item() or jnp.isinf(current_loss).item():
                 print(f"Reached convergence tolerance/nan vals at step {step}")
                 break
 
@@ -254,22 +254,28 @@ def _optimise(
                         f"Moving to relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold:.2e}"
                     )
     except Exception as e:
-        raise RuntimeError(
-            f"Optimization failed due to an error: {e}. Returning best state from history.",
-            "\\n" * 10,
+        error_msg = f"Optimization failed due to an error: {e}. Returning best state from history."
+        error_details = [
+            "\n" * 10,
             "Simulation parameters at failure: ",
-            _simulation.params,
-            "\\n" * 10,
-            "Latest save state at failure: ",
-            save_state.params,
-            "\\n" * 10,
+            str(_simulation.params),
+            "\n" * 10,
+        ]
+        if save_state is not None:
+            error_details.extend([
+                "Latest save state at failure: ",
+                str(save_state.params),
+                "\n" * 10,
+            ])
+        error_details.extend([
             "Latest EMA params state at failure: ",
-            ema_params,
-            "\\n" * 10,
+            str(ema_params),
+            "\n" * 10,
             "Opt State parameters at failure: ",
-            opt_state.params,
-            "\\n" * 10,
-        )
+            str(opt_state.params),
+            "\n" * 10,
+        ])
+        raise RuntimeError(error_msg + "".join(str(d) for d in error_details))
 
     print(
         "\\n" * 10,
