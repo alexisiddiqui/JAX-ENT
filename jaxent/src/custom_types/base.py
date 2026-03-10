@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from beartype.typing import Generic, Protocol
+from beartype.typing import Generic, Protocol, Union
 from beartype.typing import runtime_checkable   
 
 import MDAnalysis as mda
@@ -40,9 +40,18 @@ class ForwardModel(ABC, Generic[T_Params, T_In, T_Config]):
         self.key = self.config.key
 
     @abstractmethod
-    def initialise(self, ensemble: list[Universe]) -> bool:
+    def initialise(self, ensemble: Union[list[Universe], list[Partial_Topology]]) -> bool:
         """
-        This should be some form of validation to ensure that the data is compatible with the forward model.
+        Validate compatibility of the forward model with an ensemble.
+
+        Accepts either a list of MDAnalysis Universe objects (for full trajectory-based
+        initialisation) or a list of pre-computed Partial_Topology objects (for
+        topology-only initialisation when trajectory data is unavailable or unnecessary).
+
+        When initialised from Partial_Topology objects the common topology is set
+        directly from the provided topologies. Universe-dependent quantities such as
+        intrinsic exchange rates (k_ints) and frame counts are not computed and must be
+        supplied through other means before featurisation is called.
         """
         pass
 

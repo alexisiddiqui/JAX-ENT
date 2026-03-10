@@ -1,4 +1,9 @@
-from warnings import deprecated
+import sys
+
+if sys.version_info >= (3, 13):
+    from warnings import deprecated
+else:
+    from typing_extensions import deprecated  # type: ignore[no-redef]
 
 import numpy as np
 from beartype.typing import Optional
