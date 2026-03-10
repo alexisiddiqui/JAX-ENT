@@ -6,7 +6,7 @@ Comprehensive code review of the JAX-ENT codebase — a JAX-based Maximum Entrop
 
 ## Critical Issues (Bugs / Correctness)
 
-### 1. NaN/Inf comparison bug — `src/opt/run.py:203`
+<!-- ### 1. NaN/Inf comparison bug — `src/opt/run.py:203`
 ```python
 if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
 ```
@@ -14,17 +14,11 @@ if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == j
 
 **Fix:** `jnp.isnan(current_loss) or jnp.isinf(current_loss)`
 
-### 7. Boolean context for JAX arrays — `src/opt/run.py:203`
-`current_loss < tolerance` produces a JAX array used in Python `if`. Works in eager mode but would fail under `jax.jit`. If this path is ever JIT-compiled, it will break.
+### [x] 7. Boolean context for JAX arrays — `src/opt/run.py:203`
+`current_loss < tolerance` produces a JAX array used in Python `if`. Works in eager mode but would fail under `jax.jit`. If this path is ever JIT-compiled, it will break. -->
 
 
-### 3. Sparse matrix converted to dense — `src/data/splitting/sparse_map.py:235`
-```python
-return jnp.squeeze(sparse_map.todense() @ features)
-```
-Defeats the purpose of BCOO sparse representation. For large systems this causes unnecessary memory allocation.
 
-**Fix:** Use `sparse_map @ features` directly (JAX BCOO supports matmul).
 
 ---
 
@@ -46,11 +40,6 @@ This creates N separate trace calls instead of using `jax.vmap` or `jax.lax.scan
 
 ## Medium Priority Issues
 
-### 8. Missing epsilon in weight normalization — `src/opt/loss/base.py:56`
-Division by `sum_weights` without epsilon protection. If all weights are zero (or near-zero after epsilon addition), this produces NaN.
-
-### 9. Unsafe pytree creation — `src/interfaces/simulation.py:93-100`
-Uses `object.__new__` and `object.__setattr__` to bypass frozen dataclass validation and beartype. Fragile and circumvents type safety.
 
 ### 10. Inconsistent error handling
 - `src/interfaces/builder.py` uses bare `assert` (stripped in `-O` mode, no error messages)
@@ -95,7 +84,7 @@ Uses `object.__new__` and `object.__setattr__` to bypass frozen dataclass valida
 
 ---
 
-## Low Priority / Housekeeping
+## Low Priority / Housekeeping / Performance
 
 - `m_key = NewType("m_key", str)` provides no runtime enforcement
 - `HDX_peptide.dfrac` accepts overly permissive types without 0-1 range validation
@@ -118,6 +107,15 @@ cls = getattr(module, class_name)
 An untrusted HDF5 file can inject arbitrary `class_info` strings, leading to arbitrary code execution via `importlib.import_module`. This is a **deserialization vulnerability**.
 
 **Fix:** Validate `class_info` against a whitelist of allowed classes before import.
+
+### 3. Sparse matrix converted to dense — `src/data/splitting/sparse_map.py:235`
+```python
+return jnp.squeeze(sparse_map.todense() @ features)
+```
+Defeats the purpose of BCOO sparse representation. For large systems this causes unnecessary memory allocation.
+
+**Fix:** Use `sparse_map @ features` directly (JAX BCOO supports matmul).
+
 ---
 
 ## Architectural Strengths
@@ -135,10 +133,10 @@ An untrusted HDF5 file can inject arbitrary `class_info` strings, leading to arb
 
 ## Recommended Priority Order
 
-1. **Fix NaN comparison bug** (`opt/run.py:203`) — correctness, trivial fix
+1. **[x] Fix NaN comparison bug** (`opt/run.py:203`) — correctness, trivial fix
 2. **Add HDF5 class whitelist** (`utils/hdf.py`) — security
 3. **Use sparse matmul** (`sparse_map.py:235`) — correctness/performance
-4. **Add gradient verification tests** — testing gap, prevents regression
+<!-- 4. **Add gradient verification tests** — testing gap, prevents regression -->
 5. **Fix forward pass in loss loop** (`opt/losses.py`) — performance
 6. **Remove prints from JIT path** (`models/core.py`) — JAX correctness
 7. **Add epsilon to weight division** (`opt/loss/base.py`) — numerical stability
