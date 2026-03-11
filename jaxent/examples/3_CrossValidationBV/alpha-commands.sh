@@ -54,9 +54,9 @@
 
 # Uses data from the previous steps
 
-cp -R jaxent/examples/2_CrossValidation/fitting/jaxENT/_datasplits jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_datasplits
+cp -R jaxent/examples/2_CrossValidation/fitting/jaxENT/_datasplits jaxent/examples/3_CrossValidationBV/fitting/jaxENT/
 
-cp -R jaxent/examples/2_CrossValidation/fitting/jaxENT/_featurise jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_featurise
+cp -R jaxent/examples/2_CrossValidation/fitting/jaxENT/_featurise jaxent/examples/3_CrossValidationBV/fitting/jaxENT/
 
 mkdir -p jaxent/examples/3_CrossValidationBV/data/
 
