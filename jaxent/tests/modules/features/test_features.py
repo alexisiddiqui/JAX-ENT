@@ -343,7 +343,7 @@ class TestClassMetadata:
     def test_bv_input_features_metadata(self):
         """Test BV_input_features class metadata."""
         assert hasattr(BV_input_features, "__features__")
-        assert BV_input_features.__features__ == {"heavy_contacts", "acceptor_contacts"}
+        assert BV_input_features.__features__ == {"heavy_contacts", "acceptor_contacts", "k_ints"}
 
         assert hasattr(BV_input_features, "key")
         assert isinstance(BV_input_features.key, set)
