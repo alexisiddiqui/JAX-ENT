@@ -4,8 +4,6 @@
 
 JAX-ENT currently supports only HDX-MS data (peptide-level deuterium exchange, residue-level protection factors). To become a general ensemble reweighting toolkit, it needs to support SAXS and XL-MS (cross-linking mass spectrometry). These data types have different topology structures and output-to-observation mappings, but all use the same execution model: **average features across frames, then apply the forward model**.
 
-Any nonlinear observable (e.g., NMR r^-6 averaging) is handled by choosing what to featurise per frame (e.g., featurise 1/r^6 directly), not by changing the forward pass ordering.
-
 ### Current state of the codebase
 
 - **HDX-only today.** There is no existing SAXS support in `jaxent/src/custom_types/` or `jaxent/src/models/`. There is no existing XL-MS support either.
