@@ -190,7 +190,7 @@ class Simulation:
 
                 # Slice feature arrays along frame dimension
                 for feat_name in feature.__features__:
-                    feat_array = getattr(feature, feat_name)
+                    feat_array = getattr(feature, feat_name) 
                     if feat_array is not None and getattr(feat_array, "ndim", 0) >= 2 and feat_array.shape[-1] == n_frames:
                         frame_data[feat_name] = feat_array[..., frame_idx : frame_idx + 1]
                     else:
