@@ -24,7 +24,7 @@ class BV_input_features(Input_Features):
     acceptor_contacts: Float[Array, "n_residues n_frames"] | Float[Array, " n_residues"] | Float[ndarray, "n_residues n_frames"] | Float[ndarray, " n_residues"]
     k_ints: Float[Array, " n_residues"] | Float[ndarray, " n_residues"] | None = None
 
-    __features__: ClassVar[set[str]] = {"heavy_contacts", "acceptor_contacts"}
+    __features__: ClassVar[set[str]] = {"heavy_contacts", "acceptor_contacts", "k_ints"}
     key: ClassVar[set[m_key]] = {m_key("HDX_resPF"), m_key("HDX_peptide")}
 
     @property

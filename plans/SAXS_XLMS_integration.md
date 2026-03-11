@@ -4,16 +4,23 @@
 
 JAX-ENT currently supports only HDX-MS data (peptide-level deuterium exchange, residue-level protection factors). To become a general ensemble reweighting toolkit, it needs to support SAXS and XL-MS (cross-linking mass spectrometry). These data types have different topology structures and output-to-observation mappings, but all use the same execution model: **average features across frames, then apply the forward model**.
 
-Any nonlinear observable (e.g., NMR r^-6 averaging) is handled by choosing what to featurise per frame (e.g., featurise 1/r^6 directly), not by changing the forward pass ordering. No `ForwardPassMode` enum is needed.
+Any nonlinear observable (e.g., NMR r^-6 averaging) is handled by choosing what to featurise per frame (e.g., featurise 1/r^6 directly), not by changing the forward pass ordering.
+
+### Current state of the codebase
+
+- **HDX-only today.** There is no existing SAXS support in `jaxent/src/custom_types/` or `jaxent/src/models/`. There is no existing XL-MS support either.
+- `Dataset` (`jaxent/src/data/loader.py`) is registered as a JAX pytree dataclass with `residue_feature_ouput_mapping: sparse.BCOO` as a data field. Many tests instantiate `Dataset(...)` directly with this kwarg.
+- `ExpD_Dataloader.create_datasets()` hardcodes `create_sparse_map()` calls for HDX residue-to-peptide mapping.
+- `create_functional_loss` in `jaxent/src/opt/loss/base.py` hardcodes `.log_Pf` and `.uptake` attribute access. Additionally, `jaxent/src/opt/losses.py` contains many HDX-specific loss functions that access these attributes directly.
+- The system is *partially* generic (ForwardModel protocol, m_key dispatch, Input/Output_Features base classes) but the data layer and loss layer are HDX-specific.
 
 ### Data type summary
 
 | Type | Topology | Features (per frame) | Forward model | Mapping |
 |------|----------|---------------------|--------------|---------|
-| HDX-MS (existing) | Peptide/residue fragments (2D seq) | Contacts per residue | BV/netHDX -> log(Pf) or uptake | Sparse (n_peptides, n_residues) |
-| SAXS 1D (pre-computed) | Whole construct | I(q) curves | Identity/scaling | Identity |
-| SAXS 2D (Debye) | Whole construct | Pairwise distances | Debye formula -> I(q) | Identity |
-| XL-MS | Residue pairs | Pairwise distances | Identity/distance extraction | PairIndex (i,j) -> scalar |
+| HDX-MS (existing) | Peptide fragments (2D seq) | Contacts per residue `(n_res, n_frames)` | BV/netHDX -> log(Pf) or uptake | Sparse (n_peptides, n_residues) |
+| SAXS (Debye 6-term) | Whole construct | 6 basis profiles `(6, n_q, n_frames)` | Cross-term formula with c1, c2, c, b | Identity |
+| XL-MS | Residue pairs | Pairwise distances `(n_res, n_res, n_frames)` | Identity/distance extraction | PairIndex (i,j) -> scalar |
 
 ---
 
@@ -29,6 +36,7 @@ class DataMapping(Protocol):
     """Protocol for mapping model outputs to observation space."""
     def apply(self, predictions: Array) -> Array: ...
 
+@partial(jax.tree_util.register_dataclass, data_fields=["sparse_map"], meta_fields=[])
 @dataclass(frozen=True, slots=True)
 class SparseFragmentMapping:
     """Wraps existing BCOO sparse map (HDX). Shape: (n_fragments, n_residues)."""
@@ -36,12 +44,14 @@ class SparseFragmentMapping:
     def apply(self, predictions: Array) -> Array:
         return apply_sparse_mapping(self.sparse_map, predictions)
 
+@partial(jax.tree_util.register_dataclass, data_fields=[], meta_fields=[])
 @dataclass(frozen=True, slots=True)
 class IdentityMapping:
     """No-op mapping for whole-construct outputs (SAXS)."""
     def apply(self, predictions: Array) -> Array:
         return predictions
 
+@partial(jax.tree_util.register_dataclass, data_fields=["indices_i", "indices_j"], meta_fields=[])
 @dataclass(frozen=True, slots=True)
 class PairIndexMapping:
     """Extracts specific residue pairs from a pairwise distance matrix (XL-MS).
@@ -53,7 +63,24 @@ class PairIndexMapping:
         return predictions[self.indices_i, self.indices_j]
 ```
 
-Register `SparseFragmentMapping` and `PairIndexMapping` as JAX pytree nodes (their array fields are dynamic). `IdentityMapping` is stateless but register for consistency.
+Note: Using `jax.tree_util.register_dataclass` avoids writing boilerplate `tree_flatten`/`tree_unflatten` functions while successfully registering these mapping protocol instances as JAX pytree nodes.
+
+**Also add `create_pair_index_mapping()` factory** in the same file (analogous to `create_sparse_map()` for HDX):
+
+```python
+def create_pair_index_mapping(
+    feature_topology: Sequence[Partial_Topology],
+    xlms_datapoints: Sequence[XLMS_distance_restraint],
+) -> PairIndexMapping:
+    """Build a PairIndexMapping from XL-MS datapoints and feature topology.
+
+    Maps each datapoint's (top, top_j) pair to indices into the feature
+    topology's residue ordering.
+    """
+    # For each datapoint, find the index of top and top_j in feature_topology
+    # Returns PairIndexMapping(indices_i, indices_j)
+    ...
+```
 
 **Reuses:** `apply_sparse_mapping` from `jaxent/src/data/splitting/sparse_map.py`
 
@@ -100,15 +127,21 @@ class XLMS_distance_restraint(ExpD_Datapoint):
     def _create_from_features(cls, topology, features): ...
 ```
 
+**Update:** `jaxent/src/custom_types/__init__.py` to export the new types.
+
 **Follows pattern of:** `jaxent/src/custom_types/HDX.py` (HDX_peptide, HDX_protection_factor)
 
 ---
 
 ## Step 3: Dataset and Dataloader Generalisation
 
+> Do not try to hack backwards compatibility into the data structure itself.
+> Keep the `Dataset` class simple and pure: `data_mapping` is the only field.
+> Perform a clean, localized "find-and-replace" refactor across the test suite, changing `Dataset(residue_feature_ouput_mapping=...)` to `Dataset(data_mapping=SparseFragmentMapping(sparse_map=...))` to keep the core architecture explicitly clean.
+
 **File:** `jaxent/src/data/loader.py`
 
-Update `Dataset` to accept generalised mapping while preserving backwards compatibility:
+The current `Dataset` registers `residue_feature_ouput_mapping` as a JAX dataclass data field, and tests construct `Dataset(...)` directly with this kwarg. The approach is to add `data_mapping` as the new generalised field and simply remove the legacy path.
 
 ```python
 @partial(
@@ -120,26 +153,19 @@ Update `Dataset` to accept generalised mapping while preserving backwards compat
 class Dataset:
     data: Sequence[ExpDDatapointLike]
     y_true: Float[Array, "n_fragments ..."]
-    data_mapping: DataMapping  # generalised - replaces residue_feature_ouput_mapping
+    data_mapping: DataMapping  # generalised mapping
     covariance_matrix: Float[Array, "n_fragments n_fragments"] | None = None
-
-    @property
-    def residue_feature_ouput_mapping(self):
-        """Backwards compat: returns BCOO if mapping is SparseFragmentMapping."""
-        if isinstance(self.data_mapping, SparseFragmentMapping):
-            return self.data_mapping.sparse_map
-        raise AttributeError("This dataset does not use sparse fragment mapping")
 ```
 
 Update `ExpD_Dataloader.create_datasets()`:
 - Accept optional `mapping_factory: Callable | None = None` parameter
-- Default behaviour: wraps `create_sparse_map()` result in `SparseFragmentMapping`
+- Default behaviour: wraps `create_sparse_map()` result in `SparseFragmentMapping` (HDX path unchanged)
 - Custom factory receives `(features, feature_topology, data_split)` and returns a `DataMapping`
-- Pass `data_mapping=...` instead of `residue_feature_ouput_mapping=...` when constructing `Dataset`
+- Pass `data_mapping=...` when constructing `Dataset`
 
 **File:** `jaxent/src/custom_types/protocols.py`
 
-Update `DatasetLike`:
+Update `DatasetLike` to use generalised mapping:
 
 ```python
 @runtime_checkable
@@ -150,11 +176,11 @@ class DatasetLike(Protocol):
 
 ---
 
-## Step 4: Simulation outputs_by_key and model_key_index
+## Step 4: Simulation outputs_by_key
 
 **File:** `jaxent/src/models/core.py`
 
-Add `outputs_by_key` property to `Simulation`:
+Add `outputs_by_key` property to `Simulation` (low-risk convenience layer):
 
 ```python
 @property
@@ -162,33 +188,7 @@ def outputs_by_key(self) -> dict[m_key, Output_Features]:
     return {output.key: output for output in self.outputs}
 ```
 
-No changes to `__init__`, `forward_pure`, or `forward` — the existing execution path handles all models since they all use `AVERAGE_THEN_FORWARD`.
-
-**File:** `jaxent/src/interfaces/simulation.py`
-
-Add `model_key_index` to `Simulation_Parameters` as a static field:
-
-```python
-@dataclass(frozen=True, slots=True)
-class Simulation_Parameters:
-    frame_weights: Float[Array, " n_frames"]
-    frame_mask: ...
-    model_parameters: Sequence[Model_Parameters]
-    forward_model_weights: Float[Array, " n_models"]
-    normalise_loss_functions: ...
-    forward_model_scaling: Float[Array, " n_models"]
-    model_key_index: tuple[m_key, ...] | None = None  # NEW - static
-
-    def get_model_params_by_key(self, key: m_key) -> Model_Parameters:
-        if self.model_key_index is None:
-            raise ValueError("model_key_index not set")
-        idx = self.model_key_index.index(key)
-        return self.model_parameters[idx]
-```
-
-Update `tree_flatten` to include `model_key_index` in `static` tuple.
-Update `tree_unflatten` to restore it.
-Update `param_labels`, `normalize_weights`, `normalize_masked_loss_scalingweights`, `propagate_model_parameters` to pass through `model_key_index`.
+No changes to `__init__`, `forward_pure`, or `forward` -- the existing execution path handles all models.
 
 **File:** `jaxent/src/custom_types/protocols.py`
 
@@ -201,6 +201,10 @@ class SimulationLike(Protocol):
     outputs: Sequence[Output_Features]
     outputs_by_key: dict[m_key, Output_Features]
 ```
+
+### Deferred: model_key_index on Simulation_Parameters
+
+Persisting `model_key_index` inside `Simulation_Parameters` is deferred from the first implementation pass. `Simulation_Parameters` is a JAX pytree and changing its static/dynamic layout has wider implications for optax multi_transform labelling, gradient masking, and all static methods (`normalize_weights`, `param_labels`, etc.). Int-based indexing via `indexes` in `run_optimise` is sufficient for the initial mixed-model workflows. If real mixed-model usage reveals int-indexing is insufficient, `model_key_index` can be added as a follow-up.
 
 ---
 
@@ -249,24 +253,57 @@ Key changes vs current (`jaxent/src/opt/loss/base.py:120-169`):
 - Uses `data_mapping.apply()` instead of direct `apply_sparse_mapping()`
 - Supports `m_key` indexing via `outputs_by_key`
 
-**Backwards compatibility:** Existing loss functions in `opt/losses.py` that access `.log_Pf` directly continue to work for HDX. Migrate them to `create_functional_loss` + `y_pred()` gradually.
+### Legacy loss audit
+
+`jaxent/src/opt/losses.py` contains many HDX-specific loss functions (`hdx_pf_l2_loss`, `hdx_pf_l1_loss`, `hdx_pf_kld_loss`, etc.) that directly access `.log_Pf` and call `apply_sparse_mapping`. These remain HDX-specific and continue to work unchanged. After `create_functional_loss` is generalised:
+- Audit `opt/losses.py` to identify which losses are truly HDX-specific vs. generic
+- Generic losses (L2, L1, KLD on mapped predictions) should be migrated to use `create_functional_loss` + `y_pred()`
+- HDX-specific losses (e.g., those that access protection factor semantics) stay as-is
 
 ---
 
 ## Step 6: New Forward Model Stubs (architecture only)
 
+### SAXS: Six Cross-Term Decomposition
+
+The Debye SAXS forward model decomposes into offline O(N^2) precomputation + O(1) online optimization:
+
+**Precomputation (offline, per frame k):** Compute 6 basis intensity profiles from atomic form factors and coordinates:
+- `I_vv,k(q)` = vacuum-vacuum
+- `I_ve,k(q)` = vacuum-excluded
+- `I_vh,k(q)` = vacuum-hydration
+- `I_ee,k(q)` = excluded-excluded
+- `I_eh,k(q)` = excluded-hydration
+- `I_hh,k(q)` = hydration-hydration
+
+Output tensor per trajectory: `(n_frames, 6, n_q)`
+
+**Online forward model:** Ensemble-average the 6 basis profiles using frame weights w_k, then combine with optimizable parameters c1, c2, c, b:
+
+```
+<I_xx(q)> = sum_k w_k * I_xx,k(q)     # frame averaging (existing machinery)
+
+I_ens(q) = <I_vv> - 2*c1*<I_ve> + 2*c2*<I_vh> + c1^2*<I_ee> - 2*c1*c2*<I_eh> + c2^2*<I_hh>
+
+I_calc(q) = c * I_ens(q) + b           # scale + background
+```
+
+This is scalar algebra on averaged features -- O(1) per q-point during optimization.
+
 **New directory:** `jaxent/src/models/SAXS/`
 - `__init__.py`
-- `config.py`: `SAXS_Debye_Config(BaseConfig)` with `q_values` array, key = `m_key("SAXS_Iq")`
-- `parameters.py`: `SAXS_Model_Parameters(Model_Parameters)` with `scaling_factor`, `background` (both dynamic)
+- `config.py`: `SAXS_Config(BaseConfig)` with `q_values` array, key = `m_key("SAXS_Iq")`
+- `parameters.py`: `SAXS_Model_Parameters(Model_Parameters)`
+  - Dynamic (optimizable): `c1` (excluded volume), `c2` (hydration), `c` (scale), `b` (background)
+  - Static: `key`
 - `features.py`:
-  - `SAXS_pairwise_input_features(Input_Features)`: pairwise distances `(n_residues, n_residues, n_frames)` for Debye 2D mode
-  - `SAXS_curve_input_features(Input_Features)`: pre-computed I(q) curves `(n_q, n_frames)` for 1D mode
-  - `SAXS_output_features(Output_Features)`: intensity array `(n_q,)` with `y_pred()` returning intensity
-- `forwardmodel.py`: `SAXS_Debye_model(ForwardModel)`
+  - `SAXS_basis_input_features(Input_Features)`: 6 basis profiles, shape `(6, n_q, n_frames)`. `__features__ = {"basis_profiles"}`. After frame averaging produces `(6, n_q)`.
+  - `SAXS_output_features(Output_Features)`: intensity array `(n_q,)` with `y_pred()` returning `intensity`. `key = m_key("SAXS_Iq")`
+- `forwardmodel.py`: `SAXS_model(ForwardModel)` -- dispatches to appropriate forward pass
 - `forward.py`:
-  - `SAXS_Debye_ForwardPass` -- Debye formula on ensemble-averaged pairwise distances
-  - `SAXS_identity_ForwardPass` -- scaling/background correction on pre-averaged I(q) curves
+  - `SAXS_ForwardPass` -- takes averaged `(6, n_q)` basis profiles + `SAXS_Model_Parameters(c1, c2, c, b)`, applies the cross-term formula, returns `SAXS_output_features(intensity)`
+
+### XL-MS
 
 **New directory:** `jaxent/src/models/XLMS/`
 - `__init__.py`
@@ -286,24 +323,51 @@ Key changes vs current (`jaxent/src/opt/loss/base.py:120-169`):
 
 | Phase | Description | Risk | Files |
 |-------|-------------|------|-------|
-| 1 | `DataMapping` protocol + implementations | Low | new `mapping.py` |
-| 2 | SAXS/XLMS datapoint types | Low | new `SAXS.py`, `XLMS.py` |
-| 3 | `Dataset` generalisation + `DatasetLike` update | Medium | `loader.py`, `protocols.py` |
-| 4 | `outputs_by_key` + `model_key_index` + `SimulationLike` | Medium | `core.py`, `simulation.py`, `protocols.py` |
-| 5 | Loss routing generalisation (`create_functional_loss`) | Medium | `opt/loss/base.py` |
+| 1 | `DataMapping` protocol + implementations + `create_pair_index_mapping` | Low | new `mapping.py` |
+| 2 | SAXS/XLMS datapoint types + `__init__.py` exports | Low | new `SAXS.py`, `XLMS.py`, `custom_types/__init__.py` |
+| 3 | `Dataset` generalisation (additive) + `DatasetLike` update | Medium | `loader.py`, `protocols.py` |
+| 4 | `outputs_by_key` + `SimulationLike` update | Low | `core.py`, `protocols.py` |
+| 5 | Loss routing generalisation (`create_functional_loss`) + audit `losses.py` | Medium | `opt/loss/base.py`, `opt/losses.py` (audit only) |
 | 6 | Model stubs (SAXS, XLMS) | Low | new `models/SAXS/`, `models/XLMS/` |
 
 No changes to `Simulation.forward_pure` -- all models use the existing average-then-forward path.
+`model_key_index` on `Simulation_Parameters` is deferred unless int-based indexing proves insufficient.
+
+---
+
+## Files touched (complete list)
+
+**New files:**
+- `jaxent/src/data/splitting/mapping.py` -- DataMapping protocol, SparseFragmentMapping, IdentityMapping, PairIndexMapping, create_pair_index_mapping
+- `jaxent/src/custom_types/SAXS.py` -- SAXS_curve datapoint
+- `jaxent/src/custom_types/XLMS.py` -- XLMS_distance_restraint datapoint
+- `jaxent/src/models/SAXS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py`
+- `jaxent/src/models/XLMS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py`
+
+**Modified files:**
+- `jaxent/src/custom_types/__init__.py` -- export new types
+- `jaxent/src/custom_types/protocols.py` -- update DatasetLike, SimulationLike
+- `jaxent/src/data/loader.py` -- Dataset generalisation (additive), ExpD_Dataloader.create_datasets mapping_factory
+- `jaxent/src/models/core.py` -- add outputs_by_key property
+- `jaxent/src/opt/loss/base.py` -- generalise create_functional_loss
+
+**Test files to add/update:**
+- `jaxent/tests/unit/data/test_mapping.py` -- DataMapping implementations
+- `jaxent/tests/unit/opt/` -- loss regression tests
+- `jaxent/tests/integration/optimise/` -- mixed-model integration tests
+- Existing tests under `jaxent/tests/losses/` -- verify HDX losses unchanged
 
 ---
 
 ## Verification Plan
 
-1. **Existing HDX tests pass unchanged** after each phase (run `pytest` after every phase)
+1. **Existing HDX tests pass unchanged** after each phase (`pytest` after every phase)
 2. **Unit test `DataMapping`**: verify `SparseFragmentMapping.apply()` matches existing `apply_sparse_mapping()`, `IdentityMapping` is identity, `PairIndexMapping` extracts correct pairs from a known distance matrix
-3. **Unit test `Dataset` backwards compat**: verify `dataset.residue_feature_ouput_mapping` property works when `data_mapping` is `SparseFragmentMapping`
-4. **Unit test `outputs_by_key`**: create `Simulation` with known outputs, verify dict access by `m_key`
-5. **Unit test `model_key_index`**: verify `get_model_params_by_key()` returns correct parameters
-6. **Unit test generalised `create_functional_loss`**: verify loss computation produces same results as legacy when using `SparseFragmentMapping` + HDX output features
-7. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
-8. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
+3. **Unit test `create_pair_index_mapping`**: verify factory builds correct index arrays from XL-MS datapoints + feature topology
+4. **Update existing tests**: perform find-and-replace to migrate existing `Dataset(residue_feature_ouput_mapping=...)` constructions to use `data_mapping=SparseFragmentMapping(sparse_map=...)`.
+5. **Regression tests for direct `Dataset(...)` construction** used throughout the existing test suite
+6. **Unit test `outputs_by_key`**: create `Simulation` with known outputs, verify dict access by `m_key`
+7. **Unit test generalised `create_functional_loss`**: verify loss computation produces same results as legacy when using `SparseFragmentMapping` + HDX output features
+8. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor
+9. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
+10. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
