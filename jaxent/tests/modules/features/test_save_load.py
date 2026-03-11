@@ -614,7 +614,7 @@ class TestSaveLoadMetadata:
         assert str(raw_data["__class_name__"].item()) == "BV_input_features"
 
         dynamic_slots = tuple(raw_data["__dynamic_slots__"])
-        expected_dynamic = {"heavy_contacts", "acceptor_contacts"}
+        expected_dynamic = {"heavy_contacts", "acceptor_contacts", "k_ints"}
         assert set(dynamic_slots) == expected_dynamic
 
         for slot in dynamic_slots:
