@@ -42,7 +42,7 @@ def hdx_pf_l2_loss(
 
     true_pf = dataset.val.y_true.reshape(-1)  # Flatten to 1D
 
-    # Calculate the L2 loss
+    # Calculate the L2 loss     
     val_loss = jnp.mean((pred_pf - true_pf) ** 2)
     # print(loss)
     # average the loss over the length of the dataset
