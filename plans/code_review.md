@@ -25,7 +25,7 @@ if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == j
 ## High Priority Issues
 
 ### 4. Forward pass computed inside loss function (performance) — `src/opt/losses.py:27,63,101,137`
-Each loss function recomputes `model.outputs` instead of receiving pre-computed predictions. In the optimization loop with N loss functions, this means N redundant forward passes per step.
+Each loss function recomputes `model.outputs` instead of receiving pre-computed predictions. In the optimization loop with N loss functions, this means N redundant forward passes per step. -> Fixed to use more flexible model interface - need to update this so that features are selected in an efficient and extendable way.
 
 
 ### 6. Python for-loop over frame dimension — `src/models/core.py:187-206`
