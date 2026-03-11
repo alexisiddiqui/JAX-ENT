@@ -257,12 +257,12 @@ Key changes vs current (`jaxent/src/opt/loss/base.py:120-169`):
 
 `jaxent/src/opt/losses.py` contains many HDX-specific loss functions (`hdx_pf_l2_loss`, `hdx_pf_l1_loss`, `hdx_pf_kld_loss`, etc.) that directly access `.log_Pf` and call `apply_sparse_mapping`. These remain HDX-specific and continue to work unchanged. After `create_functional_loss` is generalised:
 - Audit `opt/losses.py` to identify which losses are truly HDX-specific vs. generic
-- Generic losses (L2, L1, KLD on mapped predictions) should be migrated to use `create_functional_loss` + `y_pred()`
-- HDX-specific losses (e.g., those that access protection factor semantics) stay as-is
+- Generic losses (L2, L1, KLD on mapped predictions) should be cloned to use `create_functional_loss` + `y_pred()` in `jaxent/src/opt/loss/`
+- 'jaxent/src/opt/losses.py' should stay as is as these are currently used in the examples - the examples will be moved over to a functional loss style after verificatoin that everything is working as expected.
 
 ---
 
-## Step 6: New Forward Model Stubs (architecture only)
+## Step 6: New Forward Models
 
 ### SAXS: Six Cross-Term Decomposition
 
@@ -361,13 +361,14 @@ No changes to `Simulation.forward_pure` -- all models use the existing average-t
 
 ## Verification Plan
 
-1. **Existing HDX tests pass unchanged** after each phase (`pytest` after every phase)
+1. **Existing HDX tests pass unchanged** after each phase (`pytest` after every phase - make sure you use the .venv and try to run targeted tests as it takes 4-5 minutes to run all key tests)
 2. **Unit test `DataMapping`**: verify `SparseFragmentMapping.apply()` matches existing `apply_sparse_mapping()`, `IdentityMapping` is identity, `PairIndexMapping` extracts correct pairs from a known distance matrix
 3. **Unit test `create_pair_index_mapping`**: verify factory builds correct index arrays from XL-MS datapoints + feature topology
 4. **Update existing tests**: perform find-and-replace to migrate existing `Dataset(residue_feature_ouput_mapping=...)` constructions to use `data_mapping=SparseFragmentMapping(sparse_map=...)`.
 5. **Regression tests for direct `Dataset(...)` construction** used throughout the existing test suite
 6. **Unit test `outputs_by_key`**: create `Simulation` with known outputs, verify dict access by `m_key`
 7. **Unit test generalised `create_functional_loss`**: verify loss computation produces same results as legacy when using `SparseFragmentMapping` + HDX output features
-8. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor
-9. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
-10. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
+8. **Unit test Data Splitting**: Verify that the datasplitter can split SAXS and XL-MS data with random and stratified splitting strategies using simple synthetic data. Will test the other splits later.
+9. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor.
+10. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
+11. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
