@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 import time
 from beartype.typing import Callable, Optional, TypedDict, cast
@@ -17,6 +18,8 @@ from jaxent.src.models.core import Simulation
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -88,6 +91,21 @@ def _optimise(
         previous_loss = None
         prev_opt_state = None  # replace this with opt_state
         for step in range(n_steps):
+            # --- Python-level warmup LR switch ---
+            # This is intentionally handled here (not inside _step) because ``step``
+            # is a concrete Python integer, making it safe to use as a branch
+            # condition without breaking jax.jit or jax.vmap on _step.
+            if step == optimizer.initial_steps:
+                optimizer.lr_schedule.update(optimizer.learning_rate)
+                optimizer.model_lr_schedule.update(
+                    optimizer.learning_rate * optimizer.model_parameters_lr_scale
+                )
+                optimizer.gradient_mask = optimizer.create_gradient_masks(
+                    optimizer.parameter_partition_masks,
+                    opt_state.params,
+                    None,
+                )
+
             prev_grads = (
                 opt_state.gradients
                 if opt_state.gradients is not None
@@ -152,7 +170,7 @@ def _optimise(
             opt_state_param_frameweight_delta = jnp.linalg.norm(
                 _opt_state.params.frame_weights - prev_opt_state.params.frame_weights
             )
-            # compute the dot product between the previous and current gradients (Simulation_Parameters object) to check for oscillations
+            # compute the dot product between the previous and current gradients to check for oscillations
             grad_dot_product = jax.tree_util.tree_reduce(
                 lambda x, y: x + y,
                 jax.tree_util.tree_map(
@@ -191,17 +209,28 @@ def _optimise(
                 total_thresholds=len(convergence_thresholds),
                 current_threshold=current_threshold,
             )
-            if grad_dot_product < 0:
-                print(
-                    f"Warning: Gradient dot product negative at step {step}, possible oscillation."
+
+            # --- Python-level oscillation-based LR adaptation ---
+            # grad_dot_product is a concrete JAX scalar returned from the step.
+            # Checking it here (Python level) is safe; the same check inside _step
+            # would require a concrete value under jax.jit/jax.vmap and is therefore
+            # not done there.
+            if grad_dot_product < 0 and step > 1:
+                current_lr = optimizer.lr_schedule()
+                new_lr = current_lr / optimizer.plateau_denominator
+                optimizer.lr_schedule.update(new_lr)
+                optimizer.model_lr_schedule.update(new_lr * optimizer.model_parameters_lr_scale)
+                logger.warning(
+                    "Gradient dot product negative at step %d (possible oscillation). "
+                    "LR reduced: %.4e → %.4e",
+                    step,
+                    current_lr,
+                    new_lr,
                 )
-                # rescale learning rate by plateau_denominator
-                # Get current learning rate from optimizer state
                 steps_since_threshold_start = 0
-                # _history.add_state(save_state)
-                # break
-            if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
-                print(f"Reached convergence tolerance/nan vals at step {step}")
+
+            if current_loss < tolerance or jnp.isnan(current_loss) or jnp.isinf(current_loss):
+                logger.info("Reached convergence tolerance/nan/inf at step %d", step)
                 break
 
             if step == 0:
@@ -222,11 +251,14 @@ def _optimise(
                 and relative_convergence < current_threshold
                 and step > optimizer.initial_steps
             ):
-                print(
-                    f"Relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)} met at step {step}"
-                )
-                print(
-                    f"Relative convergence: {relative_convergence:.8e}, threshold: {current_threshold:.2e}"
+                logger.info(
+                    "Relative threshold %d/%d met at step %d. "
+                    "Rel conv: %.8e, threshold: %.2e",
+                    current_threshold_idx + 1,
+                    len(convergence_thresholds),
+                    step,
+                    relative_convergence,
+                    current_threshold,
                 )
                 optimizer = optimizer.update_history_compute_ema_loss(
                     optimizer=optimizer,
@@ -238,20 +270,22 @@ def _optimise(
                     ema_params=ema_params,
                 )
                 ema_loss = optimizer.ema_history.states[-1].losses.total_train_loss
-                print(
-                    f"Updated History and computed loss from EMA params. EMA param Loss: {ema_loss:.6e}"
+                logger.debug(
+                    "Updated history with EMA params. EMA param loss: %.6e", ema_loss
                 )
-                print(f"EMA Params: {ema_params}")
                 current_threshold_idx += 1
                 steps_since_threshold_start = 0
 
                 if current_threshold_idx >= len(convergence_thresholds):
-                    print(f"All relative thresholds completed at step {step}")
+                    logger.info("All relative thresholds completed at step %d", step)
                     break
                 else:
                     current_threshold = convergence_thresholds[current_threshold_idx]
-                    print(
-                        f"Moving to relative threshold {current_threshold_idx + 1}/{len(convergence_thresholds)}: {current_threshold:.2e}"
+                    logger.info(
+                        "Moving to relative threshold %d/%d: %.2e",
+                        current_threshold_idx + 1,
+                        len(convergence_thresholds),
+                        current_threshold,
                     )
     except Exception as e:
         raise RuntimeError(
@@ -271,20 +305,8 @@ def _optimise(
             "\\n" * 10,
         )
 
-    print(
-        "\\n" * 10,
-        "Simulation parameters at end: ",
-        _simulation.params,
-        "\\n" * 10,
-        "Latest save state at end: ",
-        save_state.params,
-        "\\n" * 10,
-        "Latest EMA params state at end: ",
-        ema_params,
-        "\\n" * 10,
-        "Opt State parameters at end: ",
-        opt_state.params,
-        "\\n" * 10,
+    logger.debug(
+        "Optimization ended. Simulation params: %s", _simulation.params
     )
 
     best_state = optimizer.history.get_best_state()
@@ -295,14 +317,14 @@ def _optimise(
     total_time = loop_end_time - loop_start_time
     avg_iteration_time = total_time / (step + 1) if step >= 0 else 0
     iterations_per_second = (step + 1) / total_time if total_time > 0 else 0
-    
-    print("\\n" + "=" * 50)
-    print("Optimization Loop Performance:")
-    print(f"  Total iterations completed: {step + 1}")
-    print(f"  Total time: {total_time:.2f}s")
-    print(f"  Avg time per iteration: {avg_iteration_time:.4f}s")
-    print(f"  Iterations per second: {iterations_per_second:.2f}")
-    print("=" * 50 + "\\n")
+
+    logger.info(
+        "Optimization loop performance: %d steps, %.2fs total, %.4fs/iter, %.2f iter/s",
+        step + 1,
+        total_time,
+        avg_iteration_time,
+        iterations_per_second,
+    )
 
     _simulation = cast(InitialisedSimulation, _simulation)
     return _simulation, optimizer
@@ -367,9 +389,8 @@ def run_optimise(
         ema_alpha=config.ema_alpha,
         min_steps_per_threshold=config.min_steps_per_threshold,
     )
-    # print best parameters
-    print("Best parameters:")
-    print(optimizer.history.best_state.params)  # type: ignore
+    # log best parameters
+    logger.info("Best parameters: %s", optimizer.history.best_state.params)  # type: ignore
 
     if optimizer:
         return _simulation, optimizer.history
