@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from beartype.typing import Optional
+from beartype.typing import Optional, Union
 
 import jax.numpy as jnp
 import MDAnalysis as mda
@@ -9,18 +9,20 @@ from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.interfaces.topology import Partial_Topology
 from jaxent.src.models.core import Simulation
 
 
 class Experiment_Builder:
     """
     Class to hold the information of a simulation ensemble and validate whether the forward model is compatible with the ensemble.
-    This is created from a list of MDA Universe objects, as well as a forward model object.
+    This can be created from a list of MDA Universe objects or from a list of pre-computed
+    Partial_Topology objects (when trajectory data is not available or not required).
     """
 
     def __init__(
         self,
-        universes: list[Universe],
+        universes: Union[list[Universe], list[Partial_Topology]],
         forward_models: Sequence[ForwardModel],
         experimental_data: Optional[list[ExpD_Dataloader]] = None,
         features: Optional[list[Input_Features]] = None,

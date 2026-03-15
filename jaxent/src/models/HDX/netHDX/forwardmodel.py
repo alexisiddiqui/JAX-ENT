@@ -3,7 +3,7 @@ from MDAnalysis import Universe
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
-from jaxent.src.interfaces.topology import Partial_Topology
+from jaxent.src.interfaces.topology import Partial_Topology, rank_and_index
 from jaxent.src.models.config import NetHDXConfig
 from jaxent.src.models.func.netHDX import build_hbond_network
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features
@@ -21,15 +21,28 @@ class netHDX_model(ForwardModel[NetHDX_Model_Parameters, NetHDX_input_features, 
         super().__init__(config=config)
         self.forward: dict[m_key, ForwardPass] = {m_key("HDX_resPF"): NetHDX_ForwardPass()}
 
-    def initialise(self, ensemble: list[Universe]) -> bool:
+    def initialise(self, ensemble: list[Universe] | list[Partial_Topology]) -> bool:
         ########################################################################
         # TODO needs to ensure that there are backbone protons
         # also need to check whether hydrogen bonds analysis requires Hbonds - maybe could be skippable if angles are not required
+
+        # Topology-based initialisation path
+        if ensemble and isinstance(ensemble[0], Partial_Topology):
+            self.common_topology: set[Partial_Topology] = set(ensemble)
+            self.n_frames = 0
+            self.common_residue_indices = [frag.residue_start for frag in self.common_topology]
+            print(
+                f"Initialised netHDX model from {len(self.common_topology)} pre-computed topologies"
+            )
+            return True
+
+        # Universe-based initialisation path (original behaviour)
+        universe_ensemble: list[Universe] = ensemble  # type: ignore[assignment]
         self.common_topology: set[Partial_Topology] = Partial_Topology.find_common_residues(
-            ensemble, ignore_mda_selection="(resname PRO or resid 1)"
+            universe_ensemble, ignore_mda_selection="(resname PRO or resid 1)"
         )[0]
         # Calculate total number of frames in the ensemble
-        self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
+        self.n_frames = sum([u.trajectory.n_frames for u in universe_ensemble])
 
         # Get residue indices for each universe
         self.common_residue_indices = [frag.residue_start for frag in self.common_topology]

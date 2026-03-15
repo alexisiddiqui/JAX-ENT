@@ -103,41 +103,64 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     def initialise(
         self,
-        ensemble: list[Universe],
+        ensemble: list[Universe] | list[Partial_Topology],
         include_selection: str | list[str] | None = None,
         exclude_selection: str | list[str] | None = None,
     ) -> bool:
         """
-        Initialize the BV model with an ensemble of structures.
+        Initialize the BV model with an ensemble of structures or pre-computed topologies.
 
         Args:
-            ensemble: List of MDAnalysis Universe objects
-            include_selection: MDAnalysis selection string(s) for atoms to include
-            exclude_selection: MDAnalysis selection string(s) for atoms to exclude
+            ensemble: Either a list of MDAnalysis Universe objects (full trajectory-based
+                initialisation) or a list of Partial_Topology objects (topology-only
+                initialisation). When Partial_Topology objects are provided the common
+                topology is set directly from the input and Universe-dependent quantities
+                such as intrinsic exchange rates (k_ints) and frame counts are not
+                computed.
+            include_selection: MDAnalysis selection string(s) for atoms to include.
+                Ignored when ensemble contains Partial_Topology objects.
+            exclude_selection: MDAnalysis selection string(s) for atoms to exclude.
+                Ignored when ensemble contains Partial_Topology objects.
 
         Returns:
             bool: True if initialization was successful
         """
+        # Topology-based initialisation path
+        if ensemble and isinstance(ensemble[0], Partial_Topology):
+            self.common_topology: set[Partial_Topology] = set(ensemble)
+            self.n_frames = 0
+            self.common_k_ints_map: dict[Partial_Topology, float] = {}
+            self.common_k_ints: list[float] = []
+            sorted_topologies = rank_and_index(list(self.common_topology), check_trim=False)
+            self.topology_order = sorted_topologies
+            print(
+                f"Initialised BV model from {len(self.common_topology)} pre-computed topologies"
+            )
+            return True
+
+        # Universe-based initialisation path (original behaviour)
+        universe_ensemble: list[Universe] = ensemble  # type: ignore[assignment]
+
         # Process and combine selections with base selections
         self.final_include_selection, self.final_exclude_selection = self._prepare_selection_lists(
-            ensemble, include_selection, exclude_selection
+            universe_ensemble, include_selection, exclude_selection
         )
 
         # Find common residues across the ensemble using combined selections
         self.common_topology: set[Partial_Topology] = mda_TopologyAdapter.find_common_residues(
-            ensemble,
+            universe_ensemble,
             include_selection=self.final_include_selection,
             exclude_selection=self.final_exclude_selection,
             renumber_residues=True,
         )[0]
 
         # Calculate total number of frames in the ensemble
-        self.n_frames = sum([u.trajectory.n_frames for u in ensemble])
+        self.n_frames = sum([u.trajectory.n_frames for u in universe_ensemble])
 
         # Calculate intrinsic rates for each universe and average them
         kint_values_by_topology = {}  # Maps Partial_Topology -> list of kint values from each universe
 
-        for idx, universe in enumerate(ensemble):
+        for idx, universe in enumerate(universe_ensemble):
             # Calculate intrinsic rates for the entire universe
 
             # Convert common topology to MDA residue group for mapping
@@ -195,7 +218,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
         self.topology_order = sorted_topologies  # Store ordering for reference
 
         print(f"Calculated intrinsic rates for {len(self.common_k_ints_map)} common residues")
-        print(f"Averaged over {len(ensemble)} universes")
+        print(f"Averaged over {len(universe_ensemble)} universes")
 
         return True
 
