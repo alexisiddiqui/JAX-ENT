@@ -12,6 +12,7 @@ from jaxtyping import Float
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.utils.jax_fn import frame_average_features, single_pass
@@ -153,6 +154,22 @@ class Simulation:
 
         sim.outputs = tuple(outputs)
         return sim
+
+    @property
+    def outputs_by_key(self) -> dict[m_key, Output_Features]:
+        """Look up outputs by their m_key.
+        
+        Raises KeyError on duplicate keys (indicates a misconfigured Simulation).
+        """
+        result: dict[m_key, Output_Features] = {}
+        for output in self.outputs:
+            if output.key in result:
+                raise KeyError(
+                    f"Duplicate output key '{output.key}' — each forward model "
+                    f"must produce outputs with unique m_keys."
+                )
+            result[output.key] = output
+        return result
 
     def predict(
         self, params: Union[Simulation_Parameters, Sequence[Model_Parameters]]

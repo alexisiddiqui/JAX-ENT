@@ -3,12 +3,16 @@ from typing import Any, Protocol, runtime_checkable
 from jax import Array
 from jaxent.src.custom_types.features import Output_Features
 from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.custom_types.key import m_key
 
 @runtime_checkable
 class SimulationLike(Protocol):
     """Protocol for objects that can be used in loss functions."""
     params: Simulation_Parameters
     outputs: Sequence[Output_Features]
+    
+    @property
+    def outputs_by_key(self) -> dict[Any, Output_Features]: ...
 
 @runtime_checkable
 class InputFeaturesLike(Protocol):
