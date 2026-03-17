@@ -289,8 +289,8 @@ class OptaxOptimizer:
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
-                    self.history,
-                    tuple(indexes),
+                    indexes=tuple(indexes),
+                    history=self.history,
                 )
             except Exception as e:
                 del self.step
@@ -324,8 +324,8 @@ class OptaxOptimizer:
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
-                    self.history,
-                    tuple(indexes),
+                    indexes=tuple(indexes),
+                    history=self.history,
                 )
                 logger.info("Optimiser JIT compilation successful.")
             except Exception as e:
@@ -504,8 +504,8 @@ class OptaxOptimizer:
             ...,
         ],
         loss_functions: tuple[JaxEnt_Loss, ...],
-        history: OptimizationHistory,
         indexes: tuple[int, ...],
+        history: OptimizationHistory | None = None,
     ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step.
 
@@ -517,7 +517,6 @@ class OptaxOptimizer:
         concrete Python integer and mutations of the optimizer's learning-rate
         schedule are safe.
         """
-
         def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)

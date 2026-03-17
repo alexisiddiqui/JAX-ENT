@@ -400,8 +400,15 @@ def run_optimise(
         ema_alpha=config.ema_alpha,
         min_steps_per_threshold=config.min_steps_per_threshold,
     )
-    # log best parameters
-    logger.info("Best parameters: %s", optimizer.history.best_state.params)  # type: ignore
+
+    if getattr(optimizer, "history", None) is None:
+        optimizer.history = OptimizationHistory()
+
+    # log best parameters when available
+    if optimizer.history.best_state is not None:
+        logger.info("Best parameters: %s", optimizer.history.best_state.params)
+    else:
+        logger.debug("No best_state present in optimization history.")
 
     if optimizer:
         return _simulation, optimizer.history
