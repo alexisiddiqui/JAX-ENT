@@ -60,7 +60,7 @@ cp -R jaxent/examples/2_CrossValidation/fitting/jaxENT/_featurise jaxent/example
 
 mkdir -p jaxent/examples/3_CrossValidationBV/data/
 
-cp -R jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices jaxent/examples/3_CrossValidationBV/data/_MoPrP_covariance_matrices
+cp -R jaxent/examples/2_CrossValidation/data/_MoPrP_covariance_matrices jaxent/examples/3_CrossValidationBV/data/
 
 cp jaxent/examples/2_CrossValidation/analysis/state_ratios.json jaxent/examples/3_CrossValidationBV/analysis/state_ratios.json
 

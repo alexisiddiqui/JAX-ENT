@@ -23,6 +23,7 @@ import jax.numpy as jnp
 import pytest
 
 from jaxent.src.custom_types.key import m_key
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
@@ -213,10 +214,10 @@ def create_dummy_data_with_size(config_name, config):
             # The sparse_map is now passed in from create_dummy_data_with_size
             # This ensures it's concrete before JIT compilation.
             self.train = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=self.sparse_map_train
+                data=exp_data, y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=self.sparse_map_train)
             )
             self.val = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=self.sparse_map_val
+                data=exp_data, y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=self.sparse_map_val)
             )
 
         def tree_flatten(self):

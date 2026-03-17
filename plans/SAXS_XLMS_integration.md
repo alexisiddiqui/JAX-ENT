@@ -256,7 +256,7 @@ Key changes vs current (`jaxent/src/opt/loss/base.py:120-169`):
 
 `jaxent/src/opt/losses.py` contains many HDX-specific loss functions (`hdx_pf_l2_loss`, `hdx_pf_l1_loss`, `hdx_pf_kld_loss`, etc.) that directly access `.log_Pf` and call `apply_sparse_mapping`. These remain HDX-specific and continue to work unchanged. After `create_functional_loss` is generalised:
 - Audit `opt/losses.py` to identify which losses are truly HDX-specific vs. generic
-- Generic losses (L2, L1, KLD on mapped predictions) should be cloned to use `create_functional_loss` + `y_pred()` in `jaxent/src/opt/loss/`
+- Generic losses (L2, L1, KLD on mapped predictions) should be CLONED to use `create_functional_loss` + `y_pred()` in `jaxent/src/opt/loss/`
 - 'jaxent/src/opt/losses.py' should stay as is as these are currently used in the examples - the examples will be moved over to a functional loss style after verificatoin that everything is working as expected.
 
 ---
