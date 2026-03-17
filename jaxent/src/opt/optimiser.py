@@ -279,12 +279,18 @@ class OptaxOptimizer:
             try:
                 data_targets, loss_functions, indexes = _jit_test_args
                 self.step = self._step
+                smoke_params = jax.tree_util.tree_map(
+                    lambda x: x.copy() if hasattr(x, "copy") else x, params
+                )
+                smoke_opt_state = jax.tree_util.tree_map(
+                    lambda x: x.copy() if hasattr(x, "copy") else x, opt_state
+                )
 
                 _ = self.step(
                     self,
                     OptimizationState(
-                        params=params,
-                        opt_state=opt_state,
+                        params=smoke_params,
+                        opt_state=smoke_opt_state,
                     ),
                     model,
                     tuple(data_targets),
@@ -307,18 +313,22 @@ class OptaxOptimizer:
                     donate_argnames=("state",),
                     static_argnames=(
                         # "optimizer",
-                        # "simulation",
-                        # "data_targets",
+                        "simulation",
                         "loss_functions",
-                        # "history",
                         "indexes",
                     ),
+                )
+                smoke_params = jax.tree_util.tree_map(
+                    lambda x: x.copy() if hasattr(x, "copy") else x, params
+                )
+                smoke_opt_state = jax.tree_util.tree_map(
+                    lambda x: x.copy() if hasattr(x, "copy") else x, opt_state
                 )
                 _ = self.step(
                     self,
                     OptimizationState(
-                        params=params,
-                        opt_state=opt_state,
+                        params=smoke_params,
+                        opt_state=smoke_opt_state,
                     ),
                     model,
                     tuple(data_targets),

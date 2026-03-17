@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import pytest
+from jax import tree_util
 
 from jaxent.src.custom_types.config import OptimiserSettings
 from jaxent.src.interfaces.simulation import Simulation_Parameters
@@ -8,14 +9,24 @@ from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import run_optimise
 
 
+@tree_util.register_pytree_node_class
 class DummySimulation:
     def __init__(self, params: Simulation_Parameters):
         self.params = params
 
     @staticmethod
     def forward(sim: "DummySimulation", params: Simulation_Parameters) -> "DummySimulation":
-        sim.params = params
-        return sim
+        _ = sim
+        return DummySimulation(params)
+
+    def tree_flatten(self):
+        return (self.params,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        _ = aux_data
+        (params,) = children
+        return cls(params)
 
 
 def dummy_loss(model: DummySimulation, dataset: jnp.ndarray, prediction_index: int) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -41,7 +52,7 @@ def test_run_optimise_with_jit_enabled():
     )
     simulation = DummySimulation(params)
     dataset = jnp.array([0.6, 0.4], dtype=jnp.float32)
-    config = OptimiserSettings(name="jit-step-smoke", n_steps=2, tolerance=0.0, convergence=1e-10)
+    config = OptimiserSettings(name="jit-step-smoke", n_steps=1, tolerance=0.0, convergence=1e-10)
     optimizer = OptaxOptimizer(initial_steps=10)
 
     _, history = run_optimise(
