@@ -426,7 +426,7 @@ else:
 | 3 | `Dataset` generalisation (additive) + `DatasetLike` update | Medium | `loader.py`, `protocols.py` |
 | 4 | `outputs_by_key` + `SimulationLike` update | Low | `core.py`, `protocols.py` |
 | 5 | Loss routing generalisation (`create_functional_loss`) + audit `losses.py` | Medium | `opt/loss/base.py`, `opt/losses.py` (audit only) |
-| 6 | Model stubs (SAXS reweighted primary, Debye 6-term deferred; XLMS) | Low | new `models/SAXS/`, `models/XLMS/` |
+| 6 | Model stubs (SAXS reweighted primary, Debye 6-term; XLMS) | Low | new `models/SAXS/`, `models/XLMS/` |
 | 7 | Data splitting compatibility for whole-system data (auto-detect + method guards) | Medium | `split.py` |
 
 No changes to `Simulation.forward_pure` — all models use the existing average-then-forward path.
@@ -441,7 +441,7 @@ SAXS reweighted mode has no forward model — only frame weights are optimised.
 - `jaxent/src/data/splitting/mapping.py` -- DataMapping protocol, SparseFragmentMapping, IdentityMapping, PairIndexMapping, create_pair_index_mapping
 - `jaxent/src/custom_types/SAXS.py` -- SAXS_curve datapoint
 - `jaxent/src/custom_types/XLMS.py` -- XLMS_distance_restraint datapoint
-- `jaxent/src/models/SAXS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py` (reweighted path primary, Debye 6-term deferred)
+- `jaxent/src/models/SAXS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py` 
 - `jaxent/src/models/XLMS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py`
 
 **Modified files:**
