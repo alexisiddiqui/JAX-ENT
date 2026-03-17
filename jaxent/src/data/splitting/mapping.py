@@ -15,6 +15,7 @@ from jaxent.src.interfaces.topology.core import Partial_Topology
 @runtime_checkable
 class DataMapping(Protocol):
     """Protocol for mapping model outputs to observation space."""
+
     def apply(self, predictions: Array) -> Array: ...
 
 
@@ -22,19 +23,22 @@ class DataMapping(Protocol):
 @dataclass(frozen=True, slots=True)
 class SparseFragmentMapping:
     """Wraps existing BCOO sparse map (HDX). Shape: (n_fragments, n_residues)."""
+
     sparse_map: sparse.BCOO
 
     def apply(self, predictions: Array) -> Array:
         return apply_sparse_mapping(self.sparse_map, predictions)
 
 
-@partial(jax.tree_util.register_dataclass, data_fields=[], meta_fields=[])
-@dataclass(frozen=True, slots=True)
-class IdentityMapping:
-    """No-op mapping for whole-construct outputs (SAXS)."""
-    
-    def apply(self, predictions: Array) -> Array:
-        return predictions
+@partial(jax.tree_util.register_dataclass, data_fields=["indices"], meta_fields=[])
+@dataclass(frozen=True)
+class QSubsetMapping:
+    """Maps full (501,) q-point predictions to train/val subsets."""
+
+    indices: jnp.ndarray
+
+    def apply(self, pred):
+        return pred[self.indices]
 
 
 @partial(jax.tree_util.register_dataclass, data_fields=["indices_i", "indices_j"], meta_fields=[])
@@ -43,6 +47,7 @@ class PairIndexMapping:
     """Extracts specific residue pairs from a pairwise distance matrix (XL-MS).
     indices_i, indices_j: arrays of shape (n_observations,)
     Each observation maps to predictions[indices_i[k], indices_j[k]]."""
+
     indices_i: Array
     indices_j: Array
 

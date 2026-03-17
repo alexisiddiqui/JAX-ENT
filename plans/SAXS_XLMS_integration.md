@@ -17,6 +17,7 @@ JAX-ENT currently supports only HDX-MS data (peptide-level deuterium exchange, r
 | Type | Topology | Features (per frame) | Forward model | Mapping |
 |------|----------|---------------------|--------------|---------|
 | HDX-MS (existing) | Peptide fragments (2D seq) | Contacts per residue `(n_res, n_frames)` | BV/netHDX -> log(Pf) or uptake | Sparse (n_peptides, n_residues) |
+| SAXS (reweighted) | Whole construct | Full I(q) curve per structure `(n_structures, n_q)` | **None** (direct reweighting of pre-computed curves) | Identity |
 | SAXS (Debye 6-term) | Whole construct | 6 basis profiles `(6, n_q, n_frames)` | Cross-term formula with c1, c2, c, b | Identity |
 | XL-MS | Residue pairs | Pairwise distances `(n_res, n_res, n_frames)` | Identity/distance extraction | PairIndex (i,j) -> scalar |
 
@@ -262,9 +263,24 @@ Key changes vs current (`jaxent/src/opt/loss/base.py:120-169`):
 
 ## Step 6: New Forward Models
 
-### SAXS: Six Cross-Term Decomposition
+### SAXS: Reweighted Curves (Primary Path — No Forward Model)
 
-The Debye SAXS forward model decomposes into offline O(N^2) precomputation + O(1) online optimization:
+The simplest and most direct SAXS integration: the SAXS I(q) curve for each structure is **pre-computed externally** (e.g. by CRYSOL, FoXS, or Pepsi-SAXS). Optimisation reweights these curves — there is no forward model to run.
+
+**Input:** Pre-computed I(q) curves per structure, shape `(n_structures, n_q)`
+
+**Online:** Ensemble-average using frame weights:
+```
+I_calc(q) = sum_k w_k * I_k(q)
+```
+
+This is a weighted average — the existing frame-weight machinery handles it directly. The `SAXS_output_features.y_pred()` simply returns the reweighted curve.
+
+Because there is no forward model, the SAXS config for this path has **no model parameters** (only frame weights are optimised). This is analogous to how HDX can run with fixed BV parameters — the optimiser only touches frame weights.
+
+### SAXS: Six Cross-Term Decomposition (Future Extension)
+
+For cases where per-structure SAXS curves are not available and must be computed from coordinates, the Debye SAXS forward model decomposes into offline O(N²) precomputation + O(1) online optimization:
 
 **Precomputation (offline, per frame k):** Compute 6 basis intensity profiles from atomic form factors and coordinates:
 - `I_vv,k(q)` = vacuum-vacuum
@@ -286,34 +302,118 @@ I_ens(q) = <I_vv> - 2*c1*<I_ve> + 2*c2*<I_vh> + c1^2*<I_ee> - 2*c1*c2*<I_eh> + c
 I_calc(q) = c * I_ens(q) + b           # scale + background
 ```
 
-This is scalar algebra on averaged features -- O(1) per q-point during optimization.
+This is scalar algebra on averaged features — O(1) per q-point during optimization.
 
 **New directory:** `jaxent/src/models/SAXS/`
 - `__init__.py`
-- `config.py`: `SAXS_Config(BaseConfig)` with `q_values` array, key = `m_key("SAXS_Iq")`
+- `config.py`: `SAXS_Config(BaseConfig)` with `q_values` array, key = `m_key("SAXS_Iq")`, `mode` flag (`"reweighted"` or `"debye_6term"`)
 - `parameters.py`: `SAXS_Model_Parameters(Model_Parameters)`
-  - Dynamic (optimizable): `c1` (excluded volume), `c2` (hydration), `c` (scale), `b` (background)
+  - For reweighted mode: **no model parameters** (only frame weights optimised)
+  - For Debye 6-term mode: Dynamic (optimizable): `c1` (excluded volume), `c2` (hydration), `c` (scale), `b` (background)
   - Static: `key`
 - `features.py`:
+  - `SAXS_reweighted_input_features(Input_Features)`: pre-computed I(q) per structure, shape `(n_q, n_frames)`. `__features__ = {"intensities"}`. After frame averaging produces `(n_q,)`.
   - `SAXS_basis_input_features(Input_Features)`: 6 basis profiles, shape `(6, n_q, n_frames)`. `__features__ = {"basis_profiles"}`. After frame averaging produces `(6, n_q)`.
   - `SAXS_output_features(Output_Features)`: intensity array `(n_q,)` with `y_pred()` returning `intensity`. `key = m_key("SAXS_Iq")`
-- `forwardmodel.py`: `SAXS_model(ForwardModel)` -- dispatches to appropriate forward pass
+- `forwardmodel.py`: `SAXS_model(ForwardModel)` — dispatches to reweighted or Debye forward pass based on config mode
 - `forward.py`:
-  - `SAXS_ForwardPass` -- takes averaged `(6, n_q)` basis profiles + `SAXS_Model_Parameters(c1, c2, c, b)`, applies the cross-term formula, returns `SAXS_output_features(intensity)`
+  - `SAXS_ReweightedForwardPass` — returns the frame-averaged curve directly (identity forward model)
+  - `SAXS_DebyeForwardPass` — takes averaged `(6, n_q)` basis profiles + `SAXS_Model_Parameters(c1, c2, c, b)`, applies the cross-term formula, returns `SAXS_output_features(intensity)`
 
 ### XL-MS
 
 **New directory:** `jaxent/src/models/XLMS/`
 - `__init__.py`
 - `config.py`: `XLMS_Config(BaseConfig)` with key = `m_key("XLMS_distance")`
-- `parameters.py`: `XLMS_Model_Parameters(Model_Parameters)` (minimal -- may just be scaling)
+- `parameters.py`: `XLMS_Model_Parameters(Model_Parameters)` (minimal — may just be scaling)
 - `features.py`:
   - `XLMS_input_features(Input_Features)`: pairwise distances `(n_residues, n_residues, n_frames)`
   - `XLMS_output_features(Output_Features)`: distance matrix `(n_residues, n_residues)` with `y_pred()` returning the matrix for `PairIndexMapping` to extract pairs from
 - `forwardmodel.py`: `XLMS_distance_model(ForwardModel)`
-- `forward.py`: `XLMS_distance_ForwardPass` -- extracts ensemble-averaged pairwise distance matrix
+- `forward.py`: `XLMS_distance_ForwardPass` — extracts ensemble-averaged pairwise distance matrix
 
 **Follows pattern of:** `jaxent/src/models/HDX/BV/` (forwardmodel.py, features.py, parameters.py, forward.py)
+
+---
+
+## Step 7: Data Splitting Compatibility for Whole-System Data
+
+SAXS curves represent whole-system observables — a single I(q) curve describes the entire construct, not individual fragments. The data splitting system must handle this correctly.
+
+### Design Principle: Auto-Detection
+
+The `DataSplitter` should auto-detect whether data can be split at the element level or must be retained as a whole unit. This is determined by the **data type's topology granularity**:
+
+| Data type | Topology granularity | Splittable? | Auto-detect criterion |
+|-----------|---------------------|-------------|----------------------|
+| HDX-MS | Per-peptide fragment | Yes (fragments) | Multiple distinct topologies in dataset |
+| XL-MS | Per-residue pair | Yes (pairs) | Multiple distinct topologies in dataset |
+| SAXS | Whole construct | **Depends on split method** | Single topology covering entire construct |
+
+### Split Method Compatibility
+
+Not all split methods make sense for whole-system data. The key insight is that **some methods are inherently compatible** because they operate on the data values directly rather than on topology/spatial structure:
+
+| Split method | SAXS compatible? | Rationale |
+|-------------|-----------------|----------|
+| `random_split` | ✅ Yes | Randomly assigns q-points to train/val — works on any array |
+| `stratified_split` | ✅ Yes (alternating & random strata) | Stratifies by I(q) value, alternates strata between train/val |
+| `sequence_split` | ❌ No | Requires peptide sequence positions |
+| `sequence_cluster_split` | ❌ No | Requires peptide start/end positions |
+| `spatial_split` | ❌ No | Requires 3D residue coordinates |
+
+> **Note:** Future split methods (user will add later) may also be compatible.
+
+### Implementation: `DataSplitter` Updates
+
+**File:** `jaxent/src/data/splitting/split.py`
+
+1. **Auto-detect whole-system data.** Add a property/method to detect whether the dataset contains whole-system observables:
+
+```python
+@property
+def is_whole_system_data(self) -> bool:
+    """Auto-detect if data represents whole-system observables (e.g. SAXS curves).
+    
+    Whole-system data has a single topology covering the entire construct,
+    vs fragment-level data (HDX) which has many overlapping topologies.
+    """
+    if not self.dataset.data:
+        return False
+    # Check if all datapoints share the same topology
+    # (whole-system) vs having distinct fragment topologies
+    unique_tops = {dp.top for dp in self.dataset.data}
+    return len(unique_tops) == 1 and isinstance(
+        self.dataset.data[0], SAXS_curve
+    )
+```
+
+2. **Compatible methods work directly.** For `random_split` and `stratified_split`, whole-system data is split at the datapoint level (each q-point or I(q) value becomes a splittable unit). No special handling needed — these methods already operate on the data array and don't require topology-based reasoning.
+
+3. **Incompatible methods raise clear errors.** `sequence_split`, `sequence_cluster_split`, and `spatial_split` should raise `ValueError` when called on whole-system data:
+
+```python
+def sequence_split(self, ...):
+    if self.is_whole_system_data:
+        raise ValueError(
+            f"sequence_split is not compatible with whole-system data "
+            f"(e.g. SAXS curves). Use random_split or stratified_split instead."
+        )
+    # ... existing implementation
+```
+
+4. **Topology bypass for whole-system splits.** When splitting whole-system data, the splitter should skip topology-based operations (common residue filtering, overlap removal, centrality sampling) since these concepts don't apply:
+
+```python
+# In random_split / stratified_split:
+if self.is_whole_system_data:
+    # Split directly on datapoints — no topology reasoning needed
+    # Each SAXS_curve datapoint is one observation to split
+    ...
+else:
+    # Existing topology-aware split logic
+    ...
+```
 
 ---
 
@@ -326,9 +426,11 @@ This is scalar algebra on averaged features -- O(1) per q-point during optimizat
 | 3 | `Dataset` generalisation (additive) + `DatasetLike` update | Medium | `loader.py`, `protocols.py` |
 | 4 | `outputs_by_key` + `SimulationLike` update | Low | `core.py`, `protocols.py` |
 | 5 | Loss routing generalisation (`create_functional_loss`) + audit `losses.py` | Medium | `opt/loss/base.py`, `opt/losses.py` (audit only) |
-| 6 | Model stubs (SAXS, XLMS) | Low | new `models/SAXS/`, `models/XLMS/` |
+| 6 | Model stubs (SAXS reweighted primary, Debye 6-term deferred; XLMS) | Low | new `models/SAXS/`, `models/XLMS/` |
+| 7 | Data splitting compatibility for whole-system data (auto-detect + method guards) | Medium | `split.py` |
 
-No changes to `Simulation.forward_pure` -- all models use the existing average-then-forward path.
+No changes to `Simulation.forward_pure` — all models use the existing average-then-forward path.
+SAXS reweighted mode has no forward model — only frame weights are optimised.
 `model_key_index` on `Simulation_Parameters` is deferred unless int-based indexing proves insufficient.
 
 ---
@@ -339,13 +441,14 @@ No changes to `Simulation.forward_pure` -- all models use the existing average-t
 - `jaxent/src/data/splitting/mapping.py` -- DataMapping protocol, SparseFragmentMapping, IdentityMapping, PairIndexMapping, create_pair_index_mapping
 - `jaxent/src/custom_types/SAXS.py` -- SAXS_curve datapoint
 - `jaxent/src/custom_types/XLMS.py` -- XLMS_distance_restraint datapoint
-- `jaxent/src/models/SAXS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py`
+- `jaxent/src/models/SAXS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py` (reweighted path primary, Debye 6-term deferred)
 - `jaxent/src/models/XLMS/__init__.py`, `config.py`, `parameters.py`, `features.py`, `forwardmodel.py`, `forward.py`
 
 **Modified files:**
 - `jaxent/src/custom_types/__init__.py` -- export new types
 - `jaxent/src/custom_types/protocols.py` -- update DatasetLike, SimulationLike
 - `jaxent/src/data/loader.py` -- Dataset generalisation (additive), ExpD_Dataloader.create_datasets mapping_factory
+- `jaxent/src/data/splitting/split.py` -- whole-system auto-detection, method compatibility guards, topology bypass for random/stratified
 - `jaxent/src/models/core.py` -- add outputs_by_key property
 - `jaxent/src/opt/loss/base.py` -- generalise create_functional_loss
 
@@ -367,6 +470,8 @@ No changes to `Simulation.forward_pure` -- all models use the existing average-t
 6. **Unit test `outputs_by_key`**: create `Simulation` with known outputs, verify dict access by `m_key`
 7. **Unit test generalised `create_functional_loss`**: verify loss computation produces same results as legacy when using `SparseFragmentMapping` + HDX output features
 8. **Unit test Data Splitting**: Verify that the datasplitter can split SAXS and XL-MS data with random and stratified splitting strategies using simple synthetic data. Will test the other splits later.
-9. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor.
-10. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
-11. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
+9. **Unit test SAXS reweighted forward pass**: verify that frame-weighted averaging of pre-computed I(q) curves produces correct output with known weights and curves.
+10. **Unit test Data Splitting auto-detection**: verify `is_whole_system_data` correctly identifies SAXS curves vs HDX fragments. Verify incompatible methods (`sequence_split`, `spatial_split`) raise `ValueError` on SAXS data. Verify compatible methods (`random_split`, `stratified_split`) succeed on SAXS data.
+11. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor.
+12. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS (reweighted) models, shared frame weights, verify both forward passes execute and outputs accessible by key
+13. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
