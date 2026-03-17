@@ -26,6 +26,7 @@ from jaxent.src.custom_types.config import (
     OptimiserSettings,
 )
 from jaxent.src.custom_types.HDX import HDX_protection_factor
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -168,19 +169,19 @@ def setup_features():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     return (
