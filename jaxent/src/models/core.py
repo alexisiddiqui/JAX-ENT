@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable, Sequence
 from typing import Any, Optional, Union, cast
 
@@ -15,6 +16,8 @@ from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.utils.jax_fn import frame_average_features, single_pass
+
+logger = logging.getLogger(__name__)
 
 
 class Simulation:
@@ -84,8 +87,7 @@ class Simulation:
             tuple([feature.cast_to_jax() for feature in self.input_features]),
         )
 
-        print("Loaded forward passes")
-        print(self.forwardpass)
+        logger.debug("Loaded forward passes: %s", self.forwardpass)
 
         # clear the jit function
         del self._jit_forward_pure
@@ -112,15 +114,15 @@ class Simulation:
                 self._input_features,
                 self.forwardpass,
             )
-            print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
+            logger.info("JIT compilation successful.")
 
         except Exception as e:
             if self.raise_jit_failure:
                 raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
-            print(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            logger.warning("JIT failed: %s \n Reverting to non-jit", e)
             self._jit_forward_pure = self.forward_pure
 
-        print("Simulation initialised successfully.")
+        logger.info("Simulation initialised successfully.")
         # try to run the forward pass using the parameters provided
 
         return True
