@@ -15,6 +15,7 @@ jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 import jax.numpy as jnp
+from jax.experimental import sparse
 from MDAnalysis import Universe
 
 import jaxent.src.interfaces.topology as pt
@@ -192,9 +193,10 @@ class OptimizationTestEnvironment:
             except Exception as e:
                 print(f"Error creating sparse maps: {e}")
                 # Create minimal fallback maps
-                train_sparse_map = jnp.array([[0]])
-                val_sparse_map = jnp.array([[0]])
-                test_sparse_map = jnp.array([[0]])
+                _fallback = sparse.bcoo_fromdense(jnp.zeros((1, 1), dtype=jnp.float32))
+                train_sparse_map = _fallback
+                val_sparse_map = _fallback
+                test_sparse_map = _fallback
 
             # Set up dataset splits
             self.dataset.train = Dataset(
@@ -219,7 +221,7 @@ class OptimizationTestEnvironment:
             self.dataset.train = Dataset(
                 data=self.exp_data[:1],
                 y_true=jnp.array([10.0]),
-                data_mapping=SparseFragmentMapping(sparse_map=jnp).array([[0]]),
+                data_mapping=SparseFragmentMapping(sparse_map=sparse.bcoo_fromdense(jnp.zeros((1, 1), dtype=jnp.float32))),
             )
             self.dataset.val = self.dataset.train
             self.dataset.test = self.dataset.train
