@@ -1,8 +1,8 @@
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 import jax.numpy as jnp
 from jax.experimental import sparse
 
 from jaxent.src.data.splitting.mapping import (
-    IdentityMapping,
     PairIndexMapping,
     SparseFragmentMapping,
     create_pair_index_mapping,
@@ -29,11 +29,6 @@ def test_sparse_fragment_mapping():
     assert jnp.allclose(mapped, jnp.array([20.0, 40.0]))
 
 
-def test_identity_mapping():
-    mapping = IdentityMapping()
-    predictions = jnp.array([1.0, 2.0, 3.0])
-    mapped = mapping.apply(predictions)
-    assert jnp.allclose(mapped, predictions)
 
 
 def test_pair_index_mapping():

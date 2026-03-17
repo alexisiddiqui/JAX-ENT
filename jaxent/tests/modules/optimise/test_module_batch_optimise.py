@@ -1,3 +1,4 @@
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 import os
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -72,13 +73,13 @@ sys.path.insert(0, base_dir)
 #     dataset.train = Dataset(
 #         data=train_data,
 #         y_true=jnp.array([data.extract_features() for data in train_data]),
-#         residue_feature_ouput_mapping=train_sparse_map,
+#         data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
 #     )
 
 #     dataset.val = Dataset(
 #         data=val_data,
 #         y_true=jnp.array([data.extract_features() for data in val_data]),
-#         residue_feature_ouput_mapping=val_sparse_map,
+#         data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
 #     )
 
 #     # Run batch optimization
