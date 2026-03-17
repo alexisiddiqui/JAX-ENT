@@ -403,6 +403,9 @@ def run_optimise(
 
     if getattr(optimizer, "history", None) is None:
         optimizer.history = OptimizationHistory()
+        logger.warning(
+            "Optimizer returned without history; created empty OptimizationHistory fallback."
+        )
 
     # log best parameters when available
     if optimizer.history.best_state is not None:

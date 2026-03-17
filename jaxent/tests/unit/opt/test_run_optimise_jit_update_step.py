@@ -21,13 +21,15 @@ class DummySimulation:
 def dummy_loss(model: DummySimulation, dataset: jnp.ndarray, prediction_index: int) -> tuple[jnp.ndarray, jnp.ndarray]:
     _ = prediction_index
     train_loss = jnp.sum((model.params.frame_weights - dataset) ** 2)
+    # Intentionally mirror train and validation here; this test only verifies the
+    # jit_update_step=True execution path and signature compatibility.
     val_loss = train_loss
     return train_loss, val_loss
 
 
 @pytest.mark.filterwarnings("ignore::UserWarning")
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_run_optimise_jit_update_step_true_smoke():
+def test_run_optimise_with_jit_enabled():
     model_config = BV_model_Config()
     params = Simulation_Parameters(
         frame_weights=jnp.array([0.5, 0.5], dtype=jnp.float32),
