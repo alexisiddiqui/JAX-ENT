@@ -290,7 +290,6 @@ class OptaxOptimizer:
                     tuple(data_targets),
                     tuple(loss_functions),
                     indexes=tuple(indexes),
-                    history=self.history,
                 )
             except Exception as e:
                 del self.step
@@ -325,7 +324,6 @@ class OptaxOptimizer:
                     tuple(data_targets),
                     tuple(loss_functions),
                     indexes=tuple(indexes),
-                    history=self.history,
                 )
                 logger.info("Optimiser JIT compilation successful.")
             except Exception as e:
@@ -505,7 +503,6 @@ class OptaxOptimizer:
         ],
         loss_functions: tuple[JaxEnt_Loss, ...],
         indexes: tuple[int, ...],
-        history: OptimizationHistory | None = None,
     ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step.
 

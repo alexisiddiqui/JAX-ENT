@@ -101,11 +101,10 @@ def _optimise(
                 optimizer.model_lr_schedule.update(
                     optimizer.learning_rate * optimizer.model_parameters_lr_scale
                 )
-                optimisable_funcs = getattr(optimizer, "optimisable_funcs", None)
                 optimizer.gradient_mask = optimizer.create_gradient_masks(
                     optimizer.parameter_partition_masks,
                     opt_state.params,
-                    optimisable_funcs,
+                    None,
                 )
 
             prev_grads = (
@@ -214,12 +213,14 @@ def _optimise(
 
             # --- Python-level oscillation-based LR adaptation ---
             # grad_dot_product is a JAX scalar returned from the step.
-            # Materialize it here so that using it in Python control flow is safe.
-            grad_dot_product_value = float(grad_dot_product)
+            # Compute the oscillation flag on device, then materialize only the boolean
+            # so that using it in Python control flow is safe.
+            oscillation = grad_dot_product < 0
+            oscillation_flag = bool(jax.device_get(oscillation))
             # Checking it here (Python level) is safe; the same check inside _step
             # would require a concrete value under jax.jit/jax.vmap and is therefore
             # not done there.
-            if grad_dot_product_value < 0 and step > 1:
+            if oscillation_flag and step > 1:
                 current_lr = optimizer.lr_schedule()
                 new_lr = current_lr / optimizer.plateau_denominator
                 optimizer.lr_schedule.update(new_lr)
@@ -233,14 +234,10 @@ def _optimise(
                 )
                 steps_since_threshold_start = 0
 
-            # Convert current_loss (a JAX scalar) to a Python float for safe Python-level checks.
-            current_loss_value = float(current_loss)
+            # Compute stop condition on-device to avoid per-step device→host sync of current_loss.
+            stop = (current_loss < tolerance) | jnp.isnan(current_loss) | jnp.isinf(current_loss)
 
-            if (
-                current_loss_value < tolerance
-                or math.isnan(current_loss_value)
-                or math.isinf(current_loss_value)
-            ):
+            if bool(jax.device_get(stop)):
                 logger.info("Reached convergence tolerance/nan/inf at step %d", step)
                 break
 

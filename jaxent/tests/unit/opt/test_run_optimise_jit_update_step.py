@@ -55,5 +55,15 @@ def test_run_optimise_with_jit_enabled():
         jit_update_step=True,
     )
 
+    # With jit_update_step=True, the optimiser.step should be a JIT-compiled
+    # wrapper around the underlying non-jitted `_step` implementation.
     assert callable(optimizer.step)
+    if hasattr(optimizer, "_step"):
+        # Ensure we are not falling back to the raw, non-jitted step function.
+        assert optimizer.step is not optimizer._step
+    # JAX-jitted callables typically expose a `lower` method that triggers
+    # compilation / inspection of the computation graph.
+    assert hasattr(optimizer.step, "lower")
+
+    # Still verify that optimisation actually ran and produced at least one state.
     assert len(history.states) >= 1
