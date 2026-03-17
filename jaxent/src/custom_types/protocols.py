@@ -26,7 +26,7 @@ class ModelParametersLike(Protocol):
 class DatasetLike(Protocol):
     """Protocol for dataset objects with required attributes."""
     y_true: Array
-    residue_feature_ouput_mapping: Any  # sparse.BCOO
+    data_mapping: Any  # DataMapping protocol
 
 @runtime_checkable
 class DataloaderLike(Protocol):

@@ -16,6 +16,7 @@ from jaxent.src.models.HDX.BV.features import (
 )
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.models.core import Simulation
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.loss.functional import (
@@ -102,10 +103,10 @@ class MockDataloader:
         self.sparse_map_train = sparse_map_train
         self.sparse_map_val = sparse_map_val
         self.train = Dataset(
-            data=[], y_true=y_true, residue_feature_ouput_mapping=sparse_map_train
+            data=[], y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=sparse_map_train)
         )
         self.val = Dataset(
-            data=[], y_true=y_true, residue_feature_ouput_mapping=sparse_map_val
+            data=[], y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=sparse_map_val)
         )
 
     def tree_flatten(self):

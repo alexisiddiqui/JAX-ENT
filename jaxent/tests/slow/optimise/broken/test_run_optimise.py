@@ -10,6 +10,7 @@ from jaxent.src.custom_types.HDX import (
     HDX_peptide,
     HDX_protection_factor,
 )
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -166,19 +167,19 @@ def test_quick_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     opt_simulation = run_optimise(
@@ -279,19 +280,19 @@ def test_quick_sparse_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     opt_simulation = run_optimise(
@@ -405,19 +406,19 @@ def test_quick_max_ent_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     opt_simulation = run_optimise(
@@ -529,19 +530,19 @@ def test_quick_MAE_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     pf_prior = [
@@ -561,13 +562,13 @@ def test_quick_MAE_optimiser():
     pf_prior_data.train = Dataset(
         data=prior_train_data,
         y_true=jnp.array([data.extract_features() for data in prior_train_data]),
-        residue_feature_ouput_mapping=prior_train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_train_sparse_map),
     )
 
     pf_prior_data.val = Dataset(
         data=prior_val_data,
         y_true=jnp.array([data.extract_features() for data in prior_val_data]),
-        residue_feature_ouput_mapping=prior_val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_val_sparse_map),
     )
 
     opt_simulation = run_optimise(
@@ -672,19 +673,19 @@ def test_quick_MAE_sparse_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
 
     opt_simulation = run_optimise(
@@ -798,19 +799,19 @@ def test_quick_MAE_sparse_optimiser():
 #     dataset.train = Dataset(
 #         data=train_data,
 #         y_true=jnp.array([data.extract_features() for data in train_data]),
-#         residue_feature_ouput_mapping=train_sparse_map,
+#         data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
 #     )
 
 #     dataset.val = Dataset(
 #         data=val_data,
 #         y_true=jnp.array([data.extract_features() for data in val_data]),
-#         residue_feature_ouput_mapping=val_sparse_map,
+#         data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
 #     )
 
 #     dataset.test = Dataset(
 #         data=exp_data,
 #         y_true=jnp.array([data.extract_features() for data in exp_data]),
-#         residue_feature_ouput_mapping=test_sparse_map,
+#         data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
 #     )
 
 #     opt_simulation = run_optimise(
@@ -925,19 +926,19 @@ def test_quick_MAE_sparse_max_ent_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
     pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
@@ -951,13 +952,13 @@ def test_quick_MAE_sparse_max_ent_optimiser():
     pf_prior_data.train = Dataset(
         data=prior_train_data,
         y_true=jnp.array([data.extract_features() for data in prior_train_data]),
-        residue_feature_ouput_mapping=prior_train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_train_sparse_map),
     )
 
     pf_prior_data.val = Dataset(
         data=prior_val_data,
         y_true=jnp.array([data.extract_features() for data in prior_val_data]),
-        residue_feature_ouput_mapping=prior_val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_val_sparse_map),
     )
     custom_optimizer = OptaxOptimizer(
         learning_rate=1e-3,
@@ -1084,19 +1085,19 @@ def test_quick_MAE_max_ent_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
     pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
@@ -1110,13 +1111,13 @@ def test_quick_MAE_max_ent_optimiser():
     pf_prior_data.train = Dataset(
         data=prior_train_data,
         y_true=jnp.array([data.extract_features() for data in prior_train_data]),
-        residue_feature_ouput_mapping=prior_train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_train_sparse_map),
     )
 
     pf_prior_data.val = Dataset(
         data=prior_val_data,
         y_true=jnp.array([data.extract_features() for data in prior_val_data]),
-        residue_feature_ouput_mapping=prior_val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_val_sparse_map),
     )
     custom_optimizer = OptaxOptimizer(
         learning_rate=1e-4,
@@ -1241,19 +1242,19 @@ def test_quick_sparse_max_ent_optimiser():
     dataset.train = Dataset(
         data=train_data,
         y_true=jnp.array([data.extract_features() for data in train_data]),
-        residue_feature_ouput_mapping=train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
     )
 
     dataset.val = Dataset(
         data=val_data,
         y_true=jnp.array([data.extract_features() for data in val_data]),
-        residue_feature_ouput_mapping=val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
     )
 
     dataset.test = Dataset(
         data=exp_data,
         y_true=jnp.array([data.extract_features() for data in exp_data]),
-        residue_feature_ouput_mapping=test_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
     )
     pf_prior_data = ExpD_Dataloader(data=pf_prior)
 
@@ -1267,13 +1268,13 @@ def test_quick_sparse_max_ent_optimiser():
     pf_prior_data.train = Dataset(
         data=prior_train_data,
         y_true=jnp.array([data.extract_features() for data in prior_train_data]),
-        residue_feature_ouput_mapping=prior_train_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_train_sparse_map),
     )
 
     pf_prior_data.val = Dataset(
         data=prior_val_data,
         y_true=jnp.array([data.extract_features() for data in prior_val_data]),
-        residue_feature_ouput_mapping=prior_val_sparse_map,
+        data_mapping=SparseFragmentMapping(sparse_map=prior_val_sparse_map),
     )
     custom_optimizer = OptaxOptimizer(
         learning_rate=1e-4,

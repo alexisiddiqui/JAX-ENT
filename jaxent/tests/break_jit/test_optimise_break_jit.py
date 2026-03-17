@@ -22,6 +22,7 @@ from jaxent.src.custom_types.config import FeaturiserSettings, OptimiserSettings
 from jaxent.src.custom_types.HDX import HDX_protection_factor
 
 # Import all the necessary modules
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset, ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import create_sparse_map
 from jaxent.src.data.splitting.split import DataSplitter
@@ -199,17 +200,17 @@ class OptimizationTestEnvironment:
             self.dataset.train = Dataset(
                 data=train_data,
                 y_true=jnp.array([data.extract_features() for data in train_data]),
-                residue_feature_ouput_mapping=train_sparse_map,
+                data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
             )
             self.dataset.val = Dataset(
                 data=val_data,
                 y_true=jnp.array([data.extract_features() for data in val_data]),
-                residue_feature_ouput_mapping=val_sparse_map,
+                data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
             )
             self.dataset.test = Dataset(
                 data=self.exp_data,
                 y_true=jnp.array([data.extract_features() for data in self.exp_data]),
-                residue_feature_ouput_mapping=test_sparse_map,
+                data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
             )
 
         except Exception as e:
@@ -218,7 +219,7 @@ class OptimizationTestEnvironment:
             self.dataset.train = Dataset(
                 data=self.exp_data[:1],
                 y_true=jnp.array([10.0]),
-                residue_feature_ouput_mapping=jnp.array([[0]]),
+                data_mapping=SparseFragmentMapping(sparse_map=jnp).array([[0]]),
             )
             self.dataset.val = self.dataset.train
             self.dataset.test = self.dataset.train

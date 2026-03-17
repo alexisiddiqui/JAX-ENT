@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable
 from typing import Generic
 
 import chex
@@ -17,20 +17,26 @@ from jaxent.src.custom_types.protocols import ExpDDatapointLike
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
 from jaxent.src.data.splitting.sparse_map import create_sparse_map, create_covariance_mat
+from jaxent.src.data.splitting.mapping import DataMapping, SparseFragmentMapping
 from jaxent.src.interfaces.topology import Partial_Topology
 
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=["y_true", "residue_feature_ouput_mapping", "covariance_matrix"],
+    data_fields=["y_true", "data_mapping", "covariance_matrix"],
     meta_fields=["data"],
 )
 @dataclass(frozen=True, slots=True)
 class Dataset:
     data: Sequence[ExpDDatapointLike]
     y_true: Float[Array, "n_fragments ..."]  # (n_fragments,) or (n_timepoints, n_fragments)
-    residue_feature_ouput_mapping: sparse.BCOO  # shape (n_fragments, n_residues)
+    data_mapping: DataMapping  # generalized mapping protocol
     covariance_matrix: Float[Array, "n_fragments n_fragments"] | None = None  # Inverse covariance matrix
+
+    @property
+    def residue_feature_ouput_mapping(self):
+        """Legacy compatibility for remaining HDX specific losses."""
+        return self.data_mapping.sparse_map
 
 
 class ExpD_Dataloader(Generic[T_ExpD]):
@@ -110,6 +116,7 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         train_data: Sequence[T_ExpD] | None = None,
         val_data: Sequence[T_ExpD] | None = None,
         test_data: Sequence[T_ExpD] | None = None,
+        mapping_factory: Callable[..., DataMapping] | None = None,
     ) -> None:
         """
         Create train, val, and test Dataset objects with sparse mappings.
@@ -120,6 +127,7 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             train_data: Training datapoints. If None, uses all data from dataloader
             val_data: Validation datapoints. If None, uses all data from dataloader
             test_data: Test datapoints. If None, uses all data from dataloader
+            mapping_factory: Optional factory to create mapping for train/val/test data
         """
         # Use all data if specific splits not provided
         if train_data is None:
@@ -173,25 +181,34 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         print(f"Val y_true shape: {val_y_true.shape}")
         print(f"Test y_true shape: {test_y_true.shape}")
 
+        if mapping_factory is not None:
+            train_mapping = mapping_factory(features, feature_topology, train_data)
+            val_mapping = mapping_factory(features, feature_topology, val_data)
+            test_mapping = mapping_factory(features, feature_topology, test_data)
+        else:
+            train_mapping = SparseFragmentMapping(sparse_map=train_sparse_map)
+            val_mapping = SparseFragmentMapping(sparse_map=val_sparse_map)
+            test_mapping = SparseFragmentMapping(sparse_map=test_sparse_map)
+
         # Create Dataset objects
         self.train = Dataset(
             data=train_data,
             y_true=train_y_true,
-            residue_feature_ouput_mapping=train_sparse_map,
+            data_mapping=train_mapping,
             covariance_matrix=train_cov_matrix,
         )
 
         self.val = Dataset(
             data=val_data,
             y_true=val_y_true,
-            residue_feature_ouput_mapping=val_sparse_map,
+            data_mapping=val_mapping,
             covariance_matrix=val_cov_matrix,
         )
 
         self.test = Dataset(
             data=test_data,
             y_true=test_y_true,
-            residue_feature_ouput_mapping=test_sparse_map,
+            data_mapping=test_mapping,
             covariance_matrix=test_cov_matrix,
         )
 

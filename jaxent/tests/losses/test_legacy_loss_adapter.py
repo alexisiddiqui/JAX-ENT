@@ -21,6 +21,7 @@ import jax.numpy as jnp
 import pytest
 
 from jaxent.src.custom_types.key import m_key
+from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 from jaxent.src.data.loader import Dataset
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.interfaces.topology import Partial_Topology
@@ -182,10 +183,10 @@ def create_dummy_data_with_size(config_name, config):
             sparse_map = sparse.bcoo_fromdense(mapping_matrix)
 
             self.train = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=sparse_map
+                data=exp_data, y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=sparse_map)
             )
             self.val = Dataset(
-                data=exp_data, y_true=y_true, residue_feature_ouput_mapping=sparse_map
+                data=exp_data, y_true=y_true, data_mapping=SparseFragmentMapping(sparse_map=sparse_map)
             )
 
     # Create dataloaders with proper expected shapes
