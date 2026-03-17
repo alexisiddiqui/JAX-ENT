@@ -8,7 +8,7 @@ Script args
 - Split_types: Random, Stratified, Stratified-Random (default all)
 - output_dir: directory to save the split data
 
-Example outputs can be found in jaxent/examples/4_SAXS/simple_validation/_datasplits.
+Example outputs can be found in jaxent/examples/4_SAXS/simple_validation/_datasplits_*.
 
 
 
