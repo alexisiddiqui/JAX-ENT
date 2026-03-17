@@ -1,3 +1,5 @@
+import logging
+import warnings
 from functools import partial
 from collections.abc import Sequence
 from beartype.typing import Any, Callable, Optional
@@ -21,6 +23,8 @@ from jaxent.src.opt.base import (
     OptimizationHistory,
     OptimizationState,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @register_pytree_node_class
@@ -247,7 +251,7 @@ class OptaxOptimizer:
             forward_model_weights=params.forward_model_weights,
             forward_model_scaling=params.forward_model_scaling,
         )
-        print("Params structure:", jax.tree_util.tree_structure(params))
+        logger.debug("Params structure: %s", jax.tree_util.tree_structure(params))
         if isinstance(optimisable_funcs, list):
             optimisable_funcs = jnp.array(optimisable_funcs, dtype=jnp.float32)
             optimisable_funcs = jnp.round(optimisable_funcs)
@@ -272,21 +276,35 @@ class OptaxOptimizer:
 
         # test that the _step function works
         if _jit_test_args is not None:
+            def _clone_leaf(x):
+                if isinstance(x, Array):
+                    return jnp.array(x, copy=True)
+                return x
+
+            def _clone_smoke_state() -> OptimizationState:
+                smoke_params = jax.tree_util.tree_map(
+                    _clone_leaf, params
+                )
+                smoke_opt_state = jax.tree_util.tree_map(
+                    _clone_leaf, opt_state
+                )
+                return OptimizationState(
+                    params=smoke_params,
+                    opt_state=smoke_opt_state,
+                )
+
             try:
                 data_targets, loss_functions, indexes = _jit_test_args
                 self.step = self._step
+                smoke_state = _clone_smoke_state()
 
                 _ = self.step(
                     self,
-                    OptimizationState(
-                        params=params,
-                        opt_state=opt_state,
-                    ),
+                    smoke_state,
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
-                    self.history,
-                    tuple(indexes),
+                    indexes=tuple(indexes),
                 )
             except Exception as e:
                 del self.step
@@ -304,34 +322,26 @@ class OptaxOptimizer:
                     donate_argnames=("state",),
                     static_argnames=(
                         # "optimizer",
-                        # "simulation",
-                        # "data_targets",
+                        "simulation",
                         "loss_functions",
-                        # "history",
                         "indexes",
                     ),
                 )
+                smoke_state = _clone_smoke_state()
                 _ = self.step(
                     self,
-                    OptimizationState(
-                        params=params,
-                        opt_state=opt_state,
-                    ),
+                    smoke_state,
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
-                    self.history,
-                    tuple(indexes),
+                    indexes=tuple(indexes),
                 )
-                print("\n\n\n\n\n\n\n\n\n Optimiser JIT compilation successful \n\n\n\n\n\n\n\n\n")
+                logger.info("Optimiser JIT compilation successful.")
             except Exception as e:
-                print(e)
+                logger.warning("JIT compilation failed: %s \n Reverting to non-jit step function", e)
                 self.step = self._step
-                RuntimeWarning(
-                    f"JIT compilation failed: {e} \n Reverting back to non-jit step function"
-                )
         else:
-            print("No test args provided, skipping JIT compilation")
+            logger.debug("No test args provided, skipping JIT compilation.")
             self.step = self._step
         self.gradient_mask = self.create_gradient_masks(
             {Optimisable_Parameters.frame_weights,},
@@ -358,10 +368,10 @@ class OptaxOptimizer:
             A Simulation_Parameters instance containing integer masks (0 or 1) for each parameter
         """
         if optimisable_funcs is None:
-            print(
-                DeprecationWarning(
-                    "The optimisable_funcs argument is deprecated and will be removed in future versions"
-                )
+            warnings.warn(
+                "The optimisable_funcs argument is deprecated and will be removed in future versions",
+                DeprecationWarning,
+                stacklevel=2,
             )
             optimisable_funcs = jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32)
 
@@ -381,8 +391,8 @@ class OptaxOptimizer:
                 "frame masking is not applied during weights normalisation before the forward step"
             )
 
-        print(parameter_partition_masks)
-        print(f"Masks: frame={frame_mask}, model={model_mask}, frame_mask={mask_mask}")
+        logger.debug("Gradient mask partitions: %s", parameter_partition_masks)
+        logger.debug("Masks: frame=%s, model=%s, frame_mask=%s", frame_mask, model_mask, mask_mask)
 
         # Create frame weights mask
         frame_weights_mask = jax.tree_map(
@@ -393,7 +403,7 @@ class OptaxOptimizer:
         frame_mask_mask = jax.tree_map(
             lambda x: jnp.full_like(x, mask_mask, dtype=jnp.float32), params.frame_mask
         )
-        print("Frame mask mask:", frame_mask_mask)
+        logger.debug("Frame mask mask: %s", frame_mask_mask)
 
         # Create model parameters mask - handle each Model_Parameters instance separately
         model_parameters_mask = []
@@ -415,13 +425,8 @@ class OptaxOptimizer:
             forward_model_weights=jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32),
             forward_model_scaling=jnp.zeros_like(params.forward_model_scaling, dtype=jnp.float32),
         )
-        print("Original params structure:", jax.tree_util.tree_structure(params))
-
-        print(
-            "Mask structure:",
-            jax.tree_util.tree_structure(param_mask),
-        )
-        # raise ValueError("Stop here")
+        logger.debug("Original params structure: %s", jax.tree_util.tree_structure(params))
+        logger.debug("Mask structure: %s", jax.tree_util.tree_structure(param_mask))
         return param_mask
 
     @staticmethod
@@ -508,24 +513,18 @@ class OptaxOptimizer:
             ...,
         ],
         loss_functions: tuple[JaxEnt_Loss, ...],
-        # history: OptimizationHistory,
         indexes: tuple[int, ...],
     ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
-        """Perform one optimization step"""
+        """Perform one optimization step.
 
-        # Switch to regular learning rate after initial steps
-        if state.step == optimizer.initial_steps:
-            optimizer.lr_schedule.update(optimizer.learning_rate)
-            optimizer.model_lr_schedule.update(
-                optimizer.learning_rate * optimizer.model_parameters_lr_scale
-            )
-            optimizer.gradient_mask = optimizer.create_gradient_masks(
-                optimizer.parameter_partition_masks,
-                state.params,
-                None,
-            )
+        This function is designed to be pure (no Python-level side effects on JAX
+        traced values) so it is compatible with ``jax.jit`` and ``jax.vmap``.
 
-
+        Learning-rate warmup and oscillation-based LR adaptation are intentionally
+        handled at the Python level in :func:`_optimise`, where ``step`` is a
+        concrete Python integer and mutations of the optimizer's learning-rate
+        schedule are safe.
+        """
         def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
             # Update simulation parameters for gradient computation
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
@@ -542,24 +541,6 @@ class OptaxOptimizer:
 
         # Apply masks to gradients
         masked_grads = optimizer.mask_gradients(grads, optimizer.gradient_mask)
-        
-        # Compute the dot product of current masked_grads and previous gradients for oscillation detection
-        grad_dot_product = jax.tree_util.tree_reduce(
-            lambda x, y: x + y,
-            jax.tree_util.tree_map(
-                lambda a, b: jnp.vdot(a, b),
-                state.gradients if state.gradients is not None else masked_grads,
-                masked_grads,  # type: ignore
-            ),
-        )
-        if grad_dot_product < 0 and state.step > 1:
-            current_lr = optimizer.lr_schedule()
-            new_lr = current_lr / optimizer.plateau_denominator
-            new_model_lr = new_lr * optimizer.model_parameters_lr_scale
-
-            # Update both learning rate schedules
-            optimizer.lr_schedule.update(new_lr)
-            optimizer.model_lr_schedule.update(new_model_lr)
 
         # Get optimizer updates
         updates, new_opt_state = optimizer.optimizer.update(
@@ -570,7 +551,7 @@ class OptaxOptimizer:
             grad=masked_grads,
             value_fn=scalar_loss_fn,
         )
-        
+
         # Apply updates
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore
 
