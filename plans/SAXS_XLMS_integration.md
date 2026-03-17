@@ -473,5 +473,10 @@ SAXS reweighted mode has no forward model — only frame weights are optimised.
 9. **Unit test SAXS reweighted forward pass**: verify that frame-weighted averaging of pre-computed I(q) curves produces correct output with known weights and curves.
 10. **Unit test Data Splitting auto-detection**: verify `is_whole_system_data` correctly identifies SAXS curves vs HDX fragments. Verify incompatible methods (`sequence_split`, `spatial_split`) raise `ValueError` on SAXS data. Verify compatible methods (`random_split`, `stratified_split`) succeed on SAXS data.
 11. **Regression tests for existing HDX loss functions** in `opt/losses.py` after generic loss refactor.
-12. **Integration test**: construct `Simulation` with mixed HDX + mock SAXS (reweighted) models, shared frame weights, verify both forward passes execute and outputs accessible by key
-13. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
+12. **Integration test**: construct `Simulation` with mixed HDX + SAXS (reweighted) models, shared frame weights, verify both forward passes execute and outputs accessible by key
+13. **Integration test**: construct `Simulation` with mixed HDX + XLMS   models, shared frame weights, verify both forward passes execute and outputs accessible by key
+14. **Integration test**: construct `Simulation` with mixed HDX + XLMS + SAXS   models, shared frame weights, verify both forward passes execute and outputs accessible by key
+15. **Integration test**: perform `run_optimise` on `Simulation` with mixed HDX + SAXS (reweighted) models, shared frame weights, verify both forward passes execute and outputs accessible by key
+16. **Integration test**: perform `run_optimise` on `Simulation` with mixed HDX + XLMS models, shared frame weights, verify both forward passes execute and outputs accessible by key
+17. **Integration test**: perform `run_optimise` on `Simulation` with mixed HDX + XLMS + SAXS models, shared frame weights, verify both forward passes execute and outputs accessible by key
+18. **JIT compilation test**: verify the simulation JIT-compiles with multiple model types
