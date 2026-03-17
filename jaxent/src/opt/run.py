@@ -8,6 +8,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from jax import Array
+import math
 
 from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.config import OptimiserSettings
@@ -100,10 +101,11 @@ def _optimise(
                 optimizer.model_lr_schedule.update(
                     optimizer.learning_rate * optimizer.model_parameters_lr_scale
                 )
+                optimisable_funcs = getattr(optimizer, "optimisable_funcs", None)
                 optimizer.gradient_mask = optimizer.create_gradient_masks(
                     optimizer.parameter_partition_masks,
                     opt_state.params,
-                    None,
+                    optimisable_funcs,
                 )
 
             prev_grads = (
@@ -211,11 +213,13 @@ def _optimise(
             )
 
             # --- Python-level oscillation-based LR adaptation ---
-            # grad_dot_product is a concrete JAX scalar returned from the step.
+            # grad_dot_product is a JAX scalar returned from the step.
+            # Materialize it here so that using it in Python control flow is safe.
+            grad_dot_product_value = float(grad_dot_product)
             # Checking it here (Python level) is safe; the same check inside _step
             # would require a concrete value under jax.jit/jax.vmap and is therefore
             # not done there.
-            if grad_dot_product < 0 and step > 1:
+            if grad_dot_product_value < 0 and step > 1:
                 current_lr = optimizer.lr_schedule()
                 new_lr = current_lr / optimizer.plateau_denominator
                 optimizer.lr_schedule.update(new_lr)
@@ -229,7 +233,14 @@ def _optimise(
                 )
                 steps_since_threshold_start = 0
 
-            if current_loss < tolerance or jnp.isnan(current_loss) or jnp.isinf(current_loss):
+            # Convert current_loss (a JAX scalar) to a Python float for safe Python-level checks.
+            current_loss_value = float(current_loss)
+
+            if (
+                current_loss_value < tolerance
+                or math.isnan(current_loss_value)
+                or math.isinf(current_loss_value)
+            ):
                 logger.info("Reached convergence tolerance/nan/inf at step %d", step)
                 break
 
@@ -364,7 +375,7 @@ def run_optimise(
             learning_rate=config.learning_rate,
             optimizer=config.optimiser_type,
         )
-    if jit_update_step is False or None:
+    if not jit_update_step:
         jit_test_args = None
     else:
         jit_test_args = (data_to_fit, loss_functions, indexes)

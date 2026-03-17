@@ -504,7 +504,7 @@ class OptaxOptimizer:
             ...,
         ],
         loss_functions: tuple[JaxEnt_Loss, ...],
-        # history: OptimizationHistory,
+        history: OptimizationHistory,
         indexes: tuple[int, ...],
     ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
         """Perform one optimization step.
