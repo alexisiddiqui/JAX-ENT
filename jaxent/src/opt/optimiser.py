@@ -276,22 +276,31 @@ class OptaxOptimizer:
 
         # test that the _step function works
         if _jit_test_args is not None:
+            def _clone_leaf(x):
+                if isinstance(x, Array):
+                    return jnp.array(x, copy=True)
+                return x
+
+            def _clone_smoke_state() -> OptimizationState:
+                smoke_params = jax.tree_util.tree_map(
+                    _clone_leaf, params
+                )
+                smoke_opt_state = jax.tree_util.tree_map(
+                    _clone_leaf, opt_state
+                )
+                return OptimizationState(
+                    params=smoke_params,
+                    opt_state=smoke_opt_state,
+                )
+
             try:
                 data_targets, loss_functions, indexes = _jit_test_args
                 self.step = self._step
-                smoke_params = jax.tree_util.tree_map(
-                    lambda x: x.copy() if hasattr(x, "copy") else x, params
-                )
-                smoke_opt_state = jax.tree_util.tree_map(
-                    lambda x: x.copy() if hasattr(x, "copy") else x, opt_state
-                )
+                smoke_state = _clone_smoke_state()
 
                 _ = self.step(
                     self,
-                    OptimizationState(
-                        params=smoke_params,
-                        opt_state=smoke_opt_state,
-                    ),
+                    smoke_state,
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
@@ -318,18 +327,10 @@ class OptaxOptimizer:
                         "indexes",
                     ),
                 )
-                smoke_params = jax.tree_util.tree_map(
-                    lambda x: x.copy() if hasattr(x, "copy") else x, params
-                )
-                smoke_opt_state = jax.tree_util.tree_map(
-                    lambda x: x.copy() if hasattr(x, "copy") else x, opt_state
-                )
+                smoke_state = _clone_smoke_state()
                 _ = self.step(
                     self,
-                    OptimizationState(
-                        params=smoke_params,
-                        opt_state=smoke_opt_state,
-                    ),
+                    smoke_state,
                     model,
                     tuple(data_targets),
                     tuple(loss_functions),
