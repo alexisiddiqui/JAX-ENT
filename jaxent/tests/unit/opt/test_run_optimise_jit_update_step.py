@@ -23,8 +23,7 @@ class DummySimulation:
         return (self.params,), None
 
     @classmethod
-    def tree_unflatten(cls, aux_data, children):
-        _ = aux_data
+    def tree_unflatten(cls, _aux_data, children):
         (params,) = children
         return cls(params)
 
