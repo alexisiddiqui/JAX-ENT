@@ -312,7 +312,7 @@ This is scalar algebra on averaged features — O(1) per q-point during optimiza
   - For Debye 6-term mode: Dynamic (optimizable): `c1` (excluded volume), `c2` (hydration), `c` (scale), `b` (background)
   - Static: `key`
 - `features.py`:
-  - `SAXS_reweighted_input_features(Input_Features)`: pre-computed I(q) per structure, shape `(n_q, n_frames)`. `__features__ = {"intensities"}`. After frame averaging produces `(n_q,)`.
+  - `SAXS_curve_input_features(Input_Features)`: pre-computed I(q) per structure, shape `(n_q, n_frames)`. `__features__ = {"intensities"}`. After frame averaging produces `(n_q,)`.
   - `SAXS_basis_input_features(Input_Features)`: 6 basis profiles, shape `(6, n_q, n_frames)`. `__features__ = {"basis_profiles"}`. After frame averaging produces `(6, n_q)`.
   - `SAXS_output_features(Output_Features)`: intensity array `(n_q,)` with `y_pred()` returning `intensity`. `key = m_key("SAXS_Iq")`
 - `forwardmodel.py`: `SAXS_model(ForwardModel)` — dispatches to reweighted or Debye forward pass based on config mode

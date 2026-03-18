@@ -44,27 +44,13 @@ from jaxent.src.opt.optimiser import OptaxOptimizer, Optimisable_Parameters
 from jaxent.src.opt.loss.base import create_functional_loss, LossRegistry
 from jaxent.src.data.loader import Dataset
 from jaxent.src.utils.hdf import save_optimization_history_to_file
-
+from jaxent.src.data.splitting.mapping import QSubsetMapping
+from jaxent.src.data.loader import SAXSDataloader
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
-@partial(jax.tree_util.register_dataclass, data_fields=["indices"], meta_fields=[])
-@dataclass(frozen=True)
-class QSubsetMapping:
-    """Maps full (501,) q-point predictions to train/val subsets."""
-    indices: jnp.ndarray
 
-    def apply(self, pred):
-        return pred[self.indices]
-
-
-@partial(jax.tree_util.register_dataclass, data_fields=["train", "val"], meta_fields=[])
-@dataclass
-class SAXSDataloader:
-    """Container for train/val datasets."""
-    train: Dataset
-    val: Dataset
 
 
 def find_q_indices(full_q, subset_q, tol=1e-7):
@@ -130,7 +116,7 @@ def create_chi2_loss():
 def main():
     parser = argparse.ArgumentParser(description="SAXS reweighting fitting")
     parser.add_argument("--split-type",
-                        choices=["random", "stratified", "data-cluster"],
+                        choices=["random", "stratified", "random-stratified"],
                         required=True)
     parser.add_argument("--split-index", type=int, required=True)
     parser.add_argument("--maxent-strength", type=float, required=True)
@@ -199,7 +185,7 @@ def main():
     )
 
     # Setup SAXS model
-    saxs_features = SAXS_curve_input_features(curve_profiles=jnp.array(curve_matrix))
+    saxs_features = SAXS_curve_input_features(intensities=jnp.array(curve_matrix))
     saxs_config = SAXS_direct_Config(q_values=jnp.array(full_q))
     saxs_model = SAXS_direct_model(config=saxs_config)
 

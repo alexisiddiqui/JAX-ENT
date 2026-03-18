@@ -11,7 +11,7 @@ from jaxent.src.custom_types.key import m_key
 
 
 @dataclass(slots=True, frozen=True)
-class SAXS_reweighted_input_features(Input_Features):
+class SAXS_curve_input_features(Input_Features):
     """Pre-computed I(q) curves per structure, shape (n_q, n_frames).
     Frames are the last axis for compatibility with frame_average_features."""
     intensities: Float[Array, "n_q n_frames"] | Float[ndarray, "n_q n_frames"]
@@ -60,9 +60,9 @@ class SAXS_output_features(Output_Features):
 
 
 register_pytree_node(
-    SAXS_reweighted_input_features,
-    SAXS_reweighted_input_features.tree_flatten,
-    SAXS_reweighted_input_features.tree_unflatten,
+    SAXS_curve_input_features,
+    SAXS_curve_input_features.tree_flatten,
+    SAXS_curve_input_features.tree_unflatten,
 )
 register_pytree_node(
     SAXS_basis_input_features,

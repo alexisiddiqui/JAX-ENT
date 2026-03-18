@@ -1,18 +1,18 @@
 import jax.numpy as jnp
 from jaxent.src.custom_types.base import ForwardPass
 from jaxent.src.models.SAXS.features import (
-    SAXS_reweighted_input_features, SAXS_basis_input_features, SAXS_output_features,
+    SAXS_curve_input_features, SAXS_basis_input_features, SAXS_output_features,
 )
 from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
 
 
 class SAXS_ReweightedForwardPass(
-    ForwardPass[SAXS_reweighted_input_features, SAXS_output_features, SAXS_Reweighted_Parameters]
+    ForwardPass[SAXS_curve_input_features, SAXS_output_features, SAXS_Reweighted_Parameters]
 ):
     """Identity forward pass: returns frame-averaged I(q) directly."""
     def __call__(
         self,
-        input_features: SAXS_reweighted_input_features,
+        input_features: SAXS_curve_input_features,
         parameters: SAXS_Reweighted_Parameters,
     ) -> SAXS_output_features:
         return SAXS_output_features(intensity=jnp.asarray(input_features.intensities))

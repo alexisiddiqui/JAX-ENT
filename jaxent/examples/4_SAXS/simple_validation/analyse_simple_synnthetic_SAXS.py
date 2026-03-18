@@ -208,7 +208,7 @@ def plot_ess(df: pd.DataFrame, output_dir: Path):
             ses.append(se)
 
         x = np.arange(len(split_types))
-        colors = {"random": "blue", "stratified": "green", "data-cluster": "red"}
+        colors = {"random": "blue", "stratified": "green", "random-stratified": "red"}
         bar_colors = [colors.get(st, "gray") for st in split_types]
 
         bars = ax.bar(x, means, yerr=ses, capsize=5, color=bar_colors, alpha=0.7)

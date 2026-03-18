@@ -1,7 +1,7 @@
 """
 This script loads the reference data and splits it into train and validation sets.
 
-Random, Stratified (alternating), stratified-random (Data-Cluster)
+Random, Stratified (alternating), stratified-random (random-stratified)
 
 Script args
 - SAXS_data: path to the SAXS data 
