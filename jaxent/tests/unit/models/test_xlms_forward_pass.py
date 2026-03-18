@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_features
 from jaxent.src.models.XLMS.parameters import XLMS_Model_Parameters
+from jaxent.src.models.XLMS.forward import XLMS_distance_ForwardPass
 from jaxent.src.custom_types.key import m_key
 
 
@@ -63,3 +64,27 @@ class TestXLMSModelParameters:
         flat, aux = p.tree_flatten()
         r = XLMS_Model_Parameters.tree_unflatten(aux, flat)
         assert r.key == p.key
+
+class TestXLMSDistanceForwardPass:
+    def test_returns_averaged_distance_matrix(self):
+        """After frame averaging, distances is (n_residues, n_residues). Forward wraps it."""
+        mat = jnp.array([[0.0, 5.0], [5.0, 0.0]])  # already averaged
+        features = XLMS_input_features(distances=mat)
+        params = XLMS_Model_Parameters()
+        result = XLMS_distance_ForwardPass()(features, params)
+        assert isinstance(result, XLMS_output_features)
+        np.testing.assert_allclose(result.y_pred(), mat)
+
+    def test_jit_compatible(self):
+        features = XLMS_input_features(distances=jnp.eye(4))
+        params = XLMS_Model_Parameters()
+        result = jax.jit(XLMS_distance_ForwardPass())(features, params)
+        assert result.distances.shape == (4, 4)
+
+    def test_gradient_flows_through_features(self):
+        def loss(dists):
+            f = XLMS_input_features(distances=dists)
+            out = XLMS_distance_ForwardPass()(f, XLMS_Model_Parameters())
+            return out.distances.sum()
+        grad = jax.grad(loss)(jnp.ones((3, 3)))
+        assert jnp.isfinite(grad).all()
