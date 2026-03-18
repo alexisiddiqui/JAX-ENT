@@ -60,7 +60,7 @@ def find_q_indices(full_q, subset_q, tol=1e-7):
 
 def load_experimental_curve(curve_type: str) -> tuple:
     """Load experimental curve (q, I, err) from FOXS directory."""
-    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" / "FOXS"
+    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" / "FOXS" / "missing_residues"
     fname = "1CLL_apo.pdb.dat" if curve_type == "APO" else "1CLL_nosol.pdb.dat"
     dat = np.loadtxt(FOXS_DIR / fname, comments="#")
     return dat[:, 0], dat[:, 1], dat[:, 2]

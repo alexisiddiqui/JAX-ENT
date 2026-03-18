@@ -284,7 +284,7 @@ class DataSplitter:
         )
         return [train_curve], [val_curve]
 
-    def _whole_system_stratified_split(self, n_strata=10):
+    def _whole_system_stratified_random_split(self, n_strata=10):
         import numpy as np
 
         saxs_curve = self.dataset.data[0]
@@ -298,6 +298,68 @@ class DataSplitter:
         n_train_s = max(1, min(int(self.train_size * n_strata), n_strata - 1))
         train_q = np.sort(np.concatenate([strata[i] for i in order[:n_train_s]]))
         val_q = np.sort(np.concatenate([strata[i] for i in order[n_train_s:]]))
+        self.last_train_q_indices = train_q
+        self.last_val_q_indices = val_q
+
+        q_has_values = len(saxs_curve.q_values) == n_q
+        train_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[train_q],
+            q_values=saxs_curve.q_values[train_q] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[train_q] if saxs_curve.errors is not None else None,
+        )
+        val_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[val_q],
+            q_values=saxs_curve.q_values[val_q] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[val_q] if saxs_curve.errors is not None else None,
+        )
+        return [train_curve], [val_curve]
+
+    def _whole_system_stratified_deterministic_split(self):
+        """Alternating-strata split over q-points inside a single SAXS_curve.
+
+        Mirrors stratified_deterministic_split but operates on q-points rather
+        than on a list of datapoints:
+          1. Sort q-points by intensity value.
+          2. Randomly pick n_strata from [2, n_q // 5] (seeded by random_seed).
+          3. Randomly choose whether stratum 0 goes to train or val.
+          4. Alternate subsequent strata between the two sets.
+        """
+        import numpy as np
+
+        saxs_curve = self.dataset.data[0]
+        intensities = np.asarray(saxs_curve.intensities)
+        n_q = len(intensities)
+
+        # Step 1: Sort q-points by intensity
+        sorted_q = np.argsort(intensities)
+
+        # Step 2: Randomly pick n_strata in [2, n_q // 5]
+        import random as _random
+        max_strata = max(2, n_q // 5)
+        _random.seed(self.random_seed)
+        n_strata = _random.randint(2, max_strata)
+
+        print(f"[det-strata] n_q={n_q}, n_strata={n_strata} (range [2, {max_strata}])")
+
+        strata = np.array_split(sorted_q, n_strata)
+
+        # Step 3 & 4: Random start, then alternate
+        first_stratum_is_train = _random.choice([True, False])
+
+        train_q_list = []
+        val_q_list = []
+        for i, stratum in enumerate(strata):
+            is_train = (i % 2 == 0) == first_stratum_is_train
+            if is_train:
+                train_q_list.append(stratum)
+            else:
+                val_q_list.append(stratum)
+
+        train_q = np.sort(np.concatenate(train_q_list))
+        val_q = np.sort(np.concatenate(val_q_list))
+
         self.last_train_q_indices = train_q
         self.last_val_q_indices = val_q
 
@@ -914,7 +976,7 @@ class DataSplitter:
             random.seed(self.random_seed)
             return self.sequence_split(remove_overlap=remove_overlap)
 
-    def stratified_split(
+    def stratified_random_split(
         self, remove_overlap: bool = False, n_strata: Optional[int] = 10
     ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
         """
@@ -937,7 +999,7 @@ class DataSplitter:
             Tuple of (training_datapoints, validation_datapoints)
         """
         if self.is_whole_system_data:
-            return self._whole_system_stratified_split(
+            return self._whole_system_stratified_random_split(
                 n_strata=n_strata if n_strata is not None else 10
             )
 
@@ -1315,3 +1377,182 @@ class DataSplitter:
                 stop=stop,
                 step=step,
             )
+
+    def stratified_deterministic_split(
+        self, remove_overlap: bool = False
+    ) -> tuple[list[ExpD_Datapoint], list[ExpD_Datapoint]]:
+        """
+        Perform a deterministic alternating stratified split.
+
+        Process:
+        0. Optional: Remove highly redundant fragments by centrality sampling
+        1. Extract average feature value (y_true) for each datapoint
+        2. Sort datapoints by feature value
+        3. Randomly sample n_strata from [2, len(features)//5]  (seeded by random_seed)
+        4. Bin sorted datapoints into n_strata equal-ish strata
+        5. Randomly choose whether stratum 0 goes to train or val  (same random stream)
+        6. Alternate subsequent strata between train and val
+        7. Create merged topologies for train/val sets
+        8. Optionally remove overlaps
+        9. Filter dataset and validate split
+
+        The alternating pattern ensures that both train and val sets receive strata at
+        every quantile level across the full feature range, giving a balanced distribution
+        without any random per-item sampling.
+
+        Args:
+            remove_overlap: If True, remove overlaps between train and val merged topologies
+
+        Returns:
+            Tuple of (training_datapoints, validation_datapoints)
+        """
+        if self.is_whole_system_data:
+            return self._whole_system_stratified_deterministic_split()
+
+        try:
+            import numpy as np
+        except ImportError:
+            raise ImportError(
+                "NumPy is required for stratified splitting. Install with: pip install numpy"
+            )
+
+        print(
+            f"Starting stratified_deterministic_split with train_size={self.train_size}, "
+            f"remove_overlap={remove_overlap}"
+        )
+
+        # Step 0: Apply centrality sampling if requested
+        if self.centrality:
+            source_dataset = self.sample_by_centrality()
+        else:
+            source_dataset = self.dataset.data
+
+        if len(source_dataset) < 2:
+            raise ValueError(
+                f"Source dataset is too small to split ({len(source_dataset)} datapoints)."
+            )
+
+        # Step 1: Extract average feature values
+        datapoint_values: list[tuple[float, int, ExpD_Datapoint]] = []
+        for i, datapoint in enumerate(source_dataset):
+            if hasattr(datapoint, "y_true") and datapoint.y_true is not None:
+                y_true = datapoint.y_true
+                if isinstance(y_true, (list, np.ndarray)):
+                    avg_value = float(np.mean(y_true)) if len(y_true) > 0 else 0.0
+                else:
+                    avg_value = float(y_true)
+            elif hasattr(datapoint, "target") and datapoint.target is not None:
+                target = datapoint.target
+                if isinstance(target, (list, np.ndarray)):
+                    avg_value = float(np.mean(target)) if len(target) > 0 else 0.0
+                else:
+                    avg_value = float(target)
+            elif hasattr(datapoint, "extract_features"):
+                features = datapoint.extract_features()
+                avg_value = float(np.mean(features)) if len(features) > 0 else 0.0
+            else:
+                avg_value = hash(str(datapoint.top)) % 1000
+
+            datapoint_values.append((avg_value, i, datapoint))
+
+        print(f"Extracted target values for {len(datapoint_values)} datapoints")
+
+        # Step 2: Sort by feature value
+        datapoint_values.sort(key=lambda x: x[0])
+
+        # Step 3: Randomly sample n_strata from [2, len(features)//5]
+        max_strata = max(2, len(source_dataset) // 5)
+        random.seed(self.random_seed)
+        n_strata = random.randint(2, max_strata)
+
+        print(f"Randomly selected n_strata={n_strata} (range [2, {max_strata}])")
+
+        # Step 4: Bin sorted datapoints into n_strata equal-ish strata
+        strata: list[list[ExpD_Datapoint]] = [[] for _ in range(n_strata)]
+        items_per_stratum = len(datapoint_values) // n_strata
+        remainder = len(datapoint_values) % n_strata
+
+        start_idx = 0
+        for stratum_idx in range(n_strata):
+            stratum_size = items_per_stratum + (1 if stratum_idx < remainder else 0)
+            end_idx = start_idx + stratum_size
+            strata[stratum_idx] = [dp for _, _, dp in datapoint_values[start_idx:end_idx]]
+            start_idx = end_idx
+
+        print(f"Created {n_strata} strata with sizes: {[len(s) for s in strata]}")
+
+        # Step 5 & 6: Random start, then alternate
+        # Continues the same random stream used for n_strata
+        first_stratum_is_train = random.choice([True, False])
+
+        selected_train_data: list[ExpD_Datapoint] = []
+        selected_val_data: list[ExpD_Datapoint] = []
+
+        for stratum_idx, stratum in enumerate(strata):
+            # even-indexed strata go to the "first" group, odd-indexed to the other
+            is_train = (stratum_idx % 2 == 0) == first_stratum_is_train
+            if is_train:
+                selected_train_data.extend(stratum)
+            else:
+                selected_val_data.extend(stratum)
+
+        print(
+            f"Alternating assignment: {len(selected_train_data)} training, "
+            f"{len(selected_val_data)} validation datapoints "
+            f"(first stratum → {'train' if first_stratum_is_train else 'val'})"
+        )
+
+        # Step 7: Create merged topologies
+        train_topologies = [d.top for d in selected_train_data]
+        val_topologies = [d.top for d in selected_val_data]
+
+        merged_train_topologies = self._merge_topologies_by_chain(
+            train_topologies, self.check_trim, "train_strat_det"
+        )
+        merged_val_topologies = self._merge_topologies_by_chain(
+            val_topologies, self.check_trim, "val_strat_det"
+        )
+
+        # Step 8: Remove overlaps if requested
+        if remove_overlap:
+            merged_val_topologies = self._remove_overlaps(
+                merged_train_topologies, merged_val_topologies
+            )
+
+        # Step 9: Filter dataset and validate
+        train_topology_set = set(merged_train_topologies.values())
+        val_topology_set = set(merged_val_topologies.values())
+
+        final_train_data = filter_common_residues(
+            self.dataset.data, train_topology_set, check_trim=self.check_trim
+        )
+        final_val_data = filter_common_residues(
+            self.dataset.data, val_topology_set, check_trim=self.check_trim
+        )
+
+        self.last_split_train_topologies_by_chain = merged_train_topologies
+        self.last_split_val_topologies_by_chain = merged_val_topologies
+
+        print(f"Final split: {len(final_train_data)} training, {len(final_val_data)} validation")
+
+        try:
+            self.validate_split(final_train_data, final_val_data)
+            self._reset_retry_counter()
+            return final_train_data, final_val_data
+        except Exception as e:
+            if self.current_retry_count >= self.max_retry_depth:
+                raise ValueError(
+                    f"Failed to create valid split after {self.max_retry_depth} attempts. "
+                    f"Last error: {e}. Consider adjusting train_size or other parameters."
+                )
+
+            print(
+                f"Split is not valid - trying again "
+                f"(attempt {self.current_retry_count + 1}/{self.max_retry_depth}, "
+                f"seed {self.random_seed}): {e}"
+            )
+            self.current_retry_count += 1
+            self.random_seed += 1
+            print(f"Incrementing random seed to {self.random_seed}")
+            random.seed(self.random_seed)
+            return self.stratified_deterministic_split(remove_overlap=remove_overlap)

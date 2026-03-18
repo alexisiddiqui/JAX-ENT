@@ -196,12 +196,12 @@ class TestRandomSplitForWholeSystemData:
 
 
 class TestStratifiedSplitForWholeSystemData:
-    """Tests for stratified_split with whole-system data."""
+    """Tests for stratified_random_split with whole-system data."""
 
-    def test_stratified_split_saxs_returns_lists(
+    def test_stratified_random_split_saxs_returns_lists(
         self, saxs_dataloader: ExpD_Dataloader
     ):
-        """stratified_split should return two lists of SAXS_curve objects."""
+        """stratified_random_split should return two lists of SAXS_curve objects."""
         splitter = DataSplitter(
             saxs_dataloader,
             ensemble=None,
@@ -209,7 +209,7 @@ class TestStratifiedSplitForWholeSystemData:
             train_size=0.5,
             random_seed=42,
         )
-        train_data, val_data = splitter.stratified_split(n_strata=3)
+        train_data, val_data = splitter.stratified_random_split(n_strata=3)
 
         assert isinstance(train_data, list)
         assert isinstance(val_data, list)
@@ -218,10 +218,10 @@ class TestStratifiedSplitForWholeSystemData:
         assert all(isinstance(d, SAXS_curve) for d in train_data)
         assert all(isinstance(d, SAXS_curve) for d in val_data)
 
-    def test_stratified_split_saxs_no_overlap(
+    def test_stratified_random_split_saxs_no_overlap(
         self, saxs_dataloader: ExpD_Dataloader
     ):
-        """stratified_split train/val should be non-overlapping."""
+        """stratified_random_split train/val should be non-overlapping."""
         splitter = DataSplitter(
             saxs_dataloader,
             ensemble=None,
@@ -229,17 +229,17 @@ class TestStratifiedSplitForWholeSystemData:
             train_size=0.5,
             random_seed=42,
         )
-        train_data, val_data = splitter.stratified_split(n_strata=3)
+        train_data, val_data = splitter.stratified_random_split(n_strata=3)
 
         # Check that train and val share no datapoints
         train_set = set(id(d) for d in train_data)
         val_set = set(id(d) for d in val_data)
         assert len(train_set & val_set) == 0
 
-    def test_stratified_split_saxs_uses_extract_features(
+    def test_stratified_random_split_saxs_uses_extract_features(
         self, saxs_dataloader: ExpD_Dataloader
     ):
-        """stratified_split should use extract_features for stratification."""
+        """stratified_random_split should use extract_features for stratification."""
         # This test verifies that the fallback to extract_features() works
         # by checking that split completes without error
         splitter = DataSplitter(
@@ -250,7 +250,7 @@ class TestStratifiedSplitForWholeSystemData:
             random_seed=42,
         )
         # Should not raise
-        train_data, val_data = splitter.stratified_split(n_strata=3)
+        train_data, val_data = splitter.stratified_random_split(n_strata=3)
         assert len(train_data) > 0
         assert len(val_data) > 0
 
