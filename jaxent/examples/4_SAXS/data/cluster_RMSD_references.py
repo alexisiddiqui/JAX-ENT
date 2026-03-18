@@ -12,10 +12,10 @@ Example output of this script can be found in jaxent/examples/4_SAXS/data/_RMSD_
 
 
 Script args:
-- trajectory_path: path to the trajectory file
-- topology_path: path to the topology file
-- reference_paths: list of paths to the reference structures
-- output_path: path to the output directory
+- trajectory_path: path to the trajectory file (jaxent/examples/4_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_max_plddt_425.pdb)
+- topology_path: path to the topology file (jaxent/examples/4_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_plddt_ordered.xtc)
+- reference_paths: list of paths to the reference structures (jaxent/examples/4_SAXS/FOXS/missing_residues/7PSZ_apo.pdb, jaxent/examples/4_SAXS/FOXS/missing_residues/1CLL_nosol.pdb)
+- output_path: path to the output directory (jaxent/examples/4_SAXS/data/_RMSD_cluster_output/)
 
 
 
