@@ -5,6 +5,8 @@ import pytest
 from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_features
 from jaxent.src.models.XLMS.parameters import XLMS_Model_Parameters
 from jaxent.src.models.XLMS.forward import XLMS_distance_ForwardPass
+from jaxent.src.models.XLMS.config import XLMS_Config
+from jaxent.src.models.XLMS.forwardmodel import XLMS_distance_model
 from jaxent.src.custom_types.key import m_key
 
 
@@ -88,3 +90,25 @@ class TestXLMSDistanceForwardPass:
             return out.distances.sum()
         grad = jax.grad(loss)(jnp.ones((3, 3)))
         assert jnp.isfinite(grad).all()
+
+class TestXLMSConfig:
+    def test_key_is_xlms_distance(self):
+        cfg = XLMS_Config()
+        assert cfg.key == m_key("XLMS_distance")
+
+    def test_forward_parameters_type(self):
+        cfg = XLMS_Config()
+        assert isinstance(cfg.forward_parameters, XLMS_Model_Parameters)
+
+class TestXLMSModel:
+    def test_has_xlms_forward_pass(self):
+        model = XLMS_distance_model(XLMS_Config())
+        assert m_key("XLMS_distance") in model.forward
+        assert isinstance(model.forward[m_key("XLMS_distance")], XLMS_distance_ForwardPass)
+
+    def test_initialise_returns_true(self):
+        assert XLMS_distance_model(XLMS_Config()).initialise([]) is True
+
+    def test_featurise_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            XLMS_distance_model(XLMS_Config()).featurise([])
