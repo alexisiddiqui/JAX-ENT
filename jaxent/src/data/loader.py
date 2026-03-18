@@ -161,15 +161,14 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         # print(f"After create_covariance_mat:")
         # print(f"  train_cov_matrix shape: {train_cov_matrix.shape if train_cov_matrix is not None else 'None'}")
         # print(f"  train_cov_matrix:\n{train_cov_matrix}")
-        # Create sparse mappings
-
-        covariance_matrix = self.covariance_matrix/jnp.linalg.norm(self.covariance_matrix, ord='fro') if self.covariance_matrix is not None else None
+        # Normalise covariance matrix once
+        covariance_matrix = (
+            self.covariance_matrix / jnp.linalg.norm(self.covariance_matrix, ord='fro')
+            if self.covariance_matrix is not None else None
+        )
         print("Normalized covariance matrix:\n", covariance_matrix)
-        train_sparse_map = create_sparse_map(features, feature_topology, train_data)
-        val_sparse_map = create_sparse_map(features, feature_topology, val_data)
-        test_sparse_map = create_sparse_map(features, feature_topology, test_data)
 
-        train_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(train_indices)) 
+        train_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(train_indices))
         val_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(val_indices))
         test_cov_matrix = create_covariance_mat(covariance_matrix, jnp.arange(len(test_data)))
 
@@ -186,6 +185,10 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             val_mapping = mapping_factory(features, feature_topology, val_data)
             test_mapping = mapping_factory(features, feature_topology, test_data)
         else:
+            # Only build sparse maps when no factory has been provided
+            train_sparse_map = create_sparse_map(features, feature_topology, train_data)
+            val_sparse_map = create_sparse_map(features, feature_topology, val_data)
+            test_sparse_map = create_sparse_map(features, feature_topology, test_data)
             train_mapping = SparseFragmentMapping(sparse_map=train_sparse_map)
             val_mapping = SparseFragmentMapping(sparse_map=val_sparse_map)
             test_mapping = SparseFragmentMapping(sparse_map=test_sparse_map)
