@@ -9,10 +9,14 @@ from jaxent.src.interfaces.simulation import Model_Parameters
 
 
 @dataclass(frozen=True, slots=True)
-class SAXS_Reweighted_Parameters(Model_Parameters):
+class SAXS_direct_Model_Parameters(Model_Parameters):
     """No optimizable model parameters — only frame weights are optimized."""
     key = frozenset({m_key("SAXS_Iq")})
     static_params: ClassVar[set[str]] = {"key"}
+
+
+# Backwards-compat alias — remove once all call sites are updated
+SAXS_Reweighted_Parameters = SAXS_direct_Model_Parameters
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +31,9 @@ class SAXS_Debye_Parameters(Model_Parameters):
 
 
 register_pytree_node(
-    SAXS_Reweighted_Parameters,
-    SAXS_Reweighted_Parameters.tree_flatten,
-    SAXS_Reweighted_Parameters.tree_unflatten,
+    SAXS_direct_Model_Parameters,
+    SAXS_direct_Model_Parameters.tree_flatten,
+    SAXS_direct_Model_Parameters.tree_unflatten,
 )
 register_pytree_node(
     SAXS_Debye_Parameters,
