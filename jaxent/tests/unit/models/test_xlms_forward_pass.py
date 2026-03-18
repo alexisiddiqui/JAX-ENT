@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_features
+from jaxent.src.models.XLMS.parameters import XLMS_Model_Parameters
 from jaxent.src.custom_types.key import m_key
 
 
@@ -46,3 +47,19 @@ class TestXLMSOutputFeatures:
         flat, aux = f.tree_flatten()
         r = XLMS_output_features.tree_unflatten(aux, flat)
         np.testing.assert_allclose(r.distances, f.distances)
+
+class TestXLMSModelParameters:
+    def test_no_dynamic_params(self):
+        """XLMS has no optimizable model parameters — only frame weights."""
+        p = XLMS_Model_Parameters()
+        flat, aux = p.tree_flatten()
+        assert flat == ()
+
+    def test_key_is_xlms_distance(self):
+        assert m_key("XLMS_distance") in XLMS_Model_Parameters().key
+
+    def test_pytree_roundtrip(self):
+        p = XLMS_Model_Parameters()
+        flat, aux = p.tree_flatten()
+        r = XLMS_Model_Parameters.tree_unflatten(aux, flat)
+        assert r.key == p.key
