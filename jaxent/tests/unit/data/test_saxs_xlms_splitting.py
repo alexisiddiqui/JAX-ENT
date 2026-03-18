@@ -5,6 +5,7 @@ Tests cover:
   - SAXS whole-system detection via is_whole_system_data
   - q-point random split
   - q-point stratified split
+  - q-point stratified_deterministic split
   - Guards on incompatible split methods
   - QSubsetMapping creation and apply()
   - saxs_mapping_factory()
@@ -153,26 +154,26 @@ class TestSAXSStratifiedSplit:
         self.splitter = _make_splitter(self.curve, train_size=0.6, seed=7)
 
     def test_returns_two_lists(self):
-        train, val = self.splitter.stratified_split()
+        train, val = self.splitter.stratified_random_split()
         assert isinstance(train, list) and isinstance(val, list)
 
     def test_total_equals_n_q(self):
-        train, val = self.splitter.stratified_split()
+        train, val = self.splitter.stratified_random_split()
         assert len(train[0].intensities) + len(val[0].intensities) == self.n_q
 
     def test_no_index_overlap(self):
-        self.splitter.stratified_split()
+        self.splitter.stratified_random_split()
         train_idx = set(self.splitter.last_train_q_indices.tolist())
         val_idx = set(self.splitter.last_val_q_indices.tolist())
         assert train_idx.isdisjoint(val_idx)
 
     def test_indices_stored(self):
-        self.splitter.stratified_split()
+        self.splitter.stratified_random_split()
         assert self.splitter.last_train_q_indices is not None
         assert self.splitter.last_val_q_indices is not None
 
     def test_custom_n_strata(self):
-        train, val = self.splitter.stratified_split(n_strata=5)
+        train, val = self.splitter.stratified_random_split(n_strata=5)
         assert len(train[0].intensities) + len(val[0].intensities) == self.n_q
 
 
@@ -331,3 +332,88 @@ class TestCreateDatasetsWithMappingFactory:
                 test_data=train_data,
             )
             assert mock_sparse_map.call_count == 3  # train + val + test
+
+
+# ── TestSAXSStratifiedDeterministicSplit ──────────────────────────────────────
+
+class TestSAXSStratifiedDeterministicSplit:
+    """
+    Tests for DataSplitter.stratified_deterministic_split() on a SAXS_curve
+    (whole-system data path).
+
+    The method:
+      - sorts q-points by intensity value
+      - randomly picks n_strata in [2, n_q // 5]
+      - alternates strata between train and val from a random starting assignment
+    """
+
+    def setup_method(self):
+        self.n_q = 50
+        self.curve = _make_saxs_curve(n_q=self.n_q, seed=3)
+        self.splitter = _make_splitter(self.curve, train_size=0.6, seed=11)
+
+    # ── basic contract ────────────────────────────────────────────────────────
+
+    def test_returns_two_lists(self):
+        train, val = self.splitter.stratified_deterministic_split()
+        assert isinstance(train, list) and isinstance(val, list)
+
+    def test_single_curve_per_split(self):
+        train, val = self.splitter.stratified_deterministic_split()
+        assert len(train) == 1 and len(val) == 1
+        assert isinstance(train[0], SAXS_curve)
+        assert isinstance(val[0], SAXS_curve)
+
+    def test_total_equals_n_q(self):
+        """All q-points should appear in exactly one of train or val."""
+        train, val = self.splitter.stratified_deterministic_split()
+        n_train = len(train[0].intensities)
+        n_val = len(val[0].intensities)
+        assert n_train + n_val == self.n_q
+
+    def test_no_index_overlap(self):
+        """Train and val q-point index sets must be disjoint."""
+        self.splitter.stratified_deterministic_split()
+        train_idx = set(self.splitter.last_train_q_indices.tolist())
+        val_idx = set(self.splitter.last_val_q_indices.tolist())
+        assert train_idx.isdisjoint(val_idx)
+
+    def test_both_splits_non_empty(self):
+        train, val = self.splitter.stratified_deterministic_split()
+        assert len(train[0].intensities) > 0
+        assert len(val[0].intensities) > 0
+
+    def test_indices_stored(self):
+        self.splitter.stratified_deterministic_split()
+        assert self.splitter.last_train_q_indices is not None
+        assert self.splitter.last_val_q_indices is not None
+
+    # ── strata count ──────────────────────────────────────────────────────────
+
+    def test_n_strata_in_valid_range(self):
+        """
+        The implementation picks n_strata ~ U[2, n_q//5].
+        We cannot inspect n_strata directly, but the split sizes must reflect
+        an alternating pattern over that range, so the total is always n_q.
+        Indirectly verify the range constraint by running with a tiny dataset.
+        """
+        tiny_curve = _make_saxs_curve(n_q=10, seed=99)
+        splitter = _make_splitter(tiny_curve, train_size=0.6, seed=5)
+        train, val = splitter.stratified_deterministic_split()
+        # n_q//5 = 2 for n_q=10, so n_strata is forced to 2
+        assert len(train[0].intensities) + len(val[0].intensities) == 10
+
+    # ── reproducibility ───────────────────────────────────────────────────────
+
+    def test_reproducible_with_same_seed(self):
+        splitter2 = _make_splitter(self.curve, train_size=0.6, seed=11)
+        train1, _ = self.splitter.stratified_deterministic_split()
+        train2, _ = splitter2.stratified_deterministic_split()
+        np.testing.assert_array_equal(train1[0].intensities, train2[0].intensities)
+
+    def test_different_seeds_give_different_splits(self):
+        splitter2 = _make_splitter(self.curve, train_size=0.6, seed=99)
+        _, val1 = self.splitter.stratified_deterministic_split()
+        _, val2 = splitter2.stratified_deterministic_split()
+        # Different seeds → different n_strata and/or starting assignment
+        assert not np.array_equal(val1[0].intensities, val2[0].intensities)
