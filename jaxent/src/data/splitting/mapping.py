@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, Union
 
 import jax
 import jax.numpy as jnp
@@ -93,3 +93,9 @@ def create_pair_index_mapping(
         indices_i=jnp.array(indices_i, dtype=jnp.int32),
         indices_j=jnp.array(indices_j, dtype=jnp.int32),
     )
+
+
+
+def create_q_subset_mapping(indices: Union[Array, list]) -> QSubsetMapping:
+    """Create a QSubsetMapping from q-point indices (SAXS analogue of create_sparse_map)."""
+    return QSubsetMapping(indices=jnp.array(indices, dtype=jnp.int32))
