@@ -3,17 +3,17 @@ from jaxent.src.custom_types.base import ForwardPass
 from jaxent.src.models.SAXS.features import (
     SAXS_curve_input_features, SAXS_basis_input_features, SAXS_output_features,
 )
-from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
+from jaxent.src.models.SAXS.parameters import SAXS_direct_Model_Parameters, SAXS_Debye_Parameters
 
 
-class SAXS_ReweightedForwardPass(
-    ForwardPass[SAXS_curve_input_features, SAXS_output_features, SAXS_Reweighted_Parameters]
+class SAXS_direct_ForwardPass(
+    ForwardPass[SAXS_curve_input_features, SAXS_output_features, SAXS_direct_Model_Parameters]
 ):
     """Identity forward pass: returns frame-averaged I(q) directly."""
     def __call__(
         self,
         input_features: SAXS_curve_input_features,
-        parameters: SAXS_Reweighted_Parameters,
+        parameters: SAXS_direct_Model_Parameters,
     ) -> SAXS_output_features:
         return SAXS_output_features(intensity=jnp.asarray(input_features.intensities))
 
