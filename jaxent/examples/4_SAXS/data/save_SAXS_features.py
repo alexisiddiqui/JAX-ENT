@@ -1,5 +1,5 @@
 """
-This script loads the SAXS trajectory data and saves them into a SAXS features object to be loaded in.
+This script loads the FOXS SAXS Curves and saves them into a jaxent SAXS features object to be loaded in.
 
 Script args
 - SAXS_features: path to the SAXS features .npz (jaxent/examples/4_SAXS/FOXS/CaM_SAXS_ordered.npz)
