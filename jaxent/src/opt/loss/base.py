@@ -7,7 +7,7 @@ from jaxtyping import Float
 
 from jaxent.src.custom_types import InitialisedSimulation
 from jaxent.src.data.loader import ExpD_Dataloader
-from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import JaxEnt_Loss
 from jaxent.src.custom_types.protocols import SimulationLike, DataloaderLike
@@ -123,47 +123,43 @@ def create_functional_loss(
     post_mean: bool = True,
     flatten: bool = True,
 ) -> JaxEnt_Loss:
-    """Create a functional loss without builders."""
+    """Create a functional loss without builders.
 
+    Works with any Output_Features (via y_pred()) and any DataMapping (via .apply()).
+    Supports both int and str/m_key prediction_index values.
+    """
     transform_chain = transform_chain or []
 
-    # @functools.partial(jax.jit, static_argnames=["prediction_index"])
     def functional_loss(
-        model: SimulationLike, dataset: DataloaderLike, prediction_index: int
+        model: SimulationLike, dataset: DataloaderLike, prediction_index: int | str
     ) -> tuple[Array, Array]:
-        # Direct indexing with static prediction_index - no need for jax.lax.switch
-        predictions = model.outputs[prediction_index]
+        # Support both int and m_key (str) indexing
+        if isinstance(prediction_index, str):
+            predictions = model.outputs_by_key[m_key(prediction_index)]
+        else:
+            predictions = model.outputs[prediction_index]
 
-        def compute_loss(sparse_mapping, y_true):
+        def compute_loss(data_mapping, y_true):
+            pred_values = predictions.y_pred()
             if flatten:
-                # Protection factors
-                pred_values = jnp.array(predictions.log_Pf).reshape(-1)
-                pred_mapped = apply_sparse_mapping(sparse_mapping, pred_values)
+                pred_mapped = data_mapping.apply(pred_values.reshape(-1))
                 true_values = y_true.reshape(-1)
-
                 pred_transformed = apply_transforms(pred_mapped, transform_chain)
                 true_transformed = apply_transforms(true_values, transform_chain)
-
                 loss = loss_fn(pred_transformed, true_transformed)
                 return apply_post_processing(loss, true_values.shape[0], post_mean)
             else:
-                # Uptake data
+                # Multi-timepoint path (HDX uptake): iterate over first axis
                 total_loss = 0.0
                 for timepoint_idx in range(y_true.shape[0]):
-                    true_uptake = y_true[timepoint_idx, :]
-                    pred_uptake = predictions.uptake[timepoint_idx]
-                    pred_mapped = apply_sparse_mapping(sparse_mapping, pred_uptake)
-
-                    pred_transformed = apply_transforms(pred_mapped, transform_chain)
-                    true_transformed = apply_transforms(true_uptake, transform_chain)
-
+                    pred_t = data_mapping.apply(pred_values[timepoint_idx])
+                    pred_transformed = apply_transforms(pred_t, transform_chain)
+                    true_transformed = apply_transforms(y_true[timepoint_idx], transform_chain)
                     total_loss += loss_fn(pred_transformed, true_transformed)
-
                 return apply_post_processing(total_loss, y_true.shape[0], post_mean)
 
-        train_loss = compute_loss(dataset.train.residue_feature_ouput_mapping, dataset.train.y_true)
-        val_loss = compute_loss(dataset.val.residue_feature_ouput_mapping, dataset.val.y_true)
-        # Return JAX arrays directly - let caller handle conversion if needed
+        train_loss = compute_loss(dataset.train.data_mapping, dataset.train.y_true)
+        val_loss = compute_loss(dataset.val.data_mapping, dataset.val.y_true)
         return train_loss, val_loss
 
     return functional_loss
