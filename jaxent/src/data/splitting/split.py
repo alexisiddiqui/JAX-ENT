@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from beartype.typing import Optional
 from MDAnalysis import Universe
 
+from jaxent.src.custom_types.SAXS import SAXS_curve
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import (
     PairwiseTopologyComparisons,
@@ -107,6 +108,20 @@ class DataSplitter:
         self.current_retry_count = 0
         self.min_split_size = min_split_size
 
+        # ── Whole-system data (e.g. SAXS_curve): bypass topology logic entirely ──
+        if len(dataset.data) >= 1 and isinstance(dataset.data[0], SAXS_curve):
+            self._seed = random_seed
+            if dataset.data[0].top.fragment_index is None:
+                dataset.data[0].top.fragment_index = 0
+            self.common_residues = set()
+            self.splittable_residues = {}
+            self.fragment_overlaps = []
+            self.last_split_train_topologies_by_chain = {}
+            self.last_split_val_topologies_by_chain = {}
+            self.last_train_q_indices = None
+            self.last_val_q_indices = None
+            return
+
         # Process selection strings - convert to lists and ensure same length
         include_selection = self._process_selection_strings(include_selection)
         exclude_selection = self._process_selection_strings(exclude_selection)
@@ -187,6 +202,15 @@ class DataSplitter:
         # Initialize storage for last split results
         self.last_split_train_topologies_by_chain = {}
         self.last_split_val_topologies_by_chain = {}
+        self.last_train_q_indices = None
+        self.last_val_q_indices = None
+
+    @property
+    def is_whole_system_data(self) -> bool:
+        return (
+            len(self.dataset.data) >= 1
+            and isinstance(self.dataset.data[0], SAXS_curve)
+        )
 
     def _process_selection_strings(self, selection: str | list[str]) -> list[str]:
         """
@@ -229,6 +253,91 @@ class DataSplitter:
                     print(f"Warning: Could not merge common residues for chain {chain}: {e}")
 
         return splittable_residues
+
+    # ── Whole-system (SAXS) split methods ──────────────────────────────────
+
+    def _whole_system_random_split(self):
+        import numpy as np
+
+        saxs_curve = self.dataset.data[0]
+        n_q = len(saxs_curve.intensities)
+        rng = np.random.default_rng(self._seed)
+        perm = rng.permutation(n_q)
+        n_train = max(1, min(int(n_q * self.train_size), n_q - 1))
+        train_idx = np.sort(perm[:n_train])
+        val_idx = np.sort(perm[n_train:])
+        self.last_train_q_indices = train_idx
+        self.last_val_q_indices = val_idx
+
+        q_has_values = len(saxs_curve.q_values) == n_q
+        train_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[train_idx],
+            q_values=saxs_curve.q_values[train_idx] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[train_idx] if saxs_curve.errors is not None else None,
+        )
+        val_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[val_idx],
+            q_values=saxs_curve.q_values[val_idx] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[val_idx] if saxs_curve.errors is not None else None,
+        )
+        return [train_curve], [val_curve]
+
+    def _whole_system_stratified_split(self, n_strata=10):
+        import numpy as np
+
+        saxs_curve = self.dataset.data[0]
+        intensities = np.asarray(saxs_curve.intensities)
+        n_q = len(intensities)
+        n_strata = min(max(2, n_strata), n_q // 2)
+        sorted_q = np.argsort(intensities)
+        strata = np.array_split(sorted_q, n_strata)
+        rng = np.random.default_rng(self._seed)
+        order = rng.permutation(n_strata)
+        n_train_s = max(1, min(int(self.train_size * n_strata), n_strata - 1))
+        train_q = np.sort(np.concatenate([strata[i] for i in order[:n_train_s]]))
+        val_q = np.sort(np.concatenate([strata[i] for i in order[n_train_s:]]))
+        self.last_train_q_indices = train_q
+        self.last_val_q_indices = val_q
+
+        q_has_values = len(saxs_curve.q_values) == n_q
+        train_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[train_q],
+            q_values=saxs_curve.q_values[train_q] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[train_q] if saxs_curve.errors is not None else None,
+        )
+        val_curve = SAXS_curve(
+            top=saxs_curve.top,
+            intensities=saxs_curve.intensities[val_q],
+            q_values=saxs_curve.q_values[val_q] if q_has_values else saxs_curve.q_values,
+            errors=saxs_curve.errors[val_q] if saxs_curve.errors is not None else None,
+        )
+        return [train_curve], [val_curve]
+
+    def saxs_mapping_factory(self, train_data, val_data):
+        """Returns a mapping_factory for use with create_datasets() after a SAXS split."""
+        from jaxent.src.data.splitting.mapping import create_q_subset_mapping
+        import numpy as np
+
+        train_curve = train_data[0]
+        val_curve = val_data[0]
+        train_idx = self.last_train_q_indices
+        val_idx = self.last_val_q_indices
+        n_q_full = len(self.dataset.data[0].intensities)
+
+        def factory(features, feature_topology, data_split):
+            if data_split[0] is train_curve:
+                return create_q_subset_mapping(train_idx)
+            elif data_split[0] is val_curve:
+                return create_q_subset_mapping(val_idx)
+            else:
+                return create_q_subset_mapping(np.arange(n_q_full))
+
+        return factory
+
+    # ── End whole-system methods ────────────────────────────────────────────
 
     def _merge_topologies_by_chain(
         self,
@@ -421,6 +530,9 @@ class DataSplitter:
             Tuple of (training_datapoints, validation_datapoints)
         """
 
+        if self.is_whole_system_data:
+            return self._whole_system_random_split()
+
         print(
             f"Starting random split with train_size={self.train_size}, remove_overlap={remove_overlap}"
         )
@@ -522,6 +634,12 @@ class DataSplitter:
         Returns:
             Tuple of (training_datapoints, validation_datapoints)
         """
+        if self.is_whole_system_data:
+            raise ValueError(
+                "sequence_cluster_split is not compatible with whole-system data (e.g., SAXS_curve). "
+                "Use random_split() or stratified_split() instead."
+            )
+
         try:
             import numpy as np
             from sklearn.cluster import KMeans
@@ -680,6 +798,12 @@ class DataSplitter:
         Returns:
             Tuple of (training_datapoints, validation_datapoints)
         """
+        if self.is_whole_system_data:
+            raise ValueError(
+                "sequence_split is not compatible with whole-system data (e.g., SAXS_curve). "
+                "Use random_split() or stratified_split() instead."
+            )
+
         print(
             f"Starting sequence split with train_size={self.train_size}, remove_overlap={remove_overlap}"
         )
@@ -812,6 +936,11 @@ class DataSplitter:
         Returns:
             Tuple of (training_datapoints, validation_datapoints)
         """
+        if self.is_whole_system_data:
+            return self._whole_system_stratified_split(
+                n_strata=n_strata if n_strata is not None else 10
+            )
+
         try:
             import numpy as np
         except ImportError:
@@ -858,6 +987,10 @@ class DataSplitter:
                         avg_value = 0.0
                 else:
                     avg_value = float(target)
+            elif hasattr(datapoint, "extract_features"):
+                # Fallback for whole-system data like SAXS_curve with extract_features method
+                features = datapoint.extract_features()
+                avg_value = float(np.mean(features)) if len(features) > 0 else 0.0
             else:
                 # Fallback: use a hash of the topology as a pseudo-random stratification value
                 avg_value = hash(str(datapoint.top)) % 1000
@@ -1031,6 +1164,12 @@ class DataSplitter:
         Returns:
             Tuple of (training_datapoints, validation_datapoints)
         """
+        if self.is_whole_system_data:
+            raise ValueError(
+                "spatial_split is not compatible with whole-system data (e.g., SAXS_curve). "
+                "Use random_split() or stratified_split() instead."
+            )
+
         try:
             import numpy as np
         except ImportError:
