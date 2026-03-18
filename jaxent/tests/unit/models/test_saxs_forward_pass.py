@@ -7,6 +7,7 @@ from jaxent.src.models.SAXS.features import (
     SAXS_output_features,
 )
 from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
+from jaxent.src.models.SAXS.forward import SAXS_ReweightedForwardPass, SAXS_DebyeForwardPass
 from jaxent.src.custom_types.key import m_key
 import jax
 
@@ -104,3 +105,78 @@ class TestSAXSDebyeParameters:
             return p.c1.sum()
         grad = jax.grad(loss)(jnp.array(1.0))
         assert jnp.isfinite(grad)
+
+class TestSAXSReweightedForwardPass:
+    def test_identity_returns_averaged_intensities(self):
+        """After frame averaging, intensities is (n_q,). Forward pass wraps it."""
+        averaged = jnp.array([1.0, 2.0, 3.0])  # already frame-averaged
+        features = SAXS_reweighted_input_features(intensities=averaged)
+        params = SAXS_Reweighted_Parameters()
+        result = SAXS_ReweightedForwardPass()(features, params)
+        assert isinstance(result, SAXS_output_features)
+        np.testing.assert_allclose(result.y_pred(), averaged)
+
+    def test_output_shape_matches_input(self):
+        n_q = 501
+        features = SAXS_reweighted_input_features(intensities=jnp.ones(n_q))
+        result = SAXS_ReweightedForwardPass()(features, SAXS_Reweighted_Parameters())
+        assert result.output_shape == (n_q,)
+
+    def test_jit_compatible(self):
+        features = SAXS_reweighted_input_features(intensities=jnp.ones(10))
+        params = SAXS_Reweighted_Parameters()
+        fn = jax.jit(SAXS_ReweightedForwardPass())
+        result = fn(features, params)
+        assert result.intensity.shape == (10,)
+
+
+class TestSAXSDebyeForwardPass:
+    def test_known_formula(self):
+        """With c1=1, c2=0, c=1, b=0: I = Ivv - 2*Ive + Iee."""
+        n_q = 3
+        # basis_profiles shape (6, n_q) after frame averaging
+        # Ivv=1, Ive=0.5, Ivh=0, Iee=0.25, Ieh=0, Ihh=0
+        bp = jnp.zeros((6, n_q))
+        bp = bp.at[0].set(jnp.ones(n_q))     # Ivv = 1
+        bp = bp.at[1].set(jnp.full(n_q, 0.5)) # Ive = 0.5
+        bp = bp.at[3].set(jnp.full(n_q, 0.25))# Iee = 0.25
+        features = SAXS_basis_input_features(basis_profiles=bp)
+        params = SAXS_Debye_Parameters(c1=jnp.array(1.0), c2=jnp.array(0.0),
+                                        c=jnp.array(1.0), b=jnp.array(0.0))
+        result = SAXS_DebyeForwardPass()(features, params)
+        # I_ens = 1 - 2*0.5 + 0 + 0.25 - 0 + 0 = 0.25
+        expected = jnp.full(n_q, 0.25)
+        np.testing.assert_allclose(result.y_pred(), expected, rtol=1e-5)
+
+    def test_scale_and_background(self):
+        """c scales, b shifts."""
+        bp = jnp.zeros((6, 3))
+        bp = bp.at[0].set(jnp.ones(3))  # Ivv = 1, everything else 0
+        features = SAXS_basis_input_features(basis_profiles=bp)
+        params = SAXS_Debye_Parameters(c1=jnp.array(0.0), c2=jnp.array(0.0),
+                                        c=jnp.array(2.0), b=jnp.array(0.5))
+        result = SAXS_DebyeForwardPass()(features, params)
+        # I_ens = 1, I_calc = 2*1 + 0.5 = 2.5
+        expected = jnp.full(3, 2.5)
+        np.testing.assert_allclose(result.y_pred(), expected, rtol=1e-5)
+
+    def test_gradient_flows_through_params(self):
+        bp = jnp.zeros((6, 3))
+        bp = bp.at[0].set(jnp.ones(3))
+        features = SAXS_basis_input_features(basis_profiles=bp)
+
+        def loss(c1):
+            params = SAXS_Debye_Parameters(c1=c1, c2=jnp.array(0.0),
+                                            c=jnp.array(1.0), b=jnp.array(0.0))
+            result = SAXS_DebyeForwardPass()(features, params)
+            return result.intensity.sum()
+        grad = jax.grad(loss)(jnp.array(1.0))
+        assert jnp.isfinite(grad)
+
+    def test_jit_compatible(self):
+        bp = jnp.zeros((6, 3))
+        bp = bp.at[0].set(jnp.ones(3))
+        features = SAXS_basis_input_features(basis_profiles=bp)
+        params = SAXS_Debye_Parameters()
+        result = jax.jit(SAXS_DebyeForwardPass())(features, params)
+        assert result.intensity.shape == (3,)
