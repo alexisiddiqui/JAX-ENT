@@ -1,7 +1,7 @@
 from jaxent.src.custom_types.config import BaseConfig
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
-from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
+from jaxent.src.models.SAXS.parameters import SAXS_direct_Model_Parameters, SAXS_Debye_Parameters
 
 
 class SAXS_Config(BaseConfig):
@@ -17,5 +17,12 @@ class SAXS_Config(BaseConfig):
     @property
     def forward_parameters(self) -> Model_Parameters:
         if self.mode == "reweighted":
-            return SAXS_Reweighted_Parameters()
+            return SAXS_direct_Model_Parameters()
         return SAXS_Debye_Parameters()
+
+
+class SAXS_direct_Config(SAXS_Config):
+    """Direct (reweighted) SAXS config. Accepts q_values for reference."""
+    def __init__(self, q_values=None) -> None:
+        super().__init__(mode="reweighted")
+        self.q_values = q_values

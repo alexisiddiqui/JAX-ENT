@@ -6,10 +6,10 @@ from jaxent.src.models.SAXS.features import (
     SAXS_basis_input_features,
     SAXS_output_features,
 )
-from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
-from jaxent.src.models.SAXS.forward import SAXS_ReweightedForwardPass, SAXS_DebyeForwardPass
-from jaxent.src.models.SAXS.config import SAXS_Config
-from jaxent.src.models.SAXS.forwardmodel import SAXS_model
+from jaxent.src.models.SAXS.parameters import SAXS_direct_Model_Parameters, SAXS_Debye_Parameters
+from jaxent.src.models.SAXS.forward import SAXS_direct_ForwardPass, SAXS_DebyeForwardPass
+from jaxent.src.models.SAXS.config import SAXS_Config, SAXS_direct_Config
+from jaxent.src.models.SAXS.forwardmodel import SAXS_direct_model
 from jaxent.src.custom_types.key import m_key
 import jax
 
@@ -66,18 +66,18 @@ class TestSAXSOutputFeatures:
 
 class TestSAXSReweightedParameters:
     def test_no_dynamic_params(self):
-        p = SAXS_Reweighted_Parameters()
+        p = SAXS_direct_Model_Parameters()
         flat, aux = p.tree_flatten()
         assert flat == ()  # no dynamic params
 
     def test_pytree_roundtrip(self):
-        p = SAXS_Reweighted_Parameters()
+        p = SAXS_direct_Model_Parameters()
         flat, aux = p.tree_flatten()
-        r = SAXS_Reweighted_Parameters.tree_unflatten(aux, flat)
+        r = SAXS_direct_Model_Parameters.tree_unflatten(aux, flat)
         assert r.key == p.key
 
     def test_key_is_saxs_iq(self):
-        assert m_key("SAXS_Iq") in SAXS_Reweighted_Parameters().key
+        assert m_key("SAXS_Iq") in SAXS_direct_Model_Parameters().key
 
 class TestSAXSDebyeParameters:
     def test_default_values(self):
@@ -113,21 +113,21 @@ class TestSAXSReweightedForwardPass:
         """After frame averaging, intensities is (n_q,). Forward pass wraps it."""
         averaged = jnp.array([1.0, 2.0, 3.0])  # already frame-averaged
         features = SAXS_curve_input_features(intensities=averaged)
-        params = SAXS_Reweighted_Parameters()
-        result = SAXS_ReweightedForwardPass()(features, params)
+        params = SAXS_direct_Model_Parameters()
+        result = SAXS_direct_ForwardPass()(features, params)
         assert isinstance(result, SAXS_output_features)
         np.testing.assert_allclose(result.y_pred(), averaged)
 
     def test_output_shape_matches_input(self):
         n_q = 501
         features = SAXS_curve_input_features(intensities=jnp.ones(n_q))
-        result = SAXS_ReweightedForwardPass()(features, SAXS_Reweighted_Parameters())
+        result = SAXS_direct_ForwardPass()(features, SAXS_direct_Model_Parameters())
         assert result.output_shape == (n_q,)
 
     def test_jit_compatible(self):
         features = SAXS_curve_input_features(intensities=jnp.ones(10))
-        params = SAXS_Reweighted_Parameters()
-        fn = jax.jit(SAXS_ReweightedForwardPass())
+        params = SAXS_direct_Model_Parameters()
+        fn = jax.jit(SAXS_direct_ForwardPass())
         result = fn(features, params)
         assert result.intensity.shape == (10,)
 
@@ -185,12 +185,12 @@ class TestSAXSDebyeForwardPass:
 
 class TestSAXSConfig:
     def test_reweighted_mode_key(self):
-        cfg = SAXS_Config(mode="reweighted")
+        cfg = SAXS_direct_Config()
         assert cfg.key == m_key("SAXS_Iq")
 
     def test_reweighted_forward_parameters_type(self):
-        cfg = SAXS_Config(mode="reweighted")
-        assert isinstance(cfg.forward_parameters, SAXS_Reweighted_Parameters)
+        cfg = SAXS_direct_Config()
+        assert isinstance(cfg.forward_parameters, SAXS_direct_Model_Parameters)
 
     def test_debye_forward_parameters_type(self):
         cfg = SAXS_Config(mode="debye_6term")
@@ -202,20 +202,20 @@ class TestSAXSConfig:
 
 class TestSAXSModel:
     def test_reweighted_has_correct_forward_pass(self):
-        model = SAXS_model(SAXS_Config(mode="reweighted"))
+        model = SAXS_direct_model(SAXS_direct_Config())
         assert m_key("SAXS_Iq") in model.forward
-        assert isinstance(model.forward[m_key("SAXS_Iq")], SAXS_ReweightedForwardPass)
+        assert isinstance(model.forward[m_key("SAXS_Iq")], SAXS_direct_ForwardPass)
 
     def test_debye_has_correct_forward_pass(self):
-        model = SAXS_model(SAXS_Config(mode="debye_6term"))
+        model = SAXS_direct_model(SAXS_Config(mode="debye_6term"))
         assert m_key("SAXS_Iq") in model.forward
         assert isinstance(model.forward[m_key("SAXS_Iq")], SAXS_DebyeForwardPass)
 
     def test_initialise_returns_true(self):
-        model = SAXS_model(SAXS_Config())
+        model = SAXS_direct_model(SAXS_direct_Config())
         assert model.initialise([]) is True
 
     def test_featurise_raises_not_implemented(self):
-        model = SAXS_model(SAXS_Config())
+        model = SAXS_direct_model(SAXS_direct_Config())
         with pytest.raises(NotImplementedError):
             model.featurise([])
