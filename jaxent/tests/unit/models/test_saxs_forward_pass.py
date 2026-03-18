@@ -8,6 +8,8 @@ from jaxent.src.models.SAXS.features import (
 )
 from jaxent.src.models.SAXS.parameters import SAXS_Reweighted_Parameters, SAXS_Debye_Parameters
 from jaxent.src.models.SAXS.forward import SAXS_ReweightedForwardPass, SAXS_DebyeForwardPass
+from jaxent.src.models.SAXS.config import SAXS_Config
+from jaxent.src.models.SAXS.forwardmodel import SAXS_model
 from jaxent.src.custom_types.key import m_key
 import jax
 
@@ -180,3 +182,40 @@ class TestSAXSDebyeForwardPass:
         params = SAXS_Debye_Parameters()
         result = jax.jit(SAXS_DebyeForwardPass())(features, params)
         assert result.intensity.shape == (3,)
+
+class TestSAXSConfig:
+    def test_reweighted_mode_key(self):
+        cfg = SAXS_Config(mode="reweighted")
+        assert cfg.key == m_key("SAXS_Iq")
+
+    def test_reweighted_forward_parameters_type(self):
+        cfg = SAXS_Config(mode="reweighted")
+        assert isinstance(cfg.forward_parameters, SAXS_Reweighted_Parameters)
+
+    def test_debye_forward_parameters_type(self):
+        cfg = SAXS_Config(mode="debye_6term")
+        assert isinstance(cfg.forward_parameters, SAXS_Debye_Parameters)
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError):
+            SAXS_Config(mode="invalid")
+
+class TestSAXSModel:
+    def test_reweighted_has_correct_forward_pass(self):
+        model = SAXS_model(SAXS_Config(mode="reweighted"))
+        assert m_key("SAXS_Iq") in model.forward
+        assert isinstance(model.forward[m_key("SAXS_Iq")], SAXS_ReweightedForwardPass)
+
+    def test_debye_has_correct_forward_pass(self):
+        model = SAXS_model(SAXS_Config(mode="debye_6term"))
+        assert m_key("SAXS_Iq") in model.forward
+        assert isinstance(model.forward[m_key("SAXS_Iq")], SAXS_DebyeForwardPass)
+
+    def test_initialise_returns_true(self):
+        model = SAXS_model(SAXS_Config())
+        assert model.initialise([]) is True
+
+    def test_featurise_raises_not_implemented(self):
+        model = SAXS_model(SAXS_Config())
+        with pytest.raises(NotImplementedError):
+            model.featurise([])
