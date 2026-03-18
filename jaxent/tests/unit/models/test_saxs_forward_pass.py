@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 from jaxent.src.models.SAXS.features import (
-    SAXS_reweighted_input_features,
+    SAXS_curve_input_features,
     SAXS_basis_input_features,
     SAXS_output_features,
 )
@@ -15,23 +15,23 @@ import jax
 
 class TestSAXSReweightedInputFeatures:
     def test_features_shape(self):
-        f = SAXS_reweighted_input_features(intensities=jnp.ones((501, 100)))
+        f = SAXS_curve_input_features(intensities=jnp.ones((501, 100)))
         assert f.features_shape == (501, 100)
 
     def test_feat_pred_returns_intensities(self):
         arr = jnp.ones((501, 100))
-        f = SAXS_reweighted_input_features(intensities=arr)
+        f = SAXS_curve_input_features(intensities=arr)
         preds = f.feat_pred
         assert len(preds) == 1
         assert preds[0].shape == (501, 100)
 
     def test_key_contains_saxs_iq(self):
-        assert m_key("SAXS_Iq") in SAXS_reweighted_input_features.key
+        assert m_key("SAXS_Iq") in SAXS_curve_input_features.key
 
     def test_pytree_roundtrip(self):
-        f = SAXS_reweighted_input_features(intensities=jnp.ones((10, 5)))
+        f = SAXS_curve_input_features(intensities=jnp.ones((10, 5)))
         flat, aux = f.tree_flatten()
-        r = SAXS_reweighted_input_features.tree_unflatten(aux, flat)
+        r = SAXS_curve_input_features.tree_unflatten(aux, flat)
         np.testing.assert_allclose(r.intensities, f.intensities)
 
 class TestSAXSBasisInputFeatures:
@@ -112,7 +112,7 @@ class TestSAXSReweightedForwardPass:
     def test_identity_returns_averaged_intensities(self):
         """After frame averaging, intensities is (n_q,). Forward pass wraps it."""
         averaged = jnp.array([1.0, 2.0, 3.0])  # already frame-averaged
-        features = SAXS_reweighted_input_features(intensities=averaged)
+        features = SAXS_curve_input_features(intensities=averaged)
         params = SAXS_Reweighted_Parameters()
         result = SAXS_ReweightedForwardPass()(features, params)
         assert isinstance(result, SAXS_output_features)
@@ -120,12 +120,12 @@ class TestSAXSReweightedForwardPass:
 
     def test_output_shape_matches_input(self):
         n_q = 501
-        features = SAXS_reweighted_input_features(intensities=jnp.ones(n_q))
+        features = SAXS_curve_input_features(intensities=jnp.ones(n_q))
         result = SAXS_ReweightedForwardPass()(features, SAXS_Reweighted_Parameters())
         assert result.output_shape == (n_q,)
 
     def test_jit_compatible(self):
-        features = SAXS_reweighted_input_features(intensities=jnp.ones(10))
+        features = SAXS_curve_input_features(intensities=jnp.ones(10))
         params = SAXS_Reweighted_Parameters()
         fn = jax.jit(SAXS_ReweightedForwardPass())
         result = fn(features, params)

@@ -9,7 +9,7 @@ from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.models.SAXS.config import SAXS_Config
 from jaxent.src.models.SAXS.forwardmodel import SAXS_model
-from jaxent.src.models.SAXS.features import SAXS_reweighted_input_features, SAXS_basis_input_features, SAXS_output_features
+from jaxent.src.models.SAXS.features import SAXS_curve_input_features, SAXS_basis_input_features, SAXS_output_features
 from jaxent.src.models.XLMS.config import XLMS_Config
 from jaxent.src.models.XLMS.forwardmodel import XLMS_distance_model
 from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_features
@@ -18,7 +18,7 @@ from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_fea
 class TestSAXSReweightedSimulation:
     def test_forward_produces_saxs_output(self):
         n_q, n_frames = 50, 10
-        features = [SAXS_reweighted_input_features(
+        features = [SAXS_curve_input_features(
             intensities=jnp.ones((n_q, n_frames))
         )]
         model = SAXS_model(SAXS_Config(mode="reweighted"))
@@ -40,7 +40,7 @@ class TestSAXSReweightedSimulation:
 
     def test_outputs_by_key_accessible(self):
         n_q, n_frames = 20, 5
-        features = [SAXS_reweighted_input_features(intensities=jnp.ones((n_q, n_frames)))]
+        features = [SAXS_curve_input_features(intensities=jnp.ones((n_q, n_frames)))]
         model = SAXS_model(SAXS_Config())
         params = Simulation_Parameters(
             frame_weights=jnp.ones(n_frames) / n_frames,
@@ -62,7 +62,7 @@ class TestSAXSReweightedSimulation:
         """Verify frame weights are applied correctly: 2 frames, known curves."""
         n_q = 3
         curves = jnp.array([[1.0, 3.0], [2.0, 4.0], [5.0, 5.0]])  # (n_q=3, n_frames=2)
-        features = [SAXS_reweighted_input_features(intensities=curves)]
+        features = [SAXS_curve_input_features(intensities=curves)]
         model = SAXS_model(SAXS_Config())
         # equal weights: expected average = mean along frames axis
         params = Simulation_Parameters(
@@ -179,7 +179,7 @@ class TestMixedModelSimulation:
             acceptor_contacts=jnp.ones((n_res, n_frames)),
             k_ints=jnp.ones(n_res),
         )
-        saxs_feats = SAXS_reweighted_input_features(intensities=jnp.ones((n_q, n_frames)))
+        saxs_feats = SAXS_curve_input_features(intensities=jnp.ones((n_q, n_frames)))
 
         bv_config = BV_model_Config()
         saxs_config = SAXS_Config()
@@ -255,7 +255,7 @@ class TestMixedModelSimulation:
             acceptor_contacts=jnp.ones((n_res, n_frames)),
             k_ints=jnp.ones(n_res),
         )
-        saxs_feats = SAXS_reweighted_input_features(intensities=jnp.ones((n_q, n_frames)))
+        saxs_feats = SAXS_curve_input_features(intensities=jnp.ones((n_q, n_frames)))
         xlms_feats = XLMS_input_features(distances=jnp.ones((n_res, n_res, n_frames)))
 
         bv_config = BV_model_Config()

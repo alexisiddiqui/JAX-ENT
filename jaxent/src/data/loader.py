@@ -259,3 +259,11 @@ jax.tree_util.register_pytree_node(
     ExpD_Dataloader.tree_flatten,
     ExpD_Dataloader.tree_unflatten,
 )
+
+
+@partial(jax.tree_util.register_dataclass, data_fields=["train", "val"], meta_fields=[])
+@dataclass
+class SAXSDataloader:
+    """Minimal SAXS specific Dataloader for testing purposes. Future work will integrate this into the ExpD_Dataloader."""
+    train: Dataset
+    val: Dataset
