@@ -255,19 +255,19 @@ def setup_splitter(request):
 
 
 class TestStratifiedSplitBasicFunctionality:
-    """Test basic functionality of stratified_split method."""
+    """Test basic functionality of stratified_random_split method."""
 
-    def test_basic_stratified_split_returns_two_lists(
+    def test_basic_stratified_random_split_returns_two_lists(
         self, create_datapoints_from_topologies, setup_splitter
     ):
-        """Test that stratified_split returns two lists."""
+        """Test that stratified_random_split returns two lists."""
         topologies = create_single_chain_topologies("A", 20)
         target_values = [i * 0.1 for i in range(20)]  # Linear values 0.0 to 1.9
         datapoints = create_datapoints_from_topologies(topologies, target_values)
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert isinstance(train_data, list)
         assert isinstance(val_data, list)
@@ -284,7 +284,7 @@ class TestStratifiedSplitBasicFunctionality:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         # Should complete without error and create valid split
         assert len(train_data) > 0
@@ -300,7 +300,7 @@ class TestStratifiedSplitBasicFunctionality:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert len(train_data) > 0
         assert len(val_data) > 0
@@ -331,7 +331,7 @@ class TestStratifiedSplitBasicFunctionality:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert len(train_data) > 0
         assert len(val_data) > 0
@@ -343,7 +343,7 @@ class TestStratifiedSplitBasicFunctionality:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         # Should still work using hash-based fallback
         assert len(train_data) > 0
@@ -363,7 +363,7 @@ class TestStratifiedSplitDependencies:
 
         with patch("builtins.__import__", side_effect=ImportError("No module named 'numpy'")):
             with pytest.raises(ImportError, match="NumPy is required"):
-                splitter.stratified_split()
+                splitter.stratified_random_split()
 
 
 class TestStratifiedSplitStrataCreation:
@@ -377,7 +377,7 @@ class TestStratifiedSplitStrataCreation:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()  # Default n_strata=10
+        train_data, val_data = splitter.stratified_random_split()  # Default n_strata=10
 
         # Should complete successfully with automatic strata sizing
         assert len(train_data) > 0
@@ -391,7 +391,7 @@ class TestStratifiedSplitStrataCreation:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split(n_strata=5)
+        train_data, val_data = splitter.stratified_random_split(n_strata=5)
 
         assert len(train_data) > 0
         assert len(val_data) > 0
@@ -404,7 +404,7 @@ class TestStratifiedSplitStrataCreation:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, train_size=0.7)
-        train_data, val_data = splitter.stratified_split(n_strata=10)
+        train_data, val_data = splitter.stratified_random_split(n_strata=10)
 
         # With 10 strata and train_size=0.7, expect ~7 strata in training
         total_data = len(train_data) + len(val_data)
@@ -421,7 +421,7 @@ class TestStratifiedSplitStrataCreation:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, train_size=0.5)
-        train_data, val_data = splitter.stratified_split(n_strata=4)
+        train_data, val_data = splitter.stratified_random_split(n_strata=4)
 
         # Extract target values from results
         train_targets = []
@@ -451,7 +451,7 @@ class TestStratifiedSplitStrataCreation:
 
         splitter = setup_splitter(datapoints, common_residues)
         # Request more strata than possible given minimum size requirement
-        train_data, val_data = splitter.stratified_split(n_strata=20)
+        train_data, val_data = splitter.stratified_random_split(n_strata=20)
 
         # Should automatically adjust to maximum feasible strata
         assert len(train_data) > 0
@@ -469,7 +469,7 @@ class TestStratifiedSplitMultiChain:
         common_residues = create_common_residues_for_chains(["A", "B", "C"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         # Should handle multiple chains correctly
         assert len(train_data) > 0
@@ -496,7 +496,7 @@ class TestStratifiedSplitPeptideHandling:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, check_trim=True)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert len(train_data) >= 0
         assert len(val_data) >= 0
@@ -516,7 +516,7 @@ class TestStratifiedSplitOverlapRemoval:
         common_residues = create_common_residues_for_chains(["A", "B"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split(remove_overlap=True)
+        train_data, val_data = splitter.stratified_random_split(remove_overlap=True)
 
         assert len(train_data) >= 0
         assert len(val_data) >= 0
@@ -534,11 +534,11 @@ class TestStratifiedSplitOverlapRemoval:
         splitter = setup_splitter(datapoints, common_residues, random_seed=999)
 
         # Without overlap removal
-        train_no_removal, val_no_removal = splitter.stratified_split(remove_overlap=False)
+        train_no_removal, val_no_removal = splitter.stratified_random_split(remove_overlap=False)
 
         # Reset and try with overlap removal
         splitter._reset_retry_counter()
-        train_with_removal, val_with_removal = splitter.stratified_split(remove_overlap=True)
+        train_with_removal, val_with_removal = splitter.stratified_random_split(remove_overlap=True)
 
         total_no_removal = len(train_no_removal) + len(val_no_removal)
         total_with_removal = len(train_with_removal) + len(val_with_removal)
@@ -562,7 +562,7 @@ class TestStratifiedSplitCentralitySampling:
             mock_sample.return_value = datapoints[:20]  # Return subset
 
             splitter = setup_splitter(datapoints, common_residues, centrality=True)
-            train_data, val_data = splitter.stratified_split()
+            train_data, val_data = splitter.stratified_random_split()
 
             # Should have called sample_by_centrality
             mock_sample.assert_called_once()
@@ -583,11 +583,11 @@ class TestStratifiedSplitDeterministicBehavior:
 
         # First split
         splitter1 = setup_splitter(datapoints, common_residues, random_seed=123)
-        train1, val1 = splitter1.stratified_split(n_strata=4)
+        train1, val1 = splitter1.stratified_random_split(n_strata=4)
 
         # Second split with same seed
         splitter2 = setup_splitter(datapoints, common_residues, random_seed=123)
-        train2, val2 = splitter2.stratified_split(n_strata=4)
+        train2, val2 = splitter2.stratified_random_split(n_strata=4)
 
         # Results should be identical
         train1_ids = {dp.data_id for dp in train1}
@@ -609,11 +609,11 @@ class TestStratifiedSplitDeterministicBehavior:
 
         # First split
         splitter1 = setup_splitter(datapoints, common_residues, random_seed=111)
-        train1, val1 = splitter1.stratified_split(n_strata=6)
+        train1, val1 = splitter1.stratified_random_split(n_strata=6)
 
         # Second split with different seed
         splitter2 = setup_splitter(datapoints, common_residues, random_seed=222)
-        train2, val2 = splitter2.stratified_split(n_strata=6)
+        train2, val2 = splitter2.stratified_random_split(n_strata=6)
 
         # Results should likely be different
         train1_ids = {dp.data_id for dp in train1}
@@ -636,7 +636,7 @@ class TestStratifiedSplitEdgeCases:
         splitter = setup_splitter(datapoints, common_residues, min_split_size=1)
 
         try:
-            train_data, val_data = splitter.stratified_split()
+            train_data, val_data = splitter.stratified_random_split()
             assert len(train_data) + len(val_data) > 0
         except ValueError:
             # Validation failure is acceptable for very small datasets
@@ -650,7 +650,7 @@ class TestStratifiedSplitEdgeCases:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split(n_strata=3)
+        train_data, val_data = splitter.stratified_random_split(n_strata=3)
 
         # Should still work even with uniform values
         assert len(train_data) > 0
@@ -669,7 +669,7 @@ class TestStratifiedSplitEdgeCases:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, min_split_size=1)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         # Should use 0.0 as default and still work
         assert len(train_data) >= 0
@@ -699,7 +699,7 @@ class TestStratifiedSplitEdgeCases:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues)
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert len(train_data) > 0
         assert len(val_data) > 0
@@ -714,7 +714,7 @@ class TestStratifiedSplitEdgeCases:
         splitter = setup_splitter(datapoints, common_residues, min_split_size=1)
 
         # Request way more strata than possible
-        train_data, val_data = splitter.stratified_split(n_strata=100)
+        train_data, val_data = splitter.stratified_random_split(n_strata=100)
 
         # Should automatically adjust and still work
         assert len(train_data) >= 0
@@ -739,7 +739,7 @@ class TestStratifiedSplitRetryLogic:
             splitter = setup_splitter(datapoints, common_residues)
 
             # Should retry and eventually succeed
-            train_data, val_data = splitter.stratified_split()
+            train_data, val_data = splitter.stratified_random_split()
 
             # Should have called validate_split twice (fail, then success)
             assert mock_validate.call_count == 2
@@ -757,7 +757,7 @@ class TestStratifiedSplitRetryLogic:
             splitter = setup_splitter(datapoints, common_residues, max_retry_depth=2)
 
             with pytest.raises(ValueError, match="Failed to create valid split after 2 attempts"):
-                splitter.stratified_split()
+                splitter.stratified_random_split()
 
             # Should have tried max_retry_depth times
             assert mock_validate.call_count == splitter.max_retry_depth + 1
@@ -777,7 +777,7 @@ class TestStratifiedSplitRetryLogic:
         splitter.current_retry_count = 5
 
         # Successful split should reset counter
-        train_data, val_data = splitter.stratified_split()
+        train_data, val_data = splitter.stratified_random_split()
 
         assert splitter.current_retry_count == 0
 
@@ -796,7 +796,7 @@ class TestStratifiedSplitSpecificBehavior:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, train_size=0.6)
-        train_data, val_data = splitter.stratified_split(n_strata=6)
+        train_data, val_data = splitter.stratified_random_split(n_strata=6)
 
         # Extract target values from results
         train_targets = []
@@ -828,7 +828,7 @@ class TestStratifiedSplitSpecificBehavior:
         common_residues = create_common_residues_for_chains(["A"])
 
         splitter = setup_splitter(datapoints, common_residues, train_size=0.5)
-        train_data, val_data = splitter.stratified_split(n_strata=4)
+        train_data, val_data = splitter.stratified_random_split(n_strata=4)
 
         # Should create 4 strata with 4 datapoints each
         assert len(train_data) + len(val_data) >= 8  # After filtering

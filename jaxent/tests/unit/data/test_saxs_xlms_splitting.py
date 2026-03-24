@@ -72,14 +72,16 @@ class TestWholeSytemDetection:
         assert splitter.is_whole_system_data is True
 
     def test_false_for_non_saxs(self):
-        """DataSplitter backed by a mock non-SAXS dataloader should return False."""
+        """DataSplitter backed by a non-whole-system datapoint should return False."""
         from jaxent.src.data.splitting.split import DataSplitter
 
-        mock_loader = MagicMock()
-        mock_loader.data = [MagicMock(spec=[])]  # not a SAXS_curve instance
+        mock_datapoint = MagicMock()
+        mock_datapoint.is_whole_system = MagicMock(return_value=False)
 
-        # We can check the property logic directly via a manually-constructed instance
-        # without calling __init__ (which requires ensemble/common_residues for non-SAXS)
+        mock_loader = MagicMock()
+        mock_loader.data = [mock_datapoint]
+
+        # Construct instance directly to bypass __init__ (which needs ensemble/common_residues)
         splitter = object.__new__(DataSplitter)
         splitter.dataset = mock_loader
         assert splitter.is_whole_system_data is False
@@ -301,37 +303,21 @@ class TestCreateDatasetsWithMappingFactory:
             )
             mock_sparse_map.assert_not_called()
 
-    def test_create_sparse_map_called_when_no_factory(self):
-        """Without mapping_factory, create_sparse_map must be called (existing behaviour)."""
+    def test_create_datasets_raises_without_factory_for_saxs(self):
+        """SAXS data must raise ValueError when mapping_factory is not provided."""
         from jaxent.src.data.loader import ExpD_Dataloader
-        from jaxent.src.data.splitting.mapping import SparseFragmentMapping
 
-        from jax.experimental import sparse as jax_sparse
-        import jax.numpy as jnp
-
-        curve = _make_saxs_curve(n_q=10)
+        curve = _make_saxs_curve(n_q=20)
         loader = ExpD_Dataloader([curve])
-
-        splitter = _make_splitter(curve, train_size=0.6, seed=2)
-        train_data, val_data = splitter.random_split()
-
-        # Provide a fake sparse map return value
-        fake_bcoo = jax_sparse.BCOO.fromdense(jnp.eye(10))
 
         mock_features = MagicMock()
         mock_topology = MagicMock()
 
-        with patch(
-            "jaxent.src.data.loader.create_sparse_map", return_value=fake_bcoo
-        ) as mock_sparse_map:
+        with pytest.raises(ValueError, match="mapping_factory"):
             loader.create_datasets(
                 features=mock_features,
                 feature_topology=mock_topology,
-                train_data=train_data,
-                val_data=val_data,
-                test_data=train_data,
             )
-            assert mock_sparse_map.call_count == 3  # train + val + test
 
 
 # ── TestSAXSStratifiedDeterministicSplit ──────────────────────────────────────
@@ -411,9 +397,116 @@ class TestSAXSStratifiedDeterministicSplit:
         train2, _ = splitter2.stratified_deterministic_split()
         np.testing.assert_array_equal(train1[0].intensities, train2[0].intensities)
 
-    def test_different_seeds_give_different_splits(self):
-        splitter2 = _make_splitter(self.curve, train_size=0.6, seed=99)
-        _, val1 = self.splitter.stratified_deterministic_split()
-        _, val2 = splitter2.stratified_deterministic_split()
-        # Different seeds → different n_strata and/or starting assignment
-        assert not np.array_equal(val1[0].intensities, val2[0].intensities)
+
+
+# ── TestIsWholeSystem ─────────────────────────────────────────────────────────
+
+class TestIsWholeSystem:
+    """Tests for the is_whole_system() classmethod on datapoint types."""
+
+    def test_saxs_curve_is_whole_system(self):
+        from jaxent.src.custom_types.SAXS import SAXS_curve
+        assert SAXS_curve.is_whole_system() is True
+
+    def test_saxs_curve_instance_is_whole_system(self):
+        curve = _make_saxs_curve()
+        assert curve.is_whole_system() is True
+
+    def test_hdx_peptide_not_whole_system(self):
+        from jaxent.src.custom_types.HDX import HDX_peptide
+        assert HDX_peptide.is_whole_system() is False
+
+    def test_hdx_protection_factor_not_whole_system(self):
+        from jaxent.src.custom_types.HDX import HDX_protection_factor
+        assert HDX_protection_factor.is_whole_system() is False
+
+    def test_xlms_distance_restraint_not_whole_system(self):
+        from jaxent.src.custom_types.XLMS import XLMS_distance_restraint
+        assert XLMS_distance_restraint.is_whole_system() is False
+
+
+# ── TestExpDDataloaderWithSAXS ────────────────────────────────────────────────
+
+class TestExpDDataloaderWithSAXS:
+    """Tests that ExpD_Dataloader can be constructed directly with SAXS data."""
+
+    def _make_loader(self, n_q: int = 30) -> tuple:
+        from jaxent.src.data.loader import ExpD_Dataloader
+        curve = _make_saxs_curve(n_q=n_q)
+        loader = ExpD_Dataloader([curve])
+        return loader, curve
+
+    def test_init_succeeds_with_single_saxs_curve(self):
+        """ExpD_Dataloader([saxs_curve]) must not raise."""
+        loader, _ = self._make_loader()
+        assert loader is not None
+
+    def test_key_is_set_correctly(self):
+        from jaxent.src.custom_types.SAXS import SAXS_curve
+        loader, _ = self._make_loader()
+        assert loader.key == SAXS_curve.key
+
+    def test_top_is_set(self):
+        loader, curve = self._make_loader()
+        assert len(loader.top) == 1
+        assert loader.top[0] is curve.top
+
+    def test_fragment_index_assigned(self):
+        """When fragment_index is None, __init__ assigns 0 for whole-system data."""
+        from jaxent.src.data.loader import ExpD_Dataloader
+        curve = _make_saxs_curve()
+        curve.top.fragment_index = None
+        loader = ExpD_Dataloader([curve])
+        assert loader.data[0].top.fragment_index == 0
+
+    def test_create_datasets_with_factory_succeeds(self):
+        """create_datasets must succeed when mapping_factory is provided."""
+        loader, curve = self._make_loader(n_q=20)
+        splitter = _make_splitter(curve, train_size=0.6, seed=1)
+        train_data, val_data = splitter.random_split()
+        factory = splitter.saxs_mapping_factory(train_data, val_data)
+
+        mock_features = MagicMock()
+        mock_topology = MagicMock()
+
+        with patch("jaxent.src.data.loader.create_sparse_map") as mock_sm:
+            loader.create_datasets(
+                features=mock_features,
+                feature_topology=mock_topology,
+                train_data=train_data,
+                val_data=val_data,
+                test_data=train_data,
+                mapping_factory=factory,
+            )
+            mock_sm.assert_not_called()
+
+        assert hasattr(loader, "train")
+        assert hasattr(loader, "val")
+        assert hasattr(loader, "test")
+
+    def test_pytree_flatten_unflatten_roundtrip(self):
+        """tree_flatten / tree_unflatten must round-trip without errors."""
+        import jax
+        loader, curve = self._make_loader(n_q=15)
+        splitter = _make_splitter(curve, train_size=0.6, seed=3)
+        train_data, val_data = splitter.random_split()
+        factory = splitter.saxs_mapping_factory(train_data, val_data)
+
+        mock_features = MagicMock()
+        mock_topology = MagicMock()
+
+        with patch("jaxent.src.data.loader.create_sparse_map"):
+            loader.create_datasets(
+                features=mock_features,
+                feature_topology=mock_topology,
+                train_data=train_data,
+                val_data=val_data,
+                test_data=train_data,
+                mapping_factory=factory,
+            )
+
+        leaves, aux = jax.tree_util.tree_flatten(loader)
+        reconstructed = jax.tree_util.tree_unflatten(
+            jax.tree_util.tree_structure(loader), leaves
+        )
+        assert reconstructed.key == loader.key

@@ -20,6 +20,11 @@ class SAXS_curve(ExpD_Datapoint):
     q_values: ndarray = field(default_factory=lambda: np.array([]))
     errors: ndarray | None = None
 
+    @classmethod
+    def is_whole_system(cls) -> bool:
+        """SAXS covers the entire construct — splitting is over q-points, not fragments."""
+        return True
+
     def extract_features(self) -> np.ndarray:
         """Return intensities as a 1D feature vector."""
         return np.asarray(self.intensities).flatten()

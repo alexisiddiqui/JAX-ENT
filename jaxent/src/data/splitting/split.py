@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from beartype.typing import Optional
 from MDAnalysis import Universe
 
-from jaxent.src.custom_types.SAXS import SAXS_curve
+from jaxent.src.custom_types.SAXS import SAXS_curve  # needed for constructing subsetted curves in split methods
 from jaxent.src.data.loader import ExpD_Dataloader, ExpD_Datapoint
 from jaxent.src.interfaces.topology import (
     PairwiseTopologyComparisons,
@@ -109,7 +109,7 @@ class DataSplitter:
         self.min_split_size = min_split_size
 
         # ── Whole-system data (e.g. SAXS_curve): bypass topology logic entirely ──
-        if len(dataset.data) >= 1 and isinstance(dataset.data[0], SAXS_curve):
+        if len(dataset.data) >= 1 and dataset.data[0].is_whole_system():
             self._seed = random_seed
             if dataset.data[0].top.fragment_index is None:
                 dataset.data[0].top.fragment_index = 0
@@ -207,9 +207,10 @@ class DataSplitter:
 
     @property
     def is_whole_system_data(self) -> bool:
+        """True when the dataset is a single whole-system observable (e.g. SAXS_curve)."""
         return (
             len(self.dataset.data) >= 1
-            and isinstance(self.dataset.data[0], SAXS_curve)
+            and self.dataset.data[0].is_whole_system()
         )
 
     def _process_selection_strings(self, selection: str | list[str]) -> list[str]:
@@ -699,7 +700,7 @@ class DataSplitter:
         if self.is_whole_system_data:
             raise ValueError(
                 "sequence_cluster_split is not compatible with whole-system data (e.g., SAXS_curve). "
-                "Use random_split() or stratified_split() instead."
+                "Use random_split() or stratified_random_split() instead."
             )
 
         try:
@@ -863,7 +864,7 @@ class DataSplitter:
         if self.is_whole_system_data:
             raise ValueError(
                 "sequence_split is not compatible with whole-system data (e.g., SAXS_curve). "
-                "Use random_split() or stratified_split() instead."
+                "Use random_split() or stratified_random_split() instead."
             )
 
         print(
@@ -1187,7 +1188,7 @@ class DataSplitter:
             self.random_seed += 1
             print(f"Incrementing random seed to {self.random_seed}")
             random.seed(self.random_seed)
-            return self.stratified_split(remove_overlap=remove_overlap, n_strata=n_strata)
+            return self.stratified_random_split(remove_overlap=remove_overlap, n_strata=n_strata)
 
     def spatial_split(
         self,

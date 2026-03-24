@@ -53,45 +53,76 @@ class ExpD_Dataloader(Generic[T_ExpD]):
     top: list[Partial_Topology]  # metadata
     train: Dataset  # static but accessed during training - must be traced
     val: Dataset  # static but accessed during training - must be traced
-    test: Dataset  # static but accessed during training - must be traced
+    test: Dataset | None = None  # static but accessed during training - must be traced
     key: m_key  # metadata key
     id: m_id = m_id("id")  # metadata id - not implemented yet, dummy value for now
     covariance_matrix: Array | None = None # static but accessed during training - must be traced
 
-    def __init__(self, data: Sequence[T_ExpD], covariance_matrix: Array | None = None) -> None:
-        self.data: Sequence[T_ExpD] = data
-        print("Data Length:", len(self.data))
-        self.y_true: np.ndarray = self.extract_data()  # warning this is not a jax array
+    def __init__(
+        self, 
+        data: Sequence[T_ExpD] | None = None, 
+        covariance_matrix: Array | None = None,
+        train: Dataset | None = None,
+        val: Dataset | None = None,
+        test: Dataset | None = None,
+        key: m_key | None = None
+    ) -> None:
+        if data is not None:
+            self.data: Sequence[T_ExpD] = data
+            print("Data Length:", len(self.data))
+            self.y_true: np.ndarray = self.extract_data()  # warning this is not a jax array
 
-        if isinstance(self.y_true, np.ndarray):
-            UserWarning("y_true is a numpy array. Do not use this for training.")
-        elif isinstance(self.y_true, Array):
-            UserWarning("y_true is a jax array. Do not use this for training.")
+            if isinstance(self.y_true, np.ndarray):
+                UserWarning("y_true is a numpy array. Do not use this for training.")
+            elif isinstance(self.y_true, Array):
+                UserWarning("y_true is a jax array. Do not use this for training.")
 
-        # Assert keys are all the same
-        chex.assert_equal(
-            len(set([data.key for data in self.data])), 1,
-            custom_message="Keys are not the same. Datasets are comprised of a single type of experimental data."
-        )
-        # Assert that all topology fragments are unique
-        chex.assert_equal(
-            len({id(data.top) for data in self.data}), len(self.data),
-            custom_message="Topology fragments are not unique/missing. Exiting."
-        )
-        self.top: list[Partial_Topology] = [data.top for data in self.data]
+            # Assert keys are all the same
+            chex.assert_equal(
+                len(set([data.key for data in self.data])), 1,
+                custom_message="Keys are not the same. Datasets are comprised of a single type of experimental data."
+            )
 
-        print("First Partial Topology:", self.top[0])
+            _whole_system = self.data[0].is_whole_system()
 
-        if any([top.fragment_index is None for top in self.top]):
-            UserWarning("Topology fragments are missing indices. Assigning indices to fragments.")
-            for idx, _data in enumerate(self.data):
-                _data.top.fragment_index = idx
+            if not _whole_system:
+                # Fragment-based data: each datapoint must have a unique topology object
+                chex.assert_equal(
+                    len({id(data.top) for data in self.data}), len(self.data),
+                    custom_message="Topology fragments are not unique/missing. Exiting."
+                )
 
-        self.key = self.data[0].key
+            self.top: list[Partial_Topology] = [data.top for data in self.data]
+
+            print("First Partial Topology:", self.top[0])
+
+            if not _whole_system and any([top.fragment_index is None for top in self.top]):
+                UserWarning("Topology fragments are missing indices. Assigning indices to fragments.")
+                for idx, _data in enumerate(self.data):
+                    _data.top.fragment_index = idx
+
+            if _whole_system and self.data[0].top.fragment_index is None:
+                self.data[0].top.fragment_index = 0
+
+            self.key = self.data[0].key
+        else:
+            # Metadata initialization for case where datasets are provided directly
+            self.data = []
+            self.y_true = np.array([])
+            self.top = []
+            self.key = key if key is not None else m_key("unknown") # Use provided key or default to unknown
+
         self.covariance_matrix = covariance_matrix
-        # self.train: Dataset
-        # self.val: Dataset
-        # self.test: Dataset
+
+        if key is not None:
+            self.key = key
+
+        if train is not None:
+            self.train = train
+        if val is not None:
+            self.val = val
+        if test is not None:
+            self.test = test
 
     def __post_init__(self) -> None:
         # check that every topology fragment contains an fragment if not - assigns indices
@@ -127,8 +158,15 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             train_data: Training datapoints. If None, uses all data from dataloader
             val_data: Validation datapoints. If None, uses all data from dataloader
             test_data: Test datapoints. If None, uses all data from dataloader
-            mapping_factory: Optional factory to create mapping for train/val/test data
+            mapping_factory: Optional factory to create mapping for train/val/test data.
+                Required for whole-system data types (e.g. SAXS_curve).
         """
+        _whole_system = self.data[0].is_whole_system()
+        if _whole_system and mapping_factory is None:
+            raise ValueError(
+                "mapping_factory is required for whole-system data (e.g. SAXS_curve). "
+                "Use DataSplitter.saxs_mapping_factory() to build one after splitting."
+            )
         # Use all data if specific splits not provided
         if train_data is None:
             train_data = self.data
@@ -264,9 +302,6 @@ jax.tree_util.register_pytree_node(
 )
 
 
-@partial(jax.tree_util.register_dataclass, data_fields=["train", "val"], meta_fields=[])
-@dataclass
-class SAXSDataloader:
-    """Minimal SAXS specific Dataloader for testing purposes. Future work will integrate this into the ExpD_Dataloader."""
-    train: Dataset
-    val: Dataset
+# SAXSDataloader has been removed — use ExpD_Dataloader directly.
+# SAXS data is handled via the is_whole_system() dispatch path in ExpD_Dataloader
+# together with a mapping_factory (e.g. DataSplitter.saxs_mapping_factory()).

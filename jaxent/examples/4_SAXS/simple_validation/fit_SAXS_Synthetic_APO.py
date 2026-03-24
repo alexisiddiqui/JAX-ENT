@@ -45,8 +45,8 @@ from jaxent.src.opt.loss.base import create_functional_loss, LossRegistry
 from jaxent.src.data.loader import Dataset
 from jaxent.src.utils.hdf import save_optimization_history_to_file
 from jaxent.src.data.splitting.mapping import QSubsetMapping
-from jaxent.src.data.loader import SAXSDataloader
-
+from jaxent.src.data.loader import ExpD_Dataloader
+from jaxent.src.custom_types.key import m_key
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 
@@ -154,7 +154,7 @@ def main():
         y_true=jnp.array(val_I),
         data_mapping=QSubsetMapping(jnp.array(val_idx))
     )
-    saxs_dataloader = SAXSDataloader(train=train_dataset, val=val_dataset)
+    saxs_dataloader = ExpD_Dataloader(train=train_dataset, val=val_dataset, key=m_key("SAXS_Iq"))
 
     # Select loss function
     if args.loss_function == "MSE":
