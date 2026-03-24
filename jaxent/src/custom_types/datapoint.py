@@ -29,6 +29,20 @@ class ExpD_Datapoint:
         if hasattr(cls, "key") and cls.key is not None:
             cls._registry[str(cls.key)] = cls
 
+    @classmethod
+    def is_whole_system(cls) -> bool:
+        """Whether this data type represents a whole-system observable (e.g. SAXS curve).
+
+        Whole-system data has a single datapoint covering the entire construct.
+        Splitting operates *within* the datapoint's feature vector (e.g. q-point
+        subsetting) rather than *across* datapoints/fragments.
+
+        Subclasses for whole-system data (SAXS, SANS, DLS, …) should override
+        this to return ``True``.  All fragment-based types (HDX, XL-MS) keep
+        the default ``False``.
+        """
+        return False
+
     @abstractmethod
     def extract_features(self) -> np.ndarray:
         raise NotImplementedError("This method must be implemented in the child class.")

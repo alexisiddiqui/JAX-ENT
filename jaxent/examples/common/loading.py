@@ -884,7 +884,7 @@ def run_data_splits(
                 remove_overlap=remove_overlap, n_clusters=n_clusters
             )
         elif split_type == "stratified":
-            train_data, val_data = splitter.stratified_split(remove_overlap=remove_overlap)
+            train_data, val_data = splitter.stratified_random_split(remove_overlap=remove_overlap)
         elif split_type == "spatial":
             if universe is None:
                 raise ValueError("MDAnalysis Universe must be provided for spatial split.")

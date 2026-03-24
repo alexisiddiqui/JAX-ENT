@@ -45,3 +45,6 @@ class ExpDDatapointLike(Protocol):
     key: Any  # m_key or ClassVar
     
     def extract_features(self) -> Any: ...
+
+    @classmethod
+    def is_whole_system(cls) -> bool: ...
