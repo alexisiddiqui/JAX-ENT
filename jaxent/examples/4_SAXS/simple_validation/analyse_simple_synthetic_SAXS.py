@@ -52,9 +52,8 @@ def compute_kld(weights):
 
 
 def compute_ess(weights):
-    """Compute normalized effective sample size."""
-    n = len(weights)
-    return (1.0 / np.sum(weights**2)) / n
+    """Compute effective sample size."""
+    return 1.0 / np.sum(weights**2)
 
 
 def compute_jsd(p, q):
@@ -214,12 +213,19 @@ def plot_ess(df: pd.DataFrame, output_dir: Path):
         bars = ax.bar(x, means, yerr=ses, capsize=5, color=bar_colors, alpha=0.7)
 
         ax.set_xlabel("Split Type")
-        ax.set_ylabel("Normalized ESS")
+        ax.set_ylabel("ESS")
         ax.set_title(f"Effective Sample Size ({target_curve}, {loss_type})")
         ax.set_xticks(x)
         ax.set_xticklabels(split_types)
-        ax.set_ylim([0, 1.1])
-        ax.grid(True, alpha=0.3, axis="y")
+        
+        ax.set_yscale("log")
+        
+        # Set limit based on total number of structures
+        if len(group) > 0:
+            n_models = len(group.iloc[0]["final_frame_weights"])
+            ax.set_ylim([0.8, n_models * 1.5]) # Start slightly below 1 for log scale
+        
+        ax.grid(True, alpha=0.3, axis="y", which="both")
 
         legend_elements = [
             Patch(facecolor=color, label=split_type)
@@ -430,8 +436,10 @@ def plot_ensemble_saxs_curves(df: pd.DataFrame, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load FOXS curves
-    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" /"FOXS"
+    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" /"FOXS" 
     foxs_data = np.load(FOXS_DIR / "CaM_SAXS_ordered.npz")
+    FOXS_DIR = FOXS_DIR / "missing_residues"
+
     curve_matrix = foxs_data["saxs"].T  # (501, 12700)
 
     for (loss_type, target_curve), group in df.groupby(["loss_type", "target_curve"]):
