@@ -1,21 +1,21 @@
 #!/bin/bash
-# SAXS-only MaxEnt reweighting sweep for CaM+CDZ and CaM-CDZ.
+# HDX-only MaxEnt reweighting sweep for CaM+CDZ and CaM-CDZ.
 #
 # Parallelises at the bash level (one Python process per combination).
 # After all jobs complete, runs the analysis script automatically.
 #
 # Usage:
-#   bash run_fit_CaM_SAXS_KLD.sh [options]
+#   bash run_fit_CaM_HDX_KLD.sh [options]
 #
 # Options:
-#   --jobs          N     Max parallel jobs          (default: 10)
-#   --n-steps       N     Optimisation steps          (default: 50000)
+#   --jobs          N     Max parallel jobs          (default: 5)
+#   --n-steps       N     Optimisation steps          (default: 500)
 #   --learning-rate F     Learning rate               (default: 1.0)
 #   --targets       A,B   Comma-separated targets     (default: CaM+CDZ,CaM-CDZ)
-#   --split-types   A,B   Comma-separated split types (default: all three)
+#   --split-types   A,B   Comma-separated split types (default: spatial,sequence-cluster,random)
 #   --split-indices 0,1,2 Comma-separated indices     (default: 0,1,2)
-#   --maxent-values A,B   Comma-separated strengths   (default: 7-value sweep)
-#   --dir-name      NAME  Output base directory name  (default: _optimise_CaM_SAXS_KLD)
+#   --maxent-values A,B   Comma-separated strengths   (default: 3-value sweep)
+#   --dir-name      NAME  Output base directory name  (default: _optimise_CaM_HDX_KLD)
 
 set -euo pipefail
 
@@ -27,10 +27,10 @@ PARALLEL_JOBS=5
 N_STEPS=500
 LEARNING_RATE=1.0
 TARGETS="CaM+CDZ,CaM-CDZ"
-SPLIT_TYPES="random-stratified"
+SPLIT_TYPES="sequence_cluster"
 SPLIT_INDICES="0,1,2"
-MAXENT_VALUES="1.0,10.0,100.0,1000.0,10000.0"
-OUTPUT_BASE="_optimise_CaM_SAXS_KLD"
+MAXENT_VALUES="1.0,10.0,100.0,1000.0,10000.0,100000.0"
+OUTPUT_BASE="_optimise_CaM_HDX_KLD"
 
 # ---------- Argument parsing ----------
 while [[ $# -gt 0 ]]; do
@@ -76,7 +76,7 @@ for _ in "${TARGET_ARRAY[@]}"; do
 done
 
 echo "========================================"
-echo "  SAXS KLD fitting — CaM pulldown"
+echo "  HDX KLD fitting — CaM pulldown"
 echo "========================================"
 echo "  Output dir:   ${OUTPUT_DIR}"
 echo "  Targets:      ${TARGETS}"
@@ -97,12 +97,12 @@ for TARGET in "${TARGET_ARRAY[@]}"; do
                 ((JOB_COUNT++))
                 wait_for_slot
 
-                LOG_NAME="SAXS_${TARGET}_${SPLIT_TYPE}_split${SPLIT_IDX}_maxent${MAXENT}"
+                LOG_NAME="HDX_${TARGET}_${SPLIT_TYPE}_split${SPLIT_IDX}_maxent${MAXENT}"
                 LOG_FILE="${OUTPUT_DIR}/logs/${LOG_NAME}.log"
 
                 echo "[${JOB_COUNT}/${TOTAL_JOBS}] ${LOG_NAME}"
 
-                python "${SCRIPT_DIR}/fit_CaM_SAXS_KLD.py" \
+                python "${SCRIPT_DIR}/fit_CaM_HDX_KLD.py" \
                     --target         "$TARGET" \
                     --split-type     "$SPLIT_TYPE" \
                     --split-index    "$SPLIT_IDX" \

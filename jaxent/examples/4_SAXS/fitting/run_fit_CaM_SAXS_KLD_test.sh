@@ -29,7 +29,7 @@ LEARNING_RATE=1.0
 TARGETS="CaM+CDZ,CaM-CDZ"
 SPLIT_TYPES="random,stratified,random-stratified"
 SPLIT_INDICES="0,1,2"
-MAXENT_VALUES="0.001,1.0,100.0"
+MAXENT_VALUES="1.0,10.0,100.0,1000.0,10000.0"
 OUTPUT_BASE="_optimise_CaM_SAXS_KLD"
 
 # ---------- Argument parsing ----------
