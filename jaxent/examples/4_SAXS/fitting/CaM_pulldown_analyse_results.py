@@ -30,25 +30,12 @@ from jaxent.src.utils.hdf import load_optimization_history_from_file
 from jaxent.src.models.SAXS.parameters import SAXS_direct_Model_Parameters
 
 from common import load_dat
+from paths import FRAME_ORDERING_PATH, SAXS_FEATURES_PATH, EXPERIMENTAL_DATA
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
-FRAME_ORDERING_PATH = (
-    SCRIPT_DIR.parent
-    / "ensemble_generation"
-    / "neuralplexer"
-    / "collected_structures"
-    / "frame_ordering.csv"
-)
-SAXS_FEATURES_PATH = DATA_DIR / "_SAXS_features" / "SAXS_curve_input_features.npz"
-EXPERIMENTAL_DATA = {
-    "CaM+CDZ": DATA_DIR / "_CaM" / "raw_data" / "SASDNY3" / "experimental_data" / "SASDNY3.dat",
-    "CaM-CDZ": DATA_DIR / "_CaM" / "raw_data" / "SASDNX3" / "experimental_data" / "SASDNX3.dat",
-}
 
 # Matches known split types to avoid ambiguity with "+" and "-" in target names
 _RUN_NAME_PATTERN = re.compile(
-    r"^([A-Za-z]+)_([\w+\-]+)_(random-stratified|stratified|random)"
+    r"^(.+?)_([a-zA-Z0-9\+\-]+)_(random-stratified|stratified|random|spatial|sequence_cluster|combined)"
     r"_split(\d+)_maxent([\d.eE+\-]+)"
 )
 
@@ -314,9 +301,190 @@ def plot_ca_cdz_heatmap(
         print(f"Saved {fname}")
 
 
+def plot_cluster_vs_maxent(
+    df: pd.DataFrame, frame_ordering: pd.DataFrame, output_dir: Path
+) -> None:
+    """Line plot of Primary_cluster weighted fractions vs maxent_strength.
+
+    Layout: one figure per (scenario, split_type) pair.
+    Columns: one panel per condition (target).
+    Rows: one per Primary_cluster label (APO-like / HOLO-like / Neither).
+    Each panel shows individual replicate traces (thin) + mean±SE band.
+    X-axis is log-scaled maxent_strength.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cluster_labels = sorted(frame_ordering["Primary_cluster"].unique())
+    label_map = {"0": "APO-like", "1": "HOLO-like", "n": "Neither"}
+    colors = {"0": "#1f77b4", "1": "#d62728", "n": "#7f7f7f"}
+
+    for (scenario, split_type), grp_sc in df.groupby(["scenario", "split_type"]):
+        targets = sorted(grp_sc["target"].unique())
+        n_rows = len(cluster_labels)
+        n_cols = len(targets)
+
+        fig, axes = plt.subplots(
+            n_rows, n_cols,
+            figsize=(4 * n_cols, 3 * n_rows),
+            sharex=True, sharey=True, squeeze=False,
+        )
+        fig.suptitle(
+            f"Primary Cluster Populations vs MaxEnt Strength\n"
+            f"{scenario} | {split_type}",
+            fontsize=11,
+        )
+
+        for col_idx, target in enumerate(targets):
+            grp_t = grp_sc[grp_sc["target"] == target]
+            strengths = sorted(grp_t["maxent_strength"].unique())
+
+            for row_idx, c in enumerate(cluster_labels):
+                ax = axes[row_idx][col_idx]
+                color = colors.get(c, "gray")
+
+                # Collect per-replicate traces keyed by split_index
+                rep_traces: dict[int, dict[float, float]] = {}
+                for _, row in grp_t.iterrows():
+                    si = int(row["split_index"])
+                    w = row["final_frame_weights"]
+                    frac = float(w[frame_ordering["Primary_cluster"] == c].sum())
+                    rep_traces.setdefault(si, {})[row["maxent_strength"]] = frac
+
+                # Build matrix (reps × strengths) for mean/SE
+                mat = np.full((len(rep_traces), len(strengths)), np.nan)
+                for r_idx, si in enumerate(sorted(rep_traces)):
+                    for s_idx, st in enumerate(strengths):
+                        mat[r_idx, s_idx] = rep_traces[si].get(st, np.nan)
+
+                x = np.array(strengths)
+                means = np.nanmean(mat, axis=0)
+                ses = np.nanstd(mat, axis=0, ddof=1) / np.sqrt(
+                    (~np.isnan(mat)).sum(axis=0).clip(min=1)
+                )
+
+                # Individual replicate traces
+                for r_idx in range(mat.shape[0]):
+                    ax.semilogx(
+                        x, mat[r_idx], color=color, alpha=0.25, lw=1, ls="--"
+                    )
+                # Mean line
+                ax.semilogx(x, means, color=color, lw=2, label=label_map.get(c, c))
+                # SE band
+                ax.fill_between(
+                    x,
+                    np.clip(means - ses, 0, 1),
+                    np.clip(means + ses, 0, 1),
+                    color=color, alpha=0.2,
+                )
+
+                ax.set_ylim(0, 1.05)
+                ax.grid(True, alpha=0.3)
+                if col_idx == 0:
+                    ax.set_ylabel(f"{label_map.get(c, c)}\nWeighted fraction")
+                if row_idx == 0:
+                    ax.set_title(target, fontsize=9)
+                if row_idx == n_rows - 1:
+                    ax.set_xlabel("MaxEnt strength")
+
+        plt.tight_layout()
+        fname = f"ClusterVsMaxent_{scenario}_{split_type}.png"
+        fig.savefig(output_dir / fname, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved {fname}")
+
+
+def plot_occupancy_vs_maxent(
+    df: pd.DataFrame, frame_ordering: pd.DataFrame, output_dir: Path
+) -> None:
+    """Heatmaps of CDZ and Ca occupancy vs maxent_strength.
+
+    Layout: one figure per (scenario, split_type).
+    Rows: CDZ (n_CDZ_ligands_final) and Ca (n_Ca_final).
+    Columns: one per target condition.
+    Each cell is a heatmap where:
+      x-axis = maxent_strength (log-ordered, labelled)
+      y-axis = occupancy value (0–N)
+      colour  = mean weighted fraction across replicates.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    n_ca_vals = sorted(frame_ordering["n_Ca_final"].unique())
+    n_cdz_vals = sorted(frame_ordering["n_CDZ_ligands_final"].unique())
+
+    occ_rows = [
+        ("CDZ", "n_CDZ_ligands_final", n_cdz_vals),
+        ("Ca",  "n_Ca_final",          n_ca_vals),
+    ]
+
+    for (scenario, split_type), grp_sc in df.groupby(["scenario", "split_type"]):
+        targets = sorted(grp_sc["target"].unique())
+        n_rows = len(occ_rows)
+        n_cols = len(targets)
+
+        fig, axes = plt.subplots(
+            n_rows, n_cols,
+            figsize=(max(5, 2.5 * grp_sc["maxent_strength"].nunique()) * n_cols,
+                     2.5 * n_rows),
+            squeeze=False,
+        )
+        fig.suptitle(
+            f"CDZ / Ca Occupancy vs MaxEnt Strength\n"
+            f"{scenario} | {split_type}",
+            fontsize=11,
+        )
+
+        for col_idx, target in enumerate(targets):
+            grp_t = grp_sc[grp_sc["target"] == target]
+            strengths = sorted(grp_t["maxent_strength"].unique())
+            x_labels = [f"{s:.2g}" for s in strengths]
+
+            for row_idx, (row_label, col_key, occ_vals) in enumerate(occ_rows):
+                ax = axes[row_idx][col_idx]
+
+                # Build heatmap: shape (len(occ_vals), len(strengths))
+                # Each cell = mean over replicates of weighted fraction
+                hm_sum = np.zeros((len(occ_vals), len(strengths)))
+                hm_cnt = np.zeros_like(hm_sum)
+
+                for _, row in grp_t.iterrows():
+                    s_idx = strengths.index(row["maxent_strength"])
+                    w = row["final_frame_weights"]
+                    for v_idx, v in enumerate(occ_vals):
+                        mask = frame_ordering[col_key] == v
+                        hm_sum[v_idx, s_idx] += float(w[mask].sum())
+                        hm_cnt[v_idx, s_idx] += 1
+
+                mean_hm = np.where(hm_cnt > 0, hm_sum / hm_cnt, 0.0)
+
+                im = ax.imshow(
+                    mean_hm,
+                    aspect="auto",
+                    origin="lower",
+                    vmin=0,
+                    vmax=1,
+                    cmap="plasma",
+                )
+                ax.set_xticks(range(len(strengths)))
+                ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=7)
+                ax.set_yticks(range(len(occ_vals)))
+                ax.set_yticklabels(occ_vals, fontsize=8)
+                fig.colorbar(im, ax=ax, label="Mean weighted fraction", shrink=0.85)
+
+                if col_idx == 0:
+                    ax.set_ylabel(f"{row_label} occupancy")
+                if row_idx == 0:
+                    ax.set_title(target, fontsize=9)
+                if row_idx == n_rows - 1:
+                    ax.set_xlabel("MaxEnt strength")
+
+        plt.tight_layout()
+        fname = f"OccupancyVsMaxent_{scenario}_{split_type}.png"
+        fig.savefig(output_dir / fname, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved {fname}")
+
+
 def plot_saxs_curves(df: pd.DataFrame, output_dir: Path) -> None:
-    """Ensemble-weighted SAXS curves vs experimental (SAXS scenario only)."""
-    saxs_df = df[df["scenario"] == "SAXS"]
+    """Ensemble-weighted SAXS curves vs experimental."""
+    saxs_df = df[df["scenario"].str.contains("SAXS", na=False)]
     if saxs_df.empty:
         return
 
@@ -330,6 +498,13 @@ def plot_saxs_curves(df: pd.DataFrame, output_dir: Path) -> None:
             continue
 
         exp_q, exp_I, exp_err = load_dat(exp_dat)
+        
+        # Filter experimental data to match simulation q-range (consistent with fit)
+        # Default max_q in split_data_SAXS_SASBDB.py is 0.5
+        mask = exp_q <= 0.5
+        exp_q = exp_q[mask]
+        exp_I = exp_I[mask]
+        exp_err = exp_err[mask]
         split_types = sorted(group["split_type"].unique())
 
         fig, axes = plt.subplots(
@@ -416,6 +591,12 @@ def main():
 
     print("Plotting Ca²⁺/CDZ heatmaps...")
     plot_ca_cdz_heatmap(best_df, frame_ordering, output_dir)
+
+    print("Plotting primary cluster vs MaxEnt strength (full sweep)...")
+    plot_cluster_vs_maxent(df, frame_ordering, output_dir)
+
+    print("Plotting CDZ/Ca occupancy vs MaxEnt strength (full sweep)...")
+    plot_occupancy_vs_maxent(df, frame_ordering, output_dir)
 
     print("Plotting SAXS curves...")
     plot_saxs_curves(best_df, output_dir)
