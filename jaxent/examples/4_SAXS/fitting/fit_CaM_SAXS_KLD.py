@@ -48,16 +48,8 @@ from jaxent.src.data.splitting.mapping import QSubsetMapping
 from jaxent.src.custom_types.key import m_key
 
 from common import load_dat, find_q_indices, create_chi2_loss
+from paths import EXPERIMENTAL_DATA, SAXS_FEATURES_PATH, FITTING_DIR
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
-
-EXPERIMENTAL_DATA = {
-    "CaM+CDZ": DATA_DIR / "_CaM" / "raw_data" / "SASDNY3" / "experimental_data" / "SASDNY3.dat",
-    "CaM-CDZ": DATA_DIR / "_CaM" / "raw_data" / "SASDNX3" / "experimental_data" / "SASDNX3.dat",
-}
-
-SAXS_FEATURES_PATH = DATA_DIR / "_SAXS_features" / "SAXS_curve_input_features.npz"
 
 
 def load_saxs_features() -> np.ndarray:
@@ -72,7 +64,7 @@ def load_datasplit(target: str, split_type: str, split_idx: int) -> tuple:
         (train_idx, train_I, val_idx, val_I) — integer index arrays and
         intensity arrays extracted from the full experimental curve.
     """
-    splits_dir = SCRIPT_DIR / f"_datasplits_{target}" / split_type / f"split_{split_idx:03d}"
+    splits_dir = FITTING_DIR / f"_datasplits_{target}" / split_type / f"split_{split_idx:03d}"
     train_npz = np.load(splits_dir / "train.npz")
     val_npz = np.load(splits_dir / "val.npz")
 

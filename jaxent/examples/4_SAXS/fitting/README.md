@@ -69,7 +69,7 @@ A simple SAXS fitting script has been performed. There are multiple examples for
 2. Analysis script
 3. HDX-MS-only + KLD fitting script + bash runner
 4. Calibrate loss scaling factors - plot loss curves vs maxent strength
-5. Combined fitting script using ESS loss function + bash runner
+5. Combined fitting script using KLD loss function + bash runner
 
 
 # Notes
@@ -81,4 +81,4 @@ Save shared functions in jaxent/examples/4_SAXS/fitting/common.py
 
 
 # Future
-- Update the loss function for the weights to be based on ESS rather than KL divergence to the uniform distribution. Fixed at 20 effective sampples. 
+- Update the loss function for the combined fitting to be based on ESS rather than KL divergence to the uniform distribution. Fixed at 20 effective sampples. 
