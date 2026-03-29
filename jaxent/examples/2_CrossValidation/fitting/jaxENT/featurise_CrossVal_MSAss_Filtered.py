@@ -65,7 +65,7 @@ def main():
         os.makedirs(output_dir)
 
     # Configure BV model
-    bv_config = BV_model_Config()
+    bv_config = BV_model_Config(switch=True)
     # times 0.08	0.33	0.67	1.00	5.00	10.00	20.00	30.00	45.00	60.00	160.00	240.00	390.00	750.00	1440.00 /min
     bv_config.timepoints = jnp.array(
         [
