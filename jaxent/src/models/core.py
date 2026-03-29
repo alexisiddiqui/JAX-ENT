@@ -175,14 +175,15 @@ class Simulation:
         self, params: Union[Simulation_Parameters, Sequence[Model_Parameters]]
     ) -> Sequence[Output_Features]:
         """
-        Apply forward pass to non-averaged features, returning frame-wise predictions.
+        Apply forward passes to un-averaged (frame-wise) features.
 
-        Returns sequence of output features with final dimension as n_frames for each forward model.
+        Returns per-frame output features — each output retains the frame dimension
+        as the last axis. All forward passes handle (..., n_frames) inputs via
+        element-wise ops, so no explicit frame loop is needed.
         """
         if not hasattr(self, "_input_features"):
             raise RuntimeError("Simulation must be initialized before calling predict")
 
-        # Extract model parameters
         if isinstance(params, Simulation_Parameters):
             model_parameters = params.model_parameters
         else:
@@ -194,63 +195,10 @@ class Simulation:
                 f"number of forward models ({len(self.forwardpass)})"
             )
 
-        n_frames = self._input_features[0].features_shape[-1]
-        output_features = []
-
-        for fp, feature, param in zip(self.forwardpass, self._input_features, model_parameters):
-            # Collect frame outputs for this forward model
-            frame_outputs = []
-
-            for frame_idx in range(n_frames):
-                # Extract frame data for all features generically
-                frame_data = {}
-
-                # Slice feature arrays along frame dimension
-                for feat_name in feature.__features__:
-                    feat_array = getattr(feature, feat_name) 
-                    if feat_array is not None and getattr(feat_array, "ndim", 0) >= 2 and feat_array.shape[-1] == n_frames:
-                        frame_data[feat_name] = feat_array[..., frame_idx : frame_idx + 1]
-                    else:
-                        frame_data[feat_name] = feat_array
-
-                # Preserve all non-feature attributes unchanged
-                for slot in feature._get_ordered_slots():
-                    if slot not in feature.__features__:
-                        frame_data[slot] = getattr(feature, slot)
-
-                # Create new frame feature object
-                frame_feature = feature.__class__(**frame_data)
-
-                # Apply forward pass to single frame
-                frame_output = single_pass(fp, frame_feature, param)
-                frame_outputs.append(frame_output)
-
-            # Stack frame outputs along final dimension generically
-            first_output = frame_outputs[0]
-            stacked_data = {}
-
-            # Stack all feature arrays (skip None values)
-            for feat_name in first_output.__features__:
-                feat_arrays = [getattr(out, feat_name) for out in frame_outputs]
-                if feat_arrays[0] is not None:
-                    stacked = jnp.stack(feat_arrays, axis=-1)
-                    # Squeeze singleton dimensions except the last (frames) dimension
-                    stacked_data[feat_name] = jnp.squeeze(
-                        stacked,
-                        axis=tuple(i for i in range(stacked.ndim - 1) if stacked.shape[i] == 1),
-                    )
-                else:
-                    stacked_data[feat_name] = None
-
-            # Preserve non-feature attributes from first output
-            for slot in first_output._get_ordered_slots():
-                if slot not in first_output.__features__:
-                    stacked_data[slot] = getattr(first_output, slot)
-
-            stacked_output = first_output.__class__(**stacked_data)
-            output_features.append(stacked_output)
-
-        return output_features
+        return [
+            single_pass(fp, feat, param)
+            for fp, feat, param in zip(self.forwardpass, self._input_features, model_parameters)
+        ]
 
     def tree_flatten(self):
         """
@@ -337,16 +285,18 @@ class Simulation:
         # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
         # masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
 
-        # Apply frame_average_features individually to each input feature
-        average_features = [
-            frame_average_features(feature, params.frame_weights) for feature in input_features
-        ]
-
-        # Second operation using direct iteration as well
-        output_features = [
-            single_pass(fp, feat, param)
-            for fp, feat, param in zip(forwardpass, average_features, params.model_parameters)
-        ]
+        # Branch per forward pass: linear models average features first (average_first=True),
+        # non-linear models run on frame-wise features and average outputs (average_first=False).
+        # Since forwardpass is a static JIT arg, this branch compiles away.
+        output_features = []
+        for fp, feat, param in zip(forwardpass, input_features, params.model_parameters):
+            if getattr(fp, "average_first", True):
+                avg_feat = frame_average_features(feat, params.frame_weights)
+                output = single_pass(fp, avg_feat, param)
+            else:
+                output = single_pass(fp, feat, param)
+                output = frame_average_features(output, params.frame_weights)
+            output_features.append(output)
 
         return output_features
 

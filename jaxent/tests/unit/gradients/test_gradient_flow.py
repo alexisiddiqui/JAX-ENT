@@ -179,14 +179,16 @@ class TestBVUptakeGradients:
         assert jnp.abs(grad_bh) > 0
 
     def test_finite_diff_uptake_bc(self):
-        """Test finite-difference gradient check for bc in uptake."""
+        """Test finite-difference gradient check for bc in uptake.
+        Uses 2D (n_residues, n_frames) inputs per BV_uptake_ForwardPass contract.
+        """
         bc = jnp.array(0.35)
         bh = jnp.array(2.0)
-        heavy = jnp.array([1.0, 2.0])
-        acceptor = jnp.array([0.5, 1.0])
+        heavy = jnp.array([[1.0], [2.0]])    # (2, 1): 2 residues, 1 frame
+        acceptor = jnp.array([[0.5], [1.0]])  # (2, 1)
         k_ints = jnp.array([0.1, 0.5])
         timepoints = jnp.array([0.1, 1.0])
-        target = jnp.array([[0.01, 0.05], [0.1, 0.2]])
+        target = jnp.array([[[0.01], [0.05]], [[0.1], [0.2]]])  # (2, 2, 1)
 
         h = 1e-5
         f_plus = bv_uptake_loss(bc + h, bh, heavy, acceptor, k_ints, timepoints, target)
@@ -199,14 +201,16 @@ class TestBVUptakeGradients:
         np.testing.assert_allclose(auto_grad, fd_grad, rtol=2e-3)
 
     def test_finite_diff_uptake_bh(self):
-        """Test finite-difference gradient check for bh in uptake."""
+        """Test finite-difference gradient check for bh in uptake.
+        Uses 2D (n_residues, n_frames) inputs per BV_uptake_ForwardPass contract.
+        """
         bc = jnp.array(0.35)
         bh = jnp.array(2.0)
-        heavy = jnp.array([1.0, 2.0])
-        acceptor = jnp.array([0.5, 1.0])
+        heavy = jnp.array([[1.0], [2.0]])    # (2, 1): 2 residues, 1 frame
+        acceptor = jnp.array([[0.5], [1.0]])  # (2, 1)
         k_ints = jnp.array([0.1, 0.5])
         timepoints = jnp.array([0.1, 1.0])
-        target = jnp.array([[0.01, 0.05], [0.1, 0.2]])
+        target = jnp.array([[[0.01], [0.05]], [[0.1], [0.2]]])  # (2, 2, 1)
 
         h = 1e-5
         f_plus = bv_uptake_loss(bc, bh + h, heavy, acceptor, k_ints, timepoints, target)

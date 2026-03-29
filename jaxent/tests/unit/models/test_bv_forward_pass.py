@@ -177,10 +177,13 @@ class TestBVUptakeForwardPass:
         assert result.uptake[0, 0] < 0.1
 
     def test_output_shape(self):
-        """Test output shape for 3 residues, 3 timepoints."""
+        """Test output shape for 3 residues, 2 frames, 3 timepoints.
+        BV_uptake_ForwardPass operates on frame-wise features (average_first=False),
+        so inputs have shape (n_residues, n_frames) and output is (n_timepoints, n_residues, n_frames).
+        """
         inputs = BV_input_features(
-            heavy_contacts=jnp.array([1.0, 2.0, 3.0]),
-            acceptor_contacts=jnp.array([0.5, 1.0, 1.5]),
+            heavy_contacts=jnp.array([[1.0, 1.1], [2.0, 2.1], [3.0, 3.1]]),  # (3, 2)
+            acceptor_contacts=jnp.array([[0.5, 0.6], [1.0, 1.1], [1.5, 1.6]]),  # (3, 2)
             k_ints=jnp.array([0.1, 0.5, 1.0]),
         )
         params = BV_Model_Parameters(
@@ -189,13 +192,16 @@ class TestBVUptakeForwardPass:
             timepoints=jnp.array([0.167, 1.0, 10.0]),
         )
         result = BV_uptake_ForwardPass()(inputs, params)
-        assert result.uptake.shape == (3, 3)
+        # (n_timepoints=3, n_residues=3, n_frames=2)
+        assert result.uptake.shape == (3, 3, 2)
 
     def test_uptake_monotonic_in_time(self):
-        """Test that uptake increases with time for each residue."""
+        """Test that uptake increases with time for each residue.
+        Uses 2D (n_residues, n_frames) inputs per the BV_uptake_ForwardPass contract.
+        """
         inputs = BV_input_features(
-            heavy_contacts=jnp.array([1.0, 2.0]),
-            acceptor_contacts=jnp.array([0.5, 1.0]),
+            heavy_contacts=jnp.array([[1.0], [2.0]]),   # (2, 1)
+            acceptor_contacts=jnp.array([[0.5], [1.0]]),  # (2, 1)
             k_ints=jnp.array([0.1, 0.5]),
         )
         params = BV_Model_Parameters(
@@ -204,9 +210,10 @@ class TestBVUptakeForwardPass:
             timepoints=jnp.array([0.001, 0.1, 1.0, 10.0]),
         )
         result = BV_uptake_ForwardPass()(inputs, params)
-        # Check monotonicity: uptake[t+1] >= uptake[t] for each residue
+        # Output shape: (n_timepoints=4, n_residues=2, n_frames=1)
+        # Check monotonicity: uptake[t+1] >= uptake[t] for each residue (frame 0)
         for res_idx in range(2):
-            uptakes = result.uptake[:, res_idx]
+            uptakes = result.uptake[:, res_idx, 0]
             assert jnp.all(jnp.diff(uptakes) >= -1e-6)  # Allow tiny numerical error
 
     def test_output_type(self):
