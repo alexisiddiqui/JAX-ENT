@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import seaborn as sns
 
 from jaxent.examples.common.analysis import (
@@ -21,6 +22,7 @@ from jaxent.examples.common.analysis import (
 from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.plotting import (
     plot_aggregated_analysis,
+    plot_cluster_populations,
     plot_fixed_effects,
     plot_minimax_panel,
     plot_rank_panel,
@@ -36,6 +38,16 @@ def main() -> None:
     p.add_argument("--output-dir", default=".")
     p.add_argument("--include-transformed", action="store_true")
     p.add_argument("--config", default=None)
+    p.add_argument(
+        "--cluster-populations-csv",
+        default=None,
+        help=(
+            "Optional path to a cluster-populations CSV "
+            "(e.g. conformational_recovery_data.csv).  Columns ending in "
+            "'_ratio' or '_current' are treated as state populations. "
+            "A bar chart showing variance across selected model replicates is produced."
+        ),
+    )
     a = p.parse_args()
 
     setup_publication_style()
@@ -87,6 +99,53 @@ def main() -> None:
         plot_rank_panel(df, col, title, a.output_dir, fname, False, transform, style=cfg.style)
 
     save_gt_scores(df_before, df_diff, df_minimax, a.output_dir)
+
+    # ── Cluster population bar charts ──────────────────────────────────────
+    _summary_raw = pd.read_csv(a.before_csv)
+    _pop_cols = [c for c in _summary_raw.columns
+                 if c.endswith("_mean")
+                 and not any(x in c for x in ["_rank_", "_transformed_", "_percentile_"])
+                 and c.replace("_mean", "_std") in _summary_raw.columns
+                 and c.startswith("cluster_")]
+    if _pop_cols:
+        keep = [c for c in ["ensemble", "split_type", "loss_function", "score_metric"] if c in _summary_raw.columns]
+        pop_summary = _summary_raw[keep + _pop_cols +
+                                   [c.replace("_mean", "_std") for c in _pop_cols]].copy()
+        plot_cluster_populations(
+            pop_summary,
+            a.output_dir,
+            filename="cluster_populations_by_metric",
+            title="Cluster Populations — Selected Models by Score Metric",
+            style=cfg.style,
+            pop_cols=_pop_cols,
+        )
+        if "loss_function" in pop_summary.columns:
+            for loss_fn in sorted(pop_summary["loss_function"].unique()):
+                safe_name = str(loss_fn).replace(" ", "_").replace("/", "-")
+                plot_cluster_populations(
+                    pop_summary,
+                    a.output_dir,
+                    filename=f"cluster_populations_{safe_name}",
+                    title=f"Cluster Populations — {loss_fn}",
+                    style=cfg.style,
+                    pop_cols=_pop_cols,
+                    loss_filter=loss_fn,
+                )
+
+    if a.cluster_populations_csv:
+        pop_path = Path(a.cluster_populations_csv)
+        if not pop_path.exists():
+            print(f"WARNING: --cluster-populations-csv not found: {pop_path}")
+        else:
+            pop_df = pd.read_csv(pop_path)
+            print(f"Loaded supplementary cluster populations from {pop_path}  ({len(pop_df)} rows)")
+            plot_cluster_populations(
+                pop_df,
+                a.output_dir,
+                filename="cluster_populations_raw",
+                title="Cluster Populations — Raw Recovery Data",
+                style=cfg.style,
+            )
 
 
 if __name__ == "__main__":
