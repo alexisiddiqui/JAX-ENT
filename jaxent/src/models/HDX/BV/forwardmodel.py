@@ -260,6 +260,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=n_atoms,
                 contact_selection="heavy",
                 radius=HEAVY_RADIUS,
+                switch=self.config.switch,
             )
 
             # Calculate O atom contacts (H-bond acceptors) using H atoms
@@ -268,6 +269,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=h_atoms,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
+                switch=self.config.switch,
             )
 
             # --- Ensure ordering matches self.topology_order ---
