@@ -24,9 +24,10 @@ class BV_model_Config(BaseConfig):
     residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
     peptide: bool = False
+    switch: bool = False
     mda_selection_exclusion: str = "resname PRO or resid 1"
 
-    def __init__(self, num_timepoints: int | None = None, timepoints: Array | None = None) -> None:
+    def __init__(self, num_timepoints: int | None = None, timepoints: Array | None = None, switch: bool | None = None) -> None:
         super().__init__()
         if timepoints is not None:
             self.timepoints = timepoints
@@ -51,6 +52,8 @@ class BV_model_Config(BaseConfig):
             else:
                 raise ValueError("Please make sure your timepoint/prior parameters make sense")
             self.num_timepoints = num_timepoints
+        if switch is not None:
+            self.switch = switch
 
     @property
     def forward_parameters(self) -> Model_Parameters:
