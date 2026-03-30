@@ -436,7 +436,7 @@ def plot_ensemble_saxs_curves(df: pd.DataFrame, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load FOXS curves
-    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" /"FOXS" 
+    FOXS_DIR = SCRIPT_DIR.parent.parent / "5_SAXS" /"FOXS" 
     foxs_data = np.load(FOXS_DIR / "CaM_SAXS_ordered.npz")
     FOXS_DIR = FOXS_DIR / "missing_residues"
 

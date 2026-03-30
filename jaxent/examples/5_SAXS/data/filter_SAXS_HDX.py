@@ -24,12 +24,12 @@ This would filter the data to only include rows where n_Ca_final is 1,2,3,4 and 
 
 
 
-python jaxent/examples/4_SAXS/data/filter_SAXS_HDX.py \
-    --SAXS_features_path jaxent/examples/4_SAXS/data/_SAXS_features/SAXS_curve_input_features.npz \
-    --HDX_features_path jaxent/examples/4_SAXS/data/_HDX_features/BV_features.npz \
-    --ordering_csv jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv \
-    --SAXS_output_dir jaxent/examples/4_SAXS/data/_filtered_SAXS_features \
-    --HDX_output_dir jaxent/examples/4_SAXS/data/_filtered_HDX_features \
+python jaxent/examples/5_SAXS/data/filter_SAXS_HDX.py \
+    --SAXS_features_path jaxent/examples/5_SAXS/data/_SAXS_features/SAXS_curve_input_features.npz \
+    --HDX_features_path jaxent/examples/5_SAXS/data/_HDX_features/BV_features.npz \
+    --ordering_csv jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv \
+    --SAXS_output_dir jaxent/examples/5_SAXS/data/_filtered_SAXS_features \
+    --HDX_output_dir jaxent/examples/5_SAXS/data/_filtered_HDX_features \
     --Primary_cluster_list 0,1,n \
     --Secondary_cluster_list 0,1,2,3,4 \
     --n_Ca_final_list 1,2,3,4 \

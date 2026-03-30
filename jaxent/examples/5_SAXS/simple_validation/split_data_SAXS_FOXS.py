@@ -7,18 +7,18 @@ splits across train/val using built-in DataSplitter whole-system strategies
 saves .npz splits for downstream fitting, and produces publication figures.
 
 Example:
-  python jaxent/examples/4_SAXS/simple_validation/split_data_SAXS_FOXS.py \
-    --saxs-data jaxent/examples/4_SAXS/data/FOXS/missing_residues/1CLL_apo.pdb.dat \
-    --output-dir jaxent/examples/4_SAXS/simple_validation/_datasplits_APO \
+  python jaxent/examples/5_SAXS/simple_validation/split_data_SAXS_FOXS.py \
+    --saxs-data jaxent/examples/5_SAXS/data/FOXS/missing_residues/1CLL_apo.pdb.dat \
+    --output-dir jaxent/examples/5_SAXS/simple_validation/_datasplits_APO \
     --name APO \
     --n-splits 3 \
     --train-size 0.5 \
     --seed 42
 
 
-  python jaxent/examples/4_SAXS/simple_validation/split_data_SAXS_FOXS.py \
-    --saxs-data jaxent/examples/4_SAXS/data/FOXS/missing_residues/1CLL_nosol.pdb.dat \
-    --output-dir jaxent/examples/4_SAXS/simple_validation/_datasplits_nosol \
+  python jaxent/examples/5_SAXS/simple_validation/split_data_SAXS_FOXS.py \
+    --saxs-data jaxent/examples/5_SAXS/data/FOXS/missing_residues/1CLL_nosol.pdb.dat \
+    --output-dir jaxent/examples/5_SAXS/simple_validation/_datasplits_nosol \
     --name nosol \
     --n-splits 3 \
     --train-size 0.5 \

@@ -1,6 +1,6 @@
 """
 Performs a second round of clustering on the trajectory data, using the clusters from a previous clustering as a starting point.
-In this case this is the RMSD clustering performed in jaxent/examples/4_SAXS/data/cluster_RMSD_references.py
+In this case this is the RMSD clustering performed in jaxent/examples/5_SAXS/data/cluster_RMSD_references.py
 
 From these clusters, we perform a second round of clustering using iPCA and k-means to further refine the clusters.
 
@@ -17,17 +17,17 @@ Script args:
 - saxs_npz_path: path to the SAXS features .npz (e.g. CaM_SAXS_ordered.npz)
 - output_path: path to the output directory
 
-Example output: jaxent/examples/4_SAXS/data/_sub_cluster_output/
+Example output: jaxent/examples/5_SAXS/data/_sub_cluster_output/
 
 
-source .venv/bin/activate && python jaxent/examples/4_SAXS/data/create_sub_clusters.py \
-  --trajectory_path jaxent/examples/4_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_plddt_ordered.xtc \
-  --topology_path jaxent/examples/4_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_max_plddt_425.pdb \
-  --clustering_assignments_csv jaxent/examples/4_SAXS/data/_RMSD_cluster_output/cluster_assignments.csv \
+source .venv/bin/activate && python jaxent/examples/5_SAXS/data/create_sub_clusters.py \
+  --trajectory_path jaxent/examples/5_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_plddt_ordered.xtc \
+  --topology_path jaxent/examples/5_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_max_plddt_425.pdb \
+  --clustering_assignments_csv jaxent/examples/5_SAXS/data/_RMSD_cluster_output/cluster_assignments.csv \
   --k 5 --seed 42 --pca_dims 10 \
-  --reference_paths jaxent/examples/4_SAXS/FOXS/missing_residues/1CLL_apo.pdb.dat jaxent/examples/4_SAXS/FOXS/missing_residues/7PSZ_apo.pdb.dat \
-  --saxs_npz_path jaxent/examples/4_SAXS/FOXS/CaM_SAXS_ordered.npz \
-  --output_path jaxent/examples/4_SAXS/data/_sub_cluster_output_test2/ 2>&1
+  --reference_paths jaxent/examples/5_SAXS/FOXS/missing_residues/1CLL_apo.pdb.dat jaxent/examples/5_SAXS/FOXS/missing_residues/7PSZ_apo.pdb.dat \
+  --saxs_npz_path jaxent/examples/5_SAXS/FOXS/CaM_SAXS_ordered.npz \
+  --output_path jaxent/examples/5_SAXS/data/_sub_cluster_output_test2/ 2>&1
 
 """
 
