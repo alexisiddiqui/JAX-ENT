@@ -50,7 +50,7 @@ For each split replicate/hyperparameter combination:
 
 
 Frame details:
-jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv
+jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv
 - this csv contains the mapping information for clustering and ligand information.
     - Headers: Primary_cluster (n, 0, 1), Secondary_cluster (0-5), n_Ca_final (0-4), n_CDZ_ligands_final (0-2)
 
@@ -77,7 +77,7 @@ The analysis script/pipeline should be agnostic to the fitting script used - it 
 
 For the fitting scripts - this means that the structure of the code and the outputs should be consistent and interoperable. Despite fewwer SAXS examples, avoid writing rigid code. Understandability of the pipeline is of most importance.
 
-Save shared functions in jaxent/examples/4_SAXS/fitting/common.py
+Save shared functions in jaxent/examples/5_SAXS/fitting/common.py
 
 
 # Future

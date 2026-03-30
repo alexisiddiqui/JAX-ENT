@@ -6,10 +6,10 @@ individually. Per-structure features are combined in CSV order into a single
 BV_input_features.npz for use in HDX-MS fitting.
 
 Usage:
-    python jaxent/examples/4_SAXS/data/featurise_HDX-MS.py \
-        --input_dir jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_structures \
-        --output_dir jaxent/examples/4_SAXS/data/_HDX_features \
-        --ordering_csv jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv \
+    python jaxent/examples/5_SAXS/data/featurise_HDX-MS.py \
+        --input_dir jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_structures \
+        --output_dir jaxent/examples/5_SAXS/data/_HDX_features \
+        --ordering_csv jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv \
         [--kint_path path/to/kints.dat] \
         [--output_name BV_features]
 
@@ -118,7 +118,7 @@ def main():
     print(f"Loaded {len(universes)} universes in CSV order")
 
     # Configure BV model
-    bv_config = BV_model_Config()
+    bv_config = BV_model_Config(switch=True)
 
     # Parse timepoints if provided
     if args.timepoints:

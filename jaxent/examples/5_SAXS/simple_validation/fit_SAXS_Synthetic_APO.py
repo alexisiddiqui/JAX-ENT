@@ -1,8 +1,8 @@
 """
-Reweights the FOXS curves (features) in jaxent/examples/4_SAXS/simple_validation/_synthetic_SAXS_features
-fits against jaxent/examples/4_SAXS/FOXS/1CLL_apo.pdb.dat
+Reweights the FOXS curves (features) in jaxent/examples/5_SAXS/simple_validation/_synthetic_SAXS_features
+fits against jaxent/examples/5_SAXS/FOXS/1CLL_apo.pdb.dat
 
-Uses datasplits from jaxent/examples/4_SAXS/simple_validation/_datasplits
+Uses datasplits from jaxent/examples/5_SAXS/simple_validation/_datasplits
 
 Fits 3 replicates for each split type (random, stratified, data-cluster)
 
@@ -60,7 +60,7 @@ def find_q_indices(full_q, subset_q, tol=1e-7):
 
 def load_experimental_curve(curve_type: str) -> tuple:
     """Load experimental curve (q, I, err) from FOXS directory."""
-    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" / "FOXS" / "missing_residues"
+    FOXS_DIR = SCRIPT_DIR.parent.parent / "5_SAXS" / "FOXS" / "missing_residues"
     fname = "1CLL_apo.pdb.dat" if curve_type == "APO" else "1CLL_nosol.pdb.dat"
     dat = np.loadtxt(FOXS_DIR / fname, comments="#")
     return dat[:, 0], dat[:, 1], dat[:, 2]
@@ -68,7 +68,7 @@ def load_experimental_curve(curve_type: str) -> tuple:
 
 def load_foxs_features() -> np.ndarray:
     """Load per-frame FOXS curves, shape (501, 12700)."""
-    FOXS_DIR = SCRIPT_DIR.parent.parent / "4_SAXS" / "FOXS"
+    FOXS_DIR = SCRIPT_DIR.parent.parent / "5_SAXS" / "FOXS"
     foxs_data = np.load(FOXS_DIR / "CaM_SAXS_ordered.npz")
     # Load (12700, 501) and transpose to (501, 12700)
     return foxs_data["saxs"].T
