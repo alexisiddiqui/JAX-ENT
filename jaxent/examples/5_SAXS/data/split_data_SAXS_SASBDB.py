@@ -8,9 +8,9 @@ saves .npz splits for downstream fitting, and produces publication figures.
 
 Example:
 
-python jaxent/examples/4_SAXS/data/split_data_SAXS_SASBDB.py \
---saxs-data jaxent/examples/4_SAXS/data/_CaM/raw_data/SASDNY3/experimental_data/SASDNY3.dat \
---output-dir jaxent/examples/4_SAXS/fitting/_datasplits_CaM+CDZ \
+python jaxent/examples/5_SAXS/data/split_data_SAXS_SASBDB.py \
+--saxs-data jaxent/examples/5_SAXS/data/_CaM/raw_data/SASDNY3/experimental_data/SASDNY3.dat \
+--output-dir jaxent/examples/5_SAXS/fitting/_datasplits_CaM+CDZ \
 --name CaM+CDZ \
 --n-splits 3 \
 --train-size 0.5 \
@@ -18,9 +18,9 @@ python jaxent/examples/4_SAXS/data/split_data_SAXS_SASBDB.py \
 
 
 
-python jaxent/examples/4_SAXS/data/split_data_SAXS_SASBDB.py \
---saxs-data jaxent/examples/4_SAXS/data/_CaM/raw_data/SASDNX3/experimental_data/SASDNX3.dat \
---output-dir jaxent/examples/4_SAXS/fitting/_datasplits_CaM-CDZ \
+python jaxent/examples/5_SAXS/data/split_data_SAXS_SASBDB.py \
+--saxs-data jaxent/examples/5_SAXS/data/_CaM/raw_data/SASDNX3/experimental_data/SASDNX3.dat \
+--output-dir jaxent/examples/5_SAXS/fitting/_datasplits_CaM-CDZ \
 --name CaM-CDZ \
 --n-splits 3 \
 --train-size 0.5 \

@@ -1,9 +1,9 @@
 """
 
-python jaxent/examples/4_SAXS/data/combine_SAXS.py \
-    --input_dir jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_saxs \
-    --output_dir jaxent/examples/4_SAXS/data/_SAXS_features \
-    --ordering_csv jaxent/examples/4_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv
+python jaxent/examples/5_SAXS/data/combine_SAXS.py \
+    --input_dir jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_saxs \
+    --output_dir jaxent/examples/5_SAXS/data/_SAXS_features \
+    --ordering_csv jaxent/examples/5_SAXS/ensemble_generation/neuralplexer/collected_structures/frame_ordering.csv
 
 
 """
@@ -51,7 +51,7 @@ def main():
     output_dir = Path(args.output_dir).expanduser().resolve()
     ordering_csv = Path(args.ordering_csv).expanduser().resolve()
     
-    topology_pdb = Path("/Users/alexi/JAX-ENT/jaxent/examples/4_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_max_plddt_425.pdb")
+    topology_pdb = Path("/Users/alexi/JAX-ENT/jaxent/examples/5_SAXS/data/_CaM/CaM_s20_r1_msa1-127_n12700_do1_20260310_183757_protonated_max_plddt_425.pdb")
 
     if not ordering_csv.exists():
         print(f"Error: ordering_csv '{ordering_csv}' not found.")
