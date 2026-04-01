@@ -14,11 +14,11 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=5
+PARALLEL_JOBS=8
 DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000"
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test_FIGURE_SIGMA_500"
-N_STEPS=500
+DIR_NAME="_optimise_quick_test_FIGURE_SIGMA_5000"
+N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -242,6 +242,13 @@ python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
   --output-dir "${ANALYSIS_DIR}/plots_selection" \
   "${PLOT_EXTRA_ARGS[@]}" \
   > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+
+echo "Extracting selected models..."
+python "${ANA_DIR}/extract_selected_models.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --scores-csv "${SCORES_DIR}/model_scores.csv" \
+  --selection-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  > "${OPT_OUTPUT_DIR}/logs/extract_selected_models.log" 2>&1
 
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"

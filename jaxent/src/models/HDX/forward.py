@@ -38,7 +38,7 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model
 class BV_uptake_ForwardPass(
     ForwardPass[BV_input_features, uptake_BV_output_features, BV_Model_Parameters]
 ):
-    average_first: bool = False  # operate per-frame then average outputs
+    average_first: bool = True  # operate per-frame then average outputs
 
     def __call__(
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
@@ -56,17 +56,20 @@ class BV_uptake_ForwardPass(
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
         pf = jnp.exp(log_pf)  # (n_residues, n_frames)
 
-        # Expand kints for broadcasting with pf: (n_residues, 1) / (n_residues, n_frames)
-        kints_expanded = jnp.expand_dims(kints, axis=-1)  # (n_residues, 1)
+        # Select kints shape based on pf dimensionality:
+        #   pf 1-D (n_residues,)        → features were pre-averaged (average_first=True)
+        #   pf 2-D (n_residues, n_frames) → per-frame path (average_first=False)
+        if pf.ndim == 1:
+            kints_for_uptake = kints                            # (n_residues,)
+        else:
+            kints_for_uptake = jnp.expand_dims(kints, axis=-1)  # (n_residues, 1)
 
-        # Vectorized computation of uptake for each timepoint
-        def compute_uptake_for_timepoint(timepoint):
-            # uptake shape: (n_residues, n_frames)
-            uptake = 1 - jnp.exp(-kints_expanded * timepoint / pf)
-            return uptake
+        # Reshape time_points to broadcast over residue (and optional frame) dims without vmap.
+        # (n_timepoints,) → (n_timepoints, 1) or (n_timepoints, 1, 1)
+        time_reshaped = time_points[(slice(None),) + (None,) * pf.ndim]
 
-        # Compute uptake for each timepoint: (n_timepoints, n_residues, n_frames)
-        uptake_per_timepoint = jax.vmap(compute_uptake_for_timepoint)(time_points)
+        # uptake_per_timepoint: (n_timepoints, n_residues) or (n_timepoints, n_residues, n_frames)
+        uptake_per_timepoint = 1 - jnp.exp(-kints_for_uptake * time_reshaped / pf)
 
         return uptake_BV_output_features(uptake_per_timepoint)
 
