@@ -415,15 +415,6 @@ wheels = [
 ]
 
 [[package]]
-name = "freesasa"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/52/fc/1b28f7973952934737387172ef0a40c0ea7cb9a6132264c3e731760f8efa/freesasa-2.2.1.tar.gz", hash = "sha256:5630e65d619cf6a062028d7c6297afe8c5b18c677c75f1c32a0938399f4f6850", size = 270138 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/08/8d063bcb70ffc11d2b17a667bb4f6708cb187631184a832f9800b447ae77/freesasa-2.2.1-cp311-cp311-win_amd64.whl", hash = "sha256:382bd60728b6f118b34a118c25fca9deb8aa7ae615d6656f35b63892abbeb2a4", size = 278361 },
-]
-
-[[package]]
 name = "gdown"
 version = "5.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -598,7 +589,6 @@ dependencies = [
     { name = "jax" },
     { name = "jaxtyping" },
     { name = "matplotlib" },
-    { name = "mdakit-sasa" },
     { name = "mdanalysis" },
     { name = "networkx", extra = ["default"] },
     { name = "numpy" },
@@ -633,7 +623,6 @@ requires-dist = [
     { name = "jax", specifier = "==0.4.35" },
     { name = "jaxtyping", specifier = ">=0.2.37" },
     { name = "matplotlib", specifier = ">=3.10.0" },
-    { name = "mdakit-sasa", git = "https://github.com/pegerto/mdakit_sasa.git" },
     { name = "mdanalysis", specifier = ">=2.8.0" },
     { name = "networkx", extras = ["default"], specifier = ">=3.4.2" },
     { name = "numpy", specifier = ">=2.2.1" },
@@ -885,15 +874,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fc/7a/19b4b3ba44a326cfdbbb731e2fbfe8ceec005d3e302bffd1b43a146e6f32/mdahole2-0.5.0.tar.gz", hash = "sha256:39150588b9bc07ebc176bac30d9c3b0bd25003e2e2eac24b622f2a10e5352a1f", size = 3740229 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/87/4957d158a403b7853ef4e0142626375f8f4ddf49599ae2d2ad73834039e2/mdahole2-0.5.0-py3-none-any.whl", hash = "sha256:6b7a9be247cd99331e8840c9012d0ed7a86874fe110983bbaed00eb39459e7a8", size = 3728373 },
-]
-
-[[package]]
-name = "mdakit-sasa"
-version = "0.2.7"
-source = { git = "https://github.com/pegerto/mdakit_sasa.git#25e7a2aa675a4d65071723c70b9b4cc56a070b8e" }
-dependencies = [
-    { name = "freesasa" },
-    { name = "mdanalysis" },
 ]
 
 [[package]]
