@@ -131,7 +131,8 @@ def multiple_regression_analysis(
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    X_scaled_with_intercept = sm.add_constant(X_scaled)
+    X_scaled_df = pd.DataFrame(X_scaled, columns=valid_predictors, index=df_reg.index)
+    X_scaled_with_intercept = sm.add_constant(X_scaled_df, has_constant="add")
 
     try:
         model_full = sm.OLS(y, X_scaled_with_intercept).fit()
@@ -147,26 +148,36 @@ def multiple_regression_analysis(
         }
     }
 
-    for i, pred in enumerate(valid_predictors):
+    for pred in valid_predictors:
         try:
-            model_without = sm.OLS(y, sm.add_constant(np.delete(X_scaled, i, axis=1))).fit()
+            X_without = sm.add_constant(
+                X_scaled_df.drop(columns=[pred]),
+                has_constant="add",
+            )
+            model_without = sm.OLS(y, X_without).fit()
             partial_r2 = model_full.rsquared - model_without.rsquared
         except Exception:
             partial_r2 = np.nan
 
         try:
-            model_univariate = sm.OLS(y, sm.add_constant(X_scaled[:, i])).fit()
+            X_univariate = sm.add_constant(X_scaled_df[[pred]], has_constant="add")
+            model_univariate = sm.OLS(y, X_univariate).fit()
             univariate_r2 = model_univariate.rsquared
         except Exception:
             univariate_r2 = np.nan
 
+        beta = float(model_full.params.get(pred, np.nan))
+        se = float(model_full.bse.get(pred, np.nan))
+        pvalue = float(model_full.pvalues.get(pred, np.nan))
+        t_stat = float(model_full.tvalues.get(pred, np.nan))
+
         results[pred] = {
-            "beta_standardized": model_full.params[i + 1],
-            "se": model_full.bse[i + 1],
-            "pvalue": model_full.pvalues[i + 1],
+            "beta_standardized": beta,
+            "se": se,
+            "pvalue": pvalue,
             "partial_r2": partial_r2,
             "univariate_r2": univariate_r2,
-            "t_statistic": model_full.tvalues[i + 1],
+            "t_statistic": t_stat,
         }
 
     return results

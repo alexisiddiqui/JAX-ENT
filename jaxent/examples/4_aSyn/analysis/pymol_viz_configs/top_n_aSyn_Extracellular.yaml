@@ -1,0 +1,49 @@
+# Top-N structures — MoPrP ensemble, metric=weight
+# Based on _reference/MoPrP_weighted_SASA_test.py settings
+#
+# Selects the 20 frames with the highest replicate-average weight.
+# Frames are coloured on a white→grey→green scale by log-weight.
+# The full ensemble is shown in the background coloured blue→cyan→yellow→orange→red by weight.
+#
+# Usage (inside PyMOL):
+#   run Top_N_structures.py test_configs/top_n_MoPrP_weights.yaml
+
+render:
+  spectrum_colours: "cyan_magenta_black"
+  spectrum_range: [15.0, 19.0]     # adjust to actual weight range if needed
+  putty_transform: 7
+  putty_range: [1.5, 1.5]
+  trajectory_transparency: 0.1
+  reference_transparency: 0.7
+  transparency_mode: 1
+  orthoscopic_view: true
+  antialias: 1
+  ray_trace_mode: 0
+  ray_transparency_oblique: false
+  ray_trace_on_save: false
+
+
+general:
+  references:
+    - "data/_aSyn/2kkw.pdb"
+  reference_labels:
+    - "NMR"
+  reference_colors:
+    - "yellow"
+  trajectory_label: "aSyn_ensemble"
+  align_atoms: "name CA"
+  align_selection: "resid 15-45"
+  working_dir: "/Users/alexi/JAX-ENT/jaxent/examples/4_aSyn"
+
+output:
+  save_png: false
+  save_session: false
+  output_prefix: "aSyn_TopN"
+
+top_n:
+  trajectory: "data/_cluster_aSyn/clusters/all_clusters.xtc,data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb"
+  weights: "fitting/_processed__optimise_aSyn_BV_20260403_233618/_extracted__processed__optimise_aSyn_BV_20260403_233618/val_loss_min/Extracellular_MSE_sequence_cluster_L1_selected.npz"
+  colour_metric: "weight"     
+  top_n: 10 # top-N = frames with highest replicate-average weight
+  transparency_range: [0.2, 0.6]  
+  transparency_metric: "weight" # opacity → weight rank (or "RMSD" for RMSD rank)

@@ -8,11 +8,11 @@
 #   run Top_N_structures.py test_configs/top_n_TeaA_RMSD.yaml
 
 render:
-  spectrum_colours: "cyan white grey yellow"
-  spectrum_range: [0.0, 10.0]
+  spectrum_colours: "cyan_white_yellow"
+  spectrum_range: [0.5, 3.5]
   putty_transform: 7
-  putty_range: [0.4, 4.0]
-  trajectory_transparency: 0.7
+  putty_range: [1.0, 1.0]
+  trajectory_transparency: 0.1
   reference_transparency: 0.4
   transparency_mode: 1
   orthoscopic_view: true
@@ -51,5 +51,5 @@ output:
 top_n:
   trajectory: "sliced_trajectories/TeaA_initial_sliced.xtc,TeaA_ref_closed_state.pdb"
   weights: "val_loss_min/ISO_TRI_SIGMA_MSE_sequence_cluster_selected.npz"
-  metric: "RMSD"       # top-N = frames with lowest RMSD to references[0]
-  top_n: 5
+  colour_metric: "RMSD"       # top-N = frames with lowest RMSD to references[0]
+  top_n: 10

@@ -13,6 +13,8 @@ from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_M
 
 # fix the typing to use jax arrays
 class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model_Parameters]):
+    average_first: bool = True  # operate per-frame then average outputs
+
     def __call__(
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> BV_output_features:
@@ -80,7 +82,7 @@ class linear_BV_ForwardPass(
     """
     Calculate uptake using a linear BV model with bc and bh as parameters at each timepoint.
     """
-
+    average_first: bool = True  # operate per-frame then average outputs
     key = m_key("HDX_resPF")
 
     def __call__(

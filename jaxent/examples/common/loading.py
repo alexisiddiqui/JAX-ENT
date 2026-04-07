@@ -822,6 +822,8 @@ def run_data_splits(
     peptide_trim: int = 1,
     min_split_size: int | None = None,
     n_clusters: int = 25,
+    plot: bool = False,
+    peptide_plot: bool = False,
 ) -> None:
     """Run multiple data splits and save each to its own folder.
 
@@ -849,6 +851,11 @@ def run_data_splits(
     n_clusters:
         Number of clusters for ``"sequence_cluster"`` split.  Exp1 default
         ``25``; Exp2 uses ``7``.
+    plot:
+        Whether to generate and save sequence distribution plots.
+    peptide_plot:
+        Passed to ``plot_split_visualization``.  Set ``True`` for peptide-based
+        data, ``False`` for single-residue protection factors.
     """
     from jaxent.src.custom_types.datapoint import ExpD_Datapoint
     from jaxent.src.data.loader import ExpD_Dataloader
@@ -908,3 +915,19 @@ def run_data_splits(
             csv_path=os.path.join(split_dir, "val_dfrac.csv"),
         )
         print(f"Split {split_idx + 1} saved to {split_dir}")
+
+        if plot:
+            print(f"Generating split visualization for split {split_idx + 1}...")
+            from jaxent.src.analysis.plots.optimisation import plot_split_visualization
+            import matplotlib.pyplot as plt
+
+            fig = plot_split_visualization(
+                train_data=train_data,
+                val_data=val_data,
+                exp_data=hdx_data,
+                peptide=peptide_plot,
+            )
+            plot_path = os.path.join(split_dir, "split_visualization.png")
+            fig.savefig(plot_path)
+            plt.close(fig)
+            print(f"Split visualization saved to {plot_path}")
