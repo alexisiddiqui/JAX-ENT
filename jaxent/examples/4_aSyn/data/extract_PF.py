@@ -16,7 +16,12 @@ import numpy as np
 import pandas as pd
 import jax.numpy as jnp
 import MDAnalysis as mda
+import matplotlib.pyplot as plt
+import seaborn as sns
 
+from jaxent.src.custom_types.HDX import HDX_protection_factor
+from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+from jaxent.src.interfaces.topology import PTSerialiser, mda_TopologyAdapter
 from jaxent.src.models.HDX.BV.features import BV_output_features
 from jaxent.src.models.func.uptake import calculate_HDXrate
 
@@ -46,23 +51,130 @@ def parse_args():
     parser.add_argument(
         "--topology_json",
         default=SCRIPT_DIR / "_cluster_aSyn" / "data" / "topology.json",
-        help="Path to topology.json",
+        help="Path to topology.json (Optional - if not provided, will use the PDB to create a topology)",
     )
     parser.add_argument(
         "--output_dir",
         default=SCRIPT_DIR / "_aSyn",
         help="Directory to save the outputs",
     )
+    parser.add_argument(
+        "--residue_selection",
+        default=None,
+        help="Residues to include, e.g. '1-100', '1,5,10', or '1-50,60-80,100'. Default: all residues in topology.",
+    )
     return parser.parse_args()
 
 
-def load_topology_map(topo_path):
-    """Load topology JSON and build residue ID to array index map."""
-    with open(topo_path) as f:
-        topo = json.load(f)
+def parse_residue_selection(selection_str: str) -> set:
+    """Parse '1-50,60,80-90' into a set of integer residue IDs."""
+    resids = set()
+    for token in selection_str.split(","):
+        token = token.strip()
+        if "-" in token:
+            start, end = token.split("-", 1)
+            resids.update(range(int(start), int(end) + 1))
+        else:
+            resids.add(int(token))
+    return resids
 
-    resid_to_idx = {t["residues"][0]: t["fragment_index"] for t in topo["topologies"]}
-    return resid_to_idx, len(topo["topologies"])
+
+def load_topologies(topo_path):
+    """Load topologies from JSON or PDB."""
+    topo_path = Path(topo_path)
+    if topo_path.suffix == ".json":
+        return PTSerialiser.load_list_from_json(topo_path)
+    elif topo_path.suffix in [".pdb", ".pdbqt"]:
+        logging.info(f"Loading topology from PDB: {topo_path}")
+        u = mda.Universe(str(topo_path))
+        # Create one topology per residue
+        return mda_TopologyAdapter.from_mda_universe(u, mode="residue", include_selection="protein")
+    else:
+        raise ValueError(f"Unsupported topology format: {topo_path.suffix}")
+
+
+def plot_hdx_metrics(plot_data_list, output_dir, topology_resids=None):
+    """Plot k_obs, k_int, and log_PF for all conditions, highlighting missing residues."""
+    if not plot_data_list:
+        logging.warning("No data available for plotting.")
+        return
+
+    df_plot = pd.DataFrame(plot_data_list)
+    
+    if topology_resids is None:
+        topology_resids = sorted(df_plot["Residue"].unique())
+    
+    res_min, res_max = min(topology_resids), max(topology_resids)
+    full_range = np.arange(res_min, res_max + 1)
+    
+    # Identify gaps: residues in the full range that have no valid k_obs in ANY condition
+    covered_resids = df_plot[df_plot["k_obs"] > 0]["Residue"].unique()
+    missing_resids = [r for r in full_range if r not in covered_resids]
+    
+    # helper to find contiguous blocks for axvspan
+    def get_blocks(resids):
+        if not resids: return []
+        resids = sorted(resids)
+        blocks = []
+        start = resids[0]
+        for i in range(1, len(resids)):
+            if resids[i] != resids[i-1] + 1:
+                blocks.append((start, resids[i-1]))
+                start = resids[i]
+        blocks.append((start, resids[-1]))
+        return blocks
+
+    missing_blocks = get_blocks(missing_resids)
+
+    # Apply scientific style
+    sns.set_theme(style="ticks", context="paper")
+    sns.set_palette("colorblind")
+    
+    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+    
+    metrics = [
+        ("k_obs", r"$k_{obs}$ ($min^{-1}$)", "Observed Rates"),
+        ("k_int", r"$k_{int}$ ($min^{-1}$)", "Intrinsic Rates"),
+        ("log_PF", r"$\ln(PF)$", "Protection Factors")
+    ]
+    
+    for i, (col, ylabel, title) in enumerate(metrics):
+        ax = axes[i]
+        sns.lineplot(data=df_plot, x="Residue", y=col, hue="Condition", ax=ax, marker='o', markersize=3, alpha=0.7)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(True, alpha=0.2)
+        
+        # Set x-axis limit to full topology range
+        ax.set_xlim(res_min - 1, res_max + 1)
+
+        # set x ticks to integers
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        # Add grey bars for missing residues
+        for start, end in missing_blocks:
+            ax.axvspan(start - 0.5, end + 0.5, color='grey', alpha=0.2, lw=0, label="MissingData" if i==0 and start==missing_blocks[0][0] else "")
+        
+        if i == 0:
+            ax.legend(title="Condition", bbox_to_anchor=(1.01, 1), loc='upper left')
+        else:
+            ax.legend().set_visible(False)
+            
+    # set k_ints to log scale
+    axes[1].set_yscale("log")
+
+            
+    axes[2].set_xlabel("Residue ID")
+    
+    plt.tight_layout()
+    
+    png_path = output_dir / "aSyn_metrics_comparison.png"
+    pdf_path = output_dir / "aSyn_metrics_comparison.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    logging.info(f"Saved plots to {png_path} and {pdf_path}")
+    plt.close()
 
 
 def main():
@@ -85,7 +197,16 @@ def main():
         raise FileNotFoundError(f"Topology JSON not found: {topology_json}")
 
     logging.info(f"Loading topology: {topology_json}")
-    resid_to_idx, n_topology_residues = load_topology_map(topology_json)
+    topologies = load_topologies(topology_json)
+    n_topology_residues = len(topologies)
+    # Map residue ID to the topology object
+    resid_to_topo = {top.residues[0]: top for top in topologies}
+
+    if args.residue_selection:
+        selected_resids = parse_residue_selection(args.residue_selection)
+        n_before = len(resid_to_topo)
+        resid_to_topo = {k: v for k, v in resid_to_topo.items() if k in selected_resids}
+        logging.info(f"Residue selection applied: {n_before} → {len(resid_to_topo)} residues retained.")
 
     logging.info(f"Loading PDB for intrinsic rates: {pdb_path}")
     universe = mda.Universe(str(pdb_path))
@@ -104,6 +225,9 @@ def main():
     # Prepare DataFrame for Protection Factors
     df_pf = df_kobs.copy()
 
+    # Data collection for plotting
+    plot_data_list = []
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for condition in conditions:
@@ -117,52 +241,75 @@ def main():
         logging.info(f"Using pD = {pD} for condition '{condition}'")
         
         # Calculate intrinsic rates for this condition's pH/pD
-        kint_dict = calculate_HDXrate(protein_residues, temperature=293.0, pD=7.4)
+        kint_dict = calculate_HDXrate(protein_residues, temperature=293.0, pD=pD)
         
-        # Map intrinsic rates to topology fragments
-        k_ints = np.full(n_topology_residues, np.nan, dtype=np.float32)
+        # Map intrinsic rates - kint_dict maps mda.Residue -> rate
+        topo_k_ints = {}
         for res, rate in kint_dict.items():
-            if res.resid in resid_to_idx:
-                k_ints[resid_to_idx[res.resid]] = rate
+            if res.resid in resid_to_topo:
+                topo_k_ints[res.resid] = rate
 
-        pf_values = []
-        log_pf_array = np.full(n_topology_residues, np.nan, dtype=np.float32)
+        datapoints = []
+        filtered_log_pf = []
+        filtered_k_ints = []
+        
+        pfs_in_condition = []
 
         for i, row in df_kobs.iterrows():
             resid = int(row["Amino acid residues"])
-            k_obs = row[condition] * 60  # Convert from ms^-1 to min^-1
+            k_obs = row[condition] / 60   # Convert from s^-1 to min^-1
             
             pf = np.nan
-            if resid in resid_to_idx:
-                idx = resid_to_idx[resid]
-                k_int = k_ints[idx]
+            k_int = np.nan
+            if resid in resid_to_topo:
+                topo = resid_to_topo[resid]
+                k_int = topo_k_ints.get(resid, np.nan)
                 
-                # PF = k_int / k_obs. If k_obs == 0, PF is effectively infinity
-                if k_obs > 0:
+                if k_obs > 0 and not np.isnan(k_int):
                     pf = float(k_int / k_obs)
-                    log_pf_array[idx] = np.log(pf)
-                elif k_obs == 0 and k_int > 0:
-                    # Depending on how infinite PF should be handled downstream,
-                    # we could set it to inf or nan. We'll leave it as NaN in log_pf_array
-                    # since jnp can't safely fit to inf targets.
-                    pf = np.inf
+                    
+                    # Create HDX data object (using logPF as requested)
+                    dp = HDX_protection_factor(top=topo, protection_factor=np.log(pf))
+                    datapoints.append(dp)
+                    
+                    filtered_log_pf.append(np.log(pf))
+                    filtered_k_ints.append(k_int)
             
-            pf_values.append(pf)
+            pfs_in_condition.append(pf)
+            
+            # Add to plotting data
+            plot_data_list.append({
+                "Residue": resid,
+                "Condition": condition,
+                "k_obs": k_obs,
+                "k_int": k_int if not np.isnan(k_int) else None,
+                "log_PF": np.log(pf) if pf > 0 and not np.isnan(pf) else None
+            })
 
-        # Update the PF DataFrame for this condition
-        df_pf[condition] = pf_values
+        # Update the PF DataFrame for this condition (full list with NaNs for the CSV)
+        df_pf[condition] = pfs_in_condition
 
-        # Create and save BV_output_features matching topology
-        features_obj = BV_output_features(
-            log_Pf=jnp.array(log_pf_array),
-            k_ints=jnp.array(k_ints)
-        )
-        
         condition_safe_name = condition.replace(" ", "_").replace("/", "_")
-        npz_output_path = output_dir / f"aSyn_PF_{condition_safe_name}.npz"
         
-        logging.info(f"Saving BV protection features to {npz_output_path}")
-        features_obj.save(str(npz_output_path))
+        if datapoints:
+            # Save via HDX data object (CSV + JSON)
+            # This automatically handles NaN removal because we only added valid datapoints
+            output_base = output_dir / f"aSyn_PF_{condition_safe_name}"
+            logging.info(f"Saving HDX data objects to {output_base}.csv/json")
+
+            
+            ExpD_Datapoint.save_list_to_files(datapoints, base_name=str(output_base))
+
+            # Also save the filtered NPZ for JAX compatibility as requested
+            features_obj = BV_output_features(
+                log_Pf=jnp.array(filtered_log_pf),
+                k_ints=jnp.array(filtered_k_ints)
+            )
+            npz_output_path = output_dir / f"aSyn_PF_{condition_safe_name}.npz"
+            logging.info(f"Saving filtered BV protection features to {npz_output_path}")
+            features_obj.save(str(npz_output_path))
+        else:
+            logging.warning(f"No valid protection factors found for condition '{condition}'")
 
     # Save the combined PF CSV
     pf_csv_path = output_dir / "aSyn_PF.csv"
@@ -173,6 +320,10 @@ def main():
     with open(pf_csv_path, "w") as f:
         f.write("Amino acid residues,Protection Factors,,,\n")
     df_pf.to_csv(pf_csv_path, mode="a", index=False)
+
+    # Generate the requested visualizations
+    logging.info("Generating comparison plots...")
+    plot_hdx_metrics(plot_data_list, output_dir, topology_resids=list(resid_to_topo.keys()))
 
     logging.info("PF extraction and feature generation complete.")
 

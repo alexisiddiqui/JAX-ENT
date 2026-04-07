@@ -81,9 +81,11 @@ class RMSDScriptConfig:
 class TopNScriptConfig:
     """Options specific to Top_N_structures.py."""
     trajectory: Optional[str] = None
-    weights: Optional[str] = None       # .npz path, shape (n_replicates, n_frames)
-    metric: str = "weight"              # "RMSD" | "weight"
+    weights: Optional[str] = None           # .npz path, shape (n_replicates, n_frames)
+    colour_metric: str = "weight"           # B-factor colouring: "weight" | "RMSD"
+    transparency_metric: str = "weight"     # transparency ordering: "weight" | "RMSD"
     top_n: int = 10
+    transparency_range: tuple = (0.1, 0.85) # (most_opaque, most_transparent) for rank-1 … rank-N
 
 
 @dataclass
@@ -240,6 +242,11 @@ def _apply_top_n(data: dict, cfg: TopNScriptConfig) -> None:
     for key, val in data.items():
         if key == "top_n":
             cfg.top_n = int(val)
+        elif key == "metric":
+            # Backwards-compat: old YAML configs used `metric` for colouring choice
+            cfg.colour_metric = str(val)
+        elif key == "transparency_range":
+            cfg.transparency_range = parse_range(val)
         elif hasattr(cfg, key):
             setattr(cfg, key, val)
 
@@ -357,9 +364,13 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
     tn = p.add_argument_group("Top_N_structures options")
     tn.add_argument("--weights", default=None,
                     help="Path to .npz weights file, shape (n_replicates, n_frames)")
-    tn.add_argument("--metric", default=None,
-                    help="'RMSD' or 'weight'")
+    tn.add_argument("--colour_metric", default=None,
+                    help="Colouring metric: 'weight' (default) or 'RMSD'")
+    tn.add_argument("--transparency_metric", default=None,
+                    help="Transparency ordering metric: 'weight' (default) or 'RMSD'")
     tn.add_argument("--top_n", default=None, type=int)
+    tn.add_argument("--transparency_range", default=None,
+                    help="min,max transparency for rank-1…rank-N, e.g. '0.1,0.85'")
 
     # --- Project_logPFs script ---
     pf = p.add_argument_group("Project_logPFs options")
@@ -444,12 +455,18 @@ def merge_config_with_args(config: UnifiedConfig, args: argparse.Namespace) -> U
         config.top_n.trajectory = a["trajectory"]
 
     # Top-N script
-    for arg_key, attr in [("weights", "weights"), ("metric", "metric")]:
+    for arg_key, attr in [
+        ("weights", "weights"),
+        ("colour_metric", "colour_metric"),
+        ("transparency_metric", "transparency_metric"),
+    ]:
         val = a.get(arg_key)
         if val is not None:
             setattr(config.top_n, attr, val)
     if a.get("top_n") is not None:
         config.top_n.top_n = a["top_n"]
+    if a.get("transparency_range") is not None:
+        config.top_n.transparency_range = parse_range(a["transparency_range"])
 
     # Project_logPFs script
     for arg_key, attr in [

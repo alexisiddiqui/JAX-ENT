@@ -10,6 +10,8 @@ class SAXS_direct_ForwardPass(
     ForwardPass[SAXS_curve_input_features, SAXS_output_features, SAXS_direct_Model_Parameters]
 ):
     """Identity forward pass: returns frame-averaged I(q) directly."""
+    average_first: bool = True  # operate per-frame then average outputs
+
     def __call__(
         self,
         input_features: SAXS_curve_input_features,
@@ -29,6 +31,8 @@ class SAXS_DebyeForwardPass(
         I_ens = Ivv - 2*c1*Ive + 2*c2*Ivh + c1^2*Iee - 2*c1*c2*Ieh + c2^2*Ihh
         I_calc = c * I_ens + b
     """
+    average_first: bool = True  # operate per-frame then average outputs
+
     def __call__(
         self,
         input_features: SAXS_basis_input_features,

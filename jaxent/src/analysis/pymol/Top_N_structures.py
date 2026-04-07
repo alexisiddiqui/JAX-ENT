@@ -2,15 +2,15 @@
 Top-N structures — generic top-N frame visualiser.
 
 Loads a trajectory and reference structures, identifies the top-N frames by
-either highest weight or closest RMSD to the first reference, and renders them
-alongside the full ensemble.
+highest weight (always), and colours them by either weight or RMSD to the
+first reference structure.
 
-metric="weight"  → sort frames by replicate-average weight (descending)
-metric="RMSD"    → sort frames by RMSD to references[0] (ascending)
+colour_metric="weight"  → colour top-N frames by log-weight (default)
+colour_metric="RMSD"    → colour top-N frames by RMSD to references[0]
 
 Usage (inside PyMOL):
     run Top_N_structures.py config.yaml
-    run Top_N_structures.py config.yaml --metric RMSD --top_n 5
+    run Top_N_structures.py config.yaml --colour_metric RMSD --top_n 5
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ class TopNVisualizer:
             raw[~np.isfinite(raw)] = EPSILON
             raw[raw < EPSILON] = EPSILON
 
-            self.weights = raw
+            self.weights = raw/np.sum(raw)
             logger.info("  Weights loaded: %d frames", len(self.weights))
 
         except Exception as exc:
@@ -270,7 +270,8 @@ class TopNVisualizer:
             logger.warning("intra_fit failed: %s", exc)
 
     def _select_and_show_top_n(self) -> None:
-        metric = self.cfg.top_n.metric.upper()
+        colour_metric = self.cfg.top_n.colour_metric.upper()
+        transparency_metric = self.cfg.top_n.transparency_metric.upper()
         n = self.cfg.top_n.top_n
         n_states = cmd.count_states(self.obj_name)
 
@@ -279,19 +280,46 @@ class TopNVisualizer:
             return
 
         logger.info("-" * 40)
-        logger.info("Selecting top-%d frames by metric=%s …", n, metric)
+        logger.info(
+            "Selecting top-%d frames by weight; "
+            "colour_metric=%s  transparency_metric=%s …",
+            n, colour_metric, transparency_metric,
+        )
 
-        if metric == "RMSD":
-            top_indices, b_values, b_min, b_max = self._top_n_by_rmsd(n, n_states)
-            spectrum = "cyan white grey yellow"
+        # Always select by weight
+        top_indices, _weight_bvals, _w_min, _w_max = self._top_n_by_weight(n, n_states)
+
+        # --- Colour B-values ---
+        if colour_metric == "RMSD":
+            b_values, _b_min, _b_max = self._bvals_by_rmsd(top_indices)
         else:
-            top_indices, b_values, b_min, b_max = self._top_n_by_weight(n, n_states)
-            spectrum = "white grey green"
+            b_values = _weight_bvals
+
+        # --- Transparency ordering ---
+        # Build a parallel array of the metric used for sorting transparency.
+        # We need RMSD for the selected frames whether or not it's also the colour metric.
+        if transparency_metric == "RMSD":
+            if colour_metric == "RMSD":
+                # reuse already-computed RMSD values (same frames, same order)
+                transparency_vals = np.array(b_values, dtype=float)
+            else:
+                t_bvals, _tb_min, _tb_max = self._bvals_by_rmsd(top_indices)
+                transparency_vals = np.array(t_bvals, dtype=float)
+            # Sort frames so rank-1 = lowest RMSD (most opaque)
+            t_order = np.argsort(transparency_vals)
+        else:
+            # weight order: top_indices already descending by weight → rank-1 = highest weight
+            t_order = np.arange(len(top_indices))
+
+        # Apply the ordering
+        top_indices = top_indices[t_order]
+        b_values = [b_values[i] for i in t_order]
+
+        spectrum = self.cfg.render.spectrum_colours
+        spec_min, spec_max = self.cfg.render.spectrum_range
 
         group_members: list = []
-        for rank, (idx, bval) in enumerate(
-            zip(top_indices, b_values), start=1
-        ):
+        for rank, (idx, bval) in enumerate(zip(top_indices, b_values), start=1):
             state = int(idx) + 1
             name = f"{self.obj_name}_top_{rank:02d}"
             cmd.delete(name)
@@ -302,17 +330,17 @@ class TopNVisualizer:
             except Exception:
                 pass
 
-            # Transparency inversely proportional to rank (best = most opaque)
-            transparency = min(0.85, max(0.1, rank / (n + 1)))
+            # Transparency linearly interpolated from most-opaque (rank 1) to most-transparent (rank N)
+            t_min, t_max = self.cfg.top_n.transparency_range
+            transparency = t_min + (t_max - t_min) * (rank - 1) / max(n - 1, 1)
             cmd.set("cartoon_transparency", transparency, name)
             cmd.set("cartoon_putty_transform", self.cfg.render.putty_transform, name)
             lo, hi = self.cfg.render.putty_range
             cmd.set("cartoon_putty_scale_min", lo, name)
             cmd.set("cartoon_putty_scale_max", hi, name)
             cmd.show("cartoon", name)
-            cmd.cartoon("tube", name)
-            cmd.set("cartoon_tube_radius", 0.2, name)
-            cmd.spectrum("b", spectrum, name, minimum=b_min, maximum=b_max)
+            cmd.cartoon("putty", name)
+            cmd.spectrum("b", spectrum, name, minimum=spec_min, maximum=spec_max)
             cmd.enable(name)
             group_members.append(name)
 
@@ -349,33 +377,53 @@ class TopNVisualizer:
         set_bfactors_per_state(self.obj_name, w)
         apply_bfactor_spectrum(self.obj_name, self.cfg.render)
 
+        logger.info(
+            "Top N weight stats → min=%.4f, max=%.4f, mean=%.4f, std=%.4f",
+            float(np.min(w)), float(np.max(w)), float(np.mean(w)), float(np.std(w)),
+        )
+        
+        logger.info(
+            "B-val stats → min=%.4f, max=%.4f, mean=%.4f, std=%.4f",
+            float(np.min(bvals)), float(np.max(bvals)), float(np.mean(bvals)), float(np.std(bvals)),
+        )
+
         return top_idx, list(bvals), b_min, b_max
 
-    def _top_n_by_rmsd(
-        self, n: int, n_states: int
-    ) -> tuple[np.ndarray, list, float, float]:
-        """Select top-N frames by RMSD to first reference (ascending)."""
+    def _bvals_by_rmsd(
+        self, top_indices: np.ndarray
+    ) -> tuple[list, float, float]:
+        """Compute RMSD B-values for the already-selected top-N frames.
+
+        Only the chosen frames are evaluated against the first reference, so
+        this is fast even for large ensembles.
+        """
         first_ref_obj = next(iter(self.ref_objects.values()), None) if self.ref_objects else None
         if first_ref_obj is None:
-            logger.warning("No reference object for RMSD metric; falling back to weight")
-            return self._top_n_by_weight(n, n_states)
+            logger.warning(
+                "No reference object available for RMSD colouring; "
+                "falling back to weight B-values"
+            )
+            # Return uniform bvals so caller can still proceed
+            n = len(top_indices)
+            bvals = [1.0] * n
+            return bvals, 0.0, 1.0
 
         align_atoms = self.cfg.general.align_atoms
         rmsds: list[float] = []
 
-        logger.info("Computing RMSD to %s for %d states …", first_ref_obj, n_states)
-        for state in _tqdm(range(1, n_states + 1), desc="RMSD per frame", unit="frame"):
-            temp = f"__rmsd_frame_{state}__"
+        logger.info(
+            "Computing RMSD to %s for %d selected frames …",
+            first_ref_obj, len(top_indices),
+        )
+        for idx in _tqdm(top_indices, desc="RMSD colouring", unit="frame"):
+            state = int(idx) + 1
+            temp = f"__rmsd_colour_{state}_{os.getpid()}__"
             cmd.create(temp, self.obj_name, state, 1)
             rms = compute_rmsd_to_reference(temp, first_ref_obj, align_atoms)
             cmd.delete(temp)
             rmsds.append(rms)
 
         rmsds_arr = np.array(rmsds)
-        n = min(n, n_states)
-        top_idx = np.argsort(rmsds_arr)[:n]   # ascending → closest first
-
-        bvals = list(rmsds_arr[top_idx])
         finite = rmsds_arr[np.isfinite(rmsds_arr)]
         b_min = float(np.min(finite)) if len(finite) > 0 else 0.0
         b_max = float(np.max(finite)) if len(finite) > 0 else 1.0
@@ -383,13 +431,13 @@ class TopNVisualizer:
             b_max = b_min + 1.0
 
         logger.info(
-            "RMSD stats → mean=%.3f median=%.3f min=%.3f max=%.3f",
-            float(np.mean(finite)),
-            float(np.median(finite)),
+            "RMSD colouring stats → mean=%.3f median=%.3f min=%.3f max=%.3f",
+            float(np.mean(finite)) if len(finite) > 0 else float("nan"),
+            float(np.median(finite)) if len(finite) > 0 else float("nan"),
             b_min,
             b_max,
         )
-        return top_idx, bvals, b_min, b_max
+        return list(rmsds), b_min, b_max
 
     def _finalize_scene(self) -> None:
         logger.info("-" * 40)
@@ -407,7 +455,7 @@ class TopNVisualizer:
         apply_render_settings(self.cfg.render)
         save_output(
             self.cfg.output,
-            f"Top_{self.cfg.top_n.top_n}_{self.cfg.top_n.metric}",
+            f"Top_{self.cfg.top_n.top_n}_colour_{self.cfg.top_n.colour_metric}",
             self.cfg.general.working_dir,
             self.cfg.render,
         )

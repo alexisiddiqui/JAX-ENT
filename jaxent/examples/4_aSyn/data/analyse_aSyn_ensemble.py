@@ -62,7 +62,7 @@ REFERENCES = {
 }
 
 DYNAMIC_REFERENCES = {
-    "Dynamic Hairpin": TRAJ_DIR / "2kkw.pdb",
+    "Dynamic Hairpin": TRAJ_DIR / "bioemu_1.2pdb.pdb",
 }
 
 REF_MARKERS = {"Rod (AF)": "*", "Hairpin": "D", "Compact": "^"}
@@ -283,7 +283,7 @@ def plot_biophysical_panels(pca_coords, centers, labels, nc_dist, nac_prot, p2_p
     ax = axes[0]
     scatter = ax.scatter(
         pca_coords[:, 0], pca_coords[:, 1],
-        c=labels, cmap="tab20", s=4, alpha=0.4,
+        c=labels, cmap="tab20", s=10, alpha=0.4,
         linewidths=0, rasterized=True
     )
 
@@ -327,7 +327,7 @@ def plot_biophysical_panels(pca_coords, centers, labels, nc_dist, nac_prot, p2_p
     vmax_nc = np.percentile(nc_dist, 99)
     scatter = ax.scatter(
         pca_coords[:, 0], pca_coords[:, 1],
-        c=nc_dist, cmap="viridis", s=4, alpha=0.4,
+        c=nc_dist, cmap="bone", s=10, alpha=0.4,
         linewidths=0, rasterized=True,
         vmin=0, vmax=vmax_nc
     )
@@ -361,7 +361,7 @@ def plot_biophysical_panels(pca_coords, centers, labels, nc_dist, nac_prot, p2_p
     ax = axes[2]
     scatter = ax.scatter(
         pca_coords[:, 0], pca_coords[:, 1],
-        c=nac_prot, cmap="plasma", s=4, alpha=0.4,
+        c=nac_prot, cmap="plasma", s=10, alpha=0.4,
         linewidths=0, rasterized=True
     )
 
@@ -394,7 +394,7 @@ def plot_biophysical_panels(pca_coords, centers, labels, nc_dist, nac_prot, p2_p
     ax = axes[3]
     scatter = ax.scatter(
         pca_coords[:, 0], pca_coords[:, 1],
-        c=p2_prot, cmap="plasma", s=4, alpha=0.4,
+        c=p2_prot, cmap="plasma", s=10, alpha=0.4,
         linewidths=0, rasterized=True
     )
 
@@ -441,7 +441,7 @@ def plot_rmsd_panels(pca_coords, rmsd_dict, ref_positions, dynamic_ref_positions
 
         scatter = ax.scatter(
             pca_coords[:, 0], pca_coords[:, 1],
-            c=rmsd_vals, cmap="cividis_r", s=4, alpha=0.4,
+            c=rmsd_vals, cmap="cividis_r", s=10, alpha=0.4,
             linewidths=0, rasterized=True,
             vmin=0, vmax=vmax
         )
@@ -484,7 +484,7 @@ def plot_plddt_panel(pca_coords, plddt_vals, ref_positions, dynamic_ref_position
 
     scatter = ax.scatter(
         pca_coords[:, 0], pca_coords[:, 1],
-        c=plddt_vals, cmap="viridis", s=4, alpha=0.4,
+        c=plddt_vals, cmap="BuPu", s=20, alpha=1-(plddt_vals/100),
         linewidths=0, rasterized=True
     )
 
@@ -521,6 +521,77 @@ def plot_plddt_panel(pca_coords, plddt_vals, ref_positions, dynamic_ref_position
     fig.savefig(plots_dir / "pca_plddt.png", dpi=300)
     plt.close(fig)
     print("Saved pca_plddt.png")
+
+
+def plot_feature_histograms(nc_dist, nac_prot, p2_prot, rmsd_dict, plddt_vals, plots_dir):
+    """Plot feature distribution histograms.
+
+    Creates three figures:
+      1. Biophysical features: nc_dist, nac_prot, p2_prot
+      2. RMSD to each reference: Rod (AF), Hairpin, Compact
+      3. pLDDT single panel
+    """
+    # -------- Figure 1: Biophysical features --------
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+
+    # Panel A: N-C distance
+    ax = axes[0]
+    ax.hist(nc_dist, bins=50, density=True, alpha=0.8, color="#4393c3", edgecolor="black", linewidth=0.5)
+    ax.set_xlabel("N–C Distance (Å)")
+    ax.set_ylabel("Density")
+    ax.set_title("N-C Terminus Distance")
+    remove_top_right_spines(ax)
+
+    # Panel B: NAC protection
+    ax = axes[1]
+    ax.hist(nac_prot, bins=50, density=True, alpha=0.8, color="#d0549b", edgecolor="black", linewidth=0.5)
+    ax.set_xlabel("NAC Mean Log P$_f$")
+    ax.set_ylabel("Density")
+    ax.set_title("NAC Region Protection (res 61–95)")
+    remove_top_right_spines(ax)
+
+    # Panel C: p2 protection
+    ax = axes[2]
+    ax.hist(p2_prot, bins=50, density=True, alpha=0.8, color="#f89441", edgecolor="black", linewidth=0.5)
+    ax.set_xlabel("p2 Mean Log P$_f$")
+    ax.set_ylabel("Density")
+    ax.set_title("p2 Motif Protection (res 45–57)")
+    remove_top_right_spines(ax)
+
+    fig.savefig(plots_dir / "feature_distributions_biophysical.png", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved feature_distributions_biophysical.png")
+
+    # -------- Figure 2: RMSD to references --------
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+
+    ref_names = ["Rod (AF)", "Hairpin", "Compact"]
+    ref_colors = ["#e41a1c", "#377eb8", "#4daf4a"]
+
+    for ax, name, color in zip(axes, ref_names, ref_colors):
+        rmsd_vals = rmsd_dict[name]
+        ax.hist(rmsd_vals, bins=50, density=True, alpha=0.8, color=color, edgecolor="black", linewidth=0.5)
+        ax.set_xlabel("RMSD to {} (Å)".format(name))
+        ax.set_ylabel("Density")
+        ax.set_title("RMSD to {}".format(name))
+        remove_top_right_spines(ax)
+
+    fig.savefig(plots_dir / "feature_distributions_rmsd.png", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved feature_distributions_rmsd.png")
+
+    # -------- Figure 3: pLDDT --------
+    fig, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
+
+    ax.hist(plddt_vals, bins=50, density=True, alpha=0.8, color="#6a51a3", edgecolor="black", linewidth=0.5)
+    ax.set_xlabel("pLDDT")
+    ax.set_ylabel("Density")
+    ax.set_title("pLDDT Distribution")
+    remove_top_right_spines(ax)
+
+    fig.savefig(plots_dir / "feature_distributions_plddt.png", dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print("Saved feature_distributions_plddt.png")
 
 
 # ============================================================================
@@ -627,6 +698,10 @@ def main():
     # 11. Plot Figure 3: pLDDT panel
     print("Plotting pLDDT panel...")
     plot_plddt_panel(pca_coords, plddt_vals, ref_positions, dynamic_ref_positions, PLOTS_DIR)
+
+    # 12. Plot feature distribution histograms
+    print("Plotting feature distribution histograms...")
+    plot_feature_histograms(nc_dist, nac_prot, p2_prot, rmsd_dict, plddt_vals, PLOTS_DIR)
 
     print(f"All plots saved to {PLOTS_DIR}")
 
