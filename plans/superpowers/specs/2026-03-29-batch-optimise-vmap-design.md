@@ -60,10 +60,12 @@ Memory at any point scales with `batch_size × n_steps × state_size`, not
 | `jaxent/src/opt/batch.py` | New — `batch_optimise`, `HParamBatch`, `BatchOptimisationResult` |
 | `jaxent/src/opt/base.py` | Add `OptimisationCarry`, `ConvergenceCarry` NamedTuples |
 | `jaxent/src/opt/run.py` | Add `_optimise_pure`; refactor `_optimise` to use shared carry types |
-| `jaxent/src/opt/optimiser.py` | Add `_pure_step`; refactor `_step` to use shared carry types; move `create_gradient_masks` prints to `initialise` |
+| `jaxent/src/opt/optimiser.py` | Store pre-computed initial/final gradient masks; add `_pure_step`; update `compute_loss` and `_step` to return `(result, Simulation)` |
 | `jaxent/src/opt/gradients.py` | Remove all print statements (moved to `OptaxOptimizer.initialise`) |
-| `jaxent/src/models/core.py` | Make `Simulation.forward` fully functional (no in-place mutation) |
-| `jaxent/examples/common/optimization.py` | Remove scalar captures from loss closures; write scalings into `forward_model_scaling` |
+| `jaxent/src/opt/log.py` | Add `silent: bool` toggle; accept injected `logging.Logger` |
+| `jaxent/src/models/core.py` | Move `outputs` to dynamic pytree leaf; make `Simulation.forward` return `(sim, outputs)` |
+| `jaxent/examples/` | Update call sites: `sim, outputs = Simulation.forward(sim, params)` |
+| `jaxent/examples/common/optimization.py` | Remove scalar captures from loss closures; write scalings into `forward_model_scaling` or `weights` |
 
 ---
 
@@ -96,17 +98,20 @@ Full per-step carry. Everything that changes during optimisation.
 ```python
 class OptimisationCarry(NamedTuple):
     opt_state: OptimizationState           # params, optax state, step, losses, grads
+    sim: Simulation                        # outputs is now a dynamic pytree leaf
     convergence: ConvergenceCarry
     lr: Array                              # float32 scalar — current frame LR
     model_lr: Array                        # float32 scalar — current model LR
-    gradient_mask: Simulation_Parameters   # updated once at initial_steps
+    gradient_mask_idx: Array               # int32 scalar: 0=initial, 1=final
     history_params: Simulation_Parameters  # [n_steps, ...] pre-allocated
     history_losses: LossComponents         # [n_steps, n_models] pre-allocated
     write_idx: Array                       # int32 scalar
 ```
 
-`lr`, `model_lr`, and `gradient_mask` replace `MutableLearningRate` and the
-in-step mutation of `optimizer.gradient_mask`.
+`lr`, `model_lr`, and `gradient_mask_idx` replace `MutableLearningRate` and the
+in-step mutation of `optimizer.gradient_mask`. The actual masks are pre-computed
+and stored in `OptaxOptimizer` as `_initial_gradient_mask` and `_final_gradient_mask`;
+`gradient_mask_idx` selects between them via `jax.lax.select`.
 
 ---
 
@@ -126,19 +131,28 @@ new_lr, new_model_lr = jax.lax.cond(
 )
 ```
 
-### Gradient mask switch at `initial_steps`
+### Gradient mask selection at `initial_steps`
+
+Pre-computed masks are stored in the optimizer during initialisation. At runtime,
+`jax.lax.select` picks between them — no recomputation inside traced context:
 
 ```python
-new_mask = jax.lax.cond(
+# In OptaxOptimizer.initialise:
+self._initial_gradient_mask = create_gradient_masks(frame_only_partition, params, None)
+self._final_gradient_mask = create_gradient_masks(full_partition_masks, params, None)
+
+# In _pure_step:
+new_mask_idx = jax.lax.cond(
     carry.opt_state.step == initial_steps,
-    lambda _: create_gradient_masks(full_partition_masks, carry.opt_state.params, None),
-    lambda _: carry.gradient_mask,
-    None,
+    lambda: jnp.array(1, dtype=jnp.int32),  # switch to final
+    lambda: carry.gradient_mask_idx,
+)
+gradient_mask = jax.tree.map(
+    lambda init, final: jax.lax.select(new_mask_idx == 0, init, final),
+    optimizer._initial_gradient_mask,
+    optimizer._final_gradient_mask,
 )
 ```
-
-`create_gradient_masks` is now side-effect-free (prints moved to
-`OptaxOptimizer.initialise`) and safe to call inside a traced context.
 
 ### History write
 
@@ -217,6 +231,7 @@ All branching uses `jax.lax.cond`. No Python-level conditionals on traced values
 
 ```python
 class HParamBatch(NamedTuple):
+    forward_model_weights: Float[Array, "n_hparams n_models"]
     forward_model_scaling: Float[Array, "n_hparams n_models"]
     learning_rate: Float[Array, " n_hparams"] | None  # None → use config for all runs
 ```
@@ -306,13 +321,27 @@ return _unpad_and_collect(results, n_hparams)
 
 | Component | Logger type |
 |---|---|
-| `Simulation.initialise` | Ambient `logging.getLogger("jaxent.opt")` |
+| `Simulation.initialise` | Ambient `logging.getLogger("jaxent.models")` |
 | `create_gradient_masks` | No logging (pure function) — info moved to caller |
 | `OptaxOptimizer.initialise` | Injected `logger` — logs mask info, JIT success/failure |
-| `_optimise` | Injected `logger` — refactored `log.py` functions accept logger |
+| `_optimise` | Injected `logger` — refactored `log.py` functions accept logger + `silent` toggle |
 | `_optimise_pure` | Injected `logger` — captured in closure, used via `jax.debug.callback` |
 | `run_optimise` | Public entry — `logger=None` falls back to ambient |
 | `batch_optimise` | Public entry — `logger=None` falls back to ambient |
+
+### `log.py` silent toggle
+
+Functions in `log.py` accept `silent: bool = False`. When `silent=True`, they
+are no-ops. This is used in batch mode where `jax.debug.callback` handles
+per-run logging separately:
+
+```python
+def log_step(step: int, losses: LossComponents, lr: float, 
+             logger: logging.Logger, silent: bool = False) -> None:
+    if silent:
+        return
+    logger.info(f"Step {step}: loss={losses.total:.6f}, lr={lr:.2e}")
+```
 
 ### Per-run log files
 
@@ -354,23 +383,87 @@ All per-run scaling lives in `simulation.params.forward_model_scaling`, which
 `compute_loss` already multiplies by. `loss_functions` remains `static_argnames`
 in `compute_loss` — same callable structure across all runs.
 
-The column ordering of `forward_model_scaling` (and therefore `HParamBatch`) follows
+The column ordering of `forward_model_scaling` and `forward_model_weights` (and therefore `HParamBatch`) follows
 the `loss_functions` list ordering passed to `batch_optimise`:
 - column 0 → primary loss
 - column 1 → MaxEnt loss
 - column 2 → BV regularisation loss
 - etc.
 
+## Functional `Simulation`
+
+### Pytree update
+
+Move `outputs` from `aux_data` (static) to `dynamic_values` so JAX can trace updates
+inside JIT/vmap contexts:
+
+```python
+def tree_flatten(self):
+    """Flatten for JAX pytree registration."""
+    dynamic_values = (self.params, self.outputs)  # outputs now dynamic
+    aux_data = (
+        self.input_features,
+        self.forward_models,
+        self.forwardpass,
+        self.length,
+        self._input_features,
+        self._jit_forward_pure,
+    )
+    return dynamic_values, aux_data
+
+@classmethod
+def tree_unflatten(cls, aux_data, dynamic_values):
+    (params, outputs) = dynamic_values
+    (input_features, forward_models, forwardpass, 
+     length, _input_features, _jit_forward_pure) = aux_data
+    
+    instance = cls(input_features, forward_models, params)
+    instance.forwardpass = forwardpass
+    instance.length = length
+    instance.outputs = outputs
+    instance._input_features = _input_features
+    instance._jit_forward_pure = _jit_forward_pure
+    return instance
+```
+
+### Pure functional `forward`
+
+`Simulation.forward` returns `(new_sim, outputs)` instead of mutating in place:
+
+```python
+@staticmethod
+def forward(sim, params: Simulation_Parameters) -> tuple["Simulation", tuple[Output_Features]]:
+    """Pure forward — returns (new_sim, outputs)."""
+    params = Simulation_Parameters.normalize_weights(params)
+    outputs = tuple(sim._jit_forward_pure(params, sim._input_features, sim.forwardpass))
+    _, aux_data = sim.tree_flatten()
+    new_sim = Simulation.tree_unflatten(aux_data, (params, outputs))
+    return new_sim, outputs
+```
+
+This enables `Simulation` to be included in `OptimisationCarry` as a JAX pytree
+where only `(params, outputs)` are traced/transformed, while all static
+configuration remains unchanged.
+
+---
+
+## Functional Propagation
+
+To support pure `Simulation.forward` without mutation:
+1. **`compute_loss`** returns `(LossComponents, Simulation)` — propagates updated sim with new outputs.
+2. **`_step`** and **`_pure_step`** receive `sim`, return `(OptimizationState, Simulation)`.
+3. **`OptimisationCarry`** includes `sim: Simulation` — outputs is now a dynamic leaf, so JAX traces only the changing parts.
+4. **`Simulation.initialise`** unpacks the functional forward: `self, self.outputs = Simulation.forward(self, self.params)`
+
 ---
 
 ## What is NOT changed
 
-- `run_optimise` / `_optimise` Python loop path — left intact
-- `compute_loss` signature — unchanged
-- `Simulation` pytree registration — unchanged
+- `run_optimise` / `_optimise` Python loop path — refactored to use `OptimisationCarry` but API preserved
+- `Simulation` pytree registration — updated (outputs moves to dynamic), but still a registered pytree
 - `OptimizationHistory` in the Python loop path — unchanged
-- Example scripts — callers adapt `LossConfig` construction to write scalings into
-  `HParamBatch.forward_model_scaling` rather than loss closures
+- Example scripts — update call sites to `sim, outputs = Simulation.forward(sim, params)`;
+  callers adapt `LossConfig` construction to write scalings into `HParamBatch.forward_model_scaling`
 
 ---
 
@@ -380,7 +473,7 @@ the `loss_functions` list ordering passed to `batch_optimise`:
 |---|---|---|
 | A | Python conditionals in `_step` on traced values | `jax.lax.cond` in `_pure_step` |
 | A | `MutableLearningRate` mutation inside step | LR carried as `OptimisationCarry.lr` |
-| A | `gradient_mask` mutation inside step | Mask carried as `OptimisationCarry.gradient_mask` |
+| A | `gradient_mask` mutation inside step | Pre-compute both masks; use `gradient_mask_idx` + `jax.lax.select` |
 | A | `create_gradient_masks` print statements | Moved to `OptaxOptimizer.initialise` |
 | B | Python `for` loop | `jax.lax.while_loop` in `_optimise_pure` |
 | B | `.item()` calls on traced values | Removed; `jax.lax.cond` used throughout |
@@ -389,4 +482,5 @@ the `loss_functions` list ordering passed to `batch_optimise`:
 | B | `try/except` around loop body | Moved outside the traced path |
 | C | `OptimizationHistory.states.append` | Pre-allocated buffer + `dynamic_update_slice` |
 | D | Loss closures capturing Python floats | Scaling-free callables; scalings in `forward_model_scaling` |
-| E | `Simulation.forward` in-place mutation | Fully functional — returns updated sim |
+| E | `Simulation.forward` in-place mutation | Functional signature returning `(sim, outputs)` |
+| E | `outputs` in `aux_data` (static) | Moved to `dynamic_values` in pytree registration |
