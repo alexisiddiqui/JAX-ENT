@@ -211,7 +211,14 @@ def run_optimization(
             initial_learning_rate=initial_learning_rate,
             initial_steps=initial_steps,
         )
-        opt_state = optimizer.initialise(model=sim)
+        opt_state = optimizer.initialise(
+            model=sim,
+            _jit_test_args=(
+                tuple(data_targets_list),
+                tuple(loss_fn_list),
+                tuple(indexes_list),
+            ),
+        )
 
         # Run optimisation sweep
         sim, optimizer = _optimise(

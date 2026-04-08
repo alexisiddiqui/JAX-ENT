@@ -148,6 +148,8 @@ def run_conditions_sweep(
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     datasplit_dir = os.path.join(script_dir, "_datasplits")
+    # feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
+    # topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
     feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
     topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
 
