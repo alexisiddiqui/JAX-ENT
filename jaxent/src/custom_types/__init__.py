@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Protocol, TypeVar, Self
+from typing import TYPE_CHECKING, Protocol, TypeVar, Union
 
 from beartype.typing import runtime_checkable
 
@@ -38,7 +38,7 @@ class InitialisedSimulation(Protocol):
 
     @staticmethod
     def forward(
-        sim: Self,
+        sim: "InitialisedSimulation",
         params: "Simulation_Parameters",
         mutate: bool = True,
-    ) -> Self | tuple[Self, Sequence["Output_Features"]]: ...
+    ) -> Union["InitialisedSimulation", tuple["InitialisedSimulation", Sequence["Output_Features"]]]: ...

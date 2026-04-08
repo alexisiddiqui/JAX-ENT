@@ -28,13 +28,13 @@ class Simulation:
 
     def __init__(
         self,
-        input_features: list[Input_Features],
+        input_features: Sequence[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
         raise_jit_failure: bool = False,
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
-        self.input_features: list[Input_Features[Any]] = input_features
+        self.input_features: Sequence[Input_Features[Any]] = input_features
         self.forward_models: Sequence[ForwardModel] = forward_models
 
         self.params: Simulation_Parameters | None = params
