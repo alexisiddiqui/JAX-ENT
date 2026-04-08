@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from beartype.typing import ClassVar
+from beartype.typing import ClassVar, Union
 import numpy as np
+from jax import Array
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
@@ -27,7 +28,7 @@ class XLMS_distance_restraint(ExpD_Datapoint):
 
     @classmethod
     def _create_from_features(
-        cls, topology: Partial_Topology, features: np.ndarray
+        cls, topology: Partial_Topology, features: Union[np.ndarray, Array]
     ) -> "XLMS_distance_restraint":
         """Create from features array (distance only).
 
