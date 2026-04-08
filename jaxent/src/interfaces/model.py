@@ -83,9 +83,7 @@ class Model_Parameters:
         dynamic_slots, static_slots = self._get_grouped_slots()
 
         # Dynamic parameters become leaves
-        arrays = tuple(
-            jnp.asarray(getattr(self, slot)).astype(jnp.float32) for slot in dynamic_slots
-        )
+        arrays = tuple(getattr(self, slot) for slot in dynamic_slots)
 
         # Static parameters go in aux data
         static_data = tuple(getattr(self, slot) for slot in static_slots)
