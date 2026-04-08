@@ -1,14 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable, Sequence
+import logging
 from typing import Any, Optional, Union, cast
 
 import chex
-import jax.numpy as jnp
-from jax import (
-    jit,
-    Array,
-)
+from jax import jit
 from jax.tree_util import register_pytree_node
-from jaxtyping import Float
 
 from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.features import Input_Features, Output_Features
@@ -17,13 +15,15 @@ from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.utils.jax_fn import frame_average_features, single_pass
 
+LOGGER = logging.getLogger("jaxent.models")
+
 
 class Simulation:
     """
     This is the core object that is used during optimisation
     """
 
-    outputs: tuple[Output_Features]
+    outputs: tuple[Output_Features, ...]
     _jit_forward_pure: Callable | None
 
     def __init__(
@@ -44,6 +44,7 @@ class Simulation:
         )
         # self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
         # self.outputs: Sequence[Array]
+        self.outputs = tuple()
         self._jit_forward_pure: Callable | None = None
         self.raise_jit_failure: bool = raise_jit_failure
 
@@ -85,8 +86,7 @@ class Simulation:
             tuple([feature.cast_to_jax() for feature in self.input_features]),
         )
 
-        print("Loaded forward passes")
-        print(self.forwardpass)
+        LOGGER.debug("Loaded forward passes: %s", self.forwardpass)
 
         # clear the jit function
         del self._jit_forward_pure
@@ -94,7 +94,9 @@ class Simulation:
         self._jit_forward_pure = self.forward_pure
         # initialise the jit function using the inputs provided
         try:
-            _ = self.forward(self, self.params)
+            _sim, _outputs = self.forward(self, self.params, mutate=False)
+            self.params = _sim.params
+            self.outputs = _outputs
             # if the forward pass is successful, try jit pass
         except Exception as e:
             raise ValueError(f"Failed to apply forward models without JIT: {e}")
@@ -113,47 +115,51 @@ class Simulation:
                 self._input_features,
                 self.forwardpass,
             )
-            print("\n\n\n\n\n\n\n\n\n JIT compilation successful \n\n\n\n\n\n\n\n\n")
+            LOGGER.info("Simulation forward JIT compilation successful.")
 
         except Exception as e:
             if self.raise_jit_failure:
                 raise RuntimeError(f"Warning - Jit failed: {e} \n Reverting to non-jit")
-            print(f"Warning - Jit failed: {e} \n Reverting to non-jit")
+            LOGGER.warning("Forward JIT failed, reverting to eager forward: %s", e)
             self._jit_forward_pure = self.forward_pure
 
-        print("Simulation initialised successfully.")
+        LOGGER.info("Simulation initialised successfully.")
         # try to run the forward pass using the parameters provided
 
         return True
 
     @staticmethod
-    def forward(sim, params: Simulation_Parameters) -> "Simulation":
+    def forward(
+        sim,
+        params: Simulation_Parameters,
+        mutate: bool = True,
+    ) -> Union["Simulation", tuple["Simulation", tuple[Output_Features, ...]]]:
         """
-        This function applies the forward models to the input features
+        Apply forward models to input features and return a new simulation and outputs.
+
+        Args:
+            sim: Simulation object
+            params: Simulation parameters
+            mutate: Backward-compatible behavior. When True, update ``sim`` in place.
         """
         params = Simulation_Parameters.normalize_weights(params)
-        sim.params = params
-
-        # try:
-        outputs = sim._jit_forward_pure(
-            params,
-            sim._input_features,
-            sim.forwardpass,
+        outputs = tuple(
+            sim._jit_forward_pure(
+                params,
+                sim._input_features,
+                sim.forwardpass,
+            )
         )
-        # except Exception as e:
-        #     RuntimeWarning(f"Warning - Jit failed: {e} \n Reverting to non-jit")
 
-        # try:
-        #     outputs = self.forward_pure(
-        #         params,
-        #         self._input_features,
-        #         self.forwardpass,
-        #     )
-        # except Exception as e:
-        #     raise ValueError(f"Failed to apply forward models: {e}")
+        _, aux_data = sim.tree_flatten()
+        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs))
 
-        sim.outputs = tuple(outputs)
-        return sim
+        if mutate:
+            sim.params = new_sim.params
+            sim.outputs = new_sim.outputs
+            return sim
+
+        return new_sim, outputs
 
     @property
     def outputs_by_key(self) -> dict[m_key, Output_Features]:
@@ -210,7 +216,7 @@ class Simulation:
             - aux_data: Static data that won't be transformed by JAX
         """
         # Dynamic values (leaves) - typically parameters that change during optimization
-        dynamic_values = (self.params,)
+        dynamic_values = (self.params, self.outputs)
 
         # Static auxiliary data - configuration that doesn't change during optimization
         aux_data = (
@@ -218,7 +224,6 @@ class Simulation:
             self.forward_models,
             self.forwardpass,
             self.length,
-            self.outputs,
             self._input_features,
             self._jit_forward_pure,
         )
@@ -243,19 +248,18 @@ class Simulation:
             forward_models,
             forwardpass,
             length,
-            outputs,
             _input_features,
             _jit_forward_pure,
         ) = aux_data
 
         # Unpack dynamic values
-        (params,) = dynamic_values
+        (params, outputs) = dynamic_values
 
         # Create a new instance
         instance = cls(input_features, forward_models, params)
         instance.forwardpass = forwardpass
         instance.length = length
-        instance.outputs = outputs
+        instance.outputs = tuple(outputs)
         instance._input_features = _input_features
         instance._jit_forward_pure = _jit_forward_pure
 

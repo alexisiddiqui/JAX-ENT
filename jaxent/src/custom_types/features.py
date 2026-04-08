@@ -54,9 +54,7 @@ class AbstractFeatures(ABC):
         dynamic_slots, static_slots = self._get_grouped_slots()
 
         # Dynamic parameters become leaves
-        arrays = tuple(
-            jnp.asarray(getattr(self, slot)).astype(jnp.float32) for slot in dynamic_slots
-        )
+        arrays = tuple(getattr(self, slot) for slot in dynamic_slots)
 
         # Static parameters go in aux data
         static_data = tuple(getattr(self, slot) for slot in static_slots)
@@ -84,7 +82,11 @@ class AbstractFeatures(ABC):
     def cast_to_jax(self: T_Features) -> T_Features:
         """Casts __features__ to JAX arrays, returning a new instance."""
         arrays, static_data = self.tree_flatten()
-        return self.tree_unflatten(static_data, arrays)
+        jax_arrays = tuple(
+            None if value is None else jnp.asarray(value).astype(jnp.float32)
+            for value in arrays
+        )
+        return self.tree_unflatten(static_data, jax_arrays)
 
     def save(self, filepath: str) -> None:
         """
