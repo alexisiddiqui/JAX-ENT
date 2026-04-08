@@ -140,11 +140,10 @@ FEAT_DIST_STATUS="not_run"
 if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
   python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py" \
     --extracted-dir "$EXTRACT_DIR" \
-    --feature-npz "$(pwd)/data/_cluster_aSyn/data/aSyn_featurised.npz" \
-    --topology-json "$(pwd)/data/_cluster_aSyn/data/topology.json" \
-    --cluster-labels-npy "$(pwd)/data/_cluster_aSyn/data/cluster_labels.npy" \
+    --feature-npz "$(pwd)/data/_cluster_aSyn/features/features.npz" \
+    --topology-json "$(pwd)/data/_cluster_aSyn/features/topology.json" \
     --top-pdb "$(pwd)/data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb" \
-    --traj-xtc "$(pwd)/data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_plddt_ordered.xtc" \
+    --traj-xtc "$(pwd)/data/_cluster_aSyn/clusters/all_clusters.xtc" \
     --absolute-paths; then
   FEAT_DIST_STATUS="ok"
 else

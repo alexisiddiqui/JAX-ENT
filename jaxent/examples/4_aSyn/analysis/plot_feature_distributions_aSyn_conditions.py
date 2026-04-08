@@ -143,8 +143,8 @@ def plot_feature_distributions_per_metric(
     nc_dist: np.ndarray,
     nac_prot: np.ndarray,
     p2_prot: np.ndarray,
-    cluster_labels: np.ndarray,
-    n_per_cluster: np.ndarray,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
     cfg: ExperimentConfig,
     output_dir: Path,
 ):
@@ -152,11 +152,11 @@ def plot_feature_distributions_per_metric(
 
     Args:
         metric_dir: directory containing {condition}_*_selected.npz files
-        nc_dist: shape (12700,)
-        nac_prot: shape (12700,)
-        p2_prot: shape (12700,)
-        cluster_labels: shape (12700,) — frame-to-cluster mapping
-        n_per_cluster: shape (1000,) — number of frames per cluster
+        nc_dist: shape (n_frames,)
+        nac_prot: shape (n_frames,)
+        p2_prot: shape (n_frames,)
+        cluster_labels: shape (n_frames,) or None (if input matches clusters)
+        n_per_cluster: counts per cluster or None
         cfg: ExperimentConfig with ensembles and style colours
         output_dir: where to save the figure
     """
@@ -177,14 +177,26 @@ def plot_feature_distributions_per_metric(
         all_weights = []
         for npz_file in npz_files:
             data = np.load(npz_file)
-            fw = data["frame_weights"]  # shape (replicates, 1000)
+            fw = data["frame_weights"]  # shape (replicates, n_clusters)
             all_weights.append(fw)
 
-        stacked = np.vstack(all_weights)  # shape (total_replicates, 1000)
-        cluster_weights = np.nanmean(stacked, axis=0)  # shape (1000,)
+        stacked = np.vstack(all_weights)  # shape (total_replicates, n_clusters)
+        cluster_weights = np.nanmean(stacked, axis=0)  # shape (n_clusters,)
 
         # Convert to per-frame weights
-        per_frame = cluster_weights[cluster_labels] / n_per_cluster[cluster_labels]
+        if cluster_labels is not None and n_per_cluster is not None:
+            # Map cluster-level weights back to original frames
+            per_frame = cluster_weights[cluster_labels] / n_per_cluster[cluster_labels]
+        else:
+            # Use weights directly (assuming frames match cluster count)
+            per_frame = cluster_weights
+
+        # Data consistency check
+        if len(per_frame) != len(nc_dist):
+            print(f"WARNING: Weight count ({len(per_frame)}) mismatch with frame count ({len(nc_dist)}) for {condition}")
+            condition_weights[condition] = None
+            continue
+
         condition_weights[condition] = per_frame
 
     # Build figure: N_conditions rows × 3 feature columns
@@ -271,11 +283,11 @@ def main():
         description="Plot per-condition weighted feature distributions for 4_aSyn."
     )
     parser.add_argument("--extracted-dir", required=True, help="Output dir from extract_selected_models")
-    parser.add_argument("--feature-npz", required=True, help="Path to aSyn_featurised.npz")
-    parser.add_argument("--topology-json", required=True, help="Path to topology.json")
-    parser.add_argument("--cluster-labels-npy", required=True, help="Path to cluster_labels.npy")
-    parser.add_argument("--top-pdb", required=True, help="Topology PDB for MDAnalysis")
-    parser.add_argument("--traj-xtc", required=True, help="Trajectory XTC for MDAnalysis")
+    parser.add_argument("--feature-npz", default=None, help="Path to aSyn_featurised.npz")
+    parser.add_argument("--topology-json", default=None, help="Path to topology.json")
+    parser.add_argument("--cluster-labels-npy", default=None, help="Path to cluster_labels.npy (optional if traj is clustered)")
+    parser.add_argument("--top-pdb", default=None, help="Topology PDB for MDAnalysis")
+    parser.add_argument("--traj-xtc", default=None, help="Trajectory XTC for MDAnalysis")
     parser.add_argument("--output-dir", default=None, help="Output directory (default: <extracted-dir>/plots_feature_distributions)")
     parser.add_argument("--config", default=None, help="Path to config YAML (default: ../config.yaml)")
     parser.add_argument("--absolute-paths", action="store_true", help="Interpret paths as absolute")
@@ -286,19 +298,24 @@ def main():
     exp_dir = script_dir.parent
 
     extracted_dir = Path(args.extracted_dir)
-    feature_npz = Path(args.feature_npz)
-    topology_json = Path(args.topology_json)
-    cluster_labels_npy = Path(args.cluster_labels_npy)
-    top_pdb = Path(args.top_pdb)
-    traj_xtc = Path(args.traj_xtc)
+    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_cluster_aSyn/features/features.npz"
+    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_cluster_aSyn/features/topology.json"
+    cluster_labels_npy = Path(args.cluster_labels_npy) if args.cluster_labels_npy else None
+    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_cluster_aSyn/data/topology.json"  # Fallback to topology.json if needed
+    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_cluster_aSyn/clusters/all_clusters.xtc"
+
+    # Specific override for PDB if it's explicitly provided or if internal topology.json is actually what's needed
+    if not args.top_pdb and not top_pdb.exists():
+         # Last resort stable PDB
+         top_pdb = script_dir.parent / "data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb"
 
     if not args.absolute_paths:
         extracted_dir = (script_dir / extracted_dir).resolve()
-        feature_npz = (script_dir / feature_npz).resolve()
-        topology_json = (script_dir / topology_json).resolve()
-        cluster_labels_npy = (script_dir / cluster_labels_npy).resolve()
-        top_pdb = (script_dir / top_pdb).resolve()
-        traj_xtc = (script_dir / traj_xtc).resolve()
+        if args.feature_npz: feature_npz = (script_dir / feature_npz).resolve()
+        if args.topology_json: topology_json = (script_dir / topology_json).resolve()
+        if cluster_labels_npy: cluster_labels_npy = (script_dir / cluster_labels_npy).resolve()
+        if args.top_pdb: top_pdb = (script_dir / top_pdb).resolve()
+        if args.traj_xtc: traj_xtc = (script_dir / traj_xtc).resolve()
 
     if args.output_dir:
         output_dir = Path(args.output_dir) if args.absolute_paths else (script_dir / args.output_dir).resolve()
@@ -349,12 +366,15 @@ def main():
     nac_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, NAC_RANGE)
     p2_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, P2_RANGE)
 
-    print("Loading cluster labels...")
-    cluster_labels = np.load(cluster_labels_npy)
-    assert cluster_labels.shape == (12700,), f"Cluster labels shape mismatch: {cluster_labels.shape}"
-
-    print("Computing n_per_cluster...")
-    n_per_cluster = np.bincount(cluster_labels, minlength=1000)
+    cluster_labels = None
+    n_per_cluster = None
+    if cluster_labels_npy:
+        print(f"Loading cluster labels from {cluster_labels_npy}...")
+        cluster_labels = np.load(cluster_labels_npy)
+        print("Computing n_per_cluster...")
+        n_per_cluster = np.bincount(cluster_labels)
+    else:
+        print("No cluster labels provided. Assuming trajectory frames correspond to clusters directly.")
 
     print("Computing N-C distances (this may take a minute)...")
     nc_dist = compute_nc_distances(top_pdb, traj_xtc, resid_to_idx)
