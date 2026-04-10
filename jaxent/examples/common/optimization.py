@@ -246,7 +246,13 @@ def run_optimization(
         
         config_path = os.path.join(output_dir, f"{name}_config.json")
         with open(config_path, "w") as f:
-            json.dump(config_dict, f, indent=2, sort_keys=True)
+            json.dump(
+                config_dict, 
+                f, 
+                indent=2, 
+                sort_keys=True, 
+                default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)
+            )
             
         # 2. Save HDF5 Histories
         output_path = os.path.join(output_dir, f"{name}_results.hdf5")

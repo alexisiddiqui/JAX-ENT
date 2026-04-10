@@ -358,10 +358,12 @@ class TopNVisualizer:
             w = np.ones(n_states)
         else:
             w = self.weights.copy()
-            if len(w) < n_states:
-                fill = float(np.mean(w))
-                w = np.pad(w, (0, n_states - len(w)), constant_values=fill)
-            w = w[:n_states]
+            if len(w) != n_states:
+                raise ValueError(
+                    f"Weights length mismatch: weights has {len(w)} entries, "
+                    f"but trajectory has {n_states} states. Please ensure "
+                    "the weights file corresponds to the loaded trajectory."
+                )
 
         n = min(n, n_states)
         top_idx = np.argsort(w)[::-1][:n]
