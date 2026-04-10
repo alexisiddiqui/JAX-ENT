@@ -150,8 +150,8 @@ def run_conditions_sweep(
     datasplit_dir = os.path.join(script_dir, "_datasplits")
     # feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
     # topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
-    feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
-    topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
+    feature_path = os.path.join(script_dir, "../data/_aSyn/features/features.npz")
+    topology_path = os.path.join(script_dir, "../data/_aSyn/features/topology.json")
 
     if output_base_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -167,6 +167,10 @@ def run_conditions_sweep(
 
     features = BV_input_features.load(feature_path)
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
+
+    n_frames = features.features_shape[-1]
+    maxent_values = jnp.array(maxent_values) / n_frames
+
 
     bv_config = BV_model_Config(num_timepoints=None)
     bv_model = BV_model(config=bv_config)
@@ -205,7 +209,6 @@ def run_conditions_sweep(
     print(f"Processing {len(split_types)} split types with {num_splits} replicates each")
     print(f"Total runs: {results['total_runs']}")
 
-    n_frames = features.features_shape[1]
 
     parameters = Simulation_Parameters(
         frame_weights=jnp.ones(n_frames) / n_frames,
@@ -549,7 +552,7 @@ def main():
         bvreg_values = [start_val, end_val] if start_val != end_val else [start_val]
     except ValueError:
         raise ValueError("bvreg-range must be 'start,end' floats (e.g. '0.0,1.0')")
-
+    
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
     print(f"  BV reg values: {bvreg_values}")

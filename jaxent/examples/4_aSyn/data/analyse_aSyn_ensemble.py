@@ -49,7 +49,7 @@ warnings.filterwarnings("ignore", message=".*1 A.*CRYST1.*")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "_cluster_aSyn" / "data"
-PLOTS_DIR = SCRIPT_DIR / "_cluster_aSyn" / "plots"
+PLOTS_DIR = SCRIPT_DIR / "_aSyn" / "plots"
 TRAJ_DIR = SCRIPT_DIR / "_aSyn"
 
 TOP_PDB = TRAJ_DIR / "aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb"
@@ -611,7 +611,7 @@ def main():
     # 2. Load topology map and protection factors
     print("Loading topology and protection factors...")
     resid_to_idx = load_topology_map(DATA_DIR / "topology.json")
-    log_pf = load_log_pf(DATA_DIR / "aSyn_featurised.npz")
+    log_pf = load_log_pf(SCRIPT_DIR / "_aSyn" / "features" / "aSyn_featurised.npz")
 
     # 3. Compute regional protection factors
     print("Computing regional protection factors...")

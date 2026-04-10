@@ -34,7 +34,7 @@ sweep:
     - 1.0
 
 results_prefix: "fitting/_optimise_aSyn_BV"
-features_dir: "data/_cluster_aSyn/features"
+features_dir: "data/_aSyn/features"
 datasplit_dir: "fitting/_datasplits"
 output_dir: "analysis/_analysis_loss_output"
 
