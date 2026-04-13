@@ -211,7 +211,14 @@ def run_optimization(
             initial_learning_rate=initial_learning_rate,
             initial_steps=initial_steps,
         )
-        opt_state = optimizer.initialise(model=sim)
+        opt_state = optimizer.initialise(
+            model=sim,
+            _jit_test_args=(
+                tuple(data_targets_list),
+                tuple(loss_fn_list),
+                tuple(indexes_list),
+            ),
+        )
 
         # Run optimisation sweep
         sim, optimizer = _optimise(
@@ -239,7 +246,13 @@ def run_optimization(
         
         config_path = os.path.join(output_dir, f"{name}_config.json")
         with open(config_path, "w") as f:
-            json.dump(config_dict, f, indent=2, sort_keys=True)
+            json.dump(
+                config_dict, 
+                f, 
+                indent=2, 
+                sort_keys=True, 
+                default=lambda x: x.tolist() if hasattr(x, "tolist") else str(x)
+            )
             
         # 2. Save HDF5 Histories
         output_path = os.path.join(output_dir, f"{name}_results.hdf5")

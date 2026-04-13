@@ -646,6 +646,233 @@ def plot_p_values(df, name, output_dir, style: PlotStyle | None = None):
     plt.close()
 
 
+def plot_cluster_populations(
+    populations_df: pd.DataFrame,
+    output_dir: str,
+    filename: str = "cluster_populations",
+    title: str = "Cluster Populations for Selected Models",
+    style: "PlotStyle | None" = None,
+    pop_cols: list[str] | None = None,
+    loss_filter: str | None = None,
+) -> None:
+    """Bar chart of cluster / state populations across replicates.
+
+    Reads a long-form DataFrame with at minimum these columns:
+        * ``ensemble``, ``split_type``, ``split``
+        * cluster population columns (auto-detected as ending in ``_ratio``
+          or ``_current``, or supplied via ``pop_cols``).
+
+    Bars: one group per cluster/state on the x-axis.
+    Bar colour: ensemble colour.
+    Grouping: split_type → one subplot per split_type.
+    Error bars: std across replicates (``split`` column).
+    Individual replicate populations are overlaid as scatter jitter.
+
+    Parameters
+    ----------
+    populations_df:
+        DataFrame as described above.  Can be the conformational_recovery_data.csv
+        or any frame-weights cluster-ratio table.
+    output_dir:
+        Directory where the PNG is written.
+    filename:
+        Output file basename (without extension).
+    title:
+        Suptitle for the figure.
+    style:
+        Optional PlotStyle for colours / name mappings.
+    pop_cols:
+        Explicit list of population column names.  If None, columns ending in
+        ``_ratio`` or ``_current`` are used.
+    loss_filter:
+        If given, only rows where ``loss_function == loss_filter`` are kept.
+        If None, populations are averaged over all loss functions and metrics.
+    """
+    ensemble_colors, _, split_name_mapping = _resolve_style_dicts(style)
+
+    df = populations_df.copy()
+
+    # Optionally filter to a single loss function
+    if loss_filter is not None and "loss_function" in df.columns:
+        df = df[df["loss_function"] == loss_filter]
+
+    # Exclude unweighted baseline rows (loss == 'Original') for variance plots
+    if "loss_function" in df.columns:
+        df = df[df["loss_function"] != "Original"]
+
+    if df.empty:
+        print(f"plot_cluster_populations: no data after filtering – skipping {filename}")
+        return
+
+    # Detect population columns
+    if pop_cols is None:
+        # Prioritize suffixes: _ratio > _proportion > _current > _mean (pre-aggregated)
+        # We want to avoid plotting same thing twice (e.g. state_ratio and state_current)
+        suffixes = ["_ratio", "_proportion", "_current"]
+        all_matches = [c for c in df.columns if any(c.endswith(s) for s in suffixes)]
+
+        # Also detect pre-aggregated *_mean/*_std pairs (from model selection summary)
+        # Only include bare _mean cols that have a corresponding _std col
+        # Exclude compound like _rank_mean, _transformed_mean, _percentile_mean
+        excluded_infixes = ["_rank_", "_transformed_", "_percentile_"]
+        mean_cols = [
+            c for c in df.columns
+            if c.endswith("_mean")
+            and not any(x in c for x in excluded_infixes)
+            and c.replace("_mean", "_std") in df.columns
+        ]
+
+        # Get unique prefixes from explicit suffixes
+        prefixes: set[str] = set()
+        for c in all_matches:
+            for s in suffixes:
+                if c.endswith(s):
+                    prefixes.add(c[: -len(s)])
+
+        # Pick the best column for each prefix
+        pop_cols = []
+        for p in sorted(prefixes):
+            if f"{p}_ratio" in df.columns:
+                pop_cols.append(f"{p}_ratio")
+            elif f"{p}_proportion" in df.columns:
+                pop_cols.append(f"{p}_proportion")
+            elif f"{p}_current" in df.columns:
+                pop_cols.append(f"{p}_current")
+
+        # Fall back to pre-aggregated mean cols if no direct ratio/current/proportion found
+        if not pop_cols and mean_cols:
+            pop_cols = sorted(mean_cols)
+
+    if not pop_cols:
+        print("plot_cluster_populations: no population columns found – skipping")
+        return
+
+    # Friendly state labels (strip suffix and replace _ with space)
+    state_labels = [
+        c.replace("_ratio", "").replace("_current", "").replace("_proportion", "").replace("_", " ")
+        for c in pop_cols
+    ]
+
+    split_types    = sorted(df["split_type"].unique()) if "split_type" in df.columns else ["all"]
+    ensembles      = sorted(df["ensemble"].unique())   if "ensemble"   in df.columns else ["ensemble"]
+    score_metrics  = sorted(df["score_metric"].unique()) if "score_metric" in df.columns else [None]
+
+    n_cols     = len(split_types)
+    n_rows     = len(score_metrics)
+    n_clusters = len(pop_cols)
+    n_ens      = len(ensembles)
+
+    cell_w     = max(6, 3 * n_clusters)
+    cell_h     = 4
+    fig, axes  = plt.subplots(
+        n_rows, n_cols,
+        figsize=(cell_w * n_cols, cell_h * n_rows),
+        sharey="row",
+        squeeze=False,
+    )
+
+    bar_width = 0.75 / max(n_ens, 1)
+    x_pos     = np.arange(n_clusters)
+
+    for row_idx, metric in enumerate(score_metrics):
+        mdf = df[df["score_metric"] == metric] if metric is not None else df
+
+        for col_idx, split in enumerate(split_types):
+            ax  = axes[row_idx][col_idx]
+            sdf = mdf[mdf["split_type"] == split] if "split_type" in df.columns else mdf
+
+            for ens_idx, ens in enumerate(ensembles):
+                edf = sdf[sdf["ensemble"] == ens] if "ensemble" in df.columns else sdf
+
+                means, stds, all_replicates = [], [], []
+                for col in pop_cols:
+                    # Support pre-aggregated layout: col is e.g. "cluster_0_mean"
+                    std_col = col.replace("_mean", "_std") if col.endswith("_mean") else None
+                    if std_col and std_col in edf.columns:
+                        # Pre-aggregated: grab the mean/std directly
+                        val = edf[col].dropna()
+                        std = edf[std_col].dropna()
+                        means.append(float(val.mean()) if len(val) else 0.0)
+                        stds.append(float(std.mean())  if len(std) else 0.0)
+                        all_replicates.append(np.array([]))  # no scatter for pre-agg data
+                    else:
+                        rep_vals = edf[col].dropna().values if col in edf.columns else np.array([])
+                        means.append(float(np.mean(rep_vals)) if len(rep_vals) else 0.0)
+                        stds.append(float(np.std(rep_vals))   if len(rep_vals) > 1 else 0.0)
+                        all_replicates.append(rep_vals)
+
+                offset = (ens_idx - n_ens / 2 + 0.5) * bar_width
+                color  = ensemble_colors.get(ens, f"C{ens_idx}")
+
+                ax.bar(
+                    x_pos + offset,
+                    means,
+                    bar_width,
+                    yerr=stds,
+                    label=ens,
+                    color=color,
+                    capsize=4,
+                    edgecolor="black",
+                    alpha=0.75,
+                    linewidth=1,
+                    error_kw={"elinewidth": 1.5, "ecolor": "black"},
+                )
+
+                # Overlay individual replicate values as scatter
+                for ci, rep_vals in enumerate(all_replicates):
+                    if len(rep_vals) == 0:
+                        continue
+                    jitter = np.random.default_rng(seed=42 + ens_idx * 100 + ci).uniform(
+                        -bar_width * 0.25, bar_width * 0.25, size=len(rep_vals)
+                    )
+                    ax.scatter(
+                        x_pos[ci] + offset + jitter,
+                        rep_vals,
+                        color=color,
+                        edgecolor="black",
+                        s=30,
+                        alpha=0.9,
+                        linewidth=0.8,
+                        zorder=5,
+                    )
+
+            # Column header (split type) – only on the first row
+            if row_idx == 0:
+                split_label = split_name_mapping.get(split, str(split))
+                ax.set_title(split_label, fontweight="bold", fontsize=14)
+
+            # Row label (score metric) – only on the leftmost column
+            if col_idx == 0:
+                row_label = str(metric) if metric is not None else "all metrics"
+                ax.set_ylabel(f"{row_label}\n\nPopulation (fraction)", fontweight="bold")
+
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels(state_labels, rotation=30, ha="right", fontsize=11)
+            if row_idx == n_rows - 1:
+                ax.set_xlabel("Cluster / State", fontweight="bold")
+            ax.set_ylim(0, None)
+            ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    # Shared legend
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    fig.legend(
+        by_label.values(),
+        by_label.keys(),
+        loc="upper right",
+        bbox_to_anchor=(1.0, 1.0),
+        title="Ensemble",
+    )
+
+    plt.suptitle(title, fontsize=16, fontweight="bold", y=1.01)
+    plt.tight_layout()
+    out_path = os.path.join(output_dir, f"{filename}.png")
+    plt.savefig(out_path, dpi=150, bbox_inches="tight")
+    print(f"Saved {out_path}")
+    plt.close()
+
+
+
 __all__ = [
     "plot_score_panel",
     "plot_minimax_panel",
@@ -653,4 +880,5 @@ __all__ = [
     "plot_fixed_effects",
     "plot_aggregated_analysis",
     "plot_p_values",
+    "plot_cluster_populations",
 ]

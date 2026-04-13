@@ -1,0 +1,76 @@
+# Example 4: aSyn condition-wise cross-validation with BV 2D sweep
+ensembles:
+  - Tris_only
+  - Extracellular
+  - Intracellular
+  - Lysosomal
+
+loss_functions:
+  - MSE
+
+num_splits: 3
+
+convergence_rates:
+  - 1.0e-1
+  - 1.0e-2
+  - 1.0e-3
+  - 1.0e-4
+  - 1.0e-5
+  - 1.0e-6
+  - 1.0e-7
+  - 1.0e-8
+
+sweep:
+  maxent_values:
+    - 1.0
+    - 5.0
+    - 10.0
+    - 50.0
+    - 100.0
+    - 500.0
+    - 1000.0
+  bv_reg_values:
+    - 0.5
+    - 1.0
+
+results_prefix: "fitting/_optimise_aSyn_BV"
+features_dir: "data/_aSyn/a99sb_features"
+datasplit_dir: "fitting/_datasplits"
+output_dir: "analysis/_analysis_loss_output"
+
+style:
+  ensemble_colors:
+    Tris_only: "#4C78A8"
+    Extracellular: "#F58518"
+    Intracellular: "#54A24B"
+    Lysosomal: "#E45756"
+
+  loss_markers:
+    MSE: "s"
+
+  split_type_colors:
+    sequence_cluster: "green"
+    spatial: "grey"
+
+  split_name_mapping:
+    sequence_cluster: "Non-Redundant"
+    spatial: "Spatial"
+
+  mse_hatch: "///"
+  work_hatch: "\\"
+  mse_facecolor: "white"
+  work_facecolor: "xkcd:neon yellow"
+  mse_text_color: "grey"
+  work_text_color: "black"
+  mse_alpha: 0.9
+  work_alpha: 0.7
+
+  dpi: 300
+  figsize_wide: [16, 6]
+  figsize_square: [10, 10]
+
+scoring:
+  scoring_weights:
+    train_penalty: 0.9
+    kl_penalty: 0.1
+  recovery_metric: jsd

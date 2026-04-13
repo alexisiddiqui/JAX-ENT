@@ -1,0 +1,34 @@
+# Pfactors: /Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation/median.dat
+# target npz (key: pred_ln_pf): /Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation/_extracted__processed__optimise_quick_test_FIGURE_SIGMA_5000__20260331_202315/val_loss_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz
+# topology: /Users/alexi/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb 
+
+render:
+  spectrum_colours: "white_black"
+  spectrum_range: [0.0, 10.0]
+  putty_transform: 7
+  putty_range: [1.0, 2.5]
+  reference_transparency: 0.0
+  orthoscopic_view: true
+  antialias: 2
+  ray_trace_mode: 0
+  ray_transparency_oblique: true
+
+
+
+general:
+  references:
+    - "/Users/alexi/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb"
+  reference_labels:
+    - "MoPrP"
+  working_dir: "/Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation"
+
+output:
+  save_png: false
+  save_session: false
+  output_prefix: "MoPrP_logPFs"
+
+project_logpfs:
+  reference_data: "median.dat"
+  target_data: "_extracted__processed__optimise_quick_test_FIGURE_SIGMA_5000__20260331_202315/val_loss_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz"
+  target_topology: "/Users/alexi/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb"
+  metric: "difference_absolute"  # Options: protection_factor, uncertainty_sd, uncertainty_rsd, difference_signed, difference_absolute

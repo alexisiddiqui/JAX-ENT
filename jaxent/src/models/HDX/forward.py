@@ -13,6 +13,8 @@ from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_M
 
 # fix the typing to use jax arrays
 class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model_Parameters]):
+    average_first: bool = True  # operate per-frame then average outputs
+
     def __call__(
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> BV_output_features:
@@ -38,41 +40,39 @@ class BV_ForwardPass(ForwardPass[BV_input_features, BV_output_features, BV_Model
 class BV_uptake_ForwardPass(
     ForwardPass[BV_input_features, uptake_BV_output_features, BV_Model_Parameters]
 ):
+    average_first: bool = True  # operate per-frame then average outputs
+
     def __call__(
         self, input_features: BV_input_features, parameters: BV_Model_Parameters
     ) -> uptake_BV_output_features:
         # Extract model parameters
         bc, bh = parameters.bv_bc, parameters.bv_bh
         # Convert inputs to JAX arrays
+        # heavy_contacts and acceptor_contacts are (n_residues, n_frames)
         heavy_contacts = jnp.asarray(input_features.heavy_contacts)
         acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
-        # print("heavy_contacts", heavy_contacts.shape)
-        # print("acceptor_contacts", acceptor_contacts.shape)
-        kints = jnp.asarray(input_features.k_ints)
-        # print("kints", kints.shape)
-        time_points = parameters.timepoints.reshape(-1)
-        # print("timepoint shape", time_points.shape)
-        # Compute protection factors
+        kints = jnp.asarray(input_features.k_ints)  # (n_residues,)
+        time_points = parameters.timepoints.reshape(-1)  # (n_timepoints,)
+
+        # Compute protection factors per frame: (n_residues, n_frames)
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
-        # print("logpf", log_pf)
+        pf = jnp.exp(log_pf)  # (n_residues, n_frames)
 
-        pf = jnp.exp(log_pf).reshape(-1)
+        # Select kints shape based on pf dimensionality:
+        #   pf 1-D (n_residues,)        → features were pre-averaged (average_first=True)
+        #   pf 2-D (n_residues, n_frames) → per-frame path (average_first=False)
+        if pf.ndim == 1:
+            kints_for_uptake = kints                            # (n_residues,)
+        else:
+            kints_for_uptake = jnp.expand_dims(kints, axis=-1)  # (n_residues, 1)
 
-        # Vectorized computation of uptake for each timepoint
-        def compute_uptake_for_timepoint(timepoint):
-            # Calculate protection factor for each residue at this timepoint
+        # Reshape time_points to broadcast over residue (and optional frame) dims without vmap.
+        # (n_timepoints,) → (n_timepoints, 1) or (n_timepoints, 1, 1)
+        time_reshaped = time_points[(slice(None),) + (None,) * pf.ndim]
 
-            # Calculate uptake for each residue: Df_i = 1 - exp(-kint_i * timepoint/ Pf_i)
-            uptake = 1 - jnp.exp(-kints.reshape(-1) * timepoint / pf)
-            # print("timepoint", timepoint)
-            # print("uptake", uptake.shape)
-            return uptake
+        # uptake_per_timepoint: (n_timepoints, n_residues) or (n_timepoints, n_residues, n_frames)
+        uptake_per_timepoint = 1 - jnp.exp(-kints_for_uptake * time_reshaped / pf)
 
-        # Compute uptake for each timepoint
-        uptake_per_timepoint = jax.vmap(compute_uptake_for_timepoint)(time_points)
-        # print("uptake_per_timepoint", uptake_per_timepoint.shape)
-        # raise NotImplementedError("stop here")
-        # Return the list of timepoint-wise residue-wise uptake arrays
         return uptake_BV_output_features(uptake_per_timepoint)
 
 
@@ -82,7 +82,7 @@ class linear_BV_ForwardPass(
     """
     Calculate uptake using a linear BV model with bc and bh as parameters at each timepoint.
     """
-
+    average_first: bool = True  # operate per-frame then average outputs
     key = m_key("HDX_resPF")
 
     def __call__(

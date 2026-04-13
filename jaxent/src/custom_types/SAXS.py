@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
-from beartype.typing import ClassVar
+from beartype.typing import ClassVar, Union
 import numpy as np
+from jax import Array
 from numpy import ndarray
 
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
@@ -31,7 +32,7 @@ class SAXS_curve(ExpD_Datapoint):
 
     @classmethod
     def _create_from_features(
-        cls, topology: Partial_Topology, features: np.ndarray
+        cls, topology: Partial_Topology, features: Union[ndarray, Array]
     ) -> "SAXS_curve":
         """Create from a flat features array (intensities only).
 

@@ -200,7 +200,7 @@ def create_contact_matrix_for_frame(
 def build_hbond_network(
     ensemble: list[Universe],
     config: Optional[NetHDXConfig | BV_model_Config] = None,
-    common_residue_ids: Optional[list[int]] = None,
+    common_residue_ids: Optional[list] = None,
 ) -> NetHDX_input_features:
     """
     Build hydrogen bond network features from an ensemble of structures using
@@ -291,7 +291,7 @@ def build_hbond_network(
 
 
 def calculate_trajectory_hbonds(
-    universe: Universe, config: NetHDXConfig, common_residue_ids: Optional[list[int]] = None
+    universe: Universe, config: NetHDXConfig, common_residue_ids: Optional[list] = None
 ) -> np.ndarray:
     """
     Calculate hydrogen bonds for all frames across all shells defined in config.
@@ -349,7 +349,7 @@ def calculate_trajectory_hbonds(
 
 
 def calculate_trajectory_hbonds_BV(
-    universe: Universe, config: BV_model_Config, common_residue_ids: Optional[list[int]] = None
+    universe: Universe, config: BV_model_Config, common_residue_ids: Optional[list] = None
 ) -> np.ndarray:
     """
     Calculate hydrogen bonds for all frames across all shells defined in config.
@@ -541,14 +541,14 @@ def compute_graph_metrics(G: nx.Graph) -> NetworkMetrics:
     )
 
 
-def compute_frame_metrics(contact_matrix: np.ndarray, residue_ids: Sequence[int]) -> NetworkMetrics:
+def compute_frame_metrics(contact_matrix: np.ndarray, residue_ids: Sequence) -> NetworkMetrics:
     """Compute network metrics using a contact matrix by creating a graph first."""
     G = contact_matrix_to_graph(contact_matrix, residue_ids)
     return compute_graph_metrics(G)
 
 
 def compute_trajectory_metrics(
-    contact_matrices: list[np.ndarray], residue_ids: Sequence[int]
+    contact_matrices: list[np.ndarray], residue_ids: Sequence
 ) -> list[NetworkMetrics]:
     """Compute network metrics for all frames in a trajectory"""
     compute_metrics = partial(compute_frame_metrics, residue_ids=residue_ids)
@@ -556,7 +556,7 @@ def compute_trajectory_metrics(
 
 
 def parallel_compute_trajectory_metrics(
-    contact_matrices: list[np.ndarray], residue_ids: Sequence[int], n_processes: int | None = 10
+    contact_matrices: list[np.ndarray], residue_ids: Sequence, n_processes: int | None = 10
 ) -> list[NetworkMetrics]:
     """Parallel version of compute_trajectory_metrics"""
     with Pool(processes=n_processes) as pool:
@@ -639,7 +639,7 @@ def create_average_network(
 
 
 def contact_matrix_to_graph(
-    contact_matrix: np.ndarray, residue_ids: Sequence[int], weight_threshold: float = 0
+    contact_matrix: np.ndarray, residue_ids: Sequence, weight_threshold: float = 0
 ) -> nx.Graph:
     """
     Convert a contact matrix to a NetworkX graph with filtered edges.
