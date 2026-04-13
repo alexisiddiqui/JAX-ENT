@@ -14,13 +14,13 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=8
-DEFAULT_MAXENT_VALUES_STR="1,10,100,1000"
+PARALLEL_JOBS=6
+DEFAULT_MAXENT_VALUES_STR="1,10,100,1000,10000,100000,1000000"
 
 
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_test_SIGMA_500"
-N_STEPS=500
+DIR_NAME="_optimise_test_FIGURE_SIGMA_5000"
+N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0
@@ -34,7 +34,7 @@ DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
-DEFAULT_SPLIT_TYPES_STR="sequence_cluster"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---

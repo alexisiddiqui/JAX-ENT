@@ -73,6 +73,7 @@ scoring:
     ISO_BI: "ISO_BI"
 
   state_mapping:
+    -1: "intermediate"
     0: "open"
     1: "closed"
 
@@ -81,6 +82,7 @@ scoring:
     kl_penalty: 0.0  # Original bug: computed but never applied
 
   ground_truth_ratios:
+    intermediate: 0.0
     open: 0.4
     closed: 0.6
 

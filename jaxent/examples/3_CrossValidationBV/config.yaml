@@ -37,7 +37,7 @@ sweep:
     - 1.0
 
 # Paths (relative to experiment directory)
-results_prefix: "fitting/jaxENT/_optimise_quick_test_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__"  # Finds most recent matching dir
+results_prefix: "fitting/jaxENT/_optimise_quick_test_SIGMA_500_lr1.0_BV_objectve_scale1.0__"  # Finds most recent matching dir
 features_dir: "fitting/jaxENT/_featurise"
 datasplit_dir: "fitting/jaxENT/_datasplits"
 clustering_dir: "../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters"

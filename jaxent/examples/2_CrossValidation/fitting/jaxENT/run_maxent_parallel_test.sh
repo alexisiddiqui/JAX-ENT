@@ -14,11 +14,11 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=4
-DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000"
+PARALLEL_JOBS=6
+DEFAULT_MAXENT_VALUES_STR="1,10,100,1000,10000,100000,1000000"
 MAXENT_VALUES_STR="$DEFAULT_MAXENT_VALUES_STR"
-DIR_NAME="_optimise_quick_test_FIGURE_SIGMA_500"
-N_STEPS=500
+DIR_NAME="_optimise_quick_test_SIGMA_5000"
+N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
 LEARNING_RATE=1.0

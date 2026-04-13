@@ -210,6 +210,70 @@ python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
 python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
+
+# New comprehensive analysis pipeline
+echo "Processing optimization results..."
+python "${ANA_DIR}/process_optimisation_results.py" \
+  --results-dir "$OPT_OUTPUT_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+  > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
+
+# Determine the processed data directory name
+# process_optimisation_results.py creates _processed_<basename> as a SIBLING of OPT_OUTPUT_DIR
+BASENAME=$(basename "$OPT_OUTPUT_DIR")
+PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
+
+echo "Scoring models..."
+python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --datasplit-dir "${DIR_WD}/_datasplits" \
+  --features-dir "${DIR_WD}/_featurise" \
+  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+  > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
+
+# Determine the scores directory name
+# score_models_ISO_TRI_BI.py creates _scores_<basename> INSIDE PROCESSED_DIR
+SCORES_BASENAME=$(basename "$PROCESSED_DIR")
+SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
+
+echo "Analyzing scores with mixed linear model..."
+python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
+  --scores-csv-path "${SCORES_DIR}/model_scores.csv" \
+  --target-metric "recovery_percent" \
+  --filter-mode "both" \
+  --analyze-subsets \
+  > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
+
+# Determine the analysis directory name
+# analyse_scores_mixed_linear_model.py creates _analysis_<scores_parent_basename> as a SIBLING of SCORES_DIR
+# For unfiltered: _analysis__scores_<SCORES_BASENAME>
+# For filtered:   _analysis__scores_<SCORES_BASENAME>_filtered
+ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
+
+# Plot model selection results for both filtered and unfiltered
+echo "Plotting selected models (unfiltered)..."
+CLUSTER_POP_CSV="${ANA_OUTPUT_DIR}/conformational_recovery_maxent_data.csv"
+PLOT_EXTRA_ARGS=()
+if [ -f "$CLUSTER_POP_CSV" ]; then
+  PLOT_EXTRA_ARGS+=(--cluster-populations-csv "$CLUSTER_POP_CSV")
+fi
+python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
+  --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
+  --output-dir "${ANALYSIS_DIR}/plots_selection" \
+  "${PLOT_EXTRA_ARGS[@]}" \
+  > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+
+echo "Extracting selected models..."
+python "${ANA_DIR}/extract_selected_models.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --scores-csv "${SCORES_DIR}/model_scores.csv" \
+  --selection-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  > "${OPT_OUTPUT_DIR}/logs/extract_selected_models.log" 2>&1
+
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"
 echo "Script finished."
+

@@ -21,7 +21,7 @@ convergence_rates:
   - 1.0e-10
 
 # Paths (relative to experiment directory)
-results_prefix: "fitting/jaxENT/_optimise_quick_test_FIGURE_SIGMA_500__"  # Finds most recent matching dir
+results_prefix: "fitting/jaxENT/_optimise_quick_test_SIGMA_5000__"  # Finds most recent matching dir
 features_dir: "fitting/jaxENT/_featurise"
 datasplit_dir: "fitting/jaxENT/_datasplits"
 clustering_dir: "analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters"
