@@ -1,0 +1,51 @@
+# RMSD by residue — MoPrP ensemble
+# Based on _reference/RMSD_by_Res.py settings
+#
+# Usage (inside PyMOL):
+#   run RMSD_by_res.py test_configs/rmsd_by_res_MoPrP.yaml
+#
+# All paths are relative to working_dir.
+
+render:
+  spectrum_colours: "paleyellow orange pink red black"
+  spectrum_range: [1.0, 4.0]
+  putty_transform: 7
+  putty_range: [0.5, 3.5]
+  trajectory_transparency: 0.8
+  reference_transparency: 0.8
+  transparency_mode: 1
+  orthoscopic_view: true
+  antialias: 2
+  ray_trace_mode: 0
+  ray_transparency_oblique: false
+  ray_trace_on_save: false
+  # Uncomment to fix camera angle:
+  view: [0.885161281, -0.063157849,  0.460974962,
+         0.178213656,  0.961208284, -0.210514292,
+        -0.429795146,  0.268488705,  0.862078071,
+         0.000000000,  0.000000000, -144.799575806,
+         2.093294144, -0.038471222,  -0.517147064,
+        79.905242920, 209.693969727,  20.000000000]
+
+general:
+  references:
+    - "2L39_crop.pdb"
+  reference_labels:
+    - "NMR"
+  reference_colors:
+    - "white"
+  trajectory_label: "MoPrP_ensemble"
+  align_atoms: "name CA"
+  align_selection: "resid 79-93"
+  working_dir: "/Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation"          # adjust to directory containing the PDB/trajectory files
+
+output:
+  save_png: false
+  save_session: false
+  output_prefix: "MoPrP_RMSD"
+
+rmsd:
+  # Single multiframe PDB
+  trajectory: "AF2_MSAss_cluster_1_frames.pdb"
+  # Or XTC + topology:
+  # trajectory: "trajectory.xtc,MoPrP_max_plddt_4334.pdb"

@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Union
 
 import numpy as np
 from jax import Array
@@ -28,7 +29,7 @@ class HDX_peptide(ExpD_Datapoint):
 
     @classmethod
     def _create_from_features(
-        cls, topology: Partial_Topology, features: np.ndarray
+        cls, topology: Partial_Topology, features: Union[ndarray, Array]
     ) -> "HDX_peptide":
         """Custom creation method for HDX_peptide"""
         return cls(top=topology, dfrac=[float(x) for x in features.flatten()])
@@ -49,7 +50,7 @@ class HDX_protection_factor(ExpD_Datapoint):
 
     @classmethod
     def _create_from_features(
-        cls, topology: Partial_Topology, features: np.ndarray
+        cls, topology: Partial_Topology, features: Union[ndarray, Array]
     ) -> "HDX_protection_factor":
         """Custom creation method for HDX_protection_factor"""
         if features.shape != (1,):

@@ -74,8 +74,10 @@ class BV_output_features(Output_Features):
 class uptake_BV_output_features(Output_Features):
     """Concrete implementation of Output_Features for uptake BV output features."""
 
-    # uptake can be 2-D (n_timepoints, n_residues) or 3-D (batch, n_timepoints, n_residues) when stacked
-    uptake: Float[Array, "n_timepoints n_residues"] | Float[Array, "batch n_timepoints n_residues"]
+    # uptake can be 2-D (n_timepoints, n_residues) from forward_pure (after averaging),
+    # 3-D (n_timepoints, n_residues, n_frames) from predict (per-frame), or
+    # 3-D (batch, n_timepoints, n_residues) when stacked
+    uptake: Float[Array, "n_timepoints n_residues"] | Float[Array, "n_timepoints n_residues n_frames"] | Float[Array, "batch n_timepoints n_residues"]
 
     __features__: ClassVar[set[str]] = {"uptake"}
     key: ClassVar[m_key] = m_key("HDX_peptide")

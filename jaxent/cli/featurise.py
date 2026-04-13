@@ -131,6 +131,12 @@ def main():
         default="resname PRO",
         help="MDAnalysis selection string for atoms to exclude.",
     )
+    bv_parser.add_argument(
+        "--switch",
+        action="store_true",
+        default=False, 
+        help="Flag to indicate if the model is peptide-based.",
+    )
 
     # Linear BV Model Subparser (inherits from BV, so similar args)
     linear_bv_parser = subparsers.add_parser(
@@ -301,6 +307,7 @@ def main():
     if args.model_type == "bv":
         config = BV_model_Config(num_timepoints=args.num_timepoints)
         config.temperature = args.temperature
+        config.switch = args.switch
         config.bv_bc = jnp.array(args.bv_bc)
         config.bv_bh = jnp.array(args.bv_bh)
         config.ph = args.ph

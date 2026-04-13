@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jax import Array
 from jaxtyping import Float, Int, Array, Bool
 from jax.tree_util import register_pytree_node
-
+import optax    
 from jaxent.src.interfaces.model import Model_Parameters
 
 ########################################################################
@@ -126,6 +126,11 @@ class Simulation_Parameters:
         frame_mask = jnp.clip(frame_mask, 0, 1)
 
         # Modified normalize_masked_weights function to avoid boolean context issues
+
+        # project model parameters to be non-negative
+        model_parameters = [jax.tree_util.tree_map(lambda x: jnp.maximum(x, 0.0), p) for p in params.model_parameters]
+
+
 
         return Simulation_Parameters(
             frame_weights=frame_weights,

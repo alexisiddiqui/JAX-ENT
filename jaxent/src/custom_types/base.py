@@ -15,6 +15,7 @@ class ForwardPass(Protocol[T_In, T_Out, T_Params]):
     """
     The forward pass of a model maps input features to output features using the model's parameters.
     """
+    
 
     def __call__(self, input_features: T_In, parameters: T_Params) -> T_Out: ...
 

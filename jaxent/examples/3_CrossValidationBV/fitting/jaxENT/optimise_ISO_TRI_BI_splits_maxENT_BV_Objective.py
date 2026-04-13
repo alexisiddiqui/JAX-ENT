@@ -262,6 +262,7 @@ def run_maxent_sweep(
                             optimize_bv_params=True,
                             primary_loss=LOSS_NAME_MAP[loss_name],
                             regularization_losses=[{"name": f"model_params_{bv_reg_name}_loss"}],
+                            maxent_scaling=maxent_value,
                             bv_reg_scaling=bv_reg_value,
                             normalize_bv_reg=False,
                         )

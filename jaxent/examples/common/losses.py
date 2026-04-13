@@ -15,6 +15,7 @@ from jaxent.src.opt.base import JaxEnt_Loss
 
 # Core library losses (re-exported for stability)
 from jaxent.src.opt.losses import (
+    hdx_pf_l2_loss,
     hdx_uptake_eye_MSE_loss,
     hdx_uptake_MAE_loss_vectorized,
     hdx_uptake_sigma_MSE_loss,
@@ -35,6 +36,7 @@ hdx_uptake_MSE_loss = hdx_uptake_sigma_MSE_loss
 
 LOSS_REGISTRY: dict[str, JaxEnt_Loss] = {
     # Primary data-fit losses
+    "hdx_pf_l2_loss": hdx_pf_l2_loss,
     "hdx_uptake_mean_centred_MSE_loss": hdx_uptake_mean_centred_MSE_loss,
     "hdx_uptake_eye_MSE_loss": hdx_uptake_eye_MSE_loss,
     "hdx_uptake_MSE_loss": hdx_uptake_MSE_loss,

@@ -46,8 +46,8 @@ class SAXS_basis_input_features(Input_Features):
 
 @dataclass(frozen=True, slots=True)
 class SAXS_output_features(Output_Features):
-    """Ensemble-averaged I(q) curve, shape (n_q,)."""
-    intensity: Float[Array, " n_q"]
+    """Ensemble-averaged I(q) curve, shape (n_q,) from forward_pure or (n_q, n_frames) from predict."""
+    intensity: Float[Array, " n_q"] | Float[Array, "n_q n_frames"]
     __features__: ClassVar[set[str]] = {"intensity"}
     key: ClassVar[m_key] = m_key("SAXS_Iq")
 

@@ -5,6 +5,7 @@ from beartype.typing import ClassVar, Optional, Union
 
 import numpy as np
 import pandas as pd
+from jax import Array
 
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.topology import Partial_Topology, PTSerialiser
@@ -50,7 +51,7 @@ class ExpD_Datapoint:
     @classmethod
     @abstractmethod
     def _create_from_features(
-        cls, topology: Partial_Topology, features: np.ndarray
+        cls, topology: Partial_Topology, features: Union[np.ndarray, Array]
     ) -> "ExpD_Datapoint":
         """
         Create an instance from features array.

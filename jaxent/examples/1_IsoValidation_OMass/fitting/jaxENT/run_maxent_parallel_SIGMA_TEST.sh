@@ -14,7 +14,7 @@ echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=5
+PARALLEL_JOBS=8
 DEFAULT_MAXENT_VALUES_STR="1,10,100,1000"
 
 
@@ -34,7 +34,7 @@ DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
-DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster"
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---
@@ -254,11 +254,24 @@ ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
 
 # Plot model selection results for both filtered and unfiltered
 echo "Plotting selected models (unfiltered)..."
+CLUSTER_POP_CSV="${ANA_OUTPUT_DIR}/conformational_recovery_maxent_data.csv"
+PLOT_EXTRA_ARGS=()
+if [ -f "$CLUSTER_POP_CSV" ]; then
+  PLOT_EXTRA_ARGS+=(--cluster-populations-csv "$CLUSTER_POP_CSV")
+fi
 python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
   --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
   --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
   --output-dir "${ANALYSIS_DIR}/plots_selection" \
+  "${PLOT_EXTRA_ARGS[@]}" \
   > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+
+echo "Extracting selected models..."
+python "${ANA_DIR}/extract_selected_models.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --scores-csv "${SCORES_DIR}/model_scores.csv" \
+  --selection-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
+  > "${OPT_OUTPUT_DIR}/logs/extract_selected_models.log" 2>&1
 
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"

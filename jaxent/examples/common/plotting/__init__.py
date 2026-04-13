@@ -40,6 +40,7 @@ from .selected_models import (
     plot_fixed_effects,
     plot_aggregated_analysis,
     plot_p_values,
+    plot_cluster_populations,
 )
 
 __all__ = [
@@ -87,4 +88,5 @@ __all__ = [
     "plot_fixed_effects",
     "plot_aggregated_analysis",
     "plot_p_values",
+    "plot_cluster_populations",
 ]

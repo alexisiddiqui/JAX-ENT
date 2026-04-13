@@ -2,7 +2,7 @@
 # L1, L2, KL Divergence, Hinge loss, Cross-entropy loss, etc.
 # Specialized loss functions for specific tasks:
 # Monotonicity loss, Consistency loss.
-from beartype.typing import NamedTuple, Optional, Protocol, TypeVar, runtime_checkable, Any, Union
+from beartype.typing import NamedTuple, Protocol, TypeVar, runtime_checkable, Any, Union
 from dataclasses import dataclass, field
 from functools import partial
 from collections.abc import Sequence
@@ -10,9 +10,7 @@ from collections.abc import Sequence
 import chex
 import jax
 import jax.numpy as jnp
-import optax
-from jax import Array
-from jaxtyping import Float, Array
+from jaxtyping import Array
 
 from jaxent.src.custom_types import InitialisedSimulation
 from jaxent.src.custom_types.features import Output_Features
@@ -63,12 +61,22 @@ class JaxEnt_Loss(Protocol[M, D]):
 class LossComponents(NamedTuple):
     """Stores the various components of loss for training and validation"""
 
-    train_losses: Float[Array, " n_models"]  # Individual training loss components
-    val_losses: Float[Array, " n_models"]  # Individual validation loss components
-    scaled_train_losses: Float[Array, " n_models"]  # Scaled training loss components
-    scaled_val_losses: Float[Array, " n_models"]  # Scaled validation loss components
-    total_train_loss: Float[Array, ""]  # Total training loss
-    total_val_loss: Float[Array, ""]  # Total validation loss
+    train_losses: Any  # Individual training loss components
+    val_losses: Any  # Individual validation loss components
+    scaled_train_losses: Any  # Scaled training loss components
+    scaled_val_losses: Any  # Scaled validation loss components
+    total_train_loss: Any  # Total training loss
+    total_val_loss: Any  # Total validation loss
+
+
+class ConvergenceCarry(NamedTuple):
+    """Pure JAX carry for convergence tracking."""
+
+    ema_loss_delta: Any
+    ema_params: Simulation_Parameters
+    steps_since_threshold_start: Any
+    current_threshold_idx: Any
+    converged: Any
 
 
 class OptimizationState(NamedTuple):
@@ -94,7 +102,7 @@ class OptimizationState(NamedTuple):
 
     params: Simulation_Parameters
     opt_state: Union[Any, "chex.ArrayTree"]  # optax.OptState is structurally identical
-    step: int = 0
+    step: Any = 0
     losses: LossComponents | None = None
     gradients: Simulation_Parameters | None = None
 
@@ -104,7 +112,7 @@ class OptimizationState(NamedTuple):
         new_opt_state: Union[Any, "chex.ArrayTree"],  # optax.OptState is structurally identical
         new_losses: LossComponents,
         new_gradients: Simulation_Parameters | None = None,
-        step: int | None = None,
+        step: Any = None,
     ) -> "OptimizationState":
         return OptimizationState(
             params=new_params,
@@ -186,3 +194,34 @@ class OptimizationHistory:
         self.best_state = self._pick_best_state(self.states)
 
         return self.best_state
+
+
+class OptimisationCarry(NamedTuple):
+    """Per-step carry for pure optimisation loops."""
+
+    opt_state: OptimizationState
+    sim: InitialisedSimulation
+    convergence: ConvergenceCarry
+    lr: Any
+    model_lr: Any
+    gradient_mask_idx: Any
+    history_params: Simulation_Parameters
+    history_losses: LossComponents
+    write_idx: Any
+
+
+class HParamBatch(NamedTuple):
+    """Batch of hyperparameter values for vmapped optimisation runs."""
+
+    forward_model_weights: Array
+    forward_model_scaling: Array
+    learning_rate: Array | None = None
+
+
+class BatchOptimisationResult(NamedTuple):
+    """Structured output of ``batch_optimise``."""
+
+    histories: tuple[OptimizationHistory, ...]
+    best_states: tuple[OptimizationState, ...]
+    convergence_steps: Array
+    hparam_batch: HParamBatch
