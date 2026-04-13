@@ -49,7 +49,7 @@ class AbstractFeatures(ABC):
                 static_slots.append(slot)
         return tuple(dynamic_slots), tuple(static_slots)
 
-    def tree_flatten(self) -> tuple[tuple[Array, ...], tuple[Any, ...]]:
+    def tree_flatten(self) -> tuple[Sequence[Any], Any]:
         """Flatten the object for JAX tree operations."""
         dynamic_slots, static_slots = self._get_grouped_slots()
 

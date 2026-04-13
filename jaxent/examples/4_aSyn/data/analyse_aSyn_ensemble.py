@@ -56,13 +56,13 @@ TOP_PDB = TRAJ_DIR / "aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated
 TRAJ_XTC = TRAJ_DIR / "aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_plddt_ordered.xtc"
 
 REFERENCES = {
-    "Rod (AF)": TRAJ_DIR / "AF-P37840-F1-model_v6.pdb",
+    "Rod (AF)": TRAJ_DIR / "aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb",
     "Hairpin": TRAJ_DIR / "1XQ8.pdb",
     "Compact": TRAJ_DIR / "aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_max_plddt_12691.pdb",
 }
 
 DYNAMIC_REFERENCES = {
-    "Dynamic Hairpin": TRAJ_DIR / "bioemu_1.2pdb.pdb",
+    "Dynamic Hairpin": TRAJ_DIR / "a99sb.pdb",
 }
 
 REF_MARKERS = {"Rod (AF)": "*", "Hairpin": "D", "Compact": "^"}

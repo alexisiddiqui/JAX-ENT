@@ -298,16 +298,16 @@ def main():
     exp_dir = script_dir.parent
 
     extracted_dir = Path(args.extracted_dir)
-    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_cluster_aSyn/features/features.npz"
-    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_cluster_aSyn/features/topology.json"
+    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_aSyn/a99sb_features/aSyn_featurised.npz"
+    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_aSyn/a99sb_features/topology.json"
     cluster_labels_npy = Path(args.cluster_labels_npy) if args.cluster_labels_npy else None
-    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_cluster_aSyn/data/topology.json"  # Fallback to topology.json if needed
-    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_cluster_aSyn/clusters/all_clusters.xtc"
+    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_aSyn/a99sb.pdb"  # Fallback to topology.json if needed
+    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_aSyn/a99sb.pdb"
 
     # Specific override for PDB if it's explicitly provided or if internal topology.json is actually what's needed
     if not args.top_pdb and not top_pdb.exists():
          # Last resort stable PDB
-         top_pdb = script_dir.parent / "data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb"
+         top_pdb = script_dir.parent / "data/_aSyn/a99sb.pdb"
 
     if not args.absolute_paths:
         extracted_dir = (script_dir / extracted_dir).resolve()

@@ -1,11 +1,12 @@
 #!/bin/bash
 # Comprehensive analysis pipeline for 4_aSyn (continue-on-error).
 
+# cd to the directory of the script
 cd "$(dirname "$0")" || exit 1
 
 ANA_DIR="analysis"
 DIR_WD="$(pwd)/fitting"
-RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_20260402_021807"
+RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_5000_20260412_001809"
 RESULTS_DIR="${1:-$RESULTS_DIR_DEFAULT}"
 
 LOG_DIR="${RESULTS_DIR}/logs"
@@ -41,7 +42,7 @@ if run_step "recovery_analysis" "$LOG_DIR/recovery_analysis.log" \
   python "$ANA_DIR/recovery_analysis_aSyn_conditions_2d_bv.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/features" \
+    --features-dir "$(pwd)/data/_aSyn/a99sb_features" \
     --absolute-paths; then
   RECOVERY_STATUS="ok"
 else
@@ -69,7 +70,7 @@ if run_step "process_optimisation_results" "$LOG_DIR/process_optimisation_result
   python "$ANA_DIR/process_optimisation_results_aSyn_conditions.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/features" \
+    --features-dir "$(pwd)/data/_aSyn/a99sb_features" \
     --absolute-paths; then
   PROCESS_STATUS="ok"
 else
@@ -140,10 +141,10 @@ FEAT_DIST_STATUS="not_run"
 if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
   python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py" \
     --extracted-dir "$EXTRACT_DIR" \
-    --feature-npz "$(pwd)/data/_aSyn/features/aSyn_featurised.npz" \
-    --topology-json "$(pwd)/data/_aSyn/features/topology.json" \
-    --top-pdb "$(pwd)/data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb" \
-    --traj-xtc "$(pwd)/data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_plddt_ordered.xtc" \
+    --feature-npz "$(pwd)/data/_aSyn/a99sb_features/aSyn_featurised.npz" \
+    --topology-json "$(pwd)/data/_aSyn/a99sb_features/topology.json" \
+    --top-pdb "$(pwd)/data/_aSyn/a99sb.pdb" \
+    --traj-xtc "$(pwd)/data/_aSyn/a99sb.pdb" \
     --absolute-paths; then
   FEAT_DIST_STATUS="ok"
 else
