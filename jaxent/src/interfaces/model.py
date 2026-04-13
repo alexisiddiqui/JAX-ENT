@@ -1,6 +1,6 @@
 ########################################################################
 # TODO need to simplify code using _create_modified_instance and lambda functions - using this we can then use lax to speed up the optimisation
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, ClassVar, TypeVar, cast
 
 import jax.numpy as jnp
@@ -79,7 +79,7 @@ class Model_Parameters:
     #     kwargs = {slot: array for slot, array in zip(cls._get_ordered_slots(), arrays)}
     #     return cls(**kwargs)
 
-    def tree_flatten(self) -> tuple[tuple[Array, ...], tuple[Any, ...]]:
+    def tree_flatten(self) -> tuple[Sequence[Any], Any]:
         dynamic_slots, static_slots = self._get_grouped_slots()
 
         # Dynamic parameters become leaves

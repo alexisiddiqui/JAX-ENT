@@ -51,3 +51,21 @@ jaxent-featurise --top_path /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aS
  bv \
 --switch \
 --peptide_trim 0 
+
+
+
+jaxent-featurise --top_path jaxent/examples/4_aSyn/data/_aSyn/a99sb.pdb \
+--trajectory_path jaxent/examples/4_aSyn/data/_aSyn/a99sb.pdb \
+--output_dir /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/a99sb_features \
+--name a99sb \
+ bv \
+--switch \
+--peptide_trim 0 
+
+
+
+jaxent-predict --topology_path /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/a99sb_features/topology.json \
+--features_path /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/a99sb_features/features.npz \
+--output_dir /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/a99sb_features \
+--output_name aSyn_featurised \
+bv 
