@@ -317,7 +317,7 @@ def maxent_convexKL_loss(
     loss = optax.losses.convex_kl_divergence(
         log_predictions=jnp.log(simulation_weights),
         targets=prior_frame_weights,
-    ) / (num_frames)
+    ) 
     # loss = loss - jnp.log(num_frames)
     return loss, loss
 

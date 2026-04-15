@@ -1,6 +1,8 @@
 """
-TODO: Plots should be moved to the analysis module and made more generic. This script should be made more flexible also.
-TODO: SHould be able to select which Partial_Topology regions to use for clustering
+PCA + k-means clustering for single MD trajectories.
+
+Compute and plot functions are implemented in ``jaxent.src.analysis.PCA``.
+This CLI calls them directly — no inline compute logic.
 
 This script takes in a topology and a list of trajectories and k-means clusters the ensemble down to the specified number of clusters.
 
@@ -59,15 +61,14 @@ import datetime
 import logging
 import os
 
-import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
-import seaborn as sns
-from matplotlib.gridspec import GridSpec
-from scipy.spatial.distance import pdist
 from sklearn.cluster import KMeans, MiniBatchKMeans
-from sklearn.decomposition import IncrementalPCA
 from tqdm import tqdm
+
+# Shared PCA compute + publication-quality plotting — refactored out of this file
+from jaxent.src.analysis.PCA.core import calculate_distances_and_perform_pca
+from jaxent.src.analysis.PCA.plots import create_publication_plots
 
 
 def setup_logger(log_file):
@@ -95,10 +96,18 @@ def setup_logger(log_file):
 
 def parse_arguments():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description="Cluster molecular dynamics trajectories")
-    parser.add_argument("--topology_path", type=str, required=True, help="Path to topology file")
+    parser = argparse.ArgumentParser(
+        description="Cluster molecular dynamics trajectories"
+    )
     parser.add_argument(
-        "--trajectory_paths", nargs="+", type=str, required=True, help="Paths to trajectory files"
+        "--topology_path", type=str, required=True, help="Path to topology file"
+    )
+    parser.add_argument(
+        "--trajectory_paths",
+        nargs="+",
+        type=str,
+        required=True,
+        help="Paths to trajectory files",
     )
     parser.add_argument(
         "--atom_selection",
@@ -119,7 +128,10 @@ def parse_arguments():
         help="Number of clusters for k-means (default: 500)",
     )
     parser.add_argument(
-        "--num_components", type=int, default=10, help="Number of PCA components (default: 10)"
+        "--num_components",
+        type=int,
+        default=10,
+        help="Number of PCA components (default: 10)",
     )
     parser.add_argument(
         "--output_dir",
@@ -133,59 +145,17 @@ def parse_arguments():
         help="Save individual PDB files for each cluster (default: False)",
     )
     parser.add_argument(
-        "--log", action="store_true", default=True, help="Enable logging (default: True)"
+        "--log",
+        action="store_true",
+        default=True,
+        help="Enable logging (default: True)",
     )
 
     return parser.parse_args()
 
 
-def calculate_pairwise_rmsd(universe, selection, chunk_size):
-    """Calculate pairwise distances between atoms within each frame"""
-    logger.info("Calculating pairwise atomic coordinate distances within frames...")
-
-    # Select atoms for distance calculation
-    atoms = universe.select_atoms(selection)
-    n_frames = len(universe.trajectory)
-    n_atoms = atoms.n_atoms
-    n_distances = n_atoms * (n_atoms - 1) // 2
-    logger.info(f"Selected {n_atoms} atoms, processing {n_frames} frames")
-
-    # Pre-allocate array for all pairwise distances across all frames
-    all_distances = np.zeros((n_frames, n_distances))
-
-    # Process each frame
-    for i, ts in enumerate(tqdm(universe.trajectory, desc="Processing frames")):
-        # Get atom positions for this frame
-        positions = atoms.positions
-
-        # Calculate pairwise distances for this frame only
-        frame_distances = pdist(positions, metric="euclidean")
-
-        # Store the distances for this frame
-        all_distances[i] = frame_distances
-
-    logger.info(f"Generated distances for {all_distances.shape[0]} frames")
-
-    return all_distances
-
-
-def perform_pca_on_distances(distances, num_components):
-    """Perform PCA on the distance matrix using IncrementalPCA with appropriate batch size"""
-    logger.info(f"Performing PCA with {num_components} components...")
-
-    # Set batch size to be at least 10 times the number of components as suggested
-    ipca_batch_size = max(num_components * 10, 100)
-
-    # Initialize IncrementalPCA with proper batch size
-    pca = IncrementalPCA(n_components=num_components, batch_size=ipca_batch_size)
-
-    # Fit PCA model and transform the data
-    pca_coords = pca.fit_transform(distances)
-
-    logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-    logger.info(f"Total variance explained: {sum(pca.explained_variance_ratio_):.2%}")
-
-    return pca_coords, pca
+# perform_kmeans_clustering remains in this file as it is specific to kCluster
+# and not shared by iPCA.
 
 
 def perform_kmeans_clustering(pca_coords, n_clusters):
@@ -194,7 +164,9 @@ def perform_kmeans_clustering(pca_coords, n_clusters):
 
     # Use MiniBatchKMeans for large datasets
     if len(pca_coords) > 10000:
-        kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=1000)
+        kmeans = MiniBatchKMeans(
+            n_clusters=n_clusters, random_state=42, batch_size=1000
+        )
     else:
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
 
@@ -210,187 +182,6 @@ def perform_kmeans_clustering(pca_coords, n_clusters):
     logger.info(f"Max frames per cluster: {np.max(counts)}")
 
     return cluster_labels, cluster_centers, kmeans
-
-
-def create_publication_plots(pca_coords, cluster_labels, cluster_centers, pca, output_dir):
-    """Create publication-quality plots of the PCA results and clustering"""
-    plots_dir = os.path.join(output_dir, "plots")
-    os.makedirs(plots_dir, exist_ok=True)
-
-    # Set style for publication-quality plots
-    plt.style.use("default")  # Use the default style or choose another valid style
-    plt.rcParams["font.family"] = "sans-serif"
-    plt.rcParams["font.sans-serif"] = ["Arial", "Helvetica", "DejaVu Sans"]
-    plt.rcParams["font.size"] = 12
-    plt.rcParams["axes.linewidth"] = 1.5
-    plt.rcParams["axes.edgecolor"] = "black"
-
-    # 1. Create main PCA plot with clusters
-    logger.info("Creating PCA projection plot with clusters...")
-
-    # Figure setup with gridspec for complex layout
-    fig = plt.figure(figsize=(18, 15))
-    gs = GridSpec(3, 3, figure=fig, height_ratios=[1, 3, 1])
-
-    # Main PCA scatter plot
-    ax_main = fig.add_subplot(gs[1, :2])
-
-    # Calculate point density for contour plot
-    x, y = pca_coords[:, 0], pca_coords[:, 1]
-    sns.kdeplot(x=x, y=y, ax=ax_main, levels=20, cmap="Blues", fill=True, alpha=0.5, zorder=0)
-
-    # Scatter plot of frames colored by cluster
-    scatter = ax_main.scatter(
-        x, y, c=cluster_labels, cmap="viridis", s=20, alpha=0.7, zorder=10, edgecolor="none"
-    )
-
-    # Plot cluster centers
-    ax_main.scatter(
-        cluster_centers[:, 0],
-        cluster_centers[:, 1],
-        c="red",
-        s=80,
-        marker="X",
-        edgecolors="black",
-        linewidths=1.5,
-        zorder=20,
-        label="Cluster Centers",
-    )
-
-    # Labels and title
-    variance_pc1 = pca.explained_variance_ratio_[0] * 100
-    variance_pc2 = pca.explained_variance_ratio_[1] * 100
-    ax_main.set_xlabel(f"PC1 ({variance_pc1:.1f}% variance)", fontsize=14)
-    ax_main.set_ylabel(f"PC2 ({variance_pc2:.1f}% variance)", fontsize=14)
-    ax_main.set_title("PCA Projection with K-means Clustering", fontsize=16, pad=20)
-
-    # Add histograms for PC1 distribution
-    ax_top = fig.add_subplot(gs[0, :2], sharex=ax_main)
-    sns.histplot(x, kde=True, ax=ax_top, color="darkblue", alpha=0.6)
-    ax_top.set_ylabel("Density", fontsize=12)
-    ax_top.set_title("PC1 Distribution", fontsize=14)
-    ax_top.tick_params(labelbottom=False)
-
-    # Add histograms for PC2 distribution
-    ax_right = fig.add_subplot(gs[1, 2], sharey=ax_main)
-    sns.histplot(y=y, kde=True, ax=ax_right, color="darkblue", alpha=0.6, orientation="horizontal")
-    ax_right.set_xlabel("Density", fontsize=12)
-    ax_right.set_title("PC2 Distribution", fontsize=14)
-    ax_right.tick_params(labelleft=False)
-
-    # Create explained variance ratio plot
-    ax_var = fig.add_subplot(gs[2, :])
-    components = range(1, len(pca.explained_variance_ratio_) + 1)
-    cumulative = np.cumsum(pca.explained_variance_ratio_)
-
-    # Plot individual and cumulative explained variance
-    ax_var.bar(
-        components, pca.explained_variance_ratio_, color="steelblue", alpha=0.7, label="Individual"
-    )
-
-    ax_var2 = ax_var.twinx()
-    ax_var2.plot(
-        components,
-        cumulative,
-        "o-",
-        color="firebrick",
-        linewidth=2.5,
-        markersize=8,
-        label="Cumulative",
-    )
-
-    # Add explained variance labels
-    ax_var.set_xlabel("Principal Component", fontsize=14)
-    ax_var.set_ylabel("Explained Variance Ratio", fontsize=14)
-    ax_var2.set_ylabel("Cumulative Explained Variance", fontsize=14)
-    ax_var.set_title("Explained Variance by Principal Components", fontsize=16, pad=20)
-
-    # Set x-axis to integers
-    ax_var.set_xticks(components)
-    ax_var2.set_ylim([0, 1.05])
-
-    # Combine legends
-    lines, labels = ax_var.get_legend_handles_labels()
-    lines2, labels2 = ax_var2.get_legend_handles_labels()
-    ax_var.legend(lines + lines2, labels + labels2, loc="upper left", fontsize=12)
-
-    # Add colorbar for cluster labels
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-    cbar = plt.colorbar(scatter, cax=cbar_ax)
-    cbar.set_label("Cluster Label", fontsize=14, labelpad=15)
-
-    # Save the figure
-    plt.tight_layout()
-    pca_plot_path = os.path.join(plots_dir, "pca_clusters.png")
-    plt.savefig(pca_plot_path, dpi=300, bbox_inches="tight")
-    plt.close()
-
-    # 2. Create 3D PCA plot if we have at least 3 components
-    if pca_coords.shape[1] >= 3:
-        logger.info("Creating 3D PCA plot...")
-        fig = plt.figure(figsize=(12, 10))
-        ax = fig.add_subplot(111, projection="3d")
-
-        scatter = ax.scatter(
-            pca_coords[:, 0],
-            pca_coords[:, 1],
-            pca_coords[:, 2],
-            c=cluster_labels,
-            cmap="viridis",
-            s=30,
-            alpha=0.7,
-        )
-
-        ax.scatter(
-            cluster_centers[:, 0],
-            cluster_centers[:, 1],
-            cluster_centers[:, 2],
-            c="red",
-            s=100,
-            marker="X",
-            edgecolors="black",
-            linewidths=1.5,
-        )
-
-        variance_pc3 = pca.explained_variance_ratio_[2] * 100
-        ax.set_xlabel(f"PC1 ({variance_pc1:.1f}% variance)", fontsize=12)
-        ax.set_ylabel(f"PC2 ({variance_pc2:.1f}% variance)", fontsize=12)
-        ax.set_zlabel(f"PC3 ({variance_pc3:.1f}% variance)", fontsize=12)
-        ax.set_title("3D PCA Projection with Clusters", fontsize=16)
-
-        plt.colorbar(scatter, ax=ax, label="Cluster Label")
-        plt.tight_layout()
-
-        pca_3d_path = os.path.join(plots_dir, "pca_3d.png")
-        plt.savefig(pca_3d_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-    # 3. Create cluster size distribution plot
-    logger.info("Creating cluster size distribution plot...")
-    unique_labels, counts = np.unique(cluster_labels, return_counts=True)
-
-    plt.figure(figsize=(14, 8))
-    sns.histplot(counts, kde=True, color="steelblue")
-    plt.axvline(np.mean(counts), color="red", linestyle="--", label=f"Mean: {np.mean(counts):.1f}")
-    plt.axvline(
-        np.median(counts), color="green", linestyle="--", label=f"Median: {np.median(counts):.1f}"
-    )
-
-    plt.xlabel("Frames per Cluster", fontsize=14)
-    plt.ylabel("Frequency", fontsize=14)
-    plt.title("Distribution of Cluster Sizes", fontsize=16)
-    plt.legend(fontsize=12)
-    plt.tight_layout()
-
-    cluster_dist_path = os.path.join(plots_dir, "cluster_distribution.png")
-    plt.savefig(cluster_dist_path, dpi=300)
-    plt.close()
-
-    return {
-        "pca_plot": pca_plot_path,
-        "pca_3d_plot": pca_3d_path if pca_coords.shape[1] >= 3 else None,
-        "cluster_dist": cluster_dist_path,
-    }
 
 
 def save_cluster_trajectories(
@@ -467,7 +258,9 @@ def save_cluster_trajectories(
 
     # Optionally save representative frames as PDB files
     if save_pdbs:
-        for cluster_idx, frame_idx in tqdm(representative_frames.items(), desc="Saving PDB files"):
+        for cluster_idx, frame_idx in tqdm(
+            representative_frames.items(), desc="Saving PDB files"
+        ):
             universe.trajectory[frame_idx]
             with mda.Writer(
                 os.path.join(clusters_dir, f"cluster_{cluster_idx}_rep.pdb")
@@ -491,73 +284,6 @@ def save_cluster_trajectories(
     if save_pdbs:
         logger.info(f"Saved {len(representative_frames)} representative PDB files")
     logger.info("Saved frame-to-cluster mapping to frame_to_cluster.csv")
-
-
-def calculate_distances_and_perform_pca(universe, selection, num_components, chunk_size):
-    """Calculate pairwise distances and perform incremental PCA in chunks"""
-    logger.info("Calculating pairwise distances and performing incremental PCA...")
-
-    # Select atoms for distance calculation
-    atoms = universe.select_atoms(selection)
-    n_frames = len(universe.trajectory)
-    n_atoms = atoms.n_atoms
-    n_distances = n_atoms * (n_atoms - 1) // 2
-
-    logger.info(f"Selected {n_atoms} atoms, processing {n_frames} frames")
-    logger.info(f"Each frame will generate {n_distances} pairwise distances")
-
-    # Initialize IncrementalPCA
-    ipca_batch_size = max(num_components * 10, 100)
-    pca = IncrementalPCA(n_components=num_components, batch_size=ipca_batch_size)
-
-    # Process frames in chunks
-    frame_indices = np.arange(n_frames)
-
-    # Store PCA coordinates for all frames
-    pca_coords = np.zeros((n_frames, num_components))
-
-    for chunk_start in tqdm(range(0, n_frames, chunk_size), desc="Processing frame chunks"):
-        chunk_end = min(chunk_start + chunk_size, n_frames)
-        chunk_indices = frame_indices[chunk_start:chunk_end]
-        chunk_size_actual = len(chunk_indices)
-
-        # Pre-allocate array just for this chunk of frames
-        chunk_distances = np.zeros((chunk_size_actual, n_distances))
-
-        # Process each frame in the chunk
-        for i, frame_idx in enumerate(chunk_indices):
-            # Go to the specific frame
-            universe.trajectory[frame_idx]
-
-            # Get atom positions for this frame
-            positions = atoms.positions
-
-            # Calculate pairwise distances for this frame
-            frame_distances = pdist(positions, metric="euclidean")
-
-            # Store the distances for this frame in the chunk array
-            chunk_distances[i] = frame_distances
-
-        # Partial fit PCA with this chunk
-        if chunk_start == 0:
-            # For the first chunk, we need to fit and transform
-            chunk_pca_coords = pca.fit_transform(chunk_distances)
-        else:
-            # For subsequent chunks, we partial_fit and transform
-            pca.partial_fit(chunk_distances)
-            chunk_pca_coords = pca.transform(chunk_distances)
-
-        # Store the PCA coordinates for this chunk
-        pca_coords[chunk_start:chunk_end] = chunk_pca_coords
-
-        # Free memory by deleting the chunk distances
-        del chunk_distances
-
-    logger.info(f"Completed incremental PCA with {num_components} components")
-    logger.info(f"Explained variance ratio: {pca.explained_variance_ratio_}")
-    logger.info(f"Total variance explained: {sum(pca.explained_variance_ratio_):.2%}")
-
-    return pca_coords, pca
 
 
 def main():

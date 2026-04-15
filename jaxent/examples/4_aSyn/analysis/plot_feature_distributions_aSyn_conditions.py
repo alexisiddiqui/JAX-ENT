@@ -298,11 +298,11 @@ def main():
     exp_dir = script_dir.parent
 
     extracted_dir = Path(args.extracted_dir)
-    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_aSyn/a99sb_features/aSyn_featurised.npz"
-    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_aSyn/a99sb_features/topology.json"
+    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_aSyn/tris_MD/features/aSyn_featurised.npz"
+    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_aSyn/tris_MD/features/topology.json"
     cluster_labels_npy = Path(args.cluster_labels_npy) if args.cluster_labels_npy else None
-    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_aSyn/a99sb.pdb"  # Fallback to topology.json if needed
-    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_aSyn/a99sb.pdb"
+    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_aSyn/tris_MD/md_mol_center_coil.pdb"  # Fallback to topology.json if needed
+    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_aSyn/tris_MD/tris_all_combined.xtc"
 
     # Specific override for PDB if it's explicitly provided or if internal topology.json is actually what's needed
     if not args.top_pdb and not top_pdb.exists():

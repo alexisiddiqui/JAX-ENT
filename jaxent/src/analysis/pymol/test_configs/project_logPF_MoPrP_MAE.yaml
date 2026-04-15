@@ -6,8 +6,8 @@ render:
   spectrum_colours: "white_black"
   spectrum_range: [0.0, 10.0]
   putty_transform: 7
-  putty_range: [1.0, 2.5]
-  reference_transparency: 0.0
+  putty_range: [1.5, 2.5]
+  reference_transparency: 0.1
   orthoscopic_view: true
   antialias: 2
   ray_trace_mode: 0

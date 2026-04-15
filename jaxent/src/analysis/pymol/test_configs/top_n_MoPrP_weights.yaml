@@ -47,7 +47,7 @@ output:
 
 top_n:
   trajectory: "_cluster_MoPrP/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
-  weights: "3-MoPrP+BV_weights/weights_AF2_MSAss_MSE_L1_sequence_cluster_average.npz"
+  weights: "3-MoPrP+BV_weights/weights_AF2_MSAss_mcMSE_L1_sequence_cluster_average.npz"
   colour_metric: "weight"     
   top_n: 20 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  

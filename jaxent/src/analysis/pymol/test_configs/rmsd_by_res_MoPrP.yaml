@@ -49,3 +49,4 @@ rmsd:
   trajectory: "AF2_MSAss_cluster_1_frames.pdb"
   # Or XTC + topology:
   # trajectory: "trajectory.xtc,MoPrP_max_plddt_4334.pdb"
+  transparency_metric: "RMSD" # opacity → weight rank (or "RMSD" for RMSD rank)

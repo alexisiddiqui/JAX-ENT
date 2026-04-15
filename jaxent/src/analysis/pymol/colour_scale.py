@@ -50,9 +50,9 @@ if __name__ == "__main__":
 
     # PyMOL-style cyan magenta black
     bwr_stops = [
-        (0,   255, 255),   # cyan
-        (255, 0,   255),   # magenta
-        (0,   0,   0  ),   # black
+        (255, 255, 255),   # white
+        (0,   0,   0  )   # black
+        # (0,   0,   0  ),   # black
     ]
 
 
@@ -62,11 +62,11 @@ if __name__ == "__main__":
 
     # A multi-stop rainbow-ish ramp
     rainbow_stops = [
-        (0,   0,   255),   # blue
-        (0,   255, 255),   # cyan
-        (0,   255, 0  ),   # green
-        (255, 255, 0  ),   # yellow
-        (255, 0,   0  ),   # red
+        (0,   255, 0),   # green
+        (255, 255, 255),   # white
+        # (0,   255, 0  ),   # green
+        # (255, 255, 0  ),   # yellow
+        # (255, 0,   0  ),   # red
     ]
 
     # ── Build and plot ───────────────────────────────────────────────────────

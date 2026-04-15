@@ -1,3 +1,7 @@
+"""
+These plots are a placeholder - any additional plotting functions for general analysis should be contained next to their analysis code for now. These will be moved into src/analysis/plots once the config driven analysis pipeline is established
+"""
+
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np

@@ -42,7 +42,7 @@ if run_step "recovery_analysis" "$LOG_DIR/recovery_analysis.log" \
   python "$ANA_DIR/recovery_analysis_aSyn_conditions_2d_bv.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/a99sb_features" \
+    --features-dir "$(pwd)/data/_aSyn/tris_MD/features" \
     --absolute-paths; then
   RECOVERY_STATUS="ok"
 else
@@ -70,7 +70,7 @@ if run_step "process_optimisation_results" "$LOG_DIR/process_optimisation_result
   python "$ANA_DIR/process_optimisation_results_aSyn_conditions.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/a99sb_features" \
+    --features-dir "$(pwd)/data/_aSyn/tris_MD/features" \
     --absolute-paths; then
   PROCESS_STATUS="ok"
 else
@@ -141,10 +141,10 @@ FEAT_DIST_STATUS="not_run"
 if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
   python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py" \
     --extracted-dir "$EXTRACT_DIR" \
-    --feature-npz "$(pwd)/data/_aSyn/a99sb_features/aSyn_featurised.npz" \
-    --topology-json "$(pwd)/data/_aSyn/a99sb_features/topology.json" \
-    --top-pdb "$(pwd)/data/_aSyn/a99sb.pdb" \
-    --traj-xtc "$(pwd)/data/_aSyn/a99sb.pdb" \
+    --feature-npz "$(pwd)/data/_aSyn/tris_MD/features/aSyn_featurised.npz" \
+    --topology-json "$(pwd)/data/_aSyn/tris_MD/features/topology.json" \
+    --top-pdb "$(pwd)/data/_aSyn/tris_MD/md_mol_center_coil.pdb" \
+    --traj-xtc "$(pwd)/data/_aSyn/tris_MD/tris_all_combined_filtered_10.xtc" \
     --absolute-paths; then
   FEAT_DIST_STATUS="ok"
 else

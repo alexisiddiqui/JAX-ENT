@@ -150,8 +150,8 @@ def run_conditions_sweep(
     datasplit_dir = os.path.join(script_dir, "_datasplits")
     # feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
     # topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
-    feature_path = os.path.join(script_dir, "../data/_aSyn/a99sb_features/features.npz")
-    topology_path = os.path.join(script_dir, "../data/_aSyn/a99sb_features/topology.json")
+    feature_path = os.path.join(script_dir, "../data/_aSyn/tris_MD/features/features.npz")
+    topology_path = os.path.join(script_dir, "../data/_aSyn/tris_MD/features/topology.json")
 
     if output_base_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -169,7 +169,6 @@ def run_conditions_sweep(
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
 
     n_frames = features.features_shape[-1]
-    # maxent_values = jnp.array(maxent_values) / n_frames
 
 
     bv_config = BV_model_Config(num_timepoints=None)
