@@ -199,16 +199,22 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         # print(f"After create_covariance_mat:")
         # print(f"  train_cov_matrix shape: {train_cov_matrix.shape if train_cov_matrix is not None else 'None'}")
         # print(f"  train_cov_matrix:\n{train_cov_matrix}")
-        # Normalise covariance matrix once
-        covariance_matrix = (
-            self.covariance_matrix / jnp.linalg.norm(self.covariance_matrix, ord='fro')
-            if self.covariance_matrix is not None else None
-        )
-        print("Normalized covariance matrix:\n", covariance_matrix)
+        def _trace_normalise(mat: Array | None) -> Array | None:
+            """Scale W so trace(W) == n, giving a mean diagonal weight of 1.
 
-        train_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(train_indices))
-        val_cov_matrix = create_covariance_mat(covariance_matrix, jnp.asarray(val_indices))
-        test_cov_matrix = create_covariance_mat(covariance_matrix, jnp.arange(len(test_data)))
+            Done once at dataset creation time so the loss functions receive a
+            consistently-scaled matrix regardless of the covariance source.
+            """
+            if mat is None:
+                return None
+            n = mat.shape[0]
+            return mat * (n / jnp.trace(mat))
+
+        covariance_matrix = self.covariance_matrix
+
+        train_cov_matrix = _trace_normalise(create_covariance_mat(covariance_matrix, jnp.asarray(train_indices)))
+        val_cov_matrix = _trace_normalise(create_covariance_mat(covariance_matrix, jnp.asarray(val_indices)))
+        test_cov_matrix = _trace_normalise(create_covariance_mat(covariance_matrix, jnp.arange(len(test_data))))
 
         train_y_true = jnp.array([data.extract_features() for data in train_data])
         val_y_true = jnp.array([data.extract_features() for data in val_data])

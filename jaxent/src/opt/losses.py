@@ -1551,7 +1551,8 @@ def hdx_uptake_sigma_MSE_loss(
         """
         Args:
             y_true: shape (n_fragments, n_timepoints, 1)
-            cov_matrix: shape (n_fragments, n_fragments) - inverse covariance
+            cov_matrix: shape (n_fragments, n_fragments) - inverse covariance, trace-normalised
+                        by the dataloader so trace(W) == n_fragments
         """
         # Initialize loss accumulator
         total_loss = 0.0
@@ -1579,8 +1580,10 @@ def hdx_uptake_sigma_MSE_loss(
             # Accumulate loss
             total_loss += timepoint_loss
 
-        # Average loss across timepoints
-        return jnp.asarray(total_loss) / y_true.shape[1]
+        # Average over timepoints and fragments — W is trace-normalised (trace(W) == n)
+        # so dividing by n gives the same per-element scale as eye_MSE_loss.
+        n_fragments = y_true.shape[0]
+        return jnp.asarray(total_loss) / (y_true.shape[1] * n_fragments)
 
     # Compute train and validation losses
     train_loss = compute_loss(
@@ -1636,13 +1639,14 @@ def hdx_uptake_eye_MSE_loss(
             # Accumulate loss
             total_loss += timepoint_loss
 
-        # Average loss across timepoints
-        return jnp.asarray(total_loss) / y_true.shape[1]
+        # Average over timepoints and fragments — trace(I) == n so I is already
+        # trace-normalised; dividing by n gives true per-element MSE.
+        n_fragments = y_true.shape[0]
+        return jnp.asarray(total_loss) / (y_true.shape[1] * n_fragments)
 
+    # Identity is already trace-normalised (trace(I) == n), so no further scaling needed.
     train_eye = jnp.eye(dataset.train.y_true.shape[0])
-    train_eye = train_eye / jnp.linalg.norm(train_eye)
     val_eye = jnp.eye(dataset.val.y_true.shape[0])
-    val_eye = val_eye / jnp.linalg.norm(val_eye)
 
     # Compute train and validation losses
     train_loss = compute_loss(
@@ -1818,18 +1822,18 @@ def hdx_uptake_mean_centred_eye_MSE_loss(
             timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
             total_loss += timepoint_loss
 
-        return jnp.asarray(total_loss) / y_true.shape[1]
+        # Average over timepoints and fragments — trace(I) == n so I is already
+        # trace-normalised; dividing by n gives true per-element MSE.
+        n_fragments = y_true.shape[0]
+        return jnp.asarray(total_loss) / (y_true.shape[1] * n_fragments)
 
+    # Identity is already trace-normalised (trace(I) == n), so no further scaling needed.
     eye_mat = jnp.eye(dataset.train.y_true.shape[0])
-    eye_mat = eye_mat / jnp.linalg.norm(eye_mat)
+    eye_mat_val = jnp.eye(dataset.val.y_true.shape[0])
 
     train_loss = compute_loss(
         dataset.train.residue_feature_ouput_mapping, dataset.train.y_true, eye_mat
     )
-
-    eye_mat_val = jnp.eye(dataset.val.y_true.shape[0])
-    eye_mat_val = eye_mat_val / jnp.linalg.norm(eye_mat_val)
-
     val_loss = compute_loss(
         dataset.val.residue_feature_ouput_mapping, dataset.val.y_true, eye_mat_val
     )
@@ -1872,7 +1876,10 @@ def hdx_uptake_mean_centred_sigma_MSE_loss(
             timepoint_loss = 0.5 * jnp.dot(residual, weighted_residual)
             total_loss += timepoint_loss
 
-        return jnp.asarray(total_loss) / y_true.shape[1]
+        # Average over timepoints and fragments — W is trace-normalised (trace(W) == n)
+        # so dividing by n gives the same per-element scale as mcEye_MSE_loss.
+        n_fragments = y_true.shape[0]
+        return jnp.asarray(total_loss) / (y_true.shape[1] * n_fragments)
 
     train_loss = compute_loss(
         dataset.train.residue_feature_ouput_mapping,

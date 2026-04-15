@@ -124,7 +124,7 @@ def run_maxent_sweep(
     print(f"Maxent values: {maxent_values}")
 
     # Define convergence criteria
-    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
 
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
