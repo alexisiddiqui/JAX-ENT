@@ -79,6 +79,12 @@ REF_COLORS = {"Rod (AF)": "#e41a1c", "Hairpin": "#377eb8", "Compact": "#4daf4a"}
 
 DYN_REF_MARKERS = {"Dynamic Hairpin": "o"}
 DYN_REF_COLORS = {"Dynamic Hairpin": "#ff7f00"}
+COARSE_REFERENCE_TARGETS = {
+    "Rod": "Rod (AF)",
+    "Wavy": "Hairpin",
+    "Compact": "Compact",
+}
+DEFAULT_SHAPE_RESID_CANDIDATES = ["1:61", "1:95", "1:105", "1:114", "1:135"]
 
 # ============================================================================
 # Computation
@@ -160,6 +166,104 @@ def compute_dynamic_reference_ratios(dyn_ref_dict: dict[str, Path], sel_str: str
         except Exception as e:
             print(f"Warning: Could not compute dynamic ratios for {name}: {e}")
     return ratios
+
+
+def parse_resid_range(range_str: str) -> tuple[int, int]:
+    start_str, end_str = range_str.split(":")
+    return int(start_str), int(end_str)
+
+
+def format_selection(range_str: str, atom_names: str = "name CA") -> str:
+    start, end = parse_resid_range(range_str)
+    return f"resid {start}-{end} and {atom_names}"
+
+
+def slugify_range(range_str: str) -> str:
+    start, end = parse_resid_range(range_str)
+    return f"{start}_{end}"
+
+
+def parse_shape_resid_candidates(shape_resids: str, shape_resids_grid: str | None) -> list[str]:
+    if not shape_resids_grid:
+        return [shape_resids]
+
+    candidates = []
+    for item in shape_resids_grid.split(","):
+        item = item.strip()
+        if item:
+            candidates.append(item)
+    return candidates or [shape_resids]
+
+
+def cluster_centers_from_labels(features_xy: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    centers = []
+    valid_labels = sorted(int(v) for v in np.unique(labels) if v >= 0)
+    for label in valid_labels:
+        mask = labels == label
+        centers.append(features_xy[mask].mean(axis=0))
+    return np.asarray(centers, dtype=float)
+
+
+def ensure_cluster_centers(features_xy: np.ndarray, labels: np.ndarray, centers_xy: np.ndarray | None) -> np.ndarray:
+    if centers_xy is not None and len(centers_xy) > 0:
+        return np.asarray(centers_xy, dtype=float)
+    return cluster_centers_from_labels(features_xy, labels)
+
+
+def invert_macro_mapping(cluster_to_macro: dict[int, str]) -> dict[str, list[int]]:
+    macro_map: dict[str, list[int]] = {}
+    for cluster_id, macro in sorted(cluster_to_macro.items()):
+        macro_map.setdefault(macro, []).append(cluster_id)
+    return macro_map
+
+
+def assign_macro_labels_by_reference(
+    labels: np.ndarray,
+    centers_xy: np.ndarray,
+    ref_ratios: dict[str, tuple[float, float]],
+) -> tuple[np.ndarray, dict[int, str]]:
+    macro_clusters = np.full(labels.shape, "Unassigned", dtype=object)
+    cluster_to_macro: dict[int, str] = {}
+    valid_labels = sorted(int(v) for v in np.unique(labels) if v >= 0)
+    center_lookup = {cluster_id: centers_xy[idx] for idx, cluster_id in enumerate(valid_labels)}
+    available_targets = {
+        macro: ref_ratios[ref_name]
+        for macro, ref_name in COARSE_REFERENCE_TARGETS.items()
+        if ref_name in ref_ratios
+    }
+
+    for cluster_id in valid_labels:
+        center = center_lookup[cluster_id]
+        if available_targets:
+            best_macro = min(
+                available_targets,
+                key=lambda macro: np.linalg.norm(center - np.asarray(available_targets[macro])),
+            )
+        else:
+            x_val, y_val = center
+            if x_val < 0.16 and y_val > 0.90:
+                best_macro = "Rod"
+            elif x_val > 0.40 or y_val < 0.82:
+                best_macro = "Compact"
+            else:
+                best_macro = "Wavy"
+        cluster_to_macro[cluster_id] = best_macro
+        macro_clusters[labels == cluster_id] = best_macro
+
+    return macro_clusters, cluster_to_macro
+
+
+def assign_manual_macro_labels(
+    labels: np.ndarray,
+    cluster_map: dict[str, list[int]] | None,
+) -> np.ndarray | None:
+    if cluster_map is None:
+        return None
+    macro_clusters = np.full(labels.shape, "Unassigned", dtype=object)
+    for macro_name, cluster_indices in cluster_map.items():
+        for cluster_id in cluster_indices:
+            macro_clusters[labels == cluster_id] = macro_name
+    return macro_clusters
 
 
 # ============================================================================
@@ -1180,6 +1284,188 @@ def plot_ctail_rg_macro_rows(
 # ============================================================================
 
 
+def run_candidate(
+    u: mda.Universe,
+    output_dir: Path,
+    shape_resids: str,
+    ctail_resids: str,
+    method: str,
+    n_clusters: int,
+    gmm_select_bic: bool,
+    gmm_min_components: int,
+    gmm_max_components: int,
+    dbscan_eps: float,
+    dbscan_min_samples: int,
+    basin_grid_size: int,
+    ctail_threshold: float | None,
+    cluster_map: dict[str, list[int]] | None,
+    generate_plots: bool = True,
+) -> dict[str, object]:
+    plots_dir = output_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    shape_sel_str = format_selection(shape_resids)
+    ctail_sel_str = f"resid {parse_resid_range(ctail_resids)[0]}-{parse_resid_range(ctail_resids)[1]}"
+
+    print(f"\nCandidate: shape={shape_resids}, ctail={ctail_resids}")
+    print(f"  output_dir: {output_dir}")
+    print(f"  shape_sel:  {shape_sel_str}")
+    print(f"  ctail_sel:  {ctail_sel_str}")
+
+    x_ratio, y_ratio, I1, I2, I3 = compute_inertia_ratios(u, shape_sel_str)
+    ref_ratios = compute_reference_ratios(REFERENCES, shape_sel_str)
+    dynamic_ref_ratios = compute_dynamic_reference_ratios(DYNAMIC_REFERENCES, shape_sel_str)
+
+    w_rod = y_ratio - x_ratio
+    w_sphere = x_ratio + y_ratio - 1
+    w_disk = 2 * (1 - y_ratio)
+    features_xy = np.column_stack([x_ratio, y_ratio])
+
+    method_labels: dict[str, np.ndarray] = {}
+    method_centers: dict[str, np.ndarray | None] = {}
+    selected_gmm_components = n_clusters
+    gmm_bic_counts: np.ndarray | None = None
+    gmm_bic_scores: np.ndarray | None = None
+    gmm_bic_range: tuple[int, int] | None = None
+
+    if gmm_select_bic:
+        selected_gmm_components, gmm_bic_scores, gmm_labels, gmm_centers = select_gmm_by_bic(
+            features_xy, gmm_min_components, gmm_max_components
+        )
+        gmm_bic_counts = np.arange(gmm_min_components, gmm_max_components + 1, dtype=int)
+        gmm_bic_range = (gmm_min_components, gmm_max_components)
+        method_labels["gmm"] = gmm_labels
+        method_centers["gmm"] = gmm_centers
+        print(
+            f"  selected GMM components by BIC: {selected_gmm_components} "
+            f"(searched {gmm_min_components}-{gmm_max_components})"
+        )
+
+    for method_name in ["kmeans", "gmm", "dbscan", "free_energy_basins"]:
+        print(f"  running {method_name}...")
+        if method_name == "gmm" and gmm_select_bic:
+            labels = method_labels["gmm"]
+            centers_xy = method_centers["gmm"]
+        else:
+            effective_n_clusters = selected_gmm_components if method_name == "gmm" else n_clusters
+            labels, centers_xy = run_clustering_method(
+                method_name,
+                features_xy,
+                x_ratio,
+                y_ratio,
+                effective_n_clusters,
+                dbscan_eps,
+                dbscan_min_samples,
+                basin_grid_size,
+                gmm_bic_range=None,
+            )
+        method_labels[method_name] = labels
+        method_centers[method_name] = centers_xy
+
+    cluster_labels = method_labels[method]
+    centers_xy = ensure_cluster_centers(features_xy, cluster_labels, method_centers[method])
+    rg_ctail = compute_ctail_rg(u, ctail_sel_str)
+    resolved_threshold = float(np.median(rg_ctail) if ctail_threshold is None else ctail_threshold)
+
+    coarse_labels, coarse_cluster_lookup = assign_macro_labels_by_reference(
+        cluster_labels, centers_xy, ref_ratios
+    )
+    manual_macro_labels = assign_manual_macro_labels(cluster_labels, cluster_map)
+
+    np.save(output_dir / "cluster_labels.npy", cluster_labels)
+    np.save(output_dir / "cluster_centers.npy", centers_xy)
+    np.save(output_dir / "shape_axes.npy", np.column_stack([x_ratio, y_ratio]))
+    np.save(output_dir / "ctail_rg.npy", rg_ctail)
+    np.save(output_dir / "coarse_cluster_labels.npy", coarse_labels)
+
+    metadata = {
+        "method": method,
+        "n_clusters": int(n_clusters),
+        "selected_gmm_components": int(selected_gmm_components),
+        "gmm_select_bic": gmm_select_bic,
+        "gmm_min_components": int(gmm_min_components),
+        "gmm_max_components": int(gmm_max_components),
+        "dbscan_eps": float(dbscan_eps),
+        "dbscan_min_samples": int(dbscan_min_samples),
+        "basin_grid_size": int(basin_grid_size),
+        "ctail_threshold": resolved_threshold,
+        "shape_resids": shape_resids,
+        "ctail_resids": ctail_resids,
+        "shape_selection": shape_sel_str,
+        "ctail_selection": ctail_sel_str,
+        "coarse_mapping_mode": "reference_guided",
+        "coarse_cluster_map": invert_macro_mapping(coarse_cluster_lookup),
+    }
+    with open(output_dir / "cluster_method.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    with open(output_dir / "coarse_cluster_map.json", "w") as f:
+        json.dump(invert_macro_mapping(coarse_cluster_lookup), f, indent=2)
+
+    if manual_macro_labels is not None and cluster_map is not None:
+        np.save(output_dir / "macro_cluster_labels_manual.npy", manual_macro_labels)
+        with open(output_dir / "macro_cluster_map_manual.json", "w") as f:
+            json.dump(cluster_map, f, indent=2)
+
+    if generate_plots:
+        plot_shape_space_ctail(
+            x_ratio, y_ratio, rg_ctail, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_free_energy_landscape(
+            x_ratio, y_ratio, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_free_energy_landscape_hexbin(
+            x_ratio, y_ratio, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_shape_indices_histograms(w_rod, w_sphere, w_disk, plots_dir)
+        plot_cluster_shape_space(
+            x_ratio, y_ratio, cluster_labels, centers_xy, method, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_cluster_hexbin(
+            x_ratio, y_ratio, cluster_labels, method, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_method_comparison_hexbin(
+            x_ratio, y_ratio, method_labels, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        if gmm_select_bic and gmm_bic_counts is not None and gmm_bic_scores is not None:
+            plot_gmm_bic(gmm_bic_counts, gmm_bic_scores, selected_gmm_components, plots_dir)
+        plot_ca_traces(u, shape_sel_str, cluster_labels, features_xy, centers_xy, method, plots_dir)
+        plot_moments_histograms(I1, I2, I3, plots_dir)
+        plot_ctail_rg_clusters_hist(rg_ctail, cluster_labels, plots_dir, ctail_threshold=resolved_threshold)
+        plot_ctail_rg_clusters_rows(rg_ctail, cluster_labels, plots_dir, ctail_threshold=resolved_threshold)
+        plot_macro_hexbin(
+            x_ratio, y_ratio, coarse_labels, plots_dir,
+            ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios,
+        )
+        plot_macro_cluster_bar(
+            coarse_labels, rg_ctail, resolved_threshold,
+            invert_macro_mapping(coarse_cluster_lookup), plots_dir,
+        )
+        plot_macro_cluster_pie(
+            coarse_labels, rg_ctail, resolved_threshold,
+            invert_macro_mapping(coarse_cluster_lookup), plots_dir,
+        )
+        plot_ctail_rg_macro_rows(
+            rg_ctail, coarse_labels, invert_macro_mapping(coarse_cluster_lookup), plots_dir,
+            ctail_threshold=resolved_threshold,
+        )
+
+    return {
+        "output_dir": str(output_dir),
+        "shape_resids": shape_resids,
+        "ctail_resids": ctail_resids,
+        "coarse_cluster_map": invert_macro_mapping(coarse_cluster_lookup),
+        "selected_gmm_components": int(selected_gmm_components),
+        "ctail_threshold": resolved_threshold,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Moments-of-inertia based clustering of the aSyn trajectory."
@@ -1223,6 +1509,19 @@ def main() -> None:
     )
     parser.add_argument("--shape-resids", default="1:135",
                         help="Residue range for shape region 'start:end' PDB numbering (default: 1:96)")
+    parser.add_argument(
+        "--shape-resids-grid",
+        default=None,
+        help=(
+            "Comma-separated candidate shape residue ranges for a benchmark sweep, "
+            "e.g. '1:61,1:95,1:105,1:114,1:135'. If omitted, a single candidate is run."
+        ),
+    )
+    parser.add_argument(
+        "--use-default-shape-grid",
+        action="store_true",
+        help="Run the built-in benchmark grid: 1:61,1:95,1:105,1:114,1:135.",
+    )
     parser.add_argument("--ctail-resids", default="115:140",
                         help="Residue range for C-tail Rg 'start:end' PDB numbering (default: 115:140)")
     parser.add_argument("--ctail-threshold", type=float, default=None,
@@ -1251,26 +1550,20 @@ def main() -> None:
     traj_xtc = resolve(args.traj_xtc, script_dir / "_aSyn/tris_MD/tris_all_combined.xtc")
     output_dir = resolve(args.output_dir, script_dir / "_cluster_inertia")
     output_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir = output_dir / "plots"
-    plots_dir.mkdir(parents=True, exist_ok=True)
-
-    shape_parts = args.shape_resids.split(":")
-    shape_start, shape_end = int(shape_parts[0]), int(shape_parts[1])
-    shape_sel_str = f"resid {shape_start}-{shape_end} and name CA"
-
-    ctail_parts = args.ctail_resids.split(":")
-    ctail_start, ctail_end = int(ctail_parts[0]), int(ctail_parts[1])
-    ctail_sel_str = f"resid {ctail_start}-{ctail_end}"
 
     cluster_map: dict[str, list[int]] | None = None
     if args.cluster_map:
         cluster_map = json.loads(args.cluster_map)
 
+    if args.use_default_shape_grid and args.shape_resids_grid is None:
+        args.shape_resids_grid = ",".join(DEFAULT_SHAPE_RESID_CANDIDATES)
+    shape_resid_candidates = parse_shape_resid_candidates(args.shape_resids, args.shape_resids_grid)
+
     print(f"top_pdb:          {top_pdb}")
     print(f"traj_xtc:         {traj_xtc}")
     print(f"output_dir:       {output_dir}")
-    print(f"shape_sel:        {shape_sel_str}")
-    print(f"ctail_sel:        {ctail_sel_str}")
+    print(f"shape_resids:     {shape_resid_candidates}")
+    print(f"ctail_resids:     {args.ctail_resids}")
     print(f"method:           {args.method}")
     print(f"n_clusters:       {args.n_clusters}")
     print(f"gmm_select_bic:   {args.gmm_select_bic}")
@@ -1286,151 +1579,37 @@ def main() -> None:
     u = mda.Universe(str(top_pdb), str(traj_xtc))
     n_frames = len(u.trajectory)
     print(f"  {n_frames} frames, {u.atoms.n_atoms} atoms")
-
-    x_ratio, y_ratio, I1, I2, I3 = compute_inertia_ratios(u, shape_sel_str)
-
-    # Compute reference ratios
-    print("Computing reference inertia ratios...")
-    ref_ratios = compute_reference_ratios(REFERENCES, shape_sel_str)
-    dynamic_ref_ratios = compute_dynamic_reference_ratios(DYNAMIC_REFERENCES, shape_sel_str)
-
-    w_rod = y_ratio - x_ratio
-    w_sphere = x_ratio + y_ratio - 1
-    w_disk = 2 * (1 - y_ratio)
-    features_xy = np.column_stack([x_ratio, y_ratio])
-
-    method_labels: dict[str, np.ndarray] = {}
-    method_centers: dict[str, np.ndarray | None] = {}
-    selected_gmm_components = args.n_clusters
-    gmm_bic_counts: np.ndarray | None = None
-    gmm_bic_scores: np.ndarray | None = None
-    gmm_bic_range: tuple[int, int] | None = None
-    if args.gmm_select_bic:
-        if args.gmm_min_components < 1:
-            raise ValueError("--gmm-min-components must be >= 1")
-        if args.gmm_max_components < args.gmm_min_components:
-            raise ValueError("--gmm-max-components must be >= --gmm-min-components")
-        selected_gmm_components, gmm_bic_scores, gmm_labels, gmm_centers = select_gmm_by_bic(
-            features_xy, args.gmm_min_components, args.gmm_max_components
-        )
-        gmm_bic_counts = np.arange(args.gmm_min_components, args.gmm_max_components + 1, dtype=int)
-        gmm_bic_range = (args.gmm_min_components, args.gmm_max_components)
-        method_labels["gmm"] = gmm_labels
-        method_centers["gmm"] = gmm_centers
-        print(
-            f"\nSelected GMM component count by BIC: {selected_gmm_components} "
-            f"(searched {args.gmm_min_components}-{args.gmm_max_components})"
-        )
-
-    methods = ["kmeans", "gmm", "dbscan", "free_energy_basins"]
-    for method_name in methods:
-        print(f"\nRunning {method_name}...")
-        if method_name == "gmm" and args.gmm_select_bic:
-            labels = method_labels["gmm"]
-            centers_xy = method_centers["gmm"]
-        else:
-            effective_n_clusters = selected_gmm_components if method_name == "gmm" else args.n_clusters
-            labels, centers_xy = run_clustering_method(
-                method_name,
-                features_xy,
-                x_ratio,
-                y_ratio,
-                effective_n_clusters,
-                args.dbscan_eps,
-                args.dbscan_min_samples,
-                args.basin_grid_size,
-                gmm_bic_range=None,
+    summaries = []
+    sweep_mode = len(shape_resid_candidates) > 1
+    for shape_resids in shape_resid_candidates:
+        candidate_output = output_dir / f"candidate_shape_{slugify_range(shape_resids)}" if sweep_mode else output_dir
+        candidate_output.mkdir(parents=True, exist_ok=True)
+        summaries.append(
+            run_candidate(
+                u=u,
+                output_dir=candidate_output,
+                shape_resids=shape_resids,
+                ctail_resids=args.ctail_resids,
+                method=args.method,
+                n_clusters=args.n_clusters,
+                gmm_select_bic=args.gmm_select_bic,
+                gmm_min_components=args.gmm_min_components,
+                gmm_max_components=args.gmm_max_components,
+                dbscan_eps=args.dbscan_eps,
+                dbscan_min_samples=args.dbscan_min_samples,
+                basin_grid_size=args.basin_grid_size,
+                ctail_threshold=args.ctail_threshold,
+                cluster_map=cluster_map,
+                generate_plots=True,
             )
-        method_labels[method_name] = labels
-        method_centers[method_name] = centers_xy
-
-        unique_labels, counts = np.unique(labels, return_counts=True)
-        for label, count in zip(unique_labels, counts):
-            label_name = "Noise" if int(label) == -1 else f"Cluster {int(label)}"
-            print(f"  {label_name}: {count} frames ({100*count/n_frames:.1f}%)")
-
-    cluster_labels = method_labels[args.method]
-    centers_xy = method_centers[args.method]
-
-    rg_ctail = compute_ctail_rg(u, ctail_sel_str)
-
-    if args.ctail_threshold is None:
-        args.ctail_threshold = np.median(rg_ctail)
-        print(f"Set ctail_threshold to data midpoint (median): {args.ctail_threshold:.21f} Å")
-    else:
-        print(f"Using provided ctail_threshold: {args.ctail_threshold:.1f} Å")
-
-    # Save data outputs
-    np.save(output_dir / "cluster_labels.npy", cluster_labels)
-    np.save(output_dir / "shape_axes.npy", np.column_stack([x_ratio, y_ratio]))
-    np.save(output_dir / "ctail_rg.npy", rg_ctail)
-    with open(output_dir / "cluster_method.json", "w") as f:
-        json.dump(
-            {
-                "method": args.method,
-                "n_clusters": int(args.n_clusters),
-                "selected_gmm_components": int(selected_gmm_components),
-                "gmm_select_bic": args.gmm_select_bic,
-                "gmm_min_components": int(args.gmm_min_components),
-                "gmm_max_components": int(args.gmm_max_components),
-                "dbscan_eps": float(args.dbscan_eps),
-                "dbscan_min_samples": int(args.dbscan_min_samples),
-                "basin_grid_size": int(args.basin_grid_size),
-                "ctail_threshold": float(args.ctail_threshold),
-            },
-            f,
-            indent=2,
         )
-    print("\nSaved: cluster_labels.npy, cluster_method.json, shape_axes.npy, ctail_rg.npy")
 
-    macro_clusters: np.ndarray | None = None
-    if cluster_map is not None:
-        macro_clusters = np.full(n_frames, "Unassigned", dtype=object)
-        for macro_name, cluster_indices in cluster_map.items():
-            for c_idx in cluster_indices:
-                macro_clusters[cluster_labels == c_idx] = macro_name
-        np.save(output_dir / "macro_cluster_labels.npy", macro_clusters)
-        with open(output_dir / "macro_cluster_map.json", "w") as f:
-            json.dump(cluster_map, f, indent=2)
-        print("Saved: macro_cluster_labels.npy, macro_cluster_map.json")
-    else:
-        print("No --cluster-map provided; macro-cluster outputs and bar/pie charts skipped.")
-
-    print("\nGenerating plots...")
-    plot_shape_space_ctail(x_ratio, y_ratio, rg_ctail, plots_dir,
-                           ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    plot_free_energy_landscape(x_ratio, y_ratio, plots_dir,
-                               ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    plot_free_energy_landscape_hexbin(x_ratio, y_ratio, plots_dir,
-                                      ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    plot_shape_indices_histograms(w_rod, w_sphere, w_disk, plots_dir)
-    plot_cluster_shape_space(x_ratio, y_ratio, cluster_labels, centers_xy, args.method, plots_dir,
-                             ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    plot_cluster_hexbin(x_ratio, y_ratio, cluster_labels, args.method, plots_dir,
-                        ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    plot_method_comparison_hexbin(x_ratio, y_ratio, method_labels, plots_dir,
-                                  ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-    if args.gmm_select_bic and gmm_bic_counts is not None and gmm_bic_scores is not None:
-        plot_gmm_bic(gmm_bic_counts, gmm_bic_scores, selected_gmm_components, plots_dir)
-    plot_ca_traces(u, shape_sel_str, cluster_labels, features_xy, centers_xy, args.method, plots_dir)
-    plot_moments_histograms(I1, I2, I3, plots_dir)
-    plot_ctail_rg_clusters_hist(rg_ctail, cluster_labels, plots_dir, ctail_threshold=args.ctail_threshold)
-    plot_ctail_rg_clusters_rows(rg_ctail, cluster_labels, plots_dir, ctail_threshold=args.ctail_threshold)
-
-    if macro_clusters is not None and cluster_map is not None:
-        plot_macro_hexbin(x_ratio, y_ratio, macro_clusters, plots_dir,
-                          ref_ratios=ref_ratios, dynamic_ref_ratios=dynamic_ref_ratios)
-        plot_macro_cluster_bar(macro_clusters, rg_ctail, args.ctail_threshold,
-                                cluster_map, plots_dir)
-        plot_macro_cluster_pie(macro_clusters, rg_ctail, args.ctail_threshold,
-                                cluster_map, plots_dir)
-        plot_ctail_rg_macro_rows(rg_ctail, macro_clusters, cluster_map, plots_dir, 
-                                 ctail_threshold=args.ctail_threshold)
+    if sweep_mode:
+        with open(output_dir / "candidate_sweep_summary.json", "w") as f:
+            json.dump(summaries, f, indent=2)
+        print(f"\nSaved sweep summary to {output_dir / 'candidate_sweep_summary.json'}")
 
     print(f"\nAll outputs: {output_dir}")
-    if cluster_map is None:
-        print(f"\nNext: inspect {plots_dir}/shape_space_{args.method}.png then rerun with:")
-        print(f'  --cluster-map \'{{"Rod":[?],"Wavy":[?,?],"Compact":[?,?,?]}}\'')
 
 
 if __name__ == "__main__":

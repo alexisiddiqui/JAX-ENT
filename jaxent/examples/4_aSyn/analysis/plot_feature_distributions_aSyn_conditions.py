@@ -72,6 +72,24 @@ FEATURE_NAMES = {
 CLUSTER_COLOURS = {"Rod": "grey", "Wavy": "blue", "Compact": "orange"}
 MACRO_NAMES = ["Rod", "Wavy", "Compact"]
 CTAIL_THRESHOLD_DEFAULT = None  # None implies use median of data
+SUBTYPE_FEATURE_DIRECTIONS = {
+    "ctail_rg": 1.0,
+    "nc_distance": 1.0,
+    "termini_contacts": -1.0,
+    "ctail_prot": -1.0,
+}
+AFM_CONDITION_PRIORITY = {
+    "Tris_only": 4.0,
+    "Intracellular": 3.0,
+    "Lysosomal": 2.0,
+    "Extracellular": 1.0,
+}
+AFM_BROAD_TARGETS = {
+    "Tris_only": {"Rod": 0.15, "Wavy": 0.25, "Compact": 0.60},
+    "Intracellular": {"Rod": 0.25, "Wavy": 0.35, "Compact": 0.40},
+    "Lysosomal": {"Rod": 0.10, "Wavy": 0.60, "Compact": 0.30},
+    "Extracellular": {"Rod": 0.05, "Wavy": 0.75, "Compact": 0.20},
+}
 
 # Reference PDB Definitions (Consistency with analyse_aSyn_ensemble.py)
 # Define relative to the jaxent root
@@ -671,6 +689,242 @@ def load_replicate_weights(
         replicate_weights[condition] = rows
 
     return replicate_weights
+
+
+def compute_effective_sample_size(weights: np.ndarray) -> float:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        return 0.0
+    normed = weights / total
+    return float(1.0 / np.sum(normed ** 2))
+
+
+def top_frame_weight(weights: np.ndarray) -> float:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        return 0.0
+    return float(np.max(weights / total))
+
+
+def compute_label_fractions(
+    weights: np.ndarray,
+    labels: np.ndarray,
+    ordered_labels: list[str],
+) -> dict[str, float]:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        raise ValueError("Weights sum to zero when computing label fractions.")
+    fractions = {}
+    for label in ordered_labels:
+        fractions[label] = float(np.sum(weights[labels == label]) / total)
+    return fractions
+
+
+def build_subtype_labels(
+    macro_labels: np.ndarray,
+    feature_values: np.ndarray,
+    feature_name: str,
+) -> tuple[np.ndarray, dict[str, float]]:
+    direction = SUBTYPE_FEATURE_DIRECTIONS[feature_name]
+    subtype_labels = np.full(macro_labels.shape, "Unassigned", dtype=object)
+    thresholds: dict[str, float] = {}
+
+    for macro in MACRO_NAMES:
+        mask = macro_labels == macro
+        if not np.any(mask):
+            continue
+        threshold = float(np.median(feature_values[mask]))
+        thresholds[macro] = threshold
+        if direction > 0:
+            extended_mask = mask & (feature_values >= threshold)
+        else:
+            extended_mask = mask & (feature_values <= threshold)
+        compact_mask = mask & ~extended_mask
+        subtype_labels[compact_mask] = f"{macro}_a"
+        subtype_labels[extended_mask] = f"{macro}_b"
+
+    return subtype_labels, thresholds
+
+
+def extract_state_fractions(weights: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+    state_names = [f"{macro}_{suffix}" for macro in MACRO_NAMES for suffix in ("a", "b")]
+    return compute_label_fractions(weights, labels, state_names)
+
+
+def broad_macro_fractions_from_state(state_fractions: dict[str, float]) -> dict[str, float]:
+    return {
+        macro: float(state_fractions.get(f"{macro}_a", 0.0) + state_fractions.get(f"{macro}_b", 0.0))
+        for macro in MACRO_NAMES
+    }
+
+
+def distribution_similarity(dist_a: dict[str, float], dist_b: dict[str, float], keys: list[str]) -> float:
+    vec_a = np.array([dist_a[k] for k in keys], dtype=float)
+    vec_b = np.array([dist_b[k] for k in keys], dtype=float)
+    return float(1.0 - 0.5 * np.sum(np.abs(vec_a - vec_b)))
+
+
+def ordering_score(condition_scores: dict[str, float]) -> float:
+    ordered_conditions = ["Tris_only", "Intracellular", "Lysosomal", "Extracellular"]
+    numer = 0.0
+    denom = 0.0
+    for idx, left in enumerate(ordered_conditions):
+        for right in ordered_conditions[idx + 1:]:
+            weight = AFM_CONDITION_PRIORITY[left]
+            denom += weight
+            numer += weight if condition_scores[left] >= condition_scores[right] else 0.0
+    return numer / denom if denom > 0 else 0.0
+
+
+def load_candidate_dirs(candidate_root: Path) -> list[Path]:
+    candidates = []
+    for child in sorted(candidate_root.iterdir()):
+        if child.is_dir() and (child / "coarse_cluster_labels.npy").exists():
+            candidates.append(child)
+    return candidates
+
+
+def summarize_candidate_model(
+    candidate_dir: Path,
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+    macro_labels: np.ndarray,
+    proxy_features: dict[str, np.ndarray],
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    rows: list[dict[str, object]] = []
+    stability_rows: list[dict[str, object]] = []
+    state_rows: list[dict[str, object]] = []
+    baseline_weights = np.full(len(macro_labels), 1.0 / len(macro_labels))
+
+    for proxy_name, feature_values in proxy_features.items():
+        subtype_labels, thresholds = build_subtype_labels(macro_labels, feature_values, proxy_name)
+        baseline_state = extract_state_fractions(baseline_weights, subtype_labels)
+        baseline_macro = broad_macro_fractions_from_state(baseline_state)
+
+        aggregate_macro_by_mode: dict[str, dict[str, dict[str, float]]] = {"mean": {}, "median": {}}
+        divergence_values = []
+        ess_values = []
+        top_values = []
+
+        for aggregation in ("mean", "median"):
+            condition_weights = load_condition_weights(
+                metric_dir, cfg, cluster_labels, n_per_cluster, len(macro_labels),
+                aggregation=aggregation,
+            )
+            for condition in cfg.ensembles:
+                weights = condition_weights[condition]
+                if weights is None:
+                    continue
+                state_fractions = extract_state_fractions(weights, subtype_labels)
+                macro_fractions = broad_macro_fractions_from_state(state_fractions)
+                aggregate_macro_by_mode[aggregation][condition] = macro_fractions
+                state_rows.append(
+                    {
+                        "candidate": candidate_dir.name,
+                        "metric": metric_dir.name,
+                        "proxy": proxy_name,
+                        "aggregation": aggregation,
+                        "condition": condition,
+                        **state_fractions,
+                    }
+                )
+
+        rep_weights = load_replicate_weights(metric_dir, cfg, len(macro_labels))
+        for condition in cfg.ensembles:
+            reps = rep_weights[condition]
+            if reps is None:
+                continue
+            for rep_idx, row in enumerate(reps, start=1):
+                ess = compute_effective_sample_size(row)
+                max_weight = top_frame_weight(row)
+                ess_values.append(ess)
+                top_values.append(max_weight)
+                stability_rows.append(
+                    {
+                        "candidate": candidate_dir.name,
+                        "metric": metric_dir.name,
+                        "proxy": proxy_name,
+                        "condition": condition,
+                        "series": f"replicate_{rep_idx}",
+                        "ess": ess,
+                        "top_frame_weight": max_weight,
+                    }
+                )
+
+            if condition in aggregate_macro_by_mode["mean"] and condition in aggregate_macro_by_mode["median"]:
+                divergence = 0.5 * np.sum(
+                    np.abs(
+                        np.array([aggregate_macro_by_mode["mean"][condition][macro] for macro in MACRO_NAMES]) -
+                        np.array([aggregate_macro_by_mode["median"][condition][macro] for macro in MACRO_NAMES])
+                    )
+                )
+                divergence_values.append(float(divergence))
+
+        mean_macro = aggregate_macro_by_mode["mean"]
+        if not mean_macro:
+            continue
+
+        native_similarity = {
+            condition: distribution_similarity(mean_macro[condition], baseline_macro, MACRO_NAMES)
+            for condition in mean_macro
+        }
+        afm_similarity = {
+            condition: distribution_similarity(mean_macro[condition], AFM_BROAD_TARGETS[condition], MACRO_NAMES)
+            for condition in mean_macro
+        }
+        subtype_separation = []
+        for macro in MACRO_NAMES:
+            mask = macro_labels == macro
+            if not np.any(mask):
+                continue
+            threshold = thresholds.get(macro)
+            if threshold is None:
+                continue
+            subtype_labels_macro = subtype_labels[mask]
+            values_macro = feature_values[mask]
+            mean_a = float(np.mean(values_macro[subtype_labels_macro == f"{macro}_a"]))
+            mean_b = float(np.mean(values_macro[subtype_labels_macro == f"{macro}_b"]))
+            denom = float(np.std(values_macro) + 1.0e-8)
+            subtype_separation.append(abs(mean_b - mean_a) / denom)
+
+        ordering = ordering_score(native_similarity)
+        afm_score = float(
+            np.average(
+                [afm_similarity[c] for c in sorted(afm_similarity)],
+                weights=[AFM_CONDITION_PRIORITY[c] for c in sorted(afm_similarity)],
+            )
+        )
+        stability_penalty = float(np.mean(divergence_values) + max(0.0, 5.0 - np.mean(ess_values or [0.0])) / 10.0)
+        subtype_score = float(np.mean(subtype_separation)) if subtype_separation else 0.0
+        total_score = ordering + 0.5 * afm_score + 0.15 * subtype_score - 0.35 * stability_penalty
+
+        rows.append(
+            {
+                "candidate": candidate_dir.name,
+                "metric": metric_dir.name,
+                "proxy": proxy_name,
+                "ordering_score": ordering,
+                "afm_broad_score": afm_score,
+                "subtype_separation_score": subtype_score,
+                "mean_median_divergence": float(np.mean(divergence_values)) if divergence_values else 0.0,
+                "mean_ess": float(np.mean(ess_values)) if ess_values else 0.0,
+                "min_ess": float(np.min(ess_values)) if ess_values else 0.0,
+                "max_top_frame_weight": float(np.max(top_values)) if top_values else 0.0,
+                "stability_penalty": stability_penalty,
+                "total_score": total_score,
+                "tris_similarity": native_similarity.get("Tris_only", np.nan),
+                "intracellular_similarity": native_similarity.get("Intracellular", np.nan),
+                "lysosomal_similarity": native_similarity.get("Lysosomal", np.nan),
+                "extracellular_similarity": native_similarity.get("Extracellular", np.nan),
+            }
+        )
+
+    return rows, stability_rows, state_rows
 
 
 def compute_macro_fraction_rows(
@@ -1390,6 +1644,62 @@ def export_meta_cluster_fraction_summary_per_metric(
     print(f"Saved {out_path}")
 
 
+def export_candidate_model_ranking(
+    metric_dir: Path,
+    candidate_dirs: list[Path],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    proxy_features: dict[str, np.ndarray],
+) -> None:
+    ranking_rows: list[dict[str, object]] = []
+    stability_rows: list[dict[str, object]] = []
+    state_rows: list[dict[str, object]] = []
+
+    for candidate_dir in candidate_dirs:
+        macro_labels = np.load(candidate_dir / "coarse_cluster_labels.npy", allow_pickle=True)
+        cluster_labels_path = candidate_dir / "cluster_labels.npy"
+        cluster_labels = np.load(cluster_labels_path) if cluster_labels_path.exists() else None
+        n_per_cluster = np.bincount(cluster_labels) if cluster_labels is not None else None
+        cand_rows, cand_stability, cand_states = summarize_candidate_model(
+            candidate_dir=candidate_dir,
+            metric_dir=metric_dir,
+            cfg=cfg,
+            macro_labels=macro_labels,
+            proxy_features=proxy_features,
+            cluster_labels=cluster_labels,
+            n_per_cluster=n_per_cluster,
+        )
+        ranking_rows.extend(cand_rows)
+        stability_rows.extend(cand_stability)
+        state_rows.extend(cand_states)
+
+    ranking_rows.sort(key=lambda row: row["total_score"], reverse=True)
+
+    if ranking_rows:
+        ranking_path = output_dir / f"candidate_model_summary_{metric_dir.name}.csv"
+        with open(ranking_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(ranking_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(ranking_rows)
+        print(f"Saved {ranking_path}")
+
+    if stability_rows:
+        stability_path = output_dir / f"candidate_replicate_stability_{metric_dir.name}.csv"
+        with open(stability_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(stability_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(stability_rows)
+        print(f"Saved {stability_path}")
+
+    if state_rows:
+        state_path = output_dir / f"candidate_condition_fractions_{metric_dir.name}.csv"
+        with open(state_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(state_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(state_rows)
+        print(f"Saved {state_path}")
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -1419,6 +1729,8 @@ def main():
                         help="Path to shape_axes.npy from inertia_moments_clustering.py")
     parser.add_argument("--macro-cluster-labels-npy", default=None,
                         help="Path to macro_cluster_labels.npy from inertia_moments_clustering.py")
+    parser.add_argument("--candidate-cluster-root", default=None,
+                        help="Directory containing candidate_shape_* outputs from inertia_moments_clustering.py")
     parser.add_argument("--ctail-rg-npy", default=None,
                         help="Path to ctail_rg.npy (all-atom) from clustering script; "
                              "if omitted the CA-based ctail_rg already computed is used")
@@ -1472,6 +1784,7 @@ def main():
 
     shape_axes_npy = _resolve_optional(args.shape_axes_npy)
     macro_cluster_labels_npy = _resolve_optional(args.macro_cluster_labels_npy)
+    candidate_cluster_root = _resolve_optional(args.candidate_cluster_root)
     ctail_rg_npy = _resolve_optional(args.ctail_rg_npy)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1484,6 +1797,7 @@ def main():
     print(f"traj_xtc:         {traj_xtc}")
     print(f"shape_axes_npy:   {shape_axes_npy}")
     print(f"macro_labels_npy: {macro_cluster_labels_npy}")
+    print(f"candidate_root:   {candidate_cluster_root}")
     print(f"ctail_rg_npy:     {ctail_rg_npy}")
     print(f"ctail_threshold:  {args.ctail_threshold} Å")
     print(f"weight_aggregation: {args.weight_aggregation}")
@@ -1544,6 +1858,7 @@ def main():
     shape_axes: np.ndarray | None = None
     macro_labels: np.ndarray | None = None
     ctail_rg_for_bar = ctail_rg  # default: CA-based from above
+    candidate_dirs: list[Path] = []
 
     if shape_axes_npy is not None:
         if shape_axes_npy.exists():
@@ -1565,6 +1880,13 @@ def main():
             ctail_rg_for_bar = np.load(ctail_rg_npy)
         else:
             print(f"WARNING: --ctail-rg-npy not found at {ctail_rg_npy}, using CA-based ctail_rg")
+
+    if candidate_cluster_root is not None:
+        if candidate_cluster_root.exists():
+            candidate_dirs = load_candidate_dirs(candidate_cluster_root)
+            print(f"Loaded {len(candidate_dirs)} candidate cluster directories from {candidate_cluster_root}")
+        else:
+            print(f"WARNING: --candidate-cluster-root not found at {candidate_cluster_root}, skipping candidate ranking")
 
     if args.ctail_threshold is None:
         args.ctail_threshold = np.median(ctail_rg_for_bar)
@@ -1714,6 +2036,21 @@ def main():
                 cfg,
                 output_dir,
                 args.weight_aggregation,
+            )
+
+        if candidate_dirs:
+            proxy_features = {
+                "ctail_rg": ctail_rg_for_bar,
+                "nc_distance": nc_dist,
+                "termini_contacts": termini_contacts.astype(float),
+                "ctail_prot": ctail_prot,
+            }
+            export_candidate_model_ranking(
+                metric_dir=metric_dir,
+                candidate_dirs=candidate_dirs,
+                cfg=cfg,
+                output_dir=output_dir,
+                proxy_features=proxy_features,
             )
 
     print("\nAll plots saved to:", output_dir)
