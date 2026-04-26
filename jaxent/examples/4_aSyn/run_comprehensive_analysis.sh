@@ -6,8 +6,12 @@ cd "$(dirname "$0")" || exit 1
 
 ANA_DIR="analysis"
 DIR_WD="$(pwd)/fitting"
-RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_5000_20260412_001809"
+RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_test_5000_20260420_222302"
 RESULTS_DIR="${1:-$RESULTS_DIR_DEFAULT}"
+
+# Clustering output dir — run data/inertia_moments_clustering.py separately before this script.
+# Shape/cluster plots are added automatically when the output files exist.
+CLUSTER_DIR="$(pwd)/data/_cluster_inertia"
 
 LOG_DIR="${RESULTS_DIR}/logs"
 mkdir -p "$LOG_DIR"
@@ -22,6 +26,7 @@ EXTRACT_STATUS="not_run"
 RECOVERY_STATUS="not_run"
 WEIGHTS_STATUS="not_run"
 LOSS_STATUS="not_run"
+FEAT_DIST_STATUS="not_run"
 
 run_step() {
   local step_name="$1"
@@ -136,16 +141,29 @@ else
   EXTRACT_STATUS="fail"
 fi
 
-FEAT_DIST_STATUS="not_run"
+# Build plot_feature_distributions args; add clustering outputs if present
+FEAT_DIST_ARGS=(
+  python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py"
+    --extracted-dir "$EXTRACT_DIR"
+    --feature-npz "$(pwd)/data/_aSyn/tris_MD/features/aSyn_featurised.npz"
+    --topology-json "$(pwd)/data/_aSyn/tris_MD/features/topology.json"
+    --top-pdb "$(pwd)/data/_aSyn/tris_MD/md_mol_center_coil.pdb"
+    --traj-xtc "$(pwd)/data/_aSyn/tris_MD/tris_all_combined.xtc"
+    --absolute-paths
+)
+if [ -f "$CLUSTER_DIR/cluster_labels.npy" ]; then
+  FEAT_DIST_ARGS+=(
+    --cluster-labels-npy "$CLUSTER_DIR/cluster_labels.npy"
+    --shape-axes-npy     "$CLUSTER_DIR/shape_axes.npy"
+    --ctail-rg-npy       "$CLUSTER_DIR/ctail_rg.npy"
+  )
+fi
+if [ -f "$CLUSTER_DIR/macro_cluster_labels.npy" ]; then
+  FEAT_DIST_ARGS+=(--macro-cluster-labels-npy "$CLUSTER_DIR/macro_cluster_labels.npy")
+fi
 
 if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
-  python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py" \
-    --extracted-dir "$EXTRACT_DIR" \
-    --feature-npz "$(pwd)/data/_aSyn/tris_MD/features/aSyn_featurised.npz" \
-    --topology-json "$(pwd)/data/_aSyn/tris_MD/features/topology.json" \
-    --top-pdb "$(pwd)/data/_aSyn/tris_MD/md_mol_center_coil.pdb" \
-    --traj-xtc "$(pwd)/data/_aSyn/tris_MD/tris_all_combined_filtered_10.xtc" \
-    --absolute-paths; then
+  "${FEAT_DIST_ARGS[@]}"; then
   FEAT_DIST_STATUS="ok"
 else
   FEAT_DIST_STATUS="fail"

@@ -62,9 +62,9 @@ if __name__ == "__main__":
 
     # A multi-stop rainbow-ish ramp
     rainbow_stops = [
-        (0,   255, 0),   # green
+        (255, 165, 0),   # orange
         (255, 255, 255),   # white
-        # (0,   255, 0  ),   # green
+        (0, 0, 255  ),   # blue
         # (255, 255, 0  ),   # yellow
         # (255, 0,   0  ),   # red
     ]

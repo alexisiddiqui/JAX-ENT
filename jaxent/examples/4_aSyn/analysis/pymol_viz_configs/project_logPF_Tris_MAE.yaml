@@ -1,0 +1,42 @@
+# Pfactors: /Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation/median.dat
+# target npz (key: pred_ln_pf): /Users/alexi/Library/CloudStorage/OneDrive-Nexus365/Rotation_Projects/Rotation_3/Papers/jaxENT/MoPrP Clusters/Confirmation/_extracted__processed__optimise_quick_test_FIGURE_SIGMA_5000__20260331_202315/val_loss_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz
+# topology: /Users/alexi/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb 
+
+render:
+  spectrum_colours: "white_black"
+  spectrum_range: [0.0, 10.0]
+  putty_transform: 7
+  putty_range: [1.5, 2.5]
+  reference_transparency: 0.1
+  orthoscopic_view: true
+  antialias: 2
+  ray_trace_mode: 0
+  ray_transparency_oblique: true
+  view: [
+     0.914935648,   -0.310222954,    0.258174568,
+     0.045961432,    0.715604126,    0.696991920,
+    -0.400973916,   -0.625836968,    0.668990552,
+     0.000000000,    0.000000000, -225.683685303,
+    86.123039246,  -61.275497437,   35.712631226,
+   121.841857910,  329.525848389,   20.000000000
+  ]
+
+
+
+general:
+  references:
+    - "data/_aSyn/2kkw.pdb"
+  reference_labels:
+    - "aSyn"
+  working_dir: "/Users/alexi/JAX-ENT/jaxent/examples/4_aSyn"
+
+output:
+  save_png: false
+  save_session: false
+  output_prefix: "aSyn_logPFs"
+
+project_logpfs:
+  reference_data: "data/_aSyn/aSyn_PF_Tris_only.dat"
+  target_data: "fitting/_processed__optimise_aSyn_BV_test_5000_20260420_222302/_extracted__processed__optimise_aSyn_BV_test_5000_20260420_222302/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
+  target_topology: "data/_aSyn/tris_MD/md_mol_center_coil.pdb"
+  metric: "difference_absolute"  # Options: protection_factor, uncertainty_sd, uncertainty_rsd, difference_signed, difference_absolute

@@ -49,8 +49,8 @@ output:
 #   transparency_metric: "weight" # opacity → weight rank (or "RMSD" for RMSD rank)
 
 top_n:
-  trajectory: "data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_plddt_ordered.xtc,data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_first_frame.pdb"
-  weights: "fitting/_processed__optimise_aSyn_BV_20260409_012220/_extracted__processed__optimise_aSyn_BV_20260409_012220/val_mse_min/Extracellular_MSE_sequence_cluster_L1_selected.npz"
+  trajectory: "data/_aSyn/tris_MD/tris_all_combined.xtc,data/_aSyn/tris_MD/md_mol_center_coil.pdb"
+  weights: "fitting/_processed__optimise_aSyn_BV_test_5000_20260420_222302/_extracted__processed__optimise_aSyn_BV_test_5000_20260420_222302/val_mse_min/Extracellular_MSE_sequence_cluster_L1_selected.npz"
   colour_metric: "weight"     
   top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  

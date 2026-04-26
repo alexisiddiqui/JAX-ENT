@@ -91,6 +91,7 @@ exclude = [
 [dependency-groups]
 examples = [
     "mdakit-sasa",
+    "py3dmol",
 ]
 
 
