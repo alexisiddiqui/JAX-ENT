@@ -989,7 +989,7 @@ def plot_ctail_rg_clusters_rows(
 
     axes[-1].set_xlabel(r"C-Tail $R_g$ (Å)", fontsize=14)
     plt.suptitle("C-Tail Radius of Gyration Distribution by Shape Cluster",
-                 fontsize=16, y=1.02)
+                 fontsize=16)
     sns.despine()
     plt.tight_layout()
     _savefig(plots_dir / "ctail_rg_clusters_rows.png", dpi=300, bbox_inches="tight")
@@ -1167,7 +1167,7 @@ def plot_ctail_rg_macro_rows(
 
     axes[-1].set_xlabel(r"C-Tail $R_g$ (Å)", fontsize=14)
     plt.suptitle("C-Tail Radius of Gyration Distribution by Macro-Cluster",
-                 fontsize=15, y=1.02)
+                 fontsize=15)
     sns.despine()
     plt.tight_layout()
     _savefig(plots_dir / "ctail_rg_macro_rows.png", dpi=300, bbox_inches="tight")
@@ -1221,14 +1221,14 @@ def main() -> None:
         "--basin-grid-size", type=int, default=25,
         help="Grid size for KDE/free-energy basin assignment (default: 15)"
     )
-    parser.add_argument("--shape-resids", default="1:96",
+    parser.add_argument("--shape-resids", default="1:135",
                         help="Residue range for shape region 'start:end' PDB numbering (default: 1:96)")
     parser.add_argument("--ctail-resids", default="115:140",
                         help="Residue range for C-tail Rg 'start:end' PDB numbering (default: 115:140)")
     parser.add_argument("--ctail-threshold", type=float, default=None,
                         help="C-tail Rg threshold in Å. If omitted, the median of the data is used.")
     parser.add_argument(
-        "--cluster-map", default='{"Rod":[2],"Wavy":[1,4],"Compact":[0,3,5,6]}',
+        "--cluster-map", default='{"Rod":[2],"Wavy":[1,4,7],"Compact":[0,3,5,6]}',
         help=(
             'JSON mapping macro names to k-cluster IDs, e.g. '
             '\'{"Rod":[2],"Wavy":[1,3],"Compact":[0,4,5]}\'. '

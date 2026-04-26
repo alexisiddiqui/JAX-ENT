@@ -448,7 +448,6 @@ def plot_feature_distributions_per_metric(
 
     fig.suptitle(
         f"Feature Distributions — {metric_name}",
-        y=0.995,
         fontsize=13,
         fontweight="bold",
     )
@@ -591,7 +590,6 @@ def plot_radgyr_distributions_per_metric(
 
     fig.suptitle(
         f"RadGyr Feature Distributions — {metric_name}",
-        y=0.995,
         fontsize=13,
         fontweight="bold",
     )
@@ -777,7 +775,7 @@ def plot_shape_order_per_metric(
             remove_top_right_spines(ax)
 
     fig.suptitle(f"Shape Order (Barycentric Coordinates) — {metric_name}",
-                 y=0.995, fontsize=13, fontweight="bold")
+                 fontsize=13, fontweight="bold")
     out_path = output_dir / f"shape_order_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -875,7 +873,7 @@ def plot_free_energy_landscape_per_metric(
         cbar.set_ticks(range(9))
 
     fig.suptitle(f"Free Energy Landscape — {metric_name}",
-                 y=0.995, fontsize=13, fontweight="bold")
+                 fontsize=13, fontweight="bold")
     out_path = output_dir / f"free_energy_landscape_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -986,7 +984,7 @@ def plot_free_energy_difference_per_metric(
         cbar.set_label(r"$\Delta\Delta F / k_BT$ (weighted − unweighted)", fontsize=12)
 
     fig.suptitle(f"Free Energy Difference (Weighted − Unweighted) — {metric_name}",
-                 y=0.995, fontsize=13, fontweight="bold")
+                 fontsize=13, fontweight="bold")
     out_path = output_dir / f"free_energy_difference_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1079,7 +1077,7 @@ def plot_free_energy_uncertainty_per_metric(
         cbar.set_label(r"$\sigma(\Delta F) / k_BT$ across replicates", fontsize=12)
 
     fig.suptitle(f"Free Energy Uncertainty (Replicate Std Dev) — {metric_name}",
-                 y=0.995, fontsize=13, fontweight="bold")
+                 fontsize=13, fontweight="bold")
     out_path = output_dir / f"free_energy_uncertainty_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1167,7 +1165,8 @@ def plot_meta_cluster_fractions_per_metric(
     fig.suptitle(
         f"Weighted Meta-Cluster Fractions — {metric_name}\n"
         f"(C-tail threshold = {ctail_threshold} Å)",
-        y=1.01, fontsize=13, fontweight="bold",
+        fontsize=13,
+        fontweight="bold",
     )
     out_path = output_dir / f"meta_cluster_fractions_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -1246,7 +1245,7 @@ def plot_ctail_per_meta_cluster_per_metric(
             remove_top_right_spines(ax)
 
     fig.suptitle(f"C-tail $R_g$ per Meta-Cluster — {metric_name}",
-                 y=1.01, fontsize=13, fontweight="bold")
+                 fontsize=13, fontweight="bold")
     out_path = output_dir / f"ctail_per_meta_cluster_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -1320,7 +1319,7 @@ def plot_meta_cluster_replicates_per_metric(
     fig.suptitle(
         f"Replicate Macro Fractions — {metric_name}\n"
         f"(aggregate = {weight_aggregation})",
-        y=1.02, fontsize=13, fontweight="bold",
+        fontsize=13, fontweight="bold",
     )
     out_path = output_dir / f"meta_cluster_replicates_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -1425,8 +1424,8 @@ def main():
                              "if omitted the CA-based ctail_rg already computed is used")
     parser.add_argument("--ctail-threshold", type=float, default=CTAIL_THRESHOLD_DEFAULT,
                         help=f"C-tail Rg threshold in Å for extended/compact split (default: data median)")
-    parser.add_argument("--shape-sel", default="resid 1-96 and name CA",
-                        help="Selection range for inertia tensor shape-space plots (default: 'resid 1-96 and name CA')")
+    parser.add_argument("--shape-sel", default="resid 1-135 and name CA",
+                        help="Selection range for inertia tensor shape-space plots (default: 'resid 1-135 and name CA')")
     parser.add_argument("--metrics", nargs="+", default="val_mse_min",
                         help="Optional list of metric subdirectories to process (e.g. 'bv_bh_max'). If omitted, all detected are processed.")
     args = parser.parse_args()
