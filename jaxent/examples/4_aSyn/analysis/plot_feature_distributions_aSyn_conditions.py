@@ -85,10 +85,16 @@ AFM_CONDITION_PRIORITY = {
     "Extracellular": 1.0,
 }
 AFM_BROAD_TARGETS = {
-    "Tris_only": {"Rod": 0.15, "Wavy": 0.25, "Compact": 0.60},
-    "Intracellular": {"Rod": 0.25, "Wavy": 0.35, "Compact": 0.40},
-    "Lysosomal": {"Rod": 0.10, "Wavy": 0.60, "Compact": 0.30},
-    "Extracellular": {"Rod": 0.05, "Wavy": 0.75, "Compact": 0.20},
+    "Tris_only": {"Rod": 0.16, "Wavy": 0.84, "Compact": 0.0},
+    "Intracellular": {"Rod": 0.25, "Wavy": 0.54, "Compact": 0.21},
+    "Lysosomal": {"Rod": 0.20, "Wavy": 0.0, "Compact": 0.80},
+    "Extracellular": {"Rod": 0.20, "Wavy": 0.0, "Compact": 0.80},
+}
+AFM_NARROW_TARGETS = {
+    "Tris_only": {"p1": 0.16, "p2a": 0.60, "p2b": 0.24, "p3a": 0.0, "p3b": 0.0},
+    "Intracellular": {"p1": 0.25, "p2a": 0.46, "p2b": 0.08, "p3a": 0.08, "p3b": 0.13},
+    "Lysosomal": {"p1": 0.20, "p2a": 0.0, "p2b": 0.0, "p3a": 0.59, "p3b": 0.21},
+    "Extracellular": {"p1": 0.20, "p2a": 0.0, "p2b": 0.0, "p3a": 0.0, "p3b": 0.80},
 }
 
 # Reference PDB Definitions (Consistency with analyse_aSyn_ensemble.py)
@@ -761,6 +767,17 @@ def broad_macro_fractions_from_state(state_fractions: dict[str, float]) -> dict[
     }
 
 
+def narrow_afm_fractions_from_state(state_fractions: dict[str, float]) -> dict[str, float]:
+    """Map current macro split fractions onto the AFM narrow labels."""
+    return {
+        "p1": float(state_fractions.get("Rod_a", 0.0) + state_fractions.get("Rod_b", 0.0)),
+        "p2a": float(state_fractions.get("Compact_a", 0.0)),
+        "p2b": float(state_fractions.get("Compact_b", 0.0)),
+        "p3a": float(state_fractions.get("Wavy_a", 0.0)),
+        "p3b": float(state_fractions.get("Wavy_b", 0.0)),
+    }
+
+
 def distribution_similarity(dist_a: dict[str, float], dist_b: dict[str, float], keys: list[str]) -> float:
     vec_a = np.array([dist_a[k] for k in keys], dtype=float)
     vec_b = np.array([dist_b[k] for k in keys], dtype=float)
@@ -805,8 +822,10 @@ def summarize_candidate_model(
         subtype_labels, thresholds = build_subtype_labels(macro_labels, feature_values, proxy_name)
         baseline_state = extract_state_fractions(baseline_weights, subtype_labels)
         baseline_macro = broad_macro_fractions_from_state(baseline_state)
+        baseline_narrow = narrow_afm_fractions_from_state(baseline_state)
 
         aggregate_macro_by_mode: dict[str, dict[str, dict[str, float]]] = {"mean": {}, "median": {}}
+        aggregate_state_by_mode: dict[str, dict[str, dict[str, float]]] = {"mean": {}, "median": {}}
         divergence_values = []
         ess_values = []
         top_values = []
@@ -823,6 +842,7 @@ def summarize_candidate_model(
                 state_fractions = extract_state_fractions(weights, subtype_labels)
                 macro_fractions = broad_macro_fractions_from_state(state_fractions)
                 aggregate_macro_by_mode[aggregation][condition] = macro_fractions
+                aggregate_state_by_mode[aggregation][condition] = state_fractions
                 state_rows.append(
                     {
                         "candidate": candidate_dir.name,
@@ -866,6 +886,7 @@ def summarize_candidate_model(
                 divergence_values.append(float(divergence))
 
         mean_macro = aggregate_macro_by_mode["mean"]
+        mean_state = aggregate_state_by_mode["mean"]
         if not mean_macro:
             continue
 
@@ -876,6 +897,14 @@ def summarize_candidate_model(
         afm_similarity = {
             condition: distribution_similarity(mean_macro[condition], AFM_BROAD_TARGETS[condition], MACRO_NAMES)
             for condition in mean_macro
+        }
+        narrow_similarity = {
+            condition: distribution_similarity(
+                narrow_afm_fractions_from_state(mean_state[condition]),
+                AFM_NARROW_TARGETS[condition],
+                list(AFM_NARROW_TARGETS[condition].keys()),
+            )
+            for condition in mean_state
         }
         subtype_separation = []
         for macro in MACRO_NAMES:
@@ -899,9 +928,15 @@ def summarize_candidate_model(
                 weights=[AFM_CONDITION_PRIORITY[c] for c in sorted(afm_similarity)],
             )
         )
+        narrow_score = float(
+            np.average(
+                [narrow_similarity[c] for c in sorted(narrow_similarity)],
+                weights=[AFM_CONDITION_PRIORITY[c] for c in sorted(narrow_similarity)],
+            )
+        )
         stability_penalty = float(np.mean(divergence_values) + max(0.0, 5.0 - np.mean(ess_values or [0.0])) / 10.0)
         subtype_score = float(np.mean(subtype_separation)) if subtype_separation else 0.0
-        total_score = ordering + 0.5 * afm_score + 0.15 * subtype_score - 0.35 * stability_penalty
+        total_score = ordering + 0.40 * afm_score + 0.40 * narrow_score - 0.30 * stability_penalty
 
         rows.append(
             {
@@ -910,6 +945,7 @@ def summarize_candidate_model(
                 "proxy": proxy_name,
                 "ordering_score": ordering,
                 "afm_broad_score": afm_score,
+                "afm_narrow_score": narrow_score,
                 "subtype_separation_score": subtype_score,
                 "mean_median_divergence": float(np.mean(divergence_values)) if divergence_values else 0.0,
                 "mean_ess": float(np.mean(ess_values)) if ess_values else 0.0,
@@ -1736,8 +1772,8 @@ def main():
                              "if omitted the CA-based ctail_rg already computed is used")
     parser.add_argument("--ctail-threshold", type=float, default=CTAIL_THRESHOLD_DEFAULT,
                         help=f"C-tail Rg threshold in Å for extended/compact split (default: data median)")
-    parser.add_argument("--shape-sel", default="resid 1-135 and name CA",
-                        help="Selection range for inertia tensor shape-space plots (default: 'resid 1-135 and name CA')")
+    parser.add_argument("--shape-sel", default="resid 1-114 and name CA",
+                        help="Selection range for inertia tensor shape-space plots (default: 'resid 1-114 and name CA')")
     parser.add_argument("--metrics", nargs="+", default="val_mse_min",
                         help="Optional list of metric subdirectories to process (e.g. 'bv_bh_max'). If omitted, all detected are processed.")
     args = parser.parse_args()

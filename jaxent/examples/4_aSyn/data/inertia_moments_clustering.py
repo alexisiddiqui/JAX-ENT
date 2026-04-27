@@ -19,8 +19,8 @@ Outputs (in --output-dir):
   cluster_method.json         clustering method metadata
   shape_axes.npy              (n_frames, 2) array [x_ratio=I1/I3, y_ratio=I2/I3]
   ctail_rg.npy                C-tail radius of gyration per frame (Å, all-atom)
-  macro_cluster_labels.npy    per-frame macro-cluster strings (if --cluster-map given)
-  macro_cluster_map.json      echo of --cluster-map for reproducibility
+  macro_cluster_labels.npy    per-frame macro-cluster strings (names)
+  macro_cluster_map.json      echo of the mapping used for macro_cluster_labels.npy
   plots/                      all figures
 
 Usage (two-pass workflow):
@@ -1001,6 +1001,67 @@ def plot_ca_traces(
     print(f"Saved cluster_ca_traces_{method}.png")
 
 
+def plot_ca_traces_macro(
+    u: mda.Universe,
+    shape_sel_str: str,
+    cluster_labels: np.ndarray,
+    cluster_to_macro: dict[int, str],
+    features_xy: np.ndarray,
+    centers_xy: np.ndarray | None,
+    method: str,
+    plots_dir: Path,
+) -> None:
+    valid_clusters = sorted(int(v) for v in np.unique(cluster_labels) if v >= 0)
+    if not valid_clusters:
+        print(f"Skipped cluster_ca_traces_macro_{method}.png (no non-noise clusters).")
+        return
+
+    centroid_frames = []
+    for c in valid_clusters:
+        mask = cluster_labels == c
+        pts = features_xy[mask]
+        if centers_xy is not None and c < len(centers_xy):
+            center = centers_xy[c]
+            distances = np.linalg.norm(pts - center, axis=1)
+            frame_idx = int(np.where(mask)[0][np.argmin(distances)])
+        else:
+            frame_idx = int(np.where(mask)[0][0])
+        centroid_frames.append(frame_idx)
+
+    ca_sel = u.select_atoms("name CA and (" + shape_sel_str + ")")
+
+    ncols = min(3, len(valid_clusters))
+    nrows = (len(valid_clusters) + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows),
+                             constrained_layout=True)
+    axes_flat = np.array(axes).flatten()
+
+    for idx, fidx in enumerate(centroid_frames):
+        cluster_id = valid_clusters[idx]
+        macro_name = cluster_to_macro.get(cluster_id, "Unassigned")
+        color = CLUSTER_COLOURS.get(macro_name, "grey")
+
+        u.trajectory[fidx]
+        pos = ca_sel.positions  # Angstroms, shape (n_ca, 3)
+        ax = axes_flat[idx]
+        ax.plot(pos[:, 0], pos[:, 1], color=color, lw=1.5, alpha=0.8)
+        ax.scatter(pos[:, 0], pos[:, 1], s=8, color=color, alpha=0.7)
+        ax.set_title(f"C{cluster_id} -> {macro_name} (Frame {fidx})")
+        ax.set_xlabel("X (Å)")
+        ax.set_ylabel("Y (Å)")
+        ax.set_aspect("equal")
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    for j in range(len(centroid_frames), len(axes_flat)):
+        axes_flat[j].set_visible(False)
+
+    fig.suptitle(f"Representative CA Traces by Macro-Cluster ({method})", fontsize=16)
+    _savefig(plots_dir / f"cluster_ca_traces_macro_{method}.png", dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Saved cluster_ca_traces_macro_{method}.png")
+
+
 def plot_moments_histograms(
     I1: np.ndarray, I2: np.ndarray, I3: np.ndarray, plots_dir: Path
 ) -> None:
@@ -1402,10 +1463,21 @@ def run_candidate(
     with open(output_dir / "coarse_cluster_map.json", "w") as f:
         json.dump(invert_macro_mapping(coarse_cluster_lookup), f, indent=2)
 
-    if manual_macro_labels is not None and cluster_map is not None:
-        np.save(output_dir / "macro_cluster_labels_manual.npy", manual_macro_labels)
-        with open(output_dir / "macro_cluster_map_manual.json", "w") as f:
-            json.dump(cluster_map, f, indent=2)
+    if manual_macro_labels is not None:
+        np.save(output_dir / "macro_cluster_labels.npy", manual_macro_labels)
+        if cluster_map is not None:
+            # Use the provided explicit map
+            with open(output_dir / "macro_cluster_map.json", "w") as f:
+                json.dump(cluster_map, f, indent=2)
+        else:
+            # If manual labels were assigned automatically, save that map
+            with open(output_dir / "macro_cluster_map.json", "w") as f:
+                json.dump(invert_macro_mapping(coarse_cluster_lookup), f, indent=2)
+    else:
+        # Sensible default: use the reference-guided coarse labels
+        np.save(output_dir / "macro_cluster_labels.npy", coarse_labels)
+        with open(output_dir / "macro_cluster_map.json", "w") as f:
+            json.dump(invert_macro_mapping(coarse_cluster_lookup), f, indent=2)
 
     if generate_plots:
         plot_shape_space_ctail(
@@ -1436,6 +1508,10 @@ def run_candidate(
         if gmm_select_bic and gmm_bic_counts is not None and gmm_bic_scores is not None:
             plot_gmm_bic(gmm_bic_counts, gmm_bic_scores, selected_gmm_components, plots_dir)
         plot_ca_traces(u, shape_sel_str, cluster_labels, features_xy, centers_xy, method, plots_dir)
+        plot_ca_traces_macro(
+            u, shape_sel_str, cluster_labels, coarse_cluster_lookup,
+            features_xy, centers_xy, method, plots_dir
+        )
         plot_moments_histograms(I1, I2, I3, plots_dir)
         plot_ctail_rg_clusters_hist(rg_ctail, cluster_labels, plots_dir, ctail_threshold=resolved_threshold)
         plot_ctail_rg_clusters_rows(rg_ctail, cluster_labels, plots_dir, ctail_threshold=resolved_threshold)
@@ -1492,11 +1568,11 @@ def main() -> None:
         help="Minimum GMM components to consider for BIC selection (default: 2)"
     )
     parser.add_argument(
-        "--gmm-max-components", type=int, default=8,
+        "--gmm-max-components", type=int, default=20,
         help="Maximum GMM components to consider for BIC selection (default: 8)"
     )
     parser.add_argument(
-        "--dbscan-eps", type=float, default=0.025,
+        "--dbscan-eps", type=float, default=0.0025,
         help="DBSCAN eps in shape-space coordinates (default: 0.035)"
     )
     parser.add_argument(
@@ -1507,7 +1583,7 @@ def main() -> None:
         "--basin-grid-size", type=int, default=25,
         help="Grid size for KDE/free-energy basin assignment (default: 15)"
     )
-    parser.add_argument("--shape-resids", default="1:135",
+    parser.add_argument("--shape-resids", default="1:114",
                         help="Residue range for shape region 'start:end' PDB numbering (default: 1:96)")
     parser.add_argument(
         "--shape-resids-grid",
