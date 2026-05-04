@@ -8,17 +8,17 @@
 #   run Top_N_structures.py test_configs/top_n_TeaA_RMSD.yaml
 
 render:
-  spectrum_colours: "cyan_white_orange"
+  spectrum_colours: "cyan_white_yellow"
   spectrum_range: [0.5, 3.5]
   putty_transform: 7
   putty_range: [1.0, 1.0]
   trajectory_transparency: 0.1
-  reference_transparency: 0.4
-  transparency_mode: 0
+  reference_transparency: 0.5
+  transparency_mode: 1
   orthoscopic_view: true
-  antialias: 1
-  ray_trace_mode: 0
-  ray_transparency_oblique: false
+  antialias: 2
+  ray_trace_mode: 3
+  ray_transparency_oblique: true
   ray_trace_on_save: true
   view: [0.771133900,  0.108891770, -0.627289116,
         -0.629736066,  0.275484204, -0.726315975,
@@ -36,7 +36,7 @@ general:
     - "closed"
   reference_colors:
     - "0.10,0.10,0.10"               # near-black
-    - "0.95,0.95,0.95"               # near-white
+    - "0.99,0.99,0.99"               # near-white
   trajectory_label: "TeaA_ISO_TRI"
   align_atoms: "name CA"
   # Multi-region alignment selection (TeaA rigid core)
