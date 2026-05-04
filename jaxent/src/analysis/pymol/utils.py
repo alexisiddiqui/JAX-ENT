@@ -432,6 +432,13 @@ def apply_putty_settings(obj_name: str, render_config) -> None:
     from pymol import cmd
 
     lo, hi = render_config.putty_range
+    spec_min, spec_max = render_config.spectrum_range
+
+    # If spectrum range is inverted (negative scale), swap putty scales
+    # so the minimum B-factor gets the maximum thickness.
+    if spec_min > spec_max:
+        lo, hi = hi, lo
+
     cmd.set("cartoon_putty_transform", render_config.putty_transform, obj_name)
     cmd.set("cartoon_putty_scale_min", lo, obj_name)
     cmd.set("cartoon_putty_scale_max", hi, obj_name)

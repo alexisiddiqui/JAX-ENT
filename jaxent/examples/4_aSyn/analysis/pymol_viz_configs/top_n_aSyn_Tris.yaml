@@ -13,10 +13,10 @@
 # pymol -r jaxent/src/analysis/pymol/Top_N_structures.py --config jaxent/examples/4_aSyn/analysis/pymol_viz_configs/top_n_aSyn_Tris.yaml
 
 render:
-  spectrum_colours: "yellow_cyan_blue"
-  spectrum_range: [0.0, 8.0]     # adjust to actual weight range if needed
+  spectrum_colours: "white_cyan_blue_density_purple_black"
+  spectrum_range: [4.0, 0.0]     # adjust to actual weight range if needed
   putty_transform: 7
-  putty_range: [1.5, 1.5]
+  putty_range: [1.0, 1.0]
   trajectory_transparency: 0.1
   reference_transparency: 0.7
   transparency_mode: 1
@@ -33,7 +33,7 @@ general:
   reference_labels:
     - "NMR"
   reference_colors:
-    - "black"
+    - "grey"
   trajectory_label: "aSyn_ensemble"
   align_atoms: "name CA"
   align_selection: "resid 15-45"
@@ -57,6 +57,6 @@ top_n:
   trajectory: "data/_aSyn/tris_MD/tris_all_combined.xtc,data/_aSyn/tris_MD/md_mol_center_coil.pdb"
   weights: "fitting/_processed__optimise_aSyn_BV_test_5000_20260420_222302/_extracted__processed__optimise_aSyn_BV_test_5000_20260420_222302/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
   colour_metric: "weight"     
-  top_n: 10 # top-N = frames with highest replicate-average weight
+  top_n: 20 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  
   transparency_metric: "weight" # opacity → weight rank (or "RMSD" for RMSD rank)

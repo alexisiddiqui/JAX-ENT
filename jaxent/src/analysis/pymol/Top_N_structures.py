@@ -61,6 +61,7 @@ from utils import (  # noqa: E402
     align_pymol_object_to_coords,
     apply_render_settings,
     apply_bfactor_spectrum,
+    apply_putty_settings,
     ensure_nonzero_bfactors,
     get_reference_target_coords,
     load_trajectory,
@@ -336,6 +337,12 @@ class TopNVisualizer:
             cmd.set("cartoon_transparency", transparency, name)
             cmd.set("cartoon_putty_transform", self.cfg.render.putty_transform, name)
             lo, hi = self.cfg.render.putty_range
+            
+            # If spectrum range is inverted (negative scale), swap putty scales
+            # so the minimum B-factor (highest weight) gets the maximum thickness.
+            if spec_min > spec_max:
+                lo, hi = hi, lo
+                
             cmd.set("cartoon_putty_scale_min", lo, name)
             cmd.set("cartoon_putty_scale_max", hi, name)
             cmd.show("cartoon", name)
@@ -352,7 +359,7 @@ class TopNVisualizer:
     def _top_n_by_weight(
         self, n: int, n_states: int
     ) -> tuple[np.ndarray, list, float, float]:
-        """Select top-N frames by weight (descending). B-value = log-weight."""
+        """Select top-N frames by weight (descending). B-value = ΔF (kT), 0 at highest weight."""
         if len(self.weights) == 0:
             logger.warning("No weights available; using uniform weights")
             w = np.ones(n_states)
@@ -368,15 +375,19 @@ class TopNVisualizer:
         n = min(n, n_states)
         top_idx = np.argsort(w)[::-1][:n]
 
-        safe_w = np.maximum(w[top_idx], EPSILON)
-        bvals = np.log(safe_w * len(w) * 1e6)
+        safe_w_all = np.maximum(w, EPSILON)
+        log_w_all = np.log(safe_w_all)
+        log_w_max = float(np.max(log_w_all))
+        delta_f_all = log_w_max - log_w_all
+
+        bvals = list(delta_f_all[top_idx])
         b_min = float(np.min(bvals))
         b_max = float(np.max(bvals))
         if abs(b_max - b_min) < 0.1:
             b_max = b_min + 1.0
 
-        # Encode full weight range into background ensemble
-        set_bfactors_per_state(self.obj_name, w)
+        # Encode full weight range into background ensemble as ΔF
+        set_bfactors_per_state(self.obj_name, delta_f_all)
         apply_bfactor_spectrum(self.obj_name, self.cfg.render)
 
         logger.info(
@@ -449,6 +460,7 @@ class TopNVisualizer:
         cmd.set("all_states", 0)
         cmd.show("cartoon", self.obj_name)
         cmd.cartoon("putty", self.obj_name)
+        apply_putty_settings(self.obj_name, self.cfg.render)
         cmd.set("cartoon_transparency", self.cfg.render.trajectory_transparency, self.obj_name)
 
         # Top-N group is already enabled and styled

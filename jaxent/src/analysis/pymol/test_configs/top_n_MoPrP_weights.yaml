@@ -9,17 +9,17 @@
 #   run Top_N_structures.py test_configs/top_n_MoPrP_weights.yaml
 
 render:
-  spectrum_colours: "cyan_magenta_black"
-  spectrum_range: [14.0, 18.0]     # adjust to actual weight range if needed
+  spectrum_colours: "white_cyan_blue_density_purple_black"
+  spectrum_range: [4.0, 0.0]     # adjust to actual weight range if needed
   putty_transform: 7
-  putty_range: [1.0, 1.5]
+  putty_range: [1.0, 1.0]
   trajectory_transparency: 0.7
   reference_transparency: 0.9
   transparency_mode: 1
   orthoscopic_view: true
-  antialias: 2
+  antialias: 0
   ray_trace_mode: 0
-  ray_transparency_oblique: false
+  ray_transparency_oblique: true
   ray_trace_on_save: false
   view: [0.885161281, -0.063157849,  0.460974962,
          0.178213656,  0.961208284, -0.210514292,
@@ -34,7 +34,7 @@ general:
   reference_labels:
     - "NMR"
   reference_colors:
-    - "white"
+    - "yellow"
   trajectory_label: "MoPrP_ensemble"
   align_atoms: "name CA"
   align_selection: "resid 79-93"
@@ -47,9 +47,9 @@ output:
 
 top_n:
   trajectory: "_cluster_MoPrP/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
-  weights: "3-MoPrP+BV_weights/weights_AF2_MSAss_mcMSE_L1_sequence_cluster_average.npz"
+  weights: "3-MoPrP+BV_weights/weights_AF2_MSAss_MSE_L1_sequence_cluster_average.npz"
   colour_metric: "weight"     
-  top_n: 20 # top-N = frames with highest replicate-average weight
+  top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  
   transparency_metric: "weight" # opacity → weight rank (or "RMSD" for RMSD rank)
 

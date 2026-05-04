@@ -520,6 +520,7 @@ def plot_macro_clusters_hexbin(
     gridsize: int = 30,
     x_log: bool = False,
     y_log: bool = False,
+    include_macros: list[int] | None = None,
 ):
     """Cluster hexbin plot with whitening by free energy."""
     face_colors, palette = _build_cluster_face_colors(x, y, macro_labels, gridsize=gridsize, x_log=x_log, y_log=y_log)
@@ -545,8 +546,11 @@ def plot_macro_clusters_hexbin(
     # Legend
     import matplotlib.patches as mpatches
     legend_patches = []
-    for label in sorted(np.unique(macro_labels)):
+    unique_present = sorted(np.unique(macro_labels))
+    for label in unique_present:
         cid = int(label)
+        if include_macros is not None and cid not in include_macros:
+            continue
         name = _MACRO_NAMES.get(cid, f"Cluster {cid}") if cid >= 0 else "Unassigned"
         legend_patches.append(mpatches.Patch(color=palette[cid], label=name))
     ax.legend(handles=legend_patches, loc="best", fontsize=10)
@@ -580,12 +584,14 @@ def plot_macro_cluster_grid(
     if n_cols == 1:
         axes = [axes]
     
-    # Precompute background
+    # Precompute background and global max density
     density_full, x_grid, y_grid = compute_density_grid(x_full, y_full, x_log, y_log)
+    max_dens_full = np.max(density_full)
+    
     with np.errstate(divide="ignore", invalid="ignore"):
-        F_full = -np.log(density_full)
-    F_full -= np.nanmin(F_full)
-    levels = np.arange(0, 9)
+        F_full = -np.log(density_full / max_dens_full)
+    F_full = np.clip(F_full, 0, 10)
+    levels = np.arange(0, 11)
 
     for ax, cid in zip(axes, valid_cids):
         x_clus, y_clus = cv_data[cid]
@@ -597,10 +603,12 @@ def plot_macro_cluster_grid(
 
         # Foreground
         try:
+            frac = len(x_clus) / len(x_full)
             density_clus, _, _ = compute_density_grid(x_clus, y_clus, x_log, y_log, x_grid=x_grid, y_grid=y_grid)
+            
             with np.errstate(divide="ignore", invalid="ignore"):
-                F_clus = -np.log(density_clus)
-            F_clus -= np.nanmin(F_clus)
+                F_clus = -np.log((density_clus * frac) / max_dens_full)
+            F_clus = np.clip(F_clus, 0, 10)
             
             cf = ax.contourf(x_grid, y_grid, F_clus, levels=levels, cmap="YlGnBu_r", extend="max")
             # Highlight with a primary contour outline for emphasis using the cluster color
@@ -628,12 +636,12 @@ def plot_macro_cluster_grid(
     fig.subplots_adjust(bottom=0.15, top=0.85, wspace=0.1, right=0.9)
     cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
     sm = matplotlib.cm.ScalarMappable(
-        norm=matplotlib.colors.BoundaryNorm(np.arange(10), 256), cmap="YlGnBu_r"
+        norm=matplotlib.colors.BoundaryNorm(np.arange(12), 256), cmap="YlGnBu_r"
     )
     sm.set_array([])
     cbar = fig.colorbar(sm, cax=cbar_ax)
     cbar.set_label(r"$\Delta F\ /\ k_BT$", fontsize=12)
-    cbar.set_ticks(np.arange(0, 9))
+    cbar.set_ticks(np.arange(0, 11))
 
     fig.suptitle(title, fontsize=16, y=1.0)
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
@@ -653,6 +661,7 @@ def plot_combined_cluster_landscape(
     gridsize: int = 30,
     x_log: bool = False,
     y_log: bool = False,
+    include_macros: list[int] | None = None,
 ):
     """Global hexbin landscape with hued cluster contours overlaid."""
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -665,14 +674,18 @@ def plot_combined_cluster_landscape(
     )
     # Background density grid for consistent contour computation
     density_full, x_grid, y_grid = compute_density_grid(x_full, y_full, x_log, y_log)
+    max_dens_full = np.max(density_full)
 
     # 2. Cluster Contours
-    unique_macros = sorted([cid for cid in np.unique(macro_labels) if cid >= 0])
-    contour_levels = [1.0, 2.0, 3.0]  # kBT levels
+    if include_macros is not None:
+        unique_macros = include_macros
+    else:
+        unique_macros = sorted([cid for cid in np.unique(macro_labels) if cid >= 0])
+    contour_levels = [1.0, 2.0, 3.0, 5.0]  # kBT levels
     
     for cid in unique_macros:
         mask = (macro_labels == cid)
-        if np.sum(mask) < 10:
+        if np.sum(mask) < 0:
             continue
             
         x_clus, y_clus = x_full[mask], y_full[mask]
@@ -684,6 +697,7 @@ def plot_combined_cluster_landscape(
             with np.errstate(divide="ignore", invalid="ignore"):
                 F_clus = -np.log(density_clus)
             F_clus -= np.nanmin(F_clus)
+            F_clus = np.clip(F_clus, 0, 10)
             
             # Draw multiple contours with decreasing thickness/alpha
             # 1.0 (bold), 2.0 (medium), 3.0 (thin)
@@ -712,7 +726,7 @@ def plot_combined_cluster_landscape(
     legend_patches = []
     for cid in unique_macros:
         color = palette.get(cid, "black")
-        name = _MACRO_NAMES.get(cid, f"Cluster {cid}")
+        name = _MACRO_NAMES.get(int(cid), f"Cluster {cid}")
         legend_patches.append(mpatches.Patch(color=color, label=name))
     ax.legend(handles=legend_patches, loc="upper right", fontsize=10, framealpha=0.8)
 
@@ -760,6 +774,7 @@ def main() -> None:
     parser.add_argument("--absolute-paths", action="store_true")
     parser.add_argument("--kmeans-map", type=Path, help="Path to 12700 -> 500 mapping (.npy)")
     parser.add_argument("--macro-map", type=Path, help="Path to 500 -> 5 mapping (.npy)")
+    parser.add_argument("--skip-clusters", nargs="*", type=str, help="List of macro-cluster IDs or names to skip")
 
     args = parser.parse_args()
 
@@ -834,6 +849,23 @@ def main() -> None:
         # Ensure kmeans_labels are valid for mapping
         macro_labels = macro_map_arr[kmeans_labels]   # (12700,)
 
+        # Filter out skipped clusters
+        skip_list = args.skip_clusters if args.skip_clusters else []
+        unique_macros = sorted([cid for cid in np.unique(macro_labels) if cid >= 0])
+        
+        filtered_macros = []
+        for cid in unique_macros:
+            name = _MACRO_NAMES.get(int(cid), f"Cluster {cid}")
+            if str(cid) in skip_list or name in skip_list:
+                print(f"Skipping cluster {cid} ({name}) as requested.")
+                continue
+            filtered_macros.append(cid)
+        
+        # Create a mask for remaining clusters in global plots if needed
+        # (Though individual plot functions handle filtering based on their inputs)
+        
+        palette = _cluster_palette(macro_labels)
+
         # 1. Global hexbin with all clusters (energy fading)
         hex_clus_path = cluster_dir / f"fe_landscape_hexbin_clusters_{suffix}.png"
         plot_macro_clusters_hexbin(
@@ -846,12 +878,10 @@ def main() -> None:
 
         # 2. Individual cluster contours mapped to columns
         cluster_grid_path = cluster_dir / f"fe_landscape_contours_grid_{suffix}.png"
-        unique_macros = np.unique(macro_labels)
         cv_data_map = {
             cid: (cvs_full[x_key][macro_labels == cid], cvs_full[y_key][macro_labels == cid])
-            for cid in unique_macros if cid >= 0
+            for cid in filtered_macros
         }
-        palette = _cluster_palette(macro_labels)
         
         plot_macro_cluster_grid(
             cvs_full[x_key], cvs_full[y_key], cv_data_map,
@@ -871,7 +901,8 @@ def main() -> None:
             str(combined_path),
             palette,
             gridsize=args.gridsize*2,
-            x_log=args.x_log, y_log=args.y_log
+            x_log=args.x_log, y_log=args.y_log,
+            include_macros=filtered_macros
         )
 
     print(f"\nOutput directory: {output_dir}")
