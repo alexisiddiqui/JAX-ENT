@@ -6,7 +6,7 @@ cd "$(dirname "$0")" || exit
 ANA_DIR="analysis"
 DIR_WD="$(pwd)/fitting/jaxENT"
 # Example optimization output directory - CHANGE THIS to match your actual output
-OPT_OUTPUT_DIR="${DIR_WD}/_optimise_FIGURE_SIGMA_5000__20260410_201754"
+OPT_OUTPUT_DIR="${DIR_WD}/_optimise_FIGURE_SIGMA_5000__20260416_023951"
 
 mkdir -p "${OPT_OUTPUT_DIR}/logs"
 

@@ -224,8 +224,10 @@ def main():
                             print(f"    Skipping {run_id}: No history found.")
                             continue
 
+                        valid_states = history.states[1:] if len(history.states) > 1 else history.states
+
                         met_convergence_rates = []
-                        for i in range(len(history.states)):
+                        for i in range(len(valid_states)):
                             if i < len(convergence_rates):
                                 met_convergence_rates.append(convergence_rates[i])
 
@@ -235,7 +237,7 @@ def main():
                             for rate in met_convergence_rates:
                                 f.write(f"{rate}\n")
 
-                        for i, state in enumerate(history.states):
+                        for i, state in enumerate(valid_states):
                             if i < len(convergence_rates):
                                 convergence_val = convergence_rates[i]
                             else:

@@ -47,7 +47,7 @@ output:
 
 top_n:
   trajectory: "_cluster_MoPrP/clusters/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
-  weights: "../fitting/jaxENT/_processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/_extracted__processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/val_loss_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz"
+  weights: "../fitting/jaxENT/_processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/_extracted__processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/work_scale_kj_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz"
   colour_metric: "weight"     
   top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  

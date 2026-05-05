@@ -69,6 +69,7 @@ To use the pymol visualisation features, you will need to have pymol installed. 
 
 ```bash
 conda create -n PYMOL pymol-open-source
+conda activate PYMOL
 cd JAX-ENT/
 pip install -e .
 
