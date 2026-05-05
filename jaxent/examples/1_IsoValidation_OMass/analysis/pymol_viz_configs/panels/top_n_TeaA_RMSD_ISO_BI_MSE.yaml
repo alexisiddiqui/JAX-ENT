@@ -1,0 +1,58 @@
+# Top-N structures — TeaA ensemble, metric=RMSD
+# Based on _reference/TeaA_weighted_SASA_test.py settings
+#
+# Selects the 5 frames closest (by CA RMSD) to the first reference (closed state).
+# Frames are coloured on a cyan→white→grey→yellow scale by RMSD value.
+#
+# Usage (inside PyMOL):
+#   run Top_N_structures.py test_configs/top_n_TeaA_RMSD.yaml
+
+render:
+  spectrum_colours: "black_grey_white"  # custom 3-colour spectrum: near-black → near-white
+  spectrum_range: [0.5, 3.5]
+  putty_transform: 7
+  putty_range: [1.0, 1.0]
+  trajectory_transparency: 0.1
+  reference_transparency: 0.1
+  transparency_mode: 1
+  orthoscopic_view: true
+  antialias: 2
+  ray_trace_mode: 1
+  ray_transparency_oblique: true
+  ray_trace_on_save: true
+  view: [0.771133900,  0.108891770, -0.627289116,
+        -0.629736066,  0.275484204, -0.726315975,
+         0.093720160,  0.955116212,  0.281009167,
+         0.000031699,  0.000859112, -124.987701416,
+        43.879978180, 59.640918732,  35.699680328,
+        82.134002686, 167.846145630, 20.000000000]
+
+general:
+  references:
+    - "data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_open_state.pdb" # used for alignment AND RMSD metric
+    - "data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+  reference_labels:
+    - "open"
+    - "closed"
+  reference_colors:
+    - "purpleblue"               # near-black
+    - "0.99,0.99,0.99"               # near-white
+  trajectory_label: "TeaA_ISO_BI"
+  align_atoms: "name CA"
+  # Multi-region alignment selection (TeaA rigid core)
+  align_selection: "resi 226-256 or resi 16-27 or resi 66-69"
+  working_dir: "/home/alexi/Documents/JAX-ENT/jaxent/examples/1_IsoValidation_OMass"
+
+output:
+  save_png: false
+  save_session: false
+  output_prefix: "TeaA_TopN"
+
+top_n:
+  trajectory: "data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/sliced_trajectories/TeaA_filtered_sliced.xtc,data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/TeaA_ref_closed_state.pdb"
+  weights: "analysis/_analysis_optimise_test_SIGMA_5000__20260209_164141/weights/weights_ISO_BI_MSE_sequence_cluster_average.npz"
+  colour_metric: "RMSD"       # top-N = frames with lowest RMSD to references[0]
+  top_n: 5
+  transparency_range: [0.4, 0.6]  
+  transparency_metric: "weight" # opacity → weight rank (or "RMSD" for RMSD rank)
+

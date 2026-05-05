@@ -408,6 +408,8 @@ def apply_render_settings(render_config) -> None:
     cmd.set("ray_transparency_oblique", int(render_config.ray_transparency_oblique))
     cmd.set("ray_trace_disco_factor", render_config.ray_trace_disco_factor)
     cmd.set("ray_trace_gain", render_config.ray_trace_gain)
+    cmd.set("specular", render_config.specular)
+    cmd.set("two_sided_lighting", render_config.two_sided_lighting)
     cmd.set("ray_shadows", 0)
 
     if render_config.view is not None:

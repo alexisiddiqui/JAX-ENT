@@ -68,7 +68,7 @@ uv pip install -e .[test]
 To use the pymol visualisation features, you will need to have pymol installed. You can install pymol via conda:
 
 ```bash
-conda install -c schrodinger pymol
+conda create -n PYMOL pymol-open-source
 cd JAX-ENT/
 pip install -e .
 

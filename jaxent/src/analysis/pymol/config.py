@@ -48,6 +48,8 @@ class RenderConfig:
     ray_trace_disco_factor: float = 0.5
     ray_trace_gain: float = 1.0
     ray_trace_on_save: bool = True              # ray-trace when saving PNG
+    specular: float = 0.0                       # specular highlights; 0 = off
+    two_sided_lighting: int = 1                 # two-sided lighting; 1 = on
     view: Optional[tuple] = None               # 16-value matrix or None → cmd.zoom()
 
 
@@ -333,6 +335,10 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
     r.add_argument("--ray_trace_gain", default=None, type=float)
     r.add_argument("--ray_trace_on_save", default=None,
                    type=lambda v: v.lower() != "false")
+    r.add_argument("--specular", default=None, type=float,
+                   help="Specular highlights level (0 = off, default)")
+    r.add_argument("--two_sided_lighting", default=None, type=int,
+                   help="Two-sided lighting (1 = on by default, 0 = off)")
     r.add_argument("--view", default=None,
                    help="16-18 comma/space-separated floats for cmd.set_view()")
 
@@ -410,6 +416,8 @@ def merge_config_with_args(config: UnifiedConfig, args: argparse.Namespace) -> U
         "ray_trace_disco_factor": ("render", "ray_trace_disco_factor"),
         "ray_trace_gain": ("render", "ray_trace_gain"),
         "ray_trace_on_save": ("render", "ray_trace_on_save"),
+        "specular": ("render", "specular"),
+        "two_sided_lighting": ("render", "two_sided_lighting"),
     }
     for arg_key, (sub, attr) in render_map.items():
         val = a.get(arg_key)
