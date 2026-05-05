@@ -17,16 +17,16 @@ render:
   reference_transparency: 0.9
   transparency_mode: 1
   orthoscopic_view: true
-  antialias: 0
-  ray_trace_mode: 0
+  antialias: 2
+  ray_trace_mode: 1
   ray_transparency_oblique: true
   ray_trace_on_save: false
   view: [0.885161281, -0.063157849,  0.460974962,
          0.178213656,  0.961208284, -0.210514292,
         -0.429795146,  0.268488705,  0.862078071,
-         0.000000000,  0.000000000, -144.799575806,
+         0.000000000,  0.000000000, -210.876556396,
          2.093294144, -0.038471222,  -0.517147064,
-        79.905242920, 209.693969727,  20.000000000]
+        145.982131958, 275.770965576,  20.000000000]
 
 general:
   references:
@@ -46,8 +46,8 @@ output:
   output_prefix: "MoPrP_TopN"
 
 top_n:
-  trajectory: "_cluster_MoPrP/clusters/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
-  weights: "../fitting/jaxENT/_processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/_extracted__processed__optimise_quick_FIGURE_SIGMA_5000__20260416_024057/work_scale_kj_min/AF2_MSAss_Sigma_MSE_sequence_cluster_selected.npz"
+  trajectory: "_cluster_MoPrP_filtered/clusters/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
+  weights: "/home/alexi/Documents/JAX-ENT/jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0__20260416_024125/_extracted__processed__optimise_quick_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0__20260416_024125/val_loss_min/AF2_filtered_Sigma_MSE_sequence_cluster_L1_selected.npz"
   colour_metric: "weight"     
   top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  
