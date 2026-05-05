@@ -183,11 +183,11 @@ def plot_hdx_summary() -> None:
     state_inputs = [
         ("Open", TRAJ_DIR / "open_features" / "features.npz", COLORS["open"], "-", None),
         ("Closed", TRAJ_DIR / "closed_features" / "features.npz", COLORS["closed"], "--", None),
-        ("Ground Truth-Only", FEATURE_DIR / "features_iso_bi.npz", COLORS["iso_bi"], "-.", None),
-        ("Ground Truth+Alternate", FEATURE_DIR / "features_iso_tri.npz", COLORS["iso_tri"], ":", None),
+        ("Ground Truth-Only", FEATURE_DIR / "features_iso_bi.npz", COLORS["iso_bi"], "dotted", None),
+        ("Ground Truth+Alternate", FEATURE_DIR / "features_iso_tri.npz", COLORS["iso_tri"], "dotted", None),
     ]
 
-    fig, ax = plt.subplots(figsize=(6.8, 3.8))
+    fig, ax = plt.subplots(figsize=(6, 4))
     ax.fill_between(
         times,
         np.clip(target_mean - target_std, 0, 1),
@@ -234,7 +234,6 @@ def plot_hdx_summary() -> None:
     ax.set_xlim(times.min() * 0.85, times.max() * 1.05)
     ax.set_ylim(0, 1.05)
     # ax.set_xscale("log")
-    ax.grid(alpha=0.18, linewidth=0.6)
     ax.legend(frameon=False, ncol=2)
     save_figure(fig, "iso_validation_hdx_summary")
     plt.close(fig)

@@ -8,8 +8,7 @@ jaxent-featurise --top_path /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation
 --output_dir /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/open_features \
 --name Open_features \
  bv \
---switch \
---peptide_trim 0 
+--peptide_trim 1 
 
 
 jaxent-predict --topology_path /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/open_features/topology.json \
@@ -27,8 +26,7 @@ jaxent-featurise --top_path /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation
 --output_dir /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/closed_features \
 --name Closed_features \
  bv \
---switch \
---peptide_trim 0 
+--peptide_trim 1 
 
 
 jaxent-predict --topology_path /Users/alexi/JAX-ENT/jaxent/examples/1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/data/trajectories/closed_features/topology.json \

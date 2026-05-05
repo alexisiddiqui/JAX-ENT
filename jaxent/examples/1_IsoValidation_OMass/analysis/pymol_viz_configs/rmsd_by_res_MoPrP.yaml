@@ -11,14 +11,16 @@ render:
   spectrum_range: [1.0, 4.0]
   putty_transform: 7
   putty_range: [0.5, 3.5]
-  trajectory_transparency: 0.8
+  trajectory_transparency: 0.0
   reference_transparency: 0.8
   transparency_mode: 1
   orthoscopic_view: true
   antialias: 2
-  ray_trace_mode: 0
+  ray_trace_mode: 1
   ray_transparency_oblique: false
   ray_trace_on_save: false
+  ray_trace_disco_factor: 15.0
+  ray_trace_gain: 0.25
   # Uncomment to fix camera angle:
   view: [0.885161281, -0.063157849,  0.460974962,
          0.178213656,  0.961208284, -0.210514292,
@@ -46,7 +48,8 @@ output:
 
 rmsd:
   # Single multiframe PDB
-  trajectory: "AF2_MSAss_cluster_1_frames.pdb"
+  trajectory: "AF2_MSAss_cluster_0_frames.pdb"
   # Or XTC + topology:
   # trajectory: "trajectory.xtc,MoPrP_max_plddt_4334.pdb"
   transparency_metric: "RMSD" # opacity → weight rank (or "RMSD" for RMSD rank)
+  transparency_range: [0.0, 0.0]  
