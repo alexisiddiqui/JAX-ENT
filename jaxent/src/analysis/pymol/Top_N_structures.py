@@ -156,31 +156,46 @@ class TopNVisualizer:
 
         try:
             logger.info("Loading weights: %s", os.path.basename(weights_path))
-            data = np.load(weights_path)
+            # allow_pickle=True handles some complex JAX/Numpy outputs if needed
+            data = np.load(weights_path, allow_pickle=True)
 
-            # Try common key names across different JAX-ENT run outputs
             raw: np.ndarray | None = None
-            for key in ("frame_weights", "weights"):
-                if key in data:
-                    raw = np.array(data[key], dtype=float)
-                    logger.info("  Found weights under key '%s'", key)
-                    break
 
-            if raw is None:
-                available = list(data.keys())
-                logger.warning(
-                    "No recognised key in weights file. Available: %s", available
-                )
-                if available:
-                    raw = np.array(data[available[0]], dtype=float)
-                    logger.info("  Using first available key: '%s'", available[0])
-                else:
-                    return
+            # 1) Handle .npy files (loaded directly as an array) or .npz with single array
+            if isinstance(data, np.ndarray):
+                raw = data.astype(float)
+                logger.info("  Loaded weights directly from array file (shape: %s)", raw.shape)
+            
+            # 2) Handle .npz files (dict-like NpzFile)
+            else:
+                # Try common key names across different JAX-ENT run outputs
+                # Added 'sequence_average' for pre-averaged sequence-based cross-val results
+                for key in ("frame_weights", "weights", "sequence_average", "ensemble_weights"):
+                    if key in data:
+                        raw = np.array(data[key], dtype=float)
+                        logger.info("  Found weights under key '%s' (shape: %s)", key, raw.shape)
+                        break
 
-            # Collapse (n_replicates, n_frames) → (n_frames,)
-            if raw.ndim == 2:
-                raw = np.mean(raw, axis=0)
-                logger.info("  Collapsed %s → mean per-frame weights", raw.shape)
+                if raw is None:
+                    available = list(data.keys())
+                    logger.warning(
+                        "No recognised key in weights file. Available: %s", available
+                    )
+                    if available:
+                        raw = np.array(data[available[0]], dtype=float)
+                        logger.info("  Using first available key: '%s' (shape: %s)", available[0], raw.shape)
+                    else:
+                        logger.error("  Weights file is empty or has no arrays.")
+                        return
+
+            # 3) Dimensionality reduction: Collapse (..., n_frames) → (n_frames,)
+            # We assume the last dimension is always the frame index.
+            if raw.ndim > 1:
+                # If we have (n_replicates, n_frames) or (n_sequences, n_replicates, n_frames)
+                # we take the mean over all but the last axis.
+                old_shape = raw.shape
+                raw = np.mean(raw, axis=tuple(range(raw.ndim - 1)))
+                logger.info("  Collapsed %s → mean per-frame weights %s", old_shape, raw.shape)
 
             # Sanitize
             if np.any(np.isnan(raw)):
