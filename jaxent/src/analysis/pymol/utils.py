@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 
 if TYPE_CHECKING:
-    from config import OutputConfig, RenderConfig
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ EPSILON = 1e-6
 try:
     from tqdm import tqdm as _tqdm
 except ImportError:
+
     def _tqdm(iterable, *args, **kwargs):  # type: ignore[misc]
         return iterable
 
@@ -32,10 +33,12 @@ except ImportError:
 # Environment
 # ---------------------------------------------------------------------------
 
+
 def is_running_in_pymol() -> bool:
     """Return True when the PyMOL cmd API is available in this session."""
     try:
         from pymol import cmd
+
         cmd.get_names()
         return True
     except Exception:
@@ -46,9 +49,8 @@ def is_running_in_pymol() -> bool:
 # Geometry — pure numpy, no cmd
 # ---------------------------------------------------------------------------
 
-def kabsch_alignment(
-    mobile: np.ndarray, reference: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
+
+def kabsch_alignment(mobile: np.ndarray, reference: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Kabsch rigid-body alignment of mobile onto reference.
 
     Returns (R, t) where:
@@ -101,6 +103,7 @@ def build_align_selection(
 # Trajectory / ensemble loading
 # ---------------------------------------------------------------------------
 
+
 def load_trajectory(
     obj_name: str,
     topology_file: str,
@@ -151,9 +154,7 @@ def get_reference_target_coords(
         sel = build_align_selection(temp_obj, align_atoms, align_selection)
 
         if n_states > 1:
-            logger.info(
-                "Reference has %d states — averaging for alignment target", n_states
-            )
+            logger.info("Reference has %d states — averaging for alignment target", n_states)
             sum_c: Optional[np.ndarray] = None
             count = 0
             for i in range(1, n_states + 1):
@@ -203,8 +204,7 @@ def align_pymol_object_to_coords(
     test = cmd.get_coords(sel_align, state=1)
     if test is None or len(test) != len(target_coords):
         logger.warning(
-            "Skipping alignment for %s: atom count mismatch "
-            "(%d vs %d)",
+            "Skipping alignment for %s: atom count mismatch (%d vs %d)",
             obj_name,
             0 if test is None else len(test),
             len(target_coords),
@@ -229,6 +229,7 @@ def align_pymol_object_to_coords(
 # ---------------------------------------------------------------------------
 # B-factor helpers
 # ---------------------------------------------------------------------------
+
 
 def set_bfactors_from_dict(
     obj_name: str,
@@ -386,6 +387,7 @@ def get_reference_coords_dict(
 # PyMOL display helpers
 # ---------------------------------------------------------------------------
 
+
 def set_background_white() -> None:
     """Set white opaque background for publication-style rendering."""
     from pymol import cmd
@@ -410,6 +412,8 @@ def apply_render_settings(render_config) -> None:
     cmd.set("ray_trace_gain", render_config.ray_trace_gain)
     cmd.set("specular", render_config.specular)
     cmd.set("two_sided_lighting", render_config.two_sided_lighting)
+    cmd.set("ambient_occlusion", int(render_config.ambient_occlusion))
+    cmd.set("ambient", render_config.ambient)
     cmd.set("ray_shadows", 0)
 
     if render_config.view is not None:
