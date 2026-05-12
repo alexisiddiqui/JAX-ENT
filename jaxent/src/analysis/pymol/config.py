@@ -21,6 +21,7 @@ from typing import Optional
 
 try:
     import yaml
+
     _YAML_AVAILABLE = True
 except ImportError:
     _YAML_AVAILABLE = False
@@ -30,44 +31,50 @@ except ImportError:
 # Sub-configs
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class RenderConfig:
     """PyMOL render / display settings shared across all scripts."""
+
     spectrum_colours: str = "blue_white_red"
-    spectrum_range: tuple = (0.0, 5.0)          # (min, max)
+    spectrum_range: tuple = (0.0, 5.0)  # (min, max)
     putty_transform: int = 7
-    putty_range: tuple = (0.4, 4.0)             # (scale_min, scale_max)
+    putty_range: tuple = (0.4, 4.0)  # (scale_min, scale_max)
     reference_transparency: float = 0.6
     trajectory_transparency: float = 0.8
     other_transparency: float = 0.5
     transparency_mode: int = 1
     orthoscopic_view: bool = True
     antialias: int = 2
-    ray_trace_mode: int = 3
+    ray_trace_mode: int = 1
     ray_transparency_oblique: bool = False
     ray_trace_disco_factor: float = 0.5
     ray_trace_gain: float = 1.0
-    ray_trace_on_save: bool = True              # ray-trace when saving PNG
-    specular: float = 0.0                       # specular highlights; 0 = off
-    two_sided_lighting: int = 1                 # two-sided lighting; 1 = on
-    view: Optional[tuple] = None               # 16-value matrix or None → cmd.zoom()
+    ray_trace_on_save: bool = True  # ray-trace when saving PNG
+    specular: float = 0.0  # specular highlights; 0 = off
+    two_sided_lighting: int = 1  # two-sided lighting; 1 = on
+    view: Optional[tuple] = None  # 16-value matrix or None → cmd.zoom()
+    ambient_occlusion: bool = False
+    ambient: float = 0.14
 
 
 @dataclass
 class GeneralConfig:
     """General input / alignment options shared across all scripts."""
-    references: list = field(default_factory=list)          # paths to reference PDBs
-    reference_labels: list = field(default_factory=list)    # human-readable labels
-    reference_colors: list = field(default_factory=list)    # per-reference colours
-    trajectory_label: str = "trajectory"                    # PyMOL object name
+
+    references: list = field(default_factory=list)  # paths to reference PDBs
+    reference_labels: list = field(default_factory=list)  # human-readable labels
+    reference_colors: list = field(default_factory=list)  # per-reference colours
+    trajectory_label: str = "trajectory"  # PyMOL object name
     align_atoms: str = "name CA"
-    align_selection: Optional[str] = None                   # residue selection; None = whole chain
+    align_selection: Optional[str] = None  # residue selection; None = whole chain
     working_dir: Optional[str] = None
 
 
 @dataclass
 class OutputConfig:
     """Output saving options."""
+
     save_png: bool = False
     save_session: bool = False
     output_prefix: str = "output"
@@ -76,26 +83,29 @@ class OutputConfig:
 @dataclass
 class RMSDScriptConfig:
     """Options specific to RMSD_by_res.py."""
+
     trajectory: Optional[str] = None  # "traj.xtc,topology.pdb" or "multiframe.pdb"
 
 
 @dataclass
 class TopNScriptConfig:
     """Options specific to Top_N_structures.py."""
+
     trajectory: Optional[str] = None
-    weights: Optional[str] = None           # .npz path, shape (n_replicates, n_frames)
-    colour_metric: str = "weight"           # B-factor colouring: "weight" | "RMSD"
-    transparency_metric: str = "weight"     # transparency ordering: "weight" | "RMSD"
+    weights: Optional[str] = None  # .npz path, shape (n_replicates, n_frames)
+    colour_metric: str = "weight"  # B-factor colouring: "weight" | "RMSD"
+    transparency_metric: str = "weight"  # transparency ordering: "weight" | "RMSD"
     top_n: int = 10
-    transparency_range: tuple = (0.1, 0.85) # (most_opaque, most_transparent) for rank-1 … rank-N
+    transparency_range: tuple = (0.1, 0.85)  # (most_opaque, most_transparent) for rank-1 … rank-N
 
 
 @dataclass
 class ProjectLogPFsScriptConfig:
     """Options specific to Project_logPFs.py."""
-    reference_data: Optional[str] = None    # .dat cols: residue pf
-    target_data: Optional[str] = None       # .npy shape (n_replicates, n_residues)
-    target_topology: Optional[str] = None   # full-sequence PDB
+
+    reference_data: Optional[str] = None  # .dat cols: residue pf
+    target_data: Optional[str] = None  # .npy shape (n_replicates, n_residues)
+    target_topology: Optional[str] = None  # full-sequence PDB
     metric: str = "protection_factor"
     # metric: protection_factor | uncertainty_sd | uncertainty_rsd |
     #         difference_signed | difference_absolute
@@ -104,6 +114,7 @@ class ProjectLogPFsScriptConfig:
 @dataclass
 class UnifiedConfig:
     """Top-level config bundling all sub-configs."""
+
     render: RenderConfig = field(default_factory=RenderConfig)
     general: GeneralConfig = field(default_factory=GeneralConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
@@ -142,6 +153,7 @@ class UnifiedConfig:
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def parse_comma_separated(value) -> list:
     """Normalise "a,b,c" or ["a","b","c"] to list[str]."""
@@ -189,7 +201,7 @@ def parse_trajectory_string(value: str) -> tuple:
         return ("", None)
     parts = [p.strip() for p in value.split(",")]
     if len(parts) >= 2:
-        return (parts[1], parts[0])   # swap: topology second in string, first for PyMOL
+        return (parts[1], parts[0])  # swap: topology second in string, first for PyMOL
     return (parts[0], None)
 
 
@@ -201,6 +213,7 @@ def parse_colour_string(value: str) -> str:
 # ---------------------------------------------------------------------------
 # YAML loading
 # ---------------------------------------------------------------------------
+
 
 def _apply_render(data: dict, cfg: RenderConfig) -> None:
     for key, val in data.items():
@@ -294,6 +307,7 @@ def load_config(yaml_path: str) -> UnifiedConfig:
 # Argparse
 # ---------------------------------------------------------------------------
 
+
 def build_argparser(description: str = "") -> argparse.ArgumentParser:
     """Build an ArgumentParser covering all UnifiedConfig fields.
 
@@ -311,17 +325,14 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=description)
 
     # Config file
-    p.add_argument("--config", default=None, dest="config_file",
-                   help="Path to YAML config file")
+    p.add_argument("--config", default=None, dest="config_file", help="Path to YAML config file")
 
     # --- Render ---
     r = p.add_argument_group("render options")
     r.add_argument("--spectrum_colours", default=None)
-    r.add_argument("--spectrum_range", default=None,
-                   help="min,max  e.g. '0,5'")
+    r.add_argument("--spectrum_range", default=None, help="min,max  e.g. '0,5'")
     r.add_argument("--putty_transform", default=None, type=int)
-    r.add_argument("--putty_range", default=None,
-                   help="scale_min,scale_max  e.g. '0.4,4.0'")
+    r.add_argument("--putty_range", default=None, help="scale_min,scale_max  e.g. '0.4,4.0'")
     r.add_argument("--reference_transparency", default=None, type=float)
     r.add_argument("--trajectory_transparency", default=None, type=float)
     r.add_argument("--other_transparency", default=None, type=float)
@@ -329,27 +340,36 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
     r.add_argument("--orthoscopic_view", default=None, type=lambda v: v.lower() != "false")
     r.add_argument("--antialias", default=None, type=int)
     r.add_argument("--ray_trace_mode", default=None, type=int)
-    r.add_argument("--ray_transparency_oblique", default=None,
-                   type=lambda v: v.lower() != "false")
+    r.add_argument("--ray_transparency_oblique", default=None, type=lambda v: v.lower() != "false")
     r.add_argument("--ray_trace_disco_factor", default=None, type=float)
     r.add_argument("--ray_trace_gain", default=None, type=float)
-    r.add_argument("--ray_trace_on_save", default=None,
-                   type=lambda v: v.lower() != "false")
-    r.add_argument("--specular", default=None, type=float,
-                   help="Specular highlights level (0 = off, default)")
-    r.add_argument("--two_sided_lighting", default=None, type=int,
-                   help="Two-sided lighting (1 = on by default, 0 = off)")
-    r.add_argument("--view", default=None,
-                   help="16-18 comma/space-separated floats for cmd.set_view()")
+    r.add_argument("--ray_trace_on_save", default=None, type=lambda v: v.lower() != "false")
+    r.add_argument(
+        "--specular", default=None, type=float, help="Specular highlights level (0 = off, default)"
+    )
+    r.add_argument(
+        "--two_sided_lighting",
+        default=None,
+        type=int,
+        help="Two-sided lighting (1 = on by default, 0 = off)",
+    )
+    r.add_argument(
+        "--view", default=None, help="16-18 comma/space-separated floats for cmd.set_view()"
+    )
+    r.add_argument("--ambient_occlusion", default=None, type=lambda v: v.lower() != "false", help="Enable ambient occlusion (true/false)")
+    r.add_argument("--ambient", default=None, type=float, help="Ambient lighting level (float)")
 
     # --- General ---
     g = p.add_argument_group("general options")
-    g.add_argument("--references", default=None,
-                   help="Comma-separated paths to reference PDB files")
-    g.add_argument("--reference_labels", default=None,
-                   help="Comma-separated labels for reference structures")
-    g.add_argument("--reference_colors", default=None,
-                   help="Comma-separated colours for reference structures")
+    g.add_argument(
+        "--references", default=None, help="Comma-separated paths to reference PDB files"
+    )
+    g.add_argument(
+        "--reference_labels", default=None, help="Comma-separated labels for reference structures"
+    )
+    g.add_argument(
+        "--reference_colors", default=None, help="Comma-separated colours for reference structures"
+    )
     g.add_argument("--trajectory_label", default=None)
     g.add_argument("--align_atoms", default=None)
     g.add_argument("--align_selection", default=None)
@@ -363,32 +383,48 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
 
     # --- RMSD script ---
     rs = p.add_argument_group("RMSD_by_res options")
-    rs.add_argument("--trajectory", default=None,
-                    help="'traj.xtc,topology.pdb' or 'multiframe.pdb'")
+    rs.add_argument(
+        "--trajectory", default=None, help="'traj.xtc,topology.pdb' or 'multiframe.pdb'"
+    )
 
     # --- Top-N script ---
     tn = p.add_argument_group("Top_N_structures options")
-    tn.add_argument("--weights", default=None,
-                    help="Path to .npz weights file, shape (n_replicates, n_frames)")
-    tn.add_argument("--colour_metric", default=None,
-                    help="Colouring metric: 'weight' (default) or 'RMSD'")
-    tn.add_argument("--transparency_metric", default=None,
-                    help="Transparency ordering metric: 'weight' (default) or 'RMSD'")
+    tn.add_argument(
+        "--weights", default=None, help="Path to .npz weights file, shape (n_replicates, n_frames)"
+    )
+    tn.add_argument(
+        "--colour_metric", default=None, help="Colouring metric: 'weight' (default) or 'RMSD'"
+    )
+    tn.add_argument(
+        "--transparency_metric",
+        default=None,
+        help="Transparency ordering metric: 'weight' (default) or 'RMSD'",
+    )
     tn.add_argument("--top_n", default=None, type=int)
-    tn.add_argument("--transparency_range", default=None,
-                    help="min,max transparency for rank-1…rank-N, e.g. '0.1,0.85'")
+    tn.add_argument(
+        "--transparency_range",
+        default=None,
+        help="min,max transparency for rank-1…rank-N, e.g. '0.1,0.85'",
+    )
 
     # --- Project_logPFs script ---
     pf = p.add_argument_group("Project_logPFs options")
-    pf.add_argument("--reference_data", default=None,
-                    help="Path to reference protection factors .dat file")
-    pf.add_argument("--target_data", default=None,
-                    help="Path to .npy protection factor array (n_replicates, n_residues)")
-    pf.add_argument("--target_topology", default=None,
-                    help="Path to full-sequence topology PDB")
-    pf.add_argument("--pf_metric", default=None, dest="pf_metric",
-                    help="protection_factor | uncertainty_sd | uncertainty_rsd | "
-                         "difference_signed | difference_absolute")
+    pf.add_argument(
+        "--reference_data", default=None, help="Path to reference protection factors .dat file"
+    )
+    pf.add_argument(
+        "--target_data",
+        default=None,
+        help="Path to .npy protection factor array (n_replicates, n_residues)",
+    )
+    pf.add_argument("--target_topology", default=None, help="Path to full-sequence topology PDB")
+    pf.add_argument(
+        "--pf_metric",
+        default=None,
+        dest="pf_metric",
+        help="protection_factor | uncertainty_sd | uncertainty_rsd | "
+        "difference_signed | difference_absolute",
+    )
 
     return p
 
@@ -418,6 +454,8 @@ def merge_config_with_args(config: UnifiedConfig, args: argparse.Namespace) -> U
         "ray_trace_on_save": ("render", "ray_trace_on_save"),
         "specular": ("render", "specular"),
         "two_sided_lighting": ("render", "two_sided_lighting"),
+        "ambient_occlusion": ("render", "ambient_occlusion"),
+        "ambient": ("render", "ambient"),
     }
     for arg_key, (sub, attr) in render_map.items():
         val = a.get(arg_key)
