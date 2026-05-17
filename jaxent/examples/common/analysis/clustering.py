@@ -27,9 +27,8 @@ def calculate_cluster_ratios(
     ratios: Dict[str, float] = {}
     unique = np.unique(cluster_assignments)
     for cluster in unique:
-        if cluster >= 0:
-            mask = cluster_assignments == cluster
-            ratios[f"cluster_{cluster}"] = float(np.sum(frame_weights[mask]))
+        mask = cluster_assignments == cluster
+        ratios[f"cluster_{cluster}"] = float(np.sum(frame_weights[mask]))
     return ratios
 
 

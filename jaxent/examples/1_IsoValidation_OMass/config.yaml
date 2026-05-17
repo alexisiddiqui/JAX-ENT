@@ -86,4 +86,4 @@ scoring:
     open: 0.4
     closed: 0.6
 
-  recovery_metric: ratio
+  recovery_metric: jsd

@@ -76,7 +76,9 @@ scoring:
     0: "Folded"
     1: "PUF1"
     2: "PUF2"
+    3: "PUF3"
     4: "unfolded"
+    5: "PUF2-like"
 
   scoring_weights:
     train_penalty: 0.9

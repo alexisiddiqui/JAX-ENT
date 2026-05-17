@@ -22,7 +22,7 @@ def plot_best_model_comparisons(
     metrics = [
         ("val_loss", "Validation Loss", True),
         ("kl_divergence", "KL Divergence", True),
-        ("recovery_percent", "Recovery %", False),
+        ("recovery_percent", "Recovery (%)", False),
     ]
 
     available_metrics = [(col, label, log) for col, label, log in metrics if col in df.columns]

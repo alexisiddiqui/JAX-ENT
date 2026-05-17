@@ -29,7 +29,7 @@ general:
   reference_labels:
     - "NMR"
   reference_colors:
-    - "yellow"
+    - "cerium"
   trajectory_label: "aSyn_ensemble"
   align_atoms: "name CA"
   align_selection: "resid 15-45"

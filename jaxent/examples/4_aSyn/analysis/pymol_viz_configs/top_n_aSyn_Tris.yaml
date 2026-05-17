@@ -13,7 +13,7 @@
 # pymol -r jaxent/src/analysis/pymol/Top_N_structures.py --config jaxent/examples/4_aSyn/analysis/pymol_viz_configs/top_n_aSyn_Tris.yaml
 
 render:
-  spectrum_colours: "white_cyan_blue_density_purple_black"
+  spectrum_colours: "white_greencyan_teal_francium_black"
   spectrum_range: [4.0, 0.0]     # adjust to actual weight range if needed
   putty_transform: 7
   putty_range: [1.0, 1.0]

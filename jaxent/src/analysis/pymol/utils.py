@@ -412,7 +412,7 @@ def apply_render_settings(render_config) -> None:
     cmd.set("ray_trace_gain", render_config.ray_trace_gain)
     cmd.set("specular", render_config.specular)
     cmd.set("two_sided_lighting", render_config.two_sided_lighting)
-    cmd.set("ambient_occlusion", int(render_config.ambient_occlusion))
+    cmd.set("ambient_occlusion_mode", int(render_config.ambient_occlusion))
     cmd.set("ambient", render_config.ambient)
     cmd.set("ray_shadows", 0)
 

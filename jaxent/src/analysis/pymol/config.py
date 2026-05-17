@@ -356,7 +356,12 @@ def build_argparser(description: str = "") -> argparse.ArgumentParser:
     r.add_argument(
         "--view", default=None, help="16-18 comma/space-separated floats for cmd.set_view()"
     )
-    r.add_argument("--ambient_occlusion", default=None, type=lambda v: v.lower() != "false", help="Enable ambient occlusion (true/false)")
+    r.add_argument(
+        "--ambient_occlusion",
+        default=None,
+        type=lambda v: v.lower() != "false",
+        help="Enable ambient occlusion (true/false)",
+    )
     r.add_argument("--ambient", default=None, type=float, help="Ambient lighting level (float)")
 
     # --- General ---

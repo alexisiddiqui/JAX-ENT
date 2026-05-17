@@ -301,6 +301,7 @@ def plot_recovery_vs_regularization_strength(recovery_df, convergence_rates, out
                         )
 
             ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+            ax.set_ylim(0, 100)
             ax.set_xlabel(
                 "Combined Regularization Strength\n(Higher = More MaxEnt + Looser Convergence)"
             )
@@ -379,6 +380,7 @@ def plot_maxent_comparison(recovery_df, output_dir):
                         )
 
             ax1.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+            ax1.set_ylim(0, 100)
             ax1.set_xlabel("MaxEnt Value")
             ax1.set_ylabel("Open State Recovery (%)")
             ax1.set_title("Recovery vs MaxEnt Value (Final Convergence)")
@@ -400,6 +402,7 @@ def plot_maxent_comparison(recovery_df, output_dir):
             sns.boxplot(data=plot_df, x="MaxEnt", y="Recovery", hue="Combination", ax=ax2)
 
             ax2.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
+            ax2.set_ylim(0, 100)
             ax2.set_xlabel("MaxEnt Value")
             ax2.set_ylabel("Open State Recovery (%)")
             ax2.set_title("Recovery Distribution by MaxEnt Value")

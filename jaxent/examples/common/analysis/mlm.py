@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ..config import PlotStyle
 from ..plotting.mlm import (
+    plot_cluster_populations_by_split,
     plot_coefficient_comparison,
     plot_correlations_bar_charts,
     plot_eta_and_ftest,
@@ -779,6 +780,24 @@ def run_analysis_on_subset(
                     style=style,
                     target_metric=target_metric,
                 )
+
+            _pop_cols = [
+                c for c in selection_by_split_df.columns
+                if c.startswith("cluster_")
+                and not c.endswith(("_rank", "_percentile", "_transformed"))
+            ]
+            if _pop_cols:
+                for metric in predictor_cols:
+                    plot_cluster_populations_by_split(
+                        selection_by_split_df,
+                        metric,
+                        output_dir,
+                        ensemble_colors=ensemble_colors,
+                        split_colors=split_colors,
+                        split_name_mapping=split_name_mapping,
+                        style=style,
+                        pop_cols=_pop_cols,
+                    )
 
         corr_df = compute_correlations(df_clean, stats_predictors, target_metric)
         if not corr_df.empty:
