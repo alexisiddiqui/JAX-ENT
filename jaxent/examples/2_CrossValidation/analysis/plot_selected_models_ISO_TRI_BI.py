@@ -23,7 +23,9 @@ from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.plotting import (
     plot_aggregated_analysis,
     plot_cluster_populations,
+    plot_cluster_populations_by_split,
     plot_fixed_effects,
+    plot_kl_divergence_panel,
     plot_minimax_panel,
     plot_rank_panel,
     plot_score_panel,
@@ -85,10 +87,10 @@ def main() -> None:
     fe_results = run_fixed_effects_analysis(df_before, df_diff, df_minimax, a.output_dir)
     for score_name, (summary_df, _) in fe_results.items():
         if summary_df is not None:
-            plot_fixed_effects(summary_df, score_name, a.output_dir)
+            plot_fixed_effects(summary_df, score_name, a.output_dir, style=cfg.style)
 
     concordance_maps = calculate_concordance_maps(fe_results)
-    plot_aggregated_analysis(fe_results, concordance_maps, a.output_dir)
+    plot_aggregated_analysis(fe_results, concordance_maps, a.output_dir, style=cfg.style)
 
     for df, col, title, fname, transform in [
         (df_before, "mean", "Rank of Mean Recovery", "rank_mean_recovery", None),
@@ -146,6 +148,63 @@ def main() -> None:
                 title="Cluster Populations — Raw Recovery Data",
                 style=cfg.style,
             )
+
+    # ── Plot 08: cluster populations for selected models by metric ─────────
+    _sel_csv = Path(a.before_csv).parent / "model_selection_performance_by_split.csv"
+    if _sel_csv.exists():
+        _sel_df = pd.read_csv(_sel_csv)
+        _pop_cols_08 = [
+            c for c in _sel_df.columns
+            if c.startswith("cluster_")
+            and not c.endswith(("_rank", "_percentile", "_transformed"))
+        ]
+        if _pop_cols_08 and "score_metric" in _sel_df.columns:
+            _loss_fns_08 = (
+                sorted(_sel_df["loss_function"].dropna().unique())
+                if "loss_function" in _sel_df.columns
+                else [None]
+            )
+            for _metric in sorted(_sel_df["score_metric"].dropna().unique()):
+                for _loss_fn in _loss_fns_08:
+                    plot_cluster_populations_by_split(
+                        _sel_df,
+                        _metric,
+                        a.output_dir,
+                        ensemble_colors=None,
+                        split_colors=None,
+                        split_name_mapping=None,
+                        style=cfg.style,
+                        pop_cols=_pop_cols_08,
+                        loss_filter=_loss_fn,
+                    )
+
+
+    # ── Plot 09: KL divergence — one file per model selection metric ──────────
+    if "kl_divergence_mean" in _summary_raw.columns:
+        _kl_keep = [c for c in ["ensemble", "split_type", "loss_function", "score_metric"]
+                    if c in _summary_raw.columns]
+        _kl_df = _summary_raw[
+            _kl_keep
+            + ["kl_divergence_mean"]
+            + (["kl_divergence_std"] if "kl_divergence_std" in _summary_raw.columns else [])
+        ].copy()
+        for _metric in sorted(_kl_df["score_metric"].dropna().unique()):
+            _safe = "".join(c for c in _metric if c.isalnum() or c in ("_", "-"))
+            plot_kl_divergence_panel(
+                _kl_df, a.output_dir, f"09_kl_divergence_{_safe}",
+                score_metric=_metric, style=cfg.style,
+            )
+        if "loss_function" in _kl_df.columns:
+            for _loss in sorted(_kl_df["loss_function"].dropna().unique()):
+                _loss_safe = "".join(c for c in _loss if c.isalnum() or c in ("_", "-"))
+                _loss_dir = os.path.join(a.output_dir, _loss_safe)
+                os.makedirs(_loss_dir, exist_ok=True)
+                for _metric in sorted(_kl_df["score_metric"].dropna().unique()):
+                    _safe = "".join(c for c in _metric if c.isalnum() or c in ("_", "-"))
+                    plot_kl_divergence_panel(
+                        _kl_df, _loss_dir, f"09_kl_divergence_{_safe}",
+                        score_metric=_metric, loss_function=_loss, style=cfg.style,
+                    )
 
 
 if __name__ == "__main__":

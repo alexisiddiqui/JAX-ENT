@@ -31,7 +31,7 @@ render:
 
 general:
   references:
-    - "_MoPrP/2L39_crop.pdb"
+    - "data/_MoPrP/2L39_crop.pdb"
   reference_labels:
     - "NMR"
   reference_colors:
@@ -39,7 +39,7 @@ general:
   trajectory_label: "MoPrP_ensemble"
   align_atoms: "name CA"
   align_selection: "resid 79-93"
-  working_dir: "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data"
+  working_dir: "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation"
 
 output:
   save_png: false
@@ -47,8 +47,8 @@ output:
   output_prefix: "MoPrP_TopN"
 
 top_n:
-  trajectory: "_cluster_MoPrP_filtered/clusters/all_clusters.xtc,MoPrP_max_plddt_4334.pdb"
-  weights: "/home/alexi/Documents/JAX-ENT/jaxent/examples/3_CrossValidationBV/fitting/jaxENT/_processed__optimise_quick_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0__20260416_024125/_extracted__processed__optimise_quick_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0__20260416_024125/val_loss_min/AF2_filtered_Sigma_MSE_sequence_cluster_L1_selected.npz"
+  trajectory: "data/_cluster_MoPrP_filtered/clusters/all_clusters.xtc,data/MoPrP_max_plddt_4334.pdb"
+  weights: "/home/alexi/Documents/JAX-ENT/jaxent/examples/3_CrossValidationBV/analysis/pymol_viz_configs/HDXer/_analysis_output_JSD4/weights/weights_MoPrP_af_clean_R3_k_sequence_average.npz"
   colour_metric: "weight"     
   top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  

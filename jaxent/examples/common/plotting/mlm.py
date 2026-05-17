@@ -12,6 +12,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
 from ..config import PlotStyle
+from .style import _get_metric_display_name
 
 _DEFAULT_MARKERS = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h", "H", "X", "d"]
 _DEFAULT_SPLIT_COLORS = {
@@ -148,7 +149,9 @@ def plot_coefficient_comparison(
 
         ax.axvline(x=0, color="red", linestyle="--", linewidth=1.5)
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(predictor_cols, fontsize=12)
+        ax.set_yticklabels(
+            [_get_metric_display_name(m, style) for m in predictor_cols], fontsize=12
+        )
         ax.set_xlabel("Standardized β", fontsize=14)
         ax.set_title(f"{ensemble}", fontsize=14, fontweight="bold")
         ax.grid(axis="x", alpha=0.3)
@@ -204,7 +207,7 @@ def plot_partial_r2_comparison(
             x + i * width,
             r2_vals,
             width,
-            label=metric,
+            label=_get_metric_display_name(metric, style),
             alpha=mstyle["alpha"],
             color=mstyle["facecolor"],
             hatch=mstyle["hatch"],
@@ -257,7 +260,7 @@ def plot_stability_comparison(
             else 0
             for g in groups
         ]
-        ax1.bar(x + i * width, vals, width, label=metric, alpha=0.8, edgecolor="black", linewidth=1.0)
+        ax1.bar(x + i * width, vals, width, label=_get_metric_display_name(metric, style), alpha=0.8, edgecolor="black", linewidth=1.0)
 
     ax1.set_ylabel("Stability Index", fontsize=14)
     ax1.set_xlabel("Group", fontsize=14)
@@ -278,7 +281,7 @@ def plot_stability_comparison(
             for g in groups
         ]
         vals = [min(v, 1.0) if np.isfinite(v) else 0 for v in vals]
-        ax2.bar(x + i * width, vals, width, label=metric, alpha=0.8, edgecolor="black", linewidth=1.0)
+        ax2.bar(x + i * width, vals, width, label=_get_metric_display_name(metric, style), alpha=0.8, edgecolor="black", linewidth=1.0)
 
     ax2.set_ylabel("Coefficient of Variation", fontsize=14)
     ax2.set_xlabel("Group", fontsize=14)
@@ -325,7 +328,7 @@ def plot_eta_and_ftest(
             else 0
             for g in groups
         ]
-        ax1.bar(x + i * width, vals, width, label=metric, alpha=0.8, edgecolor="black", linewidth=1.0)
+        ax1.bar(x + i * width, vals, width, label=_get_metric_display_name(metric, style), alpha=0.8, edgecolor="black", linewidth=1.0)
 
     ax1.set_ylabel("η² (Effect Size)", fontsize=14)
     ax1.set_xlabel("Group", fontsize=14)
@@ -344,7 +347,7 @@ def plot_eta_and_ftest(
             else 0
             for g in groups
         ]
-        ax2.bar(x + i * width, vals, width, label=metric, alpha=0.8, edgecolor="black", linewidth=1.0)
+        ax2.bar(x + i * width, vals, width, label=_get_metric_display_name(metric, style), alpha=0.8, edgecolor="black", linewidth=1.0)
 
     ax2.set_ylabel("F-statistic", fontsize=14)
     ax2.set_xlabel("Group", fontsize=14)
@@ -403,7 +406,7 @@ def plot_scatter_and_distributions(
         else:
             ax_dist.hist(df_ens[metric].dropna(), bins=20, alpha=0.7, color="steelblue")
 
-        ax_dist.set_xlabel(metric, fontsize=12)
+        ax_dist.set_xlabel(_get_metric_display_name(metric, style), fontsize=12)
         ax_dist.set_ylabel("Frequency", fontsize=12)
         ax_dist.set_title(f"{ensemble} - Distribution", fontsize=13, fontweight="bold")
         ax_dist.legend(fontsize=10)
@@ -462,8 +465,8 @@ def plot_scatter_and_distributions(
             r2 = r2_score(y, reg.predict(X))
             ax_scatter.plot(x_line, y_line, "k--", linewidth=2.5, alpha=0.7, label=f"Linear fit (R²={r2:.3f})")
 
-        ax_scatter.set_xlabel(metric, fontsize=12)
-        ax_scatter.set_ylabel(target_metric, fontsize=12)
+        ax_scatter.set_xlabel(_get_metric_display_name(metric, style), fontsize=12)
+        ax_scatter.set_ylabel(_get_metric_display_name(target_metric, style), fontsize=12)
         ax_scatter.set_title(f"{ensemble} - Relationship", fontsize=13, fontweight="bold")
         ax_scatter.legend(fontsize=10)
         ax_scatter.grid(alpha=0.3)
@@ -480,10 +483,10 @@ def plot_scatter_and_distributions(
                 neg_log_loss_col = "_neg_log_val_loss"
                 df_ens[neg_log_loss_col] = np.nan
                 df_ens.loc[mask, neg_log_loss_col] = -np.log(df_ens.loc[mask, "val_loss"])
-                hue_specs.append((neg_log_loss_col, ax_loss, plt.cm.ocean_r, "-log(Val Loss)", "Hue: -log(Val Loss)"))
-        ax_loss.set_xlabel(metric, fontsize=12)
-        ax_loss.set_ylabel(target_metric, fontsize=12)
-        ax_loss.set_title(f"{ensemble} - Hue: -log(Val Loss)", fontsize=13, fontweight="bold")
+                hue_specs.append((neg_log_loss_col, ax_loss, plt.cm.ocean_r, "-log(Validation Loss)", "Hue: -log(Validation Loss)"))
+        ax_loss.set_xlabel(_get_metric_display_name(metric, style), fontsize=12)
+        ax_loss.set_ylabel(_get_metric_display_name(target_metric, style), fontsize=12)
+        ax_loss.set_title(f"{ensemble} - Hue: -log(Validation Loss)", fontsize=13, fontweight="bold")
         ax_loss.grid(alpha=0.3)
 
         if has_bv_reg:
@@ -542,8 +545,8 @@ def plot_scatter_and_distributions(
                 )
 
             plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=axis, label=cbar_label)
-            axis.set_xlabel(metric, fontsize=12)
-            axis.set_ylabel(target_metric, fontsize=12)
+            axis.set_xlabel(_get_metric_display_name(metric, style), fontsize=12)
+            axis.set_ylabel(_get_metric_display_name(target_metric, style), fontsize=12)
             axis.set_title(f"{ensemble} - {title}", fontsize=13, fontweight="bold")
             axis.grid(alpha=0.3)
 
@@ -578,12 +581,18 @@ def plot_model_selection_performance(
         selected_models["method_variant"] = "All"
         x_axis = "method_variant"
 
-    palette = _get_split_colors(style, split_colors)
+    # Remap split_type to display names so legend labels are human-readable
+    sn_map = _get_split_name_mapping(style, split_name_mapping)
+    selected_models["split_type"] = selected_models["split_type"].map(lambda x: sn_map.get(x, x))
+    selected_models = selected_models.rename(columns={"split_type": "Split Type"})
+    raw_palette = _get_split_colors(style, split_colors)
+    palette = {sn_map.get(k, k): v for k, v in raw_palette.items()}
+
     g = sns.catplot(
         data=selected_models,
         x=x_axis,
         y=target_metric,
-        hue="split_type",
+        hue="Split Type",
         col="ensemble",
         kind="bar",
         height=5,
@@ -597,13 +606,107 @@ def plot_model_selection_performance(
     )
 
     direction = selected_models["direction"].iloc[0] if "direction" in selected_models.columns else "max"
+    metric_label = _get_metric_display_name(metric, style)
+    target_label = _get_metric_display_name(target_metric, style)
     g.fig.subplots_adjust(top=0.85)
-    g.fig.suptitle(f"Selection by {metric} ({direction}) -> {target_metric}", fontsize=16, fontweight="bold")
-    g.set_axis_labels("Method Variant", target_metric)
+    g.fig.suptitle(f"Selection by {metric_label} ({direction}) → {target_label}", fontsize=16, fontweight="bold")
+    g.set_axis_labels("Method Variant", target_label)
     g.set_titles("{col_name}")
 
     safe_metric = "".join(c for c in metric if c.isalnum() or c in ("_", "-"))
     output_path = os.path.join(output_dir, f"06_selection_performance_{safe_metric}.png")
+    g.savefig(output_path, dpi=300, bbox_inches="tight")
+    plt.close(g.fig)
+
+
+def plot_cluster_populations_by_split(
+    perf_df: pd.DataFrame,
+    metric: str,
+    output_dir: str,
+    ensemble_colors: dict[str, str],
+    split_colors: dict[str, str],
+    split_name_mapping: dict[str, str],
+    style: PlotStyle | None = None,
+    pop_cols: list[str] | None = None,
+    loss_filter: str | None = None,
+) -> None:
+    """Save 08_cluster_populations_<metric>[_<loss>].png — same layout as plot 06."""
+    selected = perf_df[perf_df["score_metric"] == metric].copy()
+    if loss_filter is not None and "loss_function" in selected.columns:
+        selected = selected[selected["loss_function"] == loss_filter].copy()
+    if selected.empty:
+        return
+
+    if pop_cols is None:
+        pop_cols = [
+            c for c in selected.columns
+            if c.startswith("cluster_")
+            and not c.endswith(("_rank", "_percentile", "_transformed"))
+        ]
+    if not pop_cols:
+        return
+
+    sn_map = _get_split_name_mapping(style, split_name_mapping)
+    selected["split_type"] = selected["split_type"].map(lambda x: sn_map.get(x, x))
+    raw_palette = _get_split_colors(style, split_colors)
+    palette = {sn_map.get(k, k): v for k, v in raw_palette.items()}
+
+    col_display: dict[str, str] = {}
+    for c in pop_cols:
+        base = c
+        for sfx in ("_current", "_ratio", "_proportion", "_mean", "_std"):
+            if base.endswith(sfx):
+                base = base[: -len(sfx)]
+                break
+        col_display[c] = _get_metric_display_name(base, style)
+
+    id_cols = [
+        c for c in ["ensemble", "split_type", "split_idx", "loss_function",
+                     "bv_reg_function", "method_variant", "score_metric"]
+        if c in selected.columns
+    ]
+    df_long = selected.melt(
+        id_vars=id_cols,
+        value_vars=pop_cols,
+        var_name="_raw_cluster",
+        value_name="population",
+    )
+    df_long["cluster"] = df_long["_raw_cluster"].map(col_display)
+    df_long = df_long.rename(columns={"split_type": "Split Type"})
+
+    g = sns.catplot(
+        data=df_long,
+        x="cluster",
+        y="population",
+        hue="Split Type",
+        col="ensemble",
+        kind="bar",
+        height=4,
+        aspect=1.2,
+        sharey=False,
+        palette=palette,
+        errorbar="sd",
+        capsize=0.1,
+        edgecolor="black",
+        linewidth=1.0,
+    )
+
+    metric_label = _get_metric_display_name(metric, style)
+    loss_label = f" ({loss_filter})" if loss_filter is not None else ""
+    g.fig.subplots_adjust(top=0.85)
+    g.fig.suptitle(f"Cluster Populations — Selected by {metric_label}{loss_label}", fontsize=16, fontweight="bold")
+    g.set_axis_labels("Cluster", "Population")
+    g.set_titles("{col_name}")
+    for ax in g.axes.flat:
+        ax.tick_params(axis="x", rotation=30)
+        ax.set_ylim(0, 1)
+
+    safe_metric = "".join(c for c in metric if c.isalnum() or c in ("_", "-"))
+    if loss_filter is not None:
+        safe_loss = "".join(c for c in loss_filter if c.isalnum() or c in ("_", "-"))
+        output_path = os.path.join(output_dir, f"08_cluster_populations_{safe_metric}_{safe_loss}.png")
+    else:
+        output_path = os.path.join(output_dir, f"08_cluster_populations_{safe_metric}.png")
     g.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(g.fig)
 
@@ -635,13 +738,18 @@ def plot_correlations_bar_charts(
         palette=palette,
         edgecolor="black",
     )
+    ax07 = plt.gca()
+    ax07.set_xticklabels(
+        [_get_metric_display_name(t.get_text(), style) for t in ax07.get_xticklabels()],
+        rotation=45,
+        ha="right",
+    )
     plt.title(
         f"Correlation with Target (Split Type: {split_name_mapping.get(split_type, split_type)})",
         fontsize=16,
     )
     plt.xlabel("Score Metric", fontsize=14)
     plt.ylabel("Pearson Correlation", fontsize=14)
-    plt.xticks(rotation=45, ha="right")
     plt.grid(axis="y", alpha=0.3)
     plt.legend(title="Ensemble", bbox_to_anchor=(1.05, 1), loc="upper left")
     plt.tight_layout()
@@ -659,5 +767,6 @@ __all__ = [
     "plot_eta_and_ftest",
     "plot_scatter_and_distributions",
     "plot_model_selection_performance",
+    "plot_cluster_populations_by_split",
     "plot_correlations_bar_charts",
 ]

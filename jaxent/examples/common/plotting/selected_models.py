@@ -19,6 +19,7 @@ from ..analysis.selected_models import (
     ttest_from_stats,
 )
 from ..config import PlotStyle
+from .style import _get_metric_display_name
 
 
 _DEFAULT_ENSEMBLE_COLORS = {
@@ -48,6 +49,7 @@ def _resolve_style_dicts(style: PlotStyle | None):
     ensemble_colors = dict(_DEFAULT_ENSEMBLE_COLORS)
     split_name_mapping = dict(_DEFAULT_SPLIT_NAME_MAPPING)
     split_colors = dict(_DEFAULT_SPLIT_COLORS)
+    ensemble_name_mapping: dict[str, str] = {}
 
     if style is not None:
         if style.split_name_mapping:
@@ -58,13 +60,15 @@ def _resolve_style_dicts(style: PlotStyle | None):
             for k, v in style.split_type_colors.items():
                 split_colors[k] = v
                 split_colors[split_name_mapping.get(k, k)] = v
+        if style.ensemble_name_mapping:
+            ensemble_name_mapping.update(style.ensemble_name_mapping)
 
-    return ensemble_colors, split_colors, split_name_mapping
+    return ensemble_colors, split_colors, split_name_mapping, ensemble_name_mapping
 
 
 def plot_minimax_panel(df, output_dir, filename, style: PlotStyle | None = None):
     """Plot minimum mean and abs-min recovery across losses."""
-    ensemble_colors, _, split_name_mapping = _resolve_style_dicts(style)
+    ensemble_colors, _, split_name_mapping, ensemble_name_mapping = _resolve_style_dicts(style)
     if "loss_function" not in df.columns:
         print("Cannot plot minimax: 'loss_function' column missing.")
         return
@@ -112,7 +116,7 @@ def plot_minimax_panel(df, output_dir, filename, style: PlotStyle | None = None)
                 x + offset,
                 min_means,
                 width,
-                label=ens if i == 0 else "",
+                label=ensemble_name_mapping.get(ens, ens) if i == 0 else "",
                 color=color,
                 capsize=4,
                 edgecolor="black",
@@ -134,13 +138,15 @@ def plot_minimax_panel(df, output_dir, filename, style: PlotStyle | None = None)
 
         ax.set_title(f"{split_name_mapping.get(split, split)}", fontweight="bold", fontsize=14)
         ax.set_xticks(x)
-        ax.set_xticklabels(metrics, rotation=45, ha="right")
+        ax.set_xticklabels(
+            [_get_metric_display_name(m, style) for m in metrics], rotation=45, ha="right"
+        )
         ax.set_xlabel("Metric", fontweight="bold")
         if i == 0:
             ax.set_ylabel("Min Recovery Score (%)", fontweight="bold")
 
         ax.grid(axis="y", linestyle="--", alpha=0.3)
-        ax.set_ylim(0, 110)
+        ax.set_ylim(0, 100)
 
     handles, labels = axes[-1].get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
@@ -172,7 +178,7 @@ def plot_score_panel(
     metric_col="score_metric",
 ):
     """Plot score bars with split types on separate panels."""
-    ensemble_colors, _, split_name_mapping = _resolve_style_dicts(style)
+    ensemble_colors, _, split_name_mapping, ensemble_name_mapping = _resolve_style_dicts(style)
 
     split_types = sorted(df["split_type"].unique())
     metrics = get_metric_order(df[metric_col].unique())
@@ -217,7 +223,7 @@ def plot_score_panel(
                 means,
                 width,
                 yerr=stds if y_err_col else None,
-                label=ens,
+                label=ensemble_name_mapping.get(ens, ens),
                 color=color,
                 capsize=4,
                 edgecolor="black",
@@ -259,14 +265,16 @@ def plot_score_panel(
 
         ax.set_title(f"{split_name_mapping.get(split, split)}", fontweight="bold", fontsize=14)
         ax.set_xticks(x)
-        ax.set_xticklabels(metrics, rotation=45, ha="right")
+        ax.set_xticklabels(
+            [_get_metric_display_name(m, style) for m in metrics], rotation=45, ha="right"
+        )
         ax.set_xlabel("Metric", fontweight="bold")
         if i == 0:
             ax.set_ylabel(ylabel, fontweight="bold")
 
         ax.grid(axis="y", linestyle="--", alpha=0.3)
         if "Mean Recovery" in title:
-            ax.set_ylim(0, 110)
+            ax.set_ylim(0, 100)
 
     handles, labels = axes[-1].get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
@@ -291,7 +299,7 @@ def plot_rank_panel(
     style: PlotStyle | None = None,
 ):
     """Plot ensemble-normalized ranks aggregated over ensembles/losses."""
-    _, split_colors, split_name_mapping = _resolve_style_dicts(style)
+    _, split_colors, split_name_mapping, _ = _resolve_style_dicts(style)
     local_df = df.copy()
     local_df["split_type"] = local_df["split_type"].map(lambda x: split_name_mapping.get(x, x))
 
@@ -320,7 +328,11 @@ def plot_rank_panel(
     ax.set_title(f"{title} (Aggregated)", fontweight="bold")
     ax.set_xlabel("Metric", fontweight="bold")
     ax.set_ylabel("Rank (1 is Best)", fontweight="bold")
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    ax.set_xticklabels(
+        [_get_metric_display_name(t.get_text(), style) for t in ax.get_xticklabels()],
+        rotation=45,
+        ha="right",
+    )
     ax.invert_yaxis()
     ax.grid(axis="y", linestyle="--", alpha=0.3)
 
@@ -331,24 +343,31 @@ def plot_rank_panel(
     plt.close()
 
 
-def plot_fixed_effects(summary_df, score_name, output_dir):
+def plot_fixed_effects(summary_df, score_name, output_dir, style: PlotStyle | None = None):
     """Plot scatter and bar fixed-effects outputs for one GT score."""
     metrics = get_metric_order(summary_df["score_metric"].unique())
     metric_palette = {m: get_metric_color(m) for m in metrics}
 
+    display_df = summary_df.copy()
+    display_df["score_metric"] = display_df["score_metric"].map(
+        lambda m: _get_metric_display_name(m, style)
+    )
+    display_metrics = [_get_metric_display_name(m, style) for m in metrics]
+    display_palette = {_get_metric_display_name(m, style): c for m, c in metric_palette.items()}
+
     plt.figure(figsize=(10, 8))
     sns.scatterplot(
-        data=summary_df,
+        data=display_df,
         x="Performance_Percentile",
         y="Inconsistency",
         hue="score_metric",
         s=150,
         edgecolor="black",
-        palette=metric_palette,
+        palette=display_palette,
         alpha=0.8,
     )
 
-    for _, row in summary_df.iterrows():
+    for _, row in display_df.iterrows():
         plt.text(
             row["Performance_Percentile"],
             row["Inconsistency"] + 0.05,
@@ -375,7 +394,7 @@ def plot_fixed_effects(summary_df, score_name, output_dir):
     print(f"Saved {out_plot}")
     plt.close()
 
-    melted = summary_df.melt(
+    melted = display_df.melt(
         id_vars=["score_metric"],
         value_vars=["Performance_Percentile", "Inconsistency_Percentile"],
         var_name="Type",
@@ -394,7 +413,7 @@ def plot_fixed_effects(summary_df, score_name, output_dir):
         x="score_metric",
         y="Percentile",
         hue="Type",
-        order=metrics,
+        order=display_metrics,
         palette={"Performance": "skyblue", "Inconsistency": "salmon"},
         edgecolor="black",
         linewidth=1,
@@ -415,7 +434,7 @@ def plot_fixed_effects(summary_df, score_name, output_dir):
     plt.close()
 
 
-def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
+def plot_aggregated_analysis(results_dict, concordance_maps, output_dir, style: PlotStyle | None = None):
     """Plot aggregated FE rank analyses and concordance summaries."""
     print("\n--- Running Aggregated Analysis ---")
 
@@ -435,13 +454,19 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
     ) / 2.0
 
     metrics = get_metric_order(full_df["score_metric"].unique())
+    display_metrics = [_get_metric_display_name(m, style) for m in metrics]
     metric_palette = {m: get_metric_color(m) for m in metrics}
+    display_palette = {_get_metric_display_name(m, style): c for m, c in metric_palette.items()}
+
+    full_df["score_metric"] = full_df["score_metric"].map(
+        lambda m: _get_metric_display_name(m, style)
+    )
 
     def plot_grouped_ranks(y_col, title_prefix, filename_suffix, concordance_key):
         plt.figure(figsize=(14, 7))
 
         pivot_df = full_df.pivot(index="GT_Score", columns="score_metric", values=y_col)
-        pivot_df = pivot_df[metrics]
+        pivot_df = pivot_df[display_metrics]
         if pivot_df.isnull().values.any():
             pivot_df = pivot_df.fillna(0)
         global_w = calculate_kendalls_w(pivot_df.values)
@@ -451,15 +476,15 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
             x="score_metric",
             y=y_col,
             hue="GT_Score",
-            order=metrics,
+            order=display_metrics,
             palette="viridis",
             edgecolor="black",
             linewidth=1,
         )
 
-        for i, m in enumerate(metrics):
-            w = concordance_maps[concordance_key].get(m, 0.0)
-            group_data = full_df[full_df["score_metric"] == m]
+        for i, (raw_m, disp_m) in enumerate(zip(metrics, display_metrics)):
+            w = concordance_maps[concordance_key].get(raw_m, 0.0)
+            group_data = full_df[full_df["score_metric"] == disp_m]
             max_h = group_data[y_col].max() if not group_data.empty else 0
             ax.text(
                 i,
@@ -491,15 +516,15 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
     plot_grouped_ranks("Combined_Percentile", "Aggregated Combined Ranks", "combined_ranks", "Combined")
 
     corr_rows = []
-    for m in metrics:
-        m_data = full_df[full_df["score_metric"] == m]
+    for raw_m, disp_m in zip(metrics, display_metrics):
+        m_data = full_df[full_df["score_metric"] == disp_m]
         if len(m_data) > 1:
             perf = m_data["Performance_Percentile"].values
             inc = m_data["Inconsistency_Percentile"].values
             rho, p = stats.spearmanr(perf, inc)
             if np.isnan(rho):
                 rho = 0
-            corr_rows.append({"score_metric": m, "Spearman_Rho": rho, "p_value": p})
+            corr_rows.append({"score_metric": disp_m, "Spearman_Rho": rho, "p_value": p})
 
     if corr_rows:
         corr_df = pd.DataFrame(corr_rows)
@@ -508,8 +533,8 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
             data=corr_df,
             x="score_metric",
             y="Spearman_Rho",
-            order=metrics,
-            palette=metric_palette,
+            order=display_metrics,
+            palette=display_palette,
             edgecolor="black",
             linewidth=1,
         )
@@ -529,9 +554,9 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
         plt.close()
 
     w_rows = []
-    for m in metrics:
-        w = concordance_maps["Combined"].get(m, 0.0)
-        w_rows.append({"score_metric": m, "Kendall_W": w})
+    for raw_m, disp_m in zip(metrics, display_metrics):
+        w = concordance_maps["Combined"].get(raw_m, 0.0)
+        w_rows.append({"score_metric": disp_m, "Kendall_W": w})
 
     if w_rows:
         w_df = pd.DataFrame(w_rows)
@@ -540,8 +565,8 @@ def plot_aggregated_analysis(results_dict, concordance_maps, output_dir):
             data=w_df,
             x="score_metric",
             y="Kendall_W",
-            order=metrics,
-            palette=metric_palette,
+            order=display_metrics,
+            palette=display_palette,
             edgecolor="black",
             linewidth=1,
         )
@@ -688,7 +713,7 @@ def plot_cluster_populations(
         If given, only rows where ``loss_function == loss_filter`` are kept.
         If None, populations are averaged over all loss functions and metrics.
     """
-    ensemble_colors, _, split_name_mapping = _resolve_style_dicts(style)
+    ensemble_colors, _, split_name_mapping, ensemble_name_mapping = _resolve_style_dicts(style)
 
     df = populations_df.copy()
 
@@ -748,10 +773,7 @@ def plot_cluster_populations(
         return
 
     # Friendly state labels (strip suffix and replace _ with space)
-    state_labels = [
-        c.replace("_ratio", "").replace("_current", "").replace("_proportion", "").replace("_", " ")
-        for c in pop_cols
-    ]
+    state_labels = [_get_metric_display_name(c, style) for c in pop_cols]
 
     split_types    = sorted(df["split_type"].unique()) if "split_type" in df.columns else ["all"]
     ensembles      = sorted(df["ensemble"].unique())   if "ensemble"   in df.columns else ["ensemble"]
@@ -809,7 +831,7 @@ def plot_cluster_populations(
                     means,
                     bar_width,
                     yerr=stds,
-                    label=ens,
+                    label=ensemble_name_mapping.get(ens, ens),
                     color=color,
                     capsize=4,
                     edgecolor="black",
@@ -850,7 +872,7 @@ def plot_cluster_populations(
             ax.set_xticklabels(state_labels, rotation=30, ha="right", fontsize=11)
             if row_idx == n_rows - 1:
                 ax.set_xlabel("Cluster / State", fontweight="bold")
-            ax.set_ylim(0, None)
+            ax.set_ylim(0, 1)
             ax.grid(axis="y", linestyle="--", alpha=0.3)
 
     # Shared legend
@@ -873,6 +895,95 @@ def plot_cluster_populations(
 
 
 
+def plot_kl_divergence_panel(df, output_dir, filename, score_metric=None, loss_function=None, style=None):
+    """KL divergence bar chart — one file per score_metric, mirrors plot 08 layout.
+
+    Panels = ensemble, x = loss_function, hue = split type.
+    Optional loss_function filter restricts data to a single loss.
+    """
+    if "kl_divergence_mean" not in df.columns:
+        print("Cannot plot KL divergence: 'kl_divergence_mean' column missing.")
+        return
+
+    _, split_colors, split_name_mapping, ensemble_name_mapping = _resolve_style_dicts(style)
+
+    local_df = df.copy()
+    if "kl_divergence_std" not in local_df.columns:
+        local_df["kl_divergence_std"] = 0.0
+
+    if score_metric is not None and "score_metric" in local_df.columns:
+        local_df = local_df[local_df["score_metric"] == score_metric]
+    if loss_function is not None and "loss_function" in local_df.columns:
+        local_df = local_df[local_df["loss_function"] == loss_function]
+    if local_df.empty:
+        return
+
+    ensembles = sorted(local_df["ensemble"].unique())
+    split_types = sorted(local_df["split_type"].unique())
+    loss_functions = (
+        sorted(local_df["loss_function"].unique())
+        if "loss_function" in local_df.columns
+        else ["all"]
+    )
+
+    n_ens = len(ensembles)
+    fig, axes = plt.subplots(1, n_ens, figsize=(6 * n_ens, 6), sharey=False)
+    if n_ens == 1:
+        axes = [axes]
+
+    width = 0.8 / len(split_types)
+    x = np.arange(len(loss_functions))
+
+    for i, ens in enumerate(ensembles):
+        ax = axes[i]
+        ens_data = local_df[local_df["ensemble"] == ens]
+
+        for j, split in enumerate(split_types):
+            split_data = ens_data[ens_data["split_type"] == split]
+            means, stds = [], []
+            for lf in loss_functions:
+                if "loss_function" in local_df.columns:
+                    row = split_data[split_data["loss_function"] == lf]
+                else:
+                    row = split_data
+                means.append(float(row["kl_divergence_mean"].iloc[0]) if not row.empty else 0.0)
+                stds.append(float(row["kl_divergence_std"].iloc[0]) if not row.empty else 0.0)
+
+            offset = (j - len(split_types) / 2 + 0.5) * width
+            color = split_colors.get(split, "grey")
+            ax.bar(x + offset, means, width, yerr=stds,
+                   label=split_name_mapping.get(split, split),
+                   color=color, capsize=4, edgecolor="black", alpha=0.9, linewidth=1)
+
+        ax.set_title(ensemble_name_mapping.get(ens, ens), fontweight="bold", fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            [_get_metric_display_name(lf, style) for lf in loss_functions],
+            rotation=45, ha="right",
+        )
+        ax.set_xlabel("Loss Function", fontweight="bold")
+        if i == 0:
+            ax.set_ylabel(r"$D_\mathrm{KL}(w \,\|\, \mathbf{u})$", fontweight="bold")
+        ax.set_ylim(bottom=0)
+        ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    handles, labels = axes[-1].get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    fig.legend(by_label.values(), by_label.keys(),
+               loc="upper right", bbox_to_anchor=(1.0, 1.0), title="Split Type")
+
+    metric_label = _get_metric_display_name(score_metric, style) if score_metric else "All Metrics"
+    plt.suptitle(
+        r"$D_\mathrm{KL}$ from Uniform Prior — Selected by " + metric_label,
+        fontsize=16, fontweight="bold", y=1.05,
+    )
+    plt.tight_layout()
+    out_path = os.path.join(output_dir, f"{filename}.png")
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    print(f"Saved {out_path}")
+    plt.close()
+
+
 __all__ = [
     "plot_score_panel",
     "plot_minimax_panel",
@@ -881,4 +992,5 @@ __all__ = [
     "plot_aggregated_analysis",
     "plot_p_values",
     "plot_cluster_populations",
+    "plot_kl_divergence_panel",
 ]

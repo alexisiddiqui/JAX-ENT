@@ -69,9 +69,12 @@ class PlotStyle:
     """Visual configuration for a specific experiment."""
 
     ensemble_colors: dict[str, str] = field(default_factory=dict)
+    ensemble_name_mapping: dict[str, str] = field(default_factory=dict)
+    cluster_name_mapping: dict[int, str] = field(default_factory=dict)
     loss_markers: dict[str, str] = field(default_factory=dict)
     split_type_colors: dict[str, str] = field(default_factory=dict)
     split_name_mapping: dict[str, str] = field(default_factory=dict)
+    metric_name_mapping: dict[str, str] = field(default_factory=dict)
     mse_hatch: str | None = None
     work_hatch: str | None = None
     mse_facecolor: str | None = None
@@ -180,6 +183,11 @@ class ExperimentConfig:
                     int(k): v for k, v in scoring_data["state_mapping"].items()
                 }
             data["scoring"] = ScoringConfig(**scoring_data)
+
+        # Auto-populate cluster_name_mapping from scoring.state_mapping when not explicitly set
+        if isinstance(data.get("style"), PlotStyle) and isinstance(data.get("scoring"), ScoringConfig):
+            if not data["style"].cluster_name_mapping and data["scoring"].state_mapping:
+                data["style"].cluster_name_mapping = dict(data["scoring"].state_mapping)
 
         return cls(**data)
 
