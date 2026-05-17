@@ -39,9 +39,9 @@ def apply_style() -> None:
             "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
             "font.size": 10,
             "axes.labelsize": 11,
-            "axes.titlesize": 16,
-            "xtick.labelsize": 14,
-            "ytick.labelsize": 9,
+            "axes.titlesize": 24,
+            "xtick.labelsize": 16,
+            "ytick.labelsize": 16,
             "legend.fontsize": 12,
             "figure.dpi": 300,
             "savefig.dpi": 300,
@@ -154,7 +154,7 @@ def save_figure(fig: plt.Figure, stem: str) -> None:
 
 
 def plot_composition() -> None:
-    fig, ax = plt.subplots(figsize=(3.3, 3.3), subplot_kw={"aspect": "equal"})
+    fig, ax = plt.subplots(figsize=(4, 4), subplot_kw={"aspect": "equal"})
     sizes = [40, 60]
     labels = ["Open", "Closed"]
     wedges, _, autotexts = ax.pie(
@@ -165,13 +165,14 @@ def plot_composition() -> None:
         counterclock=False,
         autopct="%1.0f%%",
         pctdistance=0.7,
+        textprops={'fontsize': 16},
         wedgeprops={"linewidth": 1.0, "edgecolor": "white"},
     )
     for autotext in autotexts:
         autotext.set_color("black")
         autotext.set_fontweight("bold")
-    ax.set_title("Iso-Validation target mixture", pad=10)
-    ax.text(0, -1.18, "Open 40%  |  Closed 60%", ha="center", va="top")
+    ax.set_title("Target mixture", pad=10)
+    # ax.text(0, -1.18, "Open 40%  |  Closed 60%", ha="center", va="top")
     ax.set_axis_off()
     save_figure(fig, "iso_validation_open_closed_composition")
     plt.close(fig)
@@ -184,7 +185,7 @@ def plot_hdx_summary() -> None:
         ("Open", TRAJ_DIR / "open_features" / "features.npz", COLORS["open"], "-", None),
         ("Closed", TRAJ_DIR / "closed_features" / "features.npz", COLORS["closed"], "--", None),
         ("Ground Truth-Only", FEATURE_DIR / "features_iso_bi.npz", COLORS["iso_bi"], "dotted", None),
-        ("Ground Truth+Alternate", FEATURE_DIR / "features_iso_tri.npz", COLORS["iso_tri"], "dotted", None),
+        ("Ground Truth+Intermediate", FEATURE_DIR / "features_iso_tri.npz", COLORS["iso_tri"], "dotted", None),
     ]
 
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -230,7 +231,7 @@ def plot_hdx_summary() -> None:
 
     ax.set_xlabel("Time (min)")
     ax.set_ylabel("Mean uptake fraction")
-    ax.set_title("ISO Validation HDX summary")
+    ax.set_title("HDX-uptake summary")
     ax.set_xlim(times.min() * 0.85, times.max() * 1.05)
     ax.set_ylim(0, 1.05)
     # ax.set_xscale("log")

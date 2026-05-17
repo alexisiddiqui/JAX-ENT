@@ -27,7 +27,7 @@ STATE_ORDER = ["Folded", "PUF1", "PUF2", "Unfolded"]
 DISPLAY_NAMES = {
     "target": "Target",
     "ground_truth_only": "Ground truth-only",
-    "ground_truth_intermediate": "Ground truth + intermediate",
+    "ground_truth_intermediate": "Ground truth+Unfolded",
 }
 COLOURS = {
     "target": "#F28E2B",
@@ -133,7 +133,7 @@ def plot_grouped_bars() -> None:
     x = np.arange(len(states))
     width = 0.24
 
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(6, 3))
 
     bars_by_condition = []
     for idx, (condition_key, condition_label) in enumerate(DISPLAY_NAMES.items()):
@@ -155,7 +155,7 @@ def plot_grouped_bars() -> None:
     ax.set_xticklabels(states)
     ax.set_ylabel("Population (%)")
     ax.set_ylim(0, 105)
-    ax.set_title("MoPrP Cross-Validation State Ratios")
+    ax.set_title("Cross-Validation Cluster Populations")
     ax.grid(axis="y", alpha=0.18, linewidth=0.6)
     ax.legend(frameon=False, ncols=1)
     # ax.text(
