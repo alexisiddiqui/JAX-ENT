@@ -3,7 +3,7 @@
 # topology: /Users/alexi/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/2L39_crop.pdb 
 
 render:
-  spectrum_colours: "green_white_purple"
+  spectrum_colours: "green_white_purpleblue"
   spectrum_range: [5.0, 45.0]
   putty_transform: 0
   putty_range: [1.0, 4.5]
