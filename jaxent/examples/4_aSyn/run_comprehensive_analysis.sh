@@ -7,10 +7,25 @@ cd "$(dirname "$0")" || exit 1
 ANA_DIR="analysis"
 DIR_WD="$(pwd)/fitting"
 RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_test_5000_20260420_222302"
-RESULTS_DIR="${1:-$RESULTS_DIR_DEFAULT}"
 
-# Read ensemble-specific paths from config.yaml (single source of truth).
-_cfg() { python -c "import yaml; c=yaml.safe_load(open('config.yaml')); print(c.get('$1',''))"; }
+# Parse --config FILE and positional RESULTS_DIR from args.
+CONFIG_YAML="config.yaml"
+RESULTS_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)   CONFIG_YAML="$2"; shift 2;;
+    --config=*) CONFIG_YAML="${1#*=}"; shift;;
+    *)
+      if [[ -z "$RESULTS_DIR" ]]; then RESULTS_DIR="$1"; fi
+      shift;;
+  esac
+done
+RESULTS_DIR="${RESULTS_DIR:-$RESULTS_DIR_DEFAULT}"
+
+echo "Config:    $CONFIG_YAML"
+
+# Read ensemble-specific paths from the specified config file (single source of truth).
+_cfg() { python -c "import yaml; c=yaml.safe_load(open('${CONFIG_YAML}')); print(c.get('$1',''))"; }
 FEATURES_DIR="$(pwd)/$(_cfg features_dir)"
 FEATURE_NPZ="$(pwd)/$(_cfg feature_npz)"
 TOPOLOGY_JSON="${FEATURES_DIR}/topology.json"

@@ -8,6 +8,8 @@ DIR_WD=$(pwd)
 echo "Working directory: $DIR_WD"
 
 # --- Defaults (can be overridden via CLI) ---
+CONFIG_YAML="${DIR_WD}/../config.yaml"
+FEATURES_DIR=""
 PARALLEL_JOBS=4
 DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000,10000,100000"
 # DEFAULT_MAXENT_VALUES_STR="1,10,100,1000,10000,100000"
@@ -95,14 +97,23 @@ while [[ $# -gt 0 ]]; do
       SPLIT_TYPES_STR="${1#*=}"; shift;;
     --skip-analysis)
       RUN_ANALYSIS=0; shift;;
+    --config)
+      CONFIG_YAML="$2"; shift 2;;
+    --config=*)
+      CONFIG_YAML="${1#*=}"; shift;;
     -h|--help)
-      echo "Usage: $0 [--conditions a,b] [--split-types s,t] [--maxent-values a,b,c] [--bvreg-values a,b] [--bv-reg-losses L1,L2] [--dir-name name] [--n-steps N] [--initial-steps M] [--initial-learning-rate X] [--learning-rate Y] [--ema-alpha Z] [--forward-model-scaling S] [--model-parameters-lr-scale P] [--skip-analysis] [-j|--jobs N]"
+      echo "Usage: $0 [--config FILE] [--conditions a,b] [--split-types s,t] [--maxent-values a,b,c] [--bvreg-values a,b] [--bv-reg-losses L1,L2] [--dir-name name] [--n-steps N] [--initial-steps M] [--initial-learning-rate X] [--learning-rate Y] [--ema-alpha Z] [--forward-model-scaling S] [--model-parameters-lr-scale P] [--skip-analysis] [-j|--jobs N]"
       exit 0;;
     *)
       break;;
   esac
 done
 
+# Extract features_dir from the selected config to pass to the optimizer.
+FEATURES_DIR=$(python -c "import yaml; c=yaml.safe_load(open('${CONFIG_YAML}')); print(c.get('features_dir',''))" 2>/dev/null || echo "")
+
+echo "Config:               $CONFIG_YAML"
+echo "Features dir:         ${FEATURES_DIR:-<from config.yaml>}"
 echo "Parallel jobs limit:  $PARALLEL_JOBS"
 echo "Maxent values:        $MAXENT_VALUES_STR"
 echo "BV reg values:        $BV_REG_VALUES_STR"
@@ -161,6 +172,10 @@ for CONDITION in "${CONDITIONS[@]}"; do
         for BV_REG_LOSS in "${BV_REG_LOSSES[@]}"; do
           echo "    Maxent: $MAXENT, BV reg: $BV_REG ($BV_REG_LOSS)"
           wait_for_slot
+          _features_arg=""
+          if [[ -n "$FEATURES_DIR" ]]; then
+            _features_arg="--features-dir ${FEATURES_DIR}"
+          fi
           python optimise_aSyn_conditions_BV.py \
             --condition "$CONDITION" \
             --loss-function "MSE" \
@@ -176,6 +191,7 @@ for CONDITION in "${CONDITIONS[@]}"; do
             --forward-model-scaling "$FORWARD_MODEL_SCALING" \
             --model-parameters-lr-scale "$MODEL_PARAMETERS_LR_SCALE" \
             --output-dir "$OPT_OUTPUT_DIR" \
+            ${_features_arg} \
             > "${OPT_OUTPUT_DIR}/logs/${CONDITION}_maxent${MAXENT}_bvreg${BV_REG}_${BV_REG_LOSS}_split${SPLIT}.log" 2>&1 &
         done
       done
@@ -196,7 +212,7 @@ if [ "$RUN_ANALYSIS" -eq 1 ]; then
     echo "Starting comprehensive analysis pipeline..."
     echo "Runner: $ANALYSIS_RUNNER"
     echo "Log:    $ANALYSIS_LOG"
-    bash "$ANALYSIS_RUNNER" "$OPT_OUTPUT_DIR" | tee "$ANALYSIS_LOG"
+    bash "$ANALYSIS_RUNNER" --config "$CONFIG_YAML" "$OPT_OUTPUT_DIR" | tee "$ANALYSIS_LOG"
     ANALYSIS_EXIT=${PIPESTATUS[0]}
     if [ "$ANALYSIS_EXIT" -eq 0 ]; then
       echo "Comprehensive analysis runner finished."
