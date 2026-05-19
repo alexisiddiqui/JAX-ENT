@@ -9,9 +9,16 @@ DIR_WD="$(pwd)/fitting"
 RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_test_5000_20260420_222302"
 RESULTS_DIR="${1:-$RESULTS_DIR_DEFAULT}"
 
+# Read ensemble-specific paths from config.yaml (single source of truth).
+_cfg() { python -c "import yaml; c=yaml.safe_load(open('config.yaml')); print(c.get('$1',''))"; }
+FEATURES_DIR="$(pwd)/$(_cfg features_dir)"
+FEATURE_NPZ="$(pwd)/$(_cfg feature_npz)"
+TOPOLOGY_JSON="${FEATURES_DIR}/topology.json"
+TOP_PDB="$(pwd)/$(_cfg top_pdb)"
+TRAJ_XTC="$(pwd)/$(_cfg trajectory_xtc)"
 # Clustering output dir — run data/inertia_moments_clustering.py separately before this script.
 # Shape/cluster plots are added automatically when the output files exist.
-CLUSTER_DIR="$(pwd)/data/_cluster_inertia"
+CLUSTER_DIR="$(pwd)/$(_cfg clustering_dir)"
 
 LOG_DIR="${RESULTS_DIR}/logs"
 mkdir -p "$LOG_DIR"
@@ -47,7 +54,7 @@ if run_step "recovery_analysis" "$LOG_DIR/recovery_analysis.log" \
   python "$ANA_DIR/recovery_analysis_aSyn_conditions_2d_bv.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/tris_MD/features" \
+    --features-dir "$FEATURES_DIR" \
     --absolute-paths; then
   RECOVERY_STATUS="ok"
 else
@@ -75,7 +82,7 @@ if run_step "process_optimisation_results" "$LOG_DIR/process_optimisation_result
   python "$ANA_DIR/process_optimisation_results_aSyn_conditions.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_aSyn/tris_MD/features" \
+    --features-dir "$FEATURES_DIR" \
     --absolute-paths; then
   PROCESS_STATUS="ok"
 else
@@ -145,10 +152,10 @@ fi
 FEAT_DIST_ARGS=(
   python "$ANA_DIR/plot_feature_distributions_aSyn_conditions.py"
     --extracted-dir "$EXTRACT_DIR"
-    --feature-npz "$(pwd)/data/_aSyn/tris_MD/features/aSyn_featurised.npz"
-    --topology-json "$(pwd)/data/_aSyn/tris_MD/features/topology.json"
-    --top-pdb "$(pwd)/data/_aSyn/tris_MD/md_mol_center_coil.pdb"
-    --traj-xtc "$(pwd)/data/_aSyn/tris_MD/tris_all_combined.xtc"
+    --feature-npz "$FEATURE_NPZ"
+    --topology-json "$TOPOLOGY_JSON"
+    --top-pdb "$TOP_PDB"
+    --traj-xtc "$TRAJ_XTC"
     --absolute-paths
 )
 if [ -f "$CLUSTER_DIR/cluster_labels.npy" ]; then
@@ -158,7 +165,9 @@ if [ -f "$CLUSTER_DIR/cluster_labels.npy" ]; then
     --ctail-rg-npy       "$CLUSTER_DIR/ctail_rg.npy"
   )
 fi
-if [ -f "$CLUSTER_DIR/macro_cluster_labels.npy" ]; then
+if [ -f "$CLUSTER_DIR/coarse_cluster_labels.npy" ]; then
+  FEAT_DIST_ARGS+=(--macro-cluster-labels-npy "$CLUSTER_DIR/coarse_cluster_labels.npy")
+elif [ -f "$CLUSTER_DIR/macro_cluster_labels.npy" ]; then
   FEAT_DIST_ARGS+=(--macro-cluster-labels-npy "$CLUSTER_DIR/macro_cluster_labels.npy")
 fi
 

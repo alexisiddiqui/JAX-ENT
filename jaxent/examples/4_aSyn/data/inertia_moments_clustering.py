@@ -23,6 +23,15 @@ Outputs (in --output-dir):
   macro_cluster_map.json      echo of the mapping used for macro_cluster_labels.npy
   plots/                      all figures
 
+
+python jaxent/examples/4_aSyn/data/inertia_moments_clustering.py --top-pdb /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/tris_MD/md_mol_center_coil.pdb --traj-xtc /Users/alexi/JAX-ENT/jaxent/examples/4_aSyn/data/_aSyn/tris_MD/tris_all_combined.xtc --absolute-paths --gmm-select-bic --method gmm
+
+
+
+
+
+
+
 Usage (two-pass workflow):
     # Pass 1 — inspect cluster layout:
     python inertia_moments_clustering.py \\
@@ -55,6 +64,7 @@ import pandas as pd
 import seaborn as sns
 from sklearn.cluster import DBSCAN, KMeans
 from sklearn.mixture import GaussianMixture
+import joblib
 
 # ============================================================================
 # Constants
@@ -289,7 +299,7 @@ def _draw_shape_boundary(ax: plt.Axes) -> None:
     ax.set_ylabel(r"$I_2/I_3$", fontsize=14)
     ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-    ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+    # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
     ax.tick_params(width=1.5)
 
 
@@ -498,24 +508,25 @@ def cluster_kmeans(features_xy: np.ndarray, n_clusters: int) -> tuple[np.ndarray
     return labels.astype(int), model.cluster_centers_
 
 
-def cluster_gmm(features_xy: np.ndarray, n_clusters: int) -> tuple[np.ndarray, np.ndarray]:
+def cluster_gmm(features_xy: np.ndarray, n_clusters: int) -> tuple[np.ndarray, np.ndarray, GaussianMixture]:
     model = GaussianMixture(n_components=n_clusters, covariance_type="full", random_state=42)
     labels = model.fit_predict(features_xy)
-    return labels.astype(int), model.means_
+    return labels.astype(int), model.means_, model
 
 
 def select_gmm_by_bic(
     features_xy: np.ndarray,
     min_components: int,
     max_components: int,
-) -> tuple[int, np.ndarray, np.ndarray, np.ndarray]:
-    """Fit a GMM range and return the BIC-optimal component count."""
+) -> tuple[int, np.ndarray, np.ndarray, np.ndarray, GaussianMixture]:
+    """Fit a GMM range and return the BIC-optimal component count and model."""
     component_counts = np.arange(min_components, max_components + 1, dtype=int)
     bic_scores = []
     best_bic = np.inf
     best_n = min_components
     best_labels: np.ndarray | None = None
     best_centers: np.ndarray | None = None
+    best_model: GaussianMixture | None = None
 
     for n_components in component_counts:
         model = GaussianMixture(
@@ -529,11 +540,12 @@ def select_gmm_by_bic(
             best_n = n_components
             best_labels = model.predict(features_xy).astype(int)
             best_centers = model.means_
+            best_model = model
 
-    if best_labels is None or best_centers is None:
+    if best_labels is None or best_centers is None or best_model is None:
         raise RuntimeError("GMM BIC selection failed to produce a fitted model.")
 
-    return best_n, np.asarray(bic_scores, dtype=float), best_labels, best_centers
+    return best_n, np.asarray(bic_scores, dtype=float), best_labels, best_centers, best_model
 
 
 def cluster_dbscan(
@@ -589,20 +601,19 @@ def cluster_free_energy_basins(
                         0 <= ni < density.shape[0]
                         and 0 <= nj < density.shape[1]
                         and valid[ni, nj]
-                        and density[ni, nj] > next_density
                     ):
-                        next_density = density[ni, nj]
-                        next_cell = (ni, nj)
+                        if density[ni, nj] > next_density:
+                            next_density = density[ni, nj]
+                            next_cell = (ni, nj)
             if next_cell == current:
-                dists = np.sum((maxima_idx - np.array(current)) ** 2, axis=1)
-                basin_id = int(np.argmin(dists))
+                basin_id = -2
                 break
             current = next_cell
         else:
             basin_id = int(basin_grid[current])
 
-        for cell in path:
-            basin_grid[cell] = basin_id
+        for p in path:
+            basin_grid[p] = basin_id
         basin_grid[current] = basin_id
 
     x_idx = _nearest_grid_indices(xg, x_ratio)
@@ -626,23 +637,26 @@ def run_clustering_method(
     dbscan_min_samples: int,
     basin_grid_size: int,
     gmm_bic_range: tuple[int, int] | None = None,
-) -> tuple[np.ndarray, np.ndarray | None]:
+) -> tuple[np.ndarray, np.ndarray | None, object | None]:
     if method == "kmeans":
-        return cluster_kmeans(features_xy, n_clusters)
+        labels, centers = cluster_kmeans(features_xy, n_clusters)
+        return labels, centers, None
     if method == "gmm":
         if gmm_bic_range is not None:
-            _best_n, _bic_scores, labels, centers = select_gmm_by_bic(
+            _best_n, _bic_scores, labels, centers, model = select_gmm_by_bic(
                 features_xy, gmm_bic_range[0], gmm_bic_range[1]
             )
-            return labels, centers
-        return cluster_gmm(features_xy, n_clusters)
+            return labels, centers, model
+        labels, centers, model = cluster_gmm(features_xy, n_clusters)
+        return labels, centers, model
     if method == "dbscan":
-        return cluster_dbscan(features_xy, dbscan_eps, dbscan_min_samples)
+        labels, _ = cluster_dbscan(features_xy, dbscan_eps, dbscan_min_samples)
+        return labels, None, None
     if method == "free_energy_basins":
         labels, basin_meta = cluster_free_energy_basins(
             x_ratio, y_ratio, n_clusters, basin_grid_size
         )
-        return labels, basin_meta["centers"]
+        return labels, basin_meta["centers"], None
     raise ValueError(f"Unsupported clustering method: {method}")
 
 
@@ -662,7 +676,7 @@ def plot_shape_indices_histograms(
         ax.set_xlabel("Shape Weight (0 to 1)", fontsize=12)
         ax.set_ylabel("Density", fontsize=12)
         ax.set_xlim(-0.05, 1.05)
-        ax.grid(True, ls=":", alpha=0.5)
+        # ax.grid(True, ls=":", alpha=0.5)
     plt.tight_layout()
     _savefig(plots_dir / "shape_indices_histograms.png", dpi=150, bbox_inches="tight")
     plt.close()
@@ -695,7 +709,7 @@ def _build_cluster_face_colors(
         gridsize=gridsize,
         extent=HEXBIN_EXTENT,
         reduce_C_function=_mode,
-        mincnt=1,
+        mincnt=None,
     )
     bin_labels = hb_cl.get_array().astype(int)
     plt.close(fig_tmp)
@@ -750,7 +764,7 @@ def plot_cluster_shape_space(
         label_int = int(label)
         display = "Noise" if label_int == -1 else f"Cluster {label_int}"
         legend_patches.append(mpatches.Patch(color=palette[label_int], label=display))
-    ax.legend(handles=legend_patches, loc="upper left", fontsize=10, title=method)
+    ax.legend(handles=legend_patches, loc="lower right", fontsize=10, title=method)
     ax.set_title(f"Shape Space Clusters ({method})", fontsize=14, pad=10)
     plt.tight_layout()
     _savefig(plots_dir / f"shape_space_{method}.png", format="png", dpi=1200,
@@ -849,7 +863,7 @@ def plot_gmm_bic(
     ax.set_xlabel("GMM Components")
     ax.set_ylabel("BIC")
     ax.set_title("GMM Model Selection by BIC")
-    ax.grid(True, ls=":", alpha=0.5)
+    # ax.grid(True, ls=":", alpha=0.5)
     ax.legend()
     plt.tight_layout()
     _savefig(plots_dir / "bic_vs_n.png", dpi=300, bbox_inches="tight")
@@ -891,7 +905,7 @@ def plot_macro_hexbin(
         return m.mode[0]
 
     hb_cl = ax_tmp.hexbin(x_ratio, y_ratio, C=macro_ids,
-                          gridsize=gridsize, extent=extent, reduce_C_function=get_mode, mincnt=1)
+                          gridsize=gridsize, extent=extent, reduce_C_function=get_mode, mincnt=None)
     bin_macro_ids = hb_cl.get_array().astype(int)
     plt.close(fig_tmp)
 
@@ -1341,6 +1355,83 @@ def plot_ctail_rg_macro_rows(
 
 
 # ============================================================================
+# Representative-structure export
+# ============================================================================
+
+
+def save_cluster_representative_pdbs(
+    u: mda.Universe,
+    cluster_labels: np.ndarray,
+    features_xy: np.ndarray,
+    centers_xy: np.ndarray,
+    output_dir: Path,
+    method: str,
+    n_representatives: int = 10,
+) -> None:
+    """Write the N frames closest to each cluster centre as a multi-frame PDB.
+
+    For each non-noise cluster the frames are ranked by Euclidean distance in
+    shape-space (I1/I3, I2/I3) to the cluster centre.  The *n_representatives*
+    closest frames are written as MODEL/ENDMDL records to
+    ``output_dir/cluster_representatives/cluster_<id>_top{n}.pdb``.
+    A combined file containing all clusters is also written.
+    """
+    reps_dir = output_dir / "cluster_representatives"
+    reps_dir.mkdir(parents=True, exist_ok=True)
+
+    all_atoms = u.select_atoms("all")
+    valid_clusters = sorted(int(v) for v in np.unique(cluster_labels) if v >= 0)
+
+    if len(valid_clusters) == 0:
+        print("No non-noise clusters found — skipping representative PDB export.")
+        return
+
+    all_frame_indices: list[int] = []
+    all_frame_cluster_ids: list[int] = []
+
+    for cluster_id in valid_clusters:
+        mask = cluster_labels == cluster_id
+        frame_indices_in_cluster = np.where(mask)[0]  # global frame indices
+        pts = features_xy[mask]  # shape-space coords for this cluster
+
+        if cluster_id < len(centers_xy):
+            center = centers_xy[cluster_id]
+        else:
+            center = pts.mean(axis=0)
+
+        distances = np.linalg.norm(pts - center, axis=1)
+        # Closest-first ordering
+        sorted_order = np.argsort(distances)
+        top_n = min(n_representatives, len(frame_indices_in_cluster))
+        chosen = frame_indices_in_cluster[sorted_order[:top_n]]
+
+        out_path = reps_dir / f"cluster_{cluster_id:02d}_top{top_n}_{method}.pdb"
+        with mda.Writer(str(out_path), n_atoms=all_atoms.n_atoms, multiframe=True) as writer:
+            for fi in chosen:
+                u.trajectory[fi]
+                writer.write(all_atoms)
+
+        print(
+            f"  Cluster {cluster_id:>2d}: wrote {top_n} representative frames "
+            f"-> {out_path.name}"
+        )
+        all_frame_indices.extend(chosen.tolist())
+        all_frame_cluster_ids.extend([cluster_id] * top_n)
+
+    # Combined file: all clusters' representatives in one PDB
+    combined_path = reps_dir / f"all_clusters_representatives_{method}.pdb"
+    with mda.Writer(str(combined_path), n_atoms=all_atoms.n_atoms, multiframe=True) as writer:
+        for fi in all_frame_indices:
+            u.trajectory[fi]
+            writer.write(all_atoms)
+    print(
+        f"  Combined representative PDB ({len(all_frame_indices)} frames) "
+        f"-> {combined_path.name}"
+    )
+    print(f"Saved cluster representative PDBs to {reps_dir}")
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -1362,6 +1453,7 @@ def run_candidate(
     cluster_map: dict[str, list[int]] | None,
     generate_plots: bool = True,
 ) -> dict[str, object]:
+    import joblib
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1390,13 +1482,16 @@ def run_candidate(
     gmm_bic_range: tuple[int, int] | None = None
 
     if gmm_select_bic:
-        selected_gmm_components, gmm_bic_scores, gmm_labels, gmm_centers = select_gmm_by_bic(
+        print(f"Selecting GMM components using BIC ({gmm_min_components} to {gmm_max_components})...")
+        selected_gmm_components, gmm_bic_scores, gmm_labels, gmm_centers, gmm_model = select_gmm_by_bic(
             features_xy, gmm_min_components, gmm_max_components
         )
         gmm_bic_counts = np.arange(gmm_min_components, gmm_max_components + 1, dtype=int)
         gmm_bic_range = (gmm_min_components, gmm_max_components)
         method_labels["gmm"] = gmm_labels
         method_centers["gmm"] = gmm_centers
+        print(f"Saving GMM model to {output_dir / 'gmm_model.pkl'}")
+        joblib.dump(gmm_model, output_dir / "gmm_model.pkl")
         print(
             f"  selected GMM components by BIC: {selected_gmm_components} "
             f"(searched {gmm_min_components}-{gmm_max_components})"
@@ -1409,7 +1504,7 @@ def run_candidate(
             centers_xy = method_centers["gmm"]
         else:
             effective_n_clusters = selected_gmm_components if method_name == "gmm" else n_clusters
-            labels, centers_xy = run_clustering_method(
+            labels, centers_xy, _model = run_clustering_method(
                 method_name,
                 features_xy,
                 x_ratio,
@@ -1418,13 +1513,29 @@ def run_candidate(
                 dbscan_eps,
                 dbscan_min_samples,
                 basin_grid_size,
-                gmm_bic_range=None,
+                gmm_bic_range=gmm_bic_range,
             )
+            if method_name == "gmm" and _model is not None and not gmm_select_bic:
+                print(f"Saving GMM model to {output_dir / 'gmm_model.pkl'}")
+                joblib.dump(_model, output_dir / "gmm_model.pkl")
         method_labels[method_name] = labels
         method_centers[method_name] = centers_xy
 
     cluster_labels = method_labels[method]
     centers_xy = ensure_cluster_centers(features_xy, cluster_labels, method_centers[method])
+
+    # --- Export 10 representative structures per cluster (closest to centre) ---
+    print("Saving representative structures (10 closest to each cluster centre)...")
+    save_cluster_representative_pdbs(
+        u=u,
+        cluster_labels=cluster_labels,
+        features_xy=features_xy,
+        centers_xy=centers_xy,
+        output_dir=output_dir,
+        method=method,
+        n_representatives=10,
+    )
+
     rg_ctail = compute_ctail_rg(u, ctail_sel_str)
     resolved_threshold = float(np.median(rg_ctail) if ctail_threshold is None else ctail_threshold)
 
@@ -1550,7 +1661,7 @@ def main() -> None:
     parser.add_argument("--traj-xtc", default=None, help="Trajectory XTC file")
     parser.add_argument("--output-dir", default=None,
                         help="Output directory (default: _cluster_inertia relative to script dir)")
-    parser.add_argument("--n-clusters", type=int, default=7,
+    parser.add_argument("--n-clusters", type=int, default=20,
                         help="Number of clusters/components/basins for kmeans, gmm, and free-energy basins")
     parser.add_argument(
         "--method",
