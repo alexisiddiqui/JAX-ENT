@@ -37,6 +37,6 @@ output:
 
 project_logpfs:
   reference_data: "data/_aSyn/aSyn_PF_Tris_only.dat"
-  target_data: "fitting/_processed__optimise_aSyn_BV_test_5000_20260420_222302/_extracted__processed__optimise_aSyn_BV_test_5000_20260420_222302/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
+  target_data: "fitting/_processed__optimise_aSyn_BV_test_5000_20260519_015112/_extracted__processed__optimise_aSyn_BV_test_5000_20260519_015112/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
   target_topology: "data/_aSyn/tris_MD/md_mol_center_coil.pdb"
   metric: "difference_signed"  # Options: protection_factor, uncertainty_sd, uncertainty_rsd, difference_signed, difference_absolute

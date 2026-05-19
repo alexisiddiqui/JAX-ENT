@@ -221,12 +221,16 @@ def main() -> None:
 
             agg_frame_weights: list[np.ndarray | None] = []
             agg_pred_ln_pf: list[np.ndarray | None] = []
+            agg_bv_bc: list[float | None] = []
+            agg_bv_bh: list[float | None] = []
 
             for split_idx in range(num_replicates):
                 rep_df = group_df[group_df["split_idx"] == split_idx].dropna(subset=[metric])
                 if rep_df.empty:
                     agg_frame_weights.append(None)
                     agg_pred_ln_pf.append(None)
+                    agg_bv_bc.append(None)
+                    agg_bv_bh.append(None)
                     continue
 
                 best_row_idx = rep_df[metric].idxmin() if direction == "min" else rep_df[metric].idxmax()
@@ -247,11 +251,15 @@ def main() -> None:
                     print(f"WARNING: Processed run not found for key: {lookup_key}")
                     agg_frame_weights.append(None)
                     agg_pred_ln_pf.append(None)
+                    agg_bv_bc.append(None)
+                    agg_bv_bh.append(None)
                     continue
 
                 run_path = Path(run["full_run_path"])
                 weights_path = run_path / "frame_weights.npy"
                 pf_path = run_path / "pred_ln_pf.npy"
+                bc_path = run_path / "bv_bc.npy"
+                bh_path = run_path / "bv_bh.npy"
                 convergence_path = run_path / "convergence_thresholds.txt"
 
                 conv_idx = _load_convergence_index(
@@ -264,6 +272,8 @@ def main() -> None:
                     )
                     agg_frame_weights.append(None)
                     agg_pred_ln_pf.append(None)
+                    agg_bv_bc.append(None)
+                    agg_bv_bh.append(None)
                     continue
 
                 if weights_path.exists():
@@ -282,6 +292,22 @@ def main() -> None:
                 else:
                     agg_pred_ln_pf.append(None)
 
+                if bc_path.exists():
+                    bc_arr = np.load(bc_path)
+                    agg_bv_bc.append(
+                        float(bc_arr[conv_idx]) if conv_idx < bc_arr.shape[0] else None
+                    )
+                else:
+                    agg_bv_bc.append(None)
+
+                if bh_path.exists():
+                    bh_arr = np.load(bh_path)
+                    agg_bv_bh.append(
+                        float(bh_arr[conv_idx]) if conv_idx < bh_arr.shape[0] else None
+                    )
+                else:
+                    agg_bv_bh.append(None)
+
             first_w = next((x for x in agg_frame_weights if x is not None), None)
             first_pf = next((x for x in agg_pred_ln_pf if x is not None), None)
 
@@ -299,10 +325,22 @@ def main() -> None:
                 if first_pf is not None
                 else np.array([])
             )
+            final_bcs = np.array(
+                [x if x is not None else np.nan for x in agg_bv_bc]
+            )
+            final_bhs = np.array(
+                [x if x is not None else np.nan for x in agg_bv_bh]
+            )
 
             save_name = f"{ensemble}_{loss_fn}_{split_type}_{bv_reg_fn}"
             out_path = metric_dir / f"{save_name}_selected.npz"
-            np.savez(out_path, frame_weights=final_weights, pred_ln_pf=final_pfs)
+            np.savez(
+                out_path,
+                frame_weights=final_weights,
+                pred_ln_pf=final_pfs,
+                bv_bc=final_bcs,
+                bv_bh=final_bhs,
+            )
 
     print("Extraction complete.")
 

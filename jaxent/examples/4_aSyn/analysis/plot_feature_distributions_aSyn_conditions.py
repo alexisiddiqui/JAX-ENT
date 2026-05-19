@@ -337,6 +337,42 @@ def aggregate_weight_rows(
     return per_frame / total
 
 
+def load_condition_bv_params(
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+) -> dict[str, tuple[float, float]]:
+    """Load and average fitted bv_bc and bv_bh parameters across replicates for each condition."""
+    condition_params: dict[str, tuple[float, float]] = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            condition_params[condition] = (0.35, 2.0)
+            continue
+
+        bcs = []
+        bhs = []
+        for npz_file in npz_files:
+            try:
+                data = np.load(npz_file)
+                if "bv_bc" in data and "bv_bh" in data:
+                    bcs.append(data["bv_bc"])
+                    bhs.append(data["bv_bh"])
+            except Exception as e:
+                print(f"WARNING: failed to load params from {npz_file}: {e}")
+
+        if bcs and bhs:
+            mean_bc = np.nanmean(np.concatenate(bcs))
+            mean_bh = np.nanmean(np.concatenate(bhs))
+            if np.isnan(mean_bc) or np.isnan(mean_bh):
+                condition_params[condition] = (0.35, 2.0)
+            else:
+                condition_params[condition] = (float(mean_bc), float(mean_bh))
+        else:
+            condition_params[condition] = (0.35, 2.0)
+
+    return condition_params
+
+
 def plot_feature_distributions_per_metric(
     metric_dir: Path,
     nc_dist: np.ndarray,
@@ -349,6 +385,9 @@ def plot_feature_distributions_per_metric(
     cfg: ExperimentConfig,
     output_dir: Path,
     weight_aggregation: str,
+    heavy_contacts: np.ndarray | None = None,
+    acceptor_contacts: np.ndarray | None = None,
+    resid_to_idx: dict[int, int] | None = None,
 ):
     """Create 3×N_conditions figure showing weighted feature distributions.
 
@@ -371,6 +410,7 @@ def plot_feature_distributions_per_metric(
         metric_dir, cfg, cluster_labels, n_per_cluster, len(nc_dist),
         aggregation=weight_aggregation,
     )
+    condition_params = load_condition_bv_params(metric_dir, cfg)
 
     # Build figure: N_conditions rows × 5 feature columns
     figsize = (20, 3 * n_conds)
@@ -378,15 +418,13 @@ def plot_feature_distributions_per_metric(
     if n_conds == 1:
         axes = axes.reshape(1, 5)
 
-    feature_data = [nc_dist, nac_prot, p2_prot, ctail_prot, termini_contacts]
     feature_keys = ["nc_distance", "nac_prot", "p2_prot", "ctail_prot", "termini_contacts"]
 
     # Outer loop: conditions (rows), Inner loop: features (columns)
     for row_idx, condition in enumerate(cfg.ensembles):
-        for col_idx, (feature_array, feature_key) in enumerate(zip(feature_data, feature_keys)):
-            ax = axes[row_idx, col_idx]
-
-            if condition_weights[condition] is None:
+        if condition_weights[condition] is None:
+            for col_idx in range(5):
+                ax = axes[row_idx, col_idx]
                 ax.text(
                     0.5,
                     0.5,
@@ -399,18 +437,35 @@ def plot_feature_distributions_per_metric(
                 )
                 ax.set_xticks([])
                 ax.set_yticks([])
-                continue
+            continue
 
-            # Get weights for this condition
-            weights = condition_weights[condition]
-            color = cfg.style.ensemble_colors.get(condition, "#808080")
+        # Get weights and params for this condition
+        weights = condition_weights[condition]
+        color = cfg.style.ensemble_colors.get(condition, "#808080")
+        bc, bh = condition_params.get(condition, (0.35, 2.0))
+        print(f"  {condition}: weights ESS = {compute_effective_sample_size(weights):.1f}, fitted BV params: bc = {bc:.4f}, bh = {bh:.4f}")
+
+        # Compute condition-specific protection factors
+        if heavy_contacts is not None and acceptor_contacts is not None and resid_to_idx is not None:
+            log_pf_cond = bc * heavy_contacts + bh * acceptor_contacts
+            nac_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, NAC_RANGE)
+            p2_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, P2_RANGE)
+            ctail_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, CTAIL_RANGE)
+        else:
+            nac_prot_cond = nac_prot
+            p2_prot_cond = p2_prot
+            ctail_prot_cond = ctail_prot
+
+        feature_data = [nc_dist, nac_prot_cond, p2_prot_cond, ctail_prot_cond, termini_contacts]
+
+        for col_idx, (feature_array, feature_key) in enumerate(zip(feature_data, feature_keys)):
+            ax = axes[row_idx, col_idx]
 
             # Calculate stats
             m_total, s_total = weighted_stats(feature_array)
             m_weighted, s_weighted = weighted_stats(feature_array, weights=weights)
 
             # Determine common bins for both histograms
-            # Use the full range of the feature data across all frames
             bins = np.linspace(np.min(feature_array), np.max(feature_array), 25)
 
             # Plot unweighted histogram behind (semi-transparent grey)
@@ -1152,7 +1207,7 @@ def plot_free_energy_landscape_per_metric(
             ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
 
         ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
-        ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
 
         _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
 
@@ -1264,7 +1319,7 @@ def plot_free_energy_difference_per_metric(
             ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
 
         ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
-        ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
 
         _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
 
@@ -1358,7 +1413,7 @@ def plot_free_energy_uncertainty_per_metric(
         if col_idx == 0:
             ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
         ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
-        ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
 
         _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
 
@@ -1736,6 +1791,406 @@ def export_candidate_model_ranking(
         print(f"Saved {state_path}")
 
 
+def plot_residue_pf_distributions_per_metric(
+    metric_dir: Path,
+    log_pf: np.ndarray,
+    heavy_contacts: np.ndarray | None,
+    acceptor_contacts: np.ndarray | None,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-mean protection factor distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black), original unweighted prior (grey dashed),
+    unweighted fitted (transparent teal), and experimental target (orange).
+    """
+    from jaxent.src.custom_types.HDX import HDX_protection_factor
+    from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+
+    # Determine paths for target experimental data
+    # metric_dir: examples/4_aSyn/fitting/_processed_.../_extracted_.../val_mse_min
+    # exp_dir is 4 levels up: examples/4_aSyn
+    exp_dir = metric_dir.parents[3]
+    data_dir = exp_dir / "data" / "_aSyn"
+
+    target_pfs = {}
+    for condition in cfg.ensembles:
+        cond_safe = condition.replace(" ", "_").replace("/", "_")
+        json_path = data_dir / f"aSyn_PF_{cond_safe}.json"
+        csv_path = data_dir / f"aSyn_PF_{cond_safe}.csv"
+        
+        if json_path.exists() and csv_path.exists():
+            try:
+                hdx_data = ExpD_Datapoint.load_list_from_files(
+                    json_path=str(json_path),
+                    csv_path=str(csv_path),
+                    datapoint_class=HDX_protection_factor
+                )
+                target_pf = {dp.top.residues[0]: float(np.atleast_1d(dp.protection_factor)[0]) for dp in hdx_data}
+                target_pfs[condition] = target_pf
+            except Exception as e:
+                print(f"Error loading target data for {condition}: {e}")
+                target_pfs[condition] = {}
+        else:
+            print(f"WARNING: target files not found for {condition} at {json_path} and {csv_path}")
+            target_pfs[condition] = {}
+
+    # Load selection files containing replicate data
+    replicate_pfs = {}
+    replicate_bc = {}
+    replicate_bh = {}
+
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            continue
+        
+        npz_file = npz_files[0]
+        data = np.load(npz_file)
+        
+        # Load pred_ln_pf (shape: n_replicates, n_residues)
+        if "pred_ln_pf" in data:
+            replicate_pfs[condition] = data["pred_ln_pf"]
+        elif "bv_bc" in data and "bv_bh" in data and "frame_weights" in data and heavy_contacts is not None and acceptor_contacts is not None:
+            # Fallback computation if pred_ln_pf was somehow missing
+            bc_arr = data["bv_bc"]
+            bh_arr = data["bv_bh"]
+            weights_arr = data["frame_weights"]
+            pfs = []
+            for bc, bh, w in zip(bc_arr, bh_arr, weights_arr):
+                pfs.append((bc * heavy_contacts + bh * acceptor_contacts) @ w)
+            replicate_pfs[condition] = np.stack(pfs)
+
+        if "bv_bc" in data:
+            replicate_bc[condition] = data["bv_bc"]
+        if "bv_bh" in data:
+            replicate_bh[condition] = data["bv_bh"]
+
+    active_conditions = [c for c in cfg.ensembles if c in replicate_pfs]
+    if not active_conditions:
+        print("No active conditions found for residue PF plots. Skipping.")
+        return
+
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    def get_blocks(resids):
+        if not resids: return []
+        resids = sorted(resids)
+        blocks = []
+        start = resids[0]
+        for i in range(1, len(resids)):
+            if resids[i] != resids[i-1] + 1:
+                blocks.append((start, resids[i-1]))
+                start = resids[i]
+        blocks.append((start, resids[-1]))
+        return blocks
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        target_pf = target_pfs.get(condition, {})
+        pred_pfs = replicate_pfs[condition]
+        
+        # Fitted Ensemble metrics
+        fitted_mean = np.mean(pred_pfs, axis=0)
+        fitted_sd = np.std(pred_pfs, axis=0)
+        
+        # Align all values to full_range
+        x_vals = full_range
+        y_target = [target_pf.get(r, np.nan) for r in x_vals]
+        
+        y_fitted_mean = [fitted_mean[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        y_fitted_sd = [fitted_sd[resid_to_idx[r]] if r in resid_to_idx else 0.0 for r in x_vals]
+        
+        # Unweighted Original Prior
+        prior_vals = log_pf.mean(axis=1)
+        y_prior = [prior_vals[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        
+        # Unweighted Fitted
+        if condition in replicate_bc and condition in replicate_bh and heavy_contacts is not None and acceptor_contacts is not None:
+            bc_vals = replicate_bc[condition]
+            bh_vals = replicate_bh[condition]
+            unweighted_fitted_reps = []
+            for bc, bh in zip(bc_vals, bh_vals):
+                unweighted_fitted_reps.append((bc * heavy_contacts + bh * acceptor_contacts).mean(axis=1))
+            unweighted_fitted_mean = np.mean(unweighted_fitted_reps, axis=0)
+            y_unweighted_fitted = [unweighted_fitted_mean[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        else:
+            y_unweighted_fitted = None
+            
+        # Draw lines
+        ax.plot(x_vals, y_prior, color="grey", linestyle="--", label="Unweighted/Original Params")
+        
+        if y_unweighted_fitted is not None:
+            ax.plot(x_vals, y_unweighted_fitted, color="teal", alpha=0.5, label="Unweighted Fitted Params")
+            
+        ax.plot(x_vals, y_fitted_mean, color="black", linestyle="-", label="Fitted Ensemble")
+        
+        y_fitted_mean = np.array(y_fitted_mean)
+        y_fitted_sd = np.array(y_fitted_sd)
+        ax.fill_between(x_vals, y_fitted_mean - y_fitted_sd, y_fitted_mean + y_fitted_sd, color="black", alpha=0.15)
+        
+        ax.plot(x_vals, y_target, color="darkorange", marker="o", markersize=3, linestyle="-", label="Experimental Target")
+        
+        # Draw boxes for missing target residues
+        missing_resids = [r for r in x_vals if r not in target_pf]
+        missing_blocks = get_blocks(missing_resids)
+        for start, end in missing_blocks:
+            ax.axvspan(start - 0.5, end + 0.5, color='grey', alpha=0.15, lw=0, label="Missing Target Data" if start == missing_blocks[0][0] else "")
+            
+        # Style row subplot
+        ax.set_ylabel(r"$\log(Pf)$")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"residue_pf_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"residue_pf_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved residue PF plots to {png_path} and {pdf_path}")
+    plt.close()
+
+
+def plot_tris_bound_distributions_per_metric(
+    metric_dir: Path,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-wise Tris bound distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
+    """
+    exp_dir = metric_dir.parents[3]
+    tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
+    if not tris_npz_path.exists():
+        print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris bound plot.")
+        return
+
+    # Load tris bound data
+    tris_data = np.load(tris_npz_path)
+    resids = tris_data["resids"]  # shape (140,)
+    tris_bound_all = tris_data["tris_bound"]  # shape (n_frames, 140)
+    tris_resid_to_idx = {r: i for i, r in enumerate(resids)}
+
+    # Filter residues to active residue numbers
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    # Filter tris_bound array to match full_range
+    X = []
+    for r in full_range:
+        if r in tris_resid_to_idx:
+            X.append(tris_bound_all[:, tris_resid_to_idx[r]])
+        else:
+            X.append(np.zeros(tris_bound_all.shape[0]))
+    X = np.stack(X, axis=1).astype(float)  # shape (n_frames, len(full_range))
+
+    # Calculate unweighted mean and SD
+    unweighted_mean = X.mean(axis=0)
+    unweighted_sd = X.std(axis=0)
+
+    # Identify active conditions (those with selected model npz files)
+    active_conditions = []
+    replicate_weights = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if npz_files:
+            active_conditions.append(condition)
+            data = np.load(npz_files[0])
+            if "frame_weights" in data:
+                replicate_weights[condition] = data["frame_weights"]
+
+    if not active_conditions:
+        print("No active conditions found for Tris bound plots. Skipping.")
+        return
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        # Plot unweighted mean + SD (grey dashed + transparent grey band)
+        ax.plot(full_range, unweighted_mean, color="grey", linestyle="--", label="Unweighted")
+        ax.fill_between(full_range, unweighted_mean - unweighted_sd, unweighted_mean + unweighted_sd, color="grey", alpha=0.15)
+        
+        # Calculate reweighted mean + SD per replicate
+        weights_arr = replicate_weights.get(condition)
+        if weights_arr is not None:
+            reweighted_means = []
+            reweighted_sds = []
+            for w in weights_arr:
+                mu_j = X.T @ w
+                var_j = ((X - mu_j)**2).T @ w
+                sd_j = np.sqrt(np.maximum(var_j, 0.0))
+                reweighted_means.append(mu_j)
+                reweighted_sds.append(sd_j)
+            
+            # Replicate average
+            mean_reps = np.mean(reweighted_means, axis=0)
+            mean_sds = np.mean(reweighted_sds, axis=0)
+            
+            # Plot reweighted replicate mean + SD (black + transparent black band)
+            ax.plot(full_range, mean_reps, color="black", linestyle="-", label="Fitted Ensemble")
+            ax.fill_between(full_range, mean_reps - mean_sds, mean_reps + mean_sds, color="black", alpha=0.15)
+
+        # Style row subplot
+        ax.set_ylabel("Average Bound Tris")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"tris_bound_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"tris_bound_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved Tris bound plots to {png_path} and {pdf_path}")
+    plt.close()
+
+
+def plot_tris_contacts_distributions_per_metric(
+    metric_dir: Path,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-wise Tris contacts distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
+    """
+    exp_dir = metric_dir.parents[3]
+    tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
+    if not tris_npz_path.exists():
+        print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris contacts plot.")
+        return
+
+    # Load tris bound data
+    tris_data = np.load(tris_npz_path)
+    resids = tris_data["resids"]  # shape (140,)
+    if "tris_contacts" in tris_data:
+        tris_contacts_all = tris_data["tris_contacts"]  # shape (n_frames, 140)
+    else:
+        print("WARNING: 'tris_contacts' not found in tris_residue_contacts.npz. Skipping Tris contacts plot.")
+        return
+        
+    tris_resid_to_idx = {r: i for i, r in enumerate(resids)}
+
+    # Filter residues to active residue numbers
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    # Filter tris_contacts array to match full_range
+    X = []
+    for r in full_range:
+        if r in tris_resid_to_idx:
+            X.append(tris_contacts_all[:, tris_resid_to_idx[r]])
+        else:
+            X.append(np.zeros(tris_contacts_all.shape[0]))
+    X = np.stack(X, axis=1).astype(float)  # shape (n_frames, len(full_range))
+
+    # Calculate unweighted mean and SD
+    unweighted_mean = X.mean(axis=0)
+    unweighted_sd = X.std(axis=0)
+
+    # Identify active conditions (those with selected model npz files)
+    active_conditions = []
+    replicate_weights = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if npz_files:
+            active_conditions.append(condition)
+            data = np.load(npz_files[0])
+            if "frame_weights" in data:
+                replicate_weights[condition] = data["frame_weights"]
+
+    if not active_conditions:
+        print("No active conditions found for Tris contacts plots. Skipping.")
+        return
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        # Plot unweighted mean + SD (grey dashed + transparent grey band)
+        ax.plot(full_range, unweighted_mean, color="grey", linestyle="--", label="Unweighted")
+        ax.fill_between(full_range, unweighted_mean - unweighted_sd, unweighted_mean + unweighted_sd, color="grey", alpha=0.15)
+        
+        # Calculate reweighted mean + SD per replicate
+        weights_arr = replicate_weights.get(condition)
+        if weights_arr is not None:
+            reweighted_means = []
+            reweighted_sds = []
+            for w in weights_arr:
+                mu_j = X.T @ w
+                var_j = ((X - mu_j)**2).T @ w
+                sd_j = np.sqrt(np.maximum(var_j, 0.0))
+                reweighted_means.append(mu_j)
+                reweighted_sds.append(sd_j)
+            
+            # Replicate average
+            mean_reps = np.mean(reweighted_means, axis=0)
+            mean_sds = np.mean(reweighted_sds, axis=0)
+            
+            # Plot reweighted replicate mean + SD (black + transparent black band)
+            ax.plot(full_range, mean_reps, color="black", linestyle="-", label="Fitted Ensemble")
+            ax.fill_between(full_range, mean_reps - mean_sds, mean_reps + mean_sds, color="black", alpha=0.15)
+
+        # Style row subplot
+        ax.set_ylabel("Average Tris Contacts")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"tris_contacts_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"tris_contacts_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved Tris contacts plots to {png_path} and {pdf_path}")
+    plt.close()
+
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -1864,6 +2319,18 @@ def main():
     print("Loading protection factors...")
     log_pf = load_log_pf(feature_npz)
 
+    print("Loading contact features...")
+    heavy_contacts = None
+    acceptor_contacts = None
+    features_npz_path = Path(feature_npz).parent / "features.npz"
+    if features_npz_path.exists():
+        print(f"Loading contact features from {features_npz_path}...")
+        feat_data = np.load(features_npz_path, allow_pickle=True)
+        heavy_contacts = feat_data["heavy_contacts"]
+        acceptor_contacts = feat_data["acceptor_contacts"]
+    else:
+        print(f"WARNING: contact features not found at {features_npz_path}. Will fall back to default prior protection factors.")
+
     print("Computing regional mean log Pf...")
     nac_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, NAC_RANGE)
     p2_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, P2_RANGE)
@@ -1973,6 +2440,9 @@ def main():
             cfg,
             output_dir,
             args.weight_aggregation,
+            heavy_contacts=heavy_contacts,
+            acceptor_contacts=acceptor_contacts,
+            resid_to_idx=resid_to_idx,
         )
 
         plot_radgyr_distributions_per_metric(
@@ -2088,6 +2558,33 @@ def main():
                 output_dir=output_dir,
                 proxy_features=proxy_features,
             )
+
+        # Plot sequence-wise residue protection factors
+        plot_residue_pf_distributions_per_metric(
+            metric_dir=metric_dir,
+            log_pf=log_pf,
+            heavy_contacts=heavy_contacts,
+            acceptor_contacts=acceptor_contacts,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
+
+        # Plot sequence-wise Tris bound distributions
+        plot_tris_bound_distributions_per_metric(
+            metric_dir=metric_dir,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
+
+        # Plot sequence-wise Tris contacts distributions
+        plot_tris_contacts_distributions_per_metric(
+            metric_dir=metric_dir,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
 
     print("\nAll plots saved to:", output_dir)
 

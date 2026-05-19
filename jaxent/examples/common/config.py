@@ -126,6 +126,9 @@ class ExperimentConfig:
     features_dir: str = ""
     datasplit_dir: str = ""
     clustering_dir: str | None = None
+    trajectory_xtc: str | None = None
+    top_pdb: str | None = None
+    feature_npz: str | None = None
     output_dir: str | None = None
     state_ratios_json: str | None = None
 

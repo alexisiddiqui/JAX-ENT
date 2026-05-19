@@ -8,6 +8,10 @@ DIR_WD="$(pwd)/fitting"
 RESULTS_DIR_DEFAULT="$(pwd)/fitting/_optimise_aSyn_BV_20260402_021807"
 RESULTS_DIR="${1:-$RESULTS_DIR_DEFAULT}"
 
+# Read ensemble-specific paths from config.yaml (single source of truth).
+_cfg() { python -c "import yaml; c=yaml.safe_load(open('config.yaml')); print(c.get('$1',''))"; }
+FEATURES_DIR="$(pwd)/$(_cfg features_dir)"
+
 LOG_DIR="${RESULTS_DIR}/logs"
 mkdir -p "$LOG_DIR"
 
@@ -36,7 +40,7 @@ if run_step "recovery_analysis" "$LOG_DIR/recovery_analysis.log" \
   python "$ANA_DIR/recovery_analysis_aSyn_conditions_2d_bv.py" \
     --results-dir "$RESULTS_DIR" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "$(pwd)/data/_cluster_aSyn/features" \
+    --features-dir "$FEATURES_DIR" \
     --absolute-paths; then
   RECOVERY_STATUS="ok"
 else

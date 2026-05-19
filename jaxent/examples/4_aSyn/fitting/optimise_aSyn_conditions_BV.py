@@ -60,7 +60,7 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.examples.common.optimization import run_optimization
-from jaxent.examples.common.config import LossConfig, OptimizationConfig
+from jaxent.examples.common.config import LossConfig, OptimizationConfig, ExperimentConfig
 
 
 CONDITIONS = ["Tris_only", "Extracellular", "Intracellular", "Lysosomal"]
@@ -121,6 +121,7 @@ def run_conditions_sweep(
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
+    features_dir: str = None,
 ) -> dict:
     """
     Run optimization sweep across maxent and BV regularization values for one condition.
@@ -148,10 +149,14 @@ def run_conditions_sweep(
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     datasplit_dir = os.path.join(script_dir, "_datasplits")
-    # feature_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/features.npz")
-    # topology_path = os.path.join(script_dir, "../data/_cluster_aSyn/features/topology.json")
-    feature_path = os.path.join(script_dir, "../data/_aSyn/tris_MD/features/features.npz")
-    topology_path = os.path.join(script_dir, "../data/_aSyn/tris_MD/features/topology.json")
+
+    if features_dir is not None:
+        resolved_features_dir = os.path.abspath(features_dir)
+    else:
+        cfg = ExperimentConfig.from_yaml(os.path.join(script_dir, "../config.yaml"))
+        resolved_features_dir = os.path.join(script_dir, "..", cfg.features_dir)
+    feature_path = os.path.join(resolved_features_dir, "features.npz")
+    topology_path = os.path.join(resolved_features_dir, "topology.json")
 
     if output_base_dir is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -364,6 +369,7 @@ def run_all_conditions(
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
+    features_dir: str = None,
 ) -> List[dict]:
     """Run sweep for all conditions with MSE loss."""
     loss_names = ["MSE"]
@@ -401,6 +407,7 @@ def run_all_conditions(
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,
                 model_parameters_lr_scale=model_parameters_lr_scale,
+                features_dir=features_dir,
             )
             all_results.append(result)
             print(f"Completed: {condition}-{loss_name}")
@@ -537,6 +544,13 @@ def main():
         default=1.0,
         help="Multiplier for model-parameter learning rate (default: 1.0).",
     )
+    parser.add_argument(
+        "--features-dir",
+        type=str,
+        default=None,
+        help="Path to features directory containing features.npz and topology.json. "
+             "Overrides features_dir from config.yaml.",
+    )
 
     args = parser.parse_args()
 
@@ -586,6 +600,7 @@ def main():
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
+            features_dir=args.features_dir,
         )
 
     else:
@@ -603,6 +618,7 @@ def main():
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
+            features_dir=args.features_dir,
         )
 
     if args.output_dir:

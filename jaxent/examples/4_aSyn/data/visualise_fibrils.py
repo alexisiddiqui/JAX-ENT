@@ -44,7 +44,7 @@ DEFAULT_TOP_PDB = DATA_DIR / "_aSyn/tris_MD/md_mol_center_coil.pdb"
 DEFAULT_TRAJ_XTC = DATA_DIR / "_aSyn/tris_MD/tris_all_combined.xtc"
 DEFAULT_FIBRIL_DIR = DATA_DIR / "_aSyn/fibrils/chain_A"
 DEFAULT_CLUSTER_DIR = DATA_DIR / "_cluster_inertia"
-DEFAULT_OUTPUT_DIR = DATA_DIR / "plots/fibrils"
+DEFAULT_OUTPUT_DIR = DATA_DIR / "_plots/fibrils"
 
 FIBRIL_NAMES: dict[str, str] = {
     "8ADW": "L1C", "9FYP": "3B", "8AEX": "L3A", "8Y2P": "Tris",
@@ -109,7 +109,7 @@ def _draw_shape_boundary(ax):
     ax.set_ylabel(r"$I_2/I_3$", fontsize=10)
     ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.0])
     ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-    ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+    # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
     ax.tick_params(width=1.5)
 
 
