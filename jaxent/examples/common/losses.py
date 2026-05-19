@@ -23,11 +23,12 @@ from jaxent.src.opt.losses import (
     maxent_L2_loss,
     model_params_L1_loss,
     model_params_L2_loss,
+    hdx_uptake_mean_centred_eye_MSE_loss
 )
 
 # Alias for backward compatibility with example scripts
-hdx_uptake_mean_centred_MSE_loss = hdx_uptake_eye_MSE_loss
-hdx_uptake_MSE_loss = hdx_uptake_sigma_MSE_loss
+hdx_uptake_mean_centred_MSE_loss = hdx_uptake_mean_centred_eye_MSE_loss
+hdx_uptake_MSE_loss = hdx_uptake_eye_MSE_loss
 
 
 # ---------------------------------------------------------------------------

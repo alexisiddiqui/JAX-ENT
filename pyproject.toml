@@ -19,7 +19,7 @@ dependencies = [
     "matplotlib>=3.10.0",
     "MDAnalysis>=2.8.0",
     "networkx[default]>=3.4.2",
-    "numpy>=2.2.1",
+    "numpy",
     "optax>=0.2.4",
     "pyyaml>=6.0.3",
     "scikit-learn>=1.6.1",
@@ -32,6 +32,7 @@ jaxent-featurise = "jaxent.cli.featurise:main"
 jaxent-predict = "jaxent.cli.predict:main"
 jaxent-forward = "jaxent.cli.forward:main"
 jaxent-kCluster = "jaxent.cli.efficient_k_cluster:main"
+jaxent-ipca = "jaxent.cli.ipca:main"
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -90,6 +91,7 @@ exclude = [
 [dependency-groups]
 examples = [
     "mdakit-sasa",
+    "py3dmol",
 ]
 
 

@@ -70,7 +70,8 @@ def _load_target_ratios(state_ratios_path: str) -> dict | None:
             "Folded": pops["folded"]["fraction"],
             "PUF1": pops["PUF1"]["fraction"],
             "PUF2": pops["PUF2"]["fraction"],
-            "unfolded": 0.0,
+            "PUF3": pops.get("PUF3", {}).get("fraction", 0.0),
+            "unfolded": pops.get("unfolded", {}).get("fraction", 0.0),
         }
         print(f"Loaded target ratios: {target_ratios}")
         return target_ratios

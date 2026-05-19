@@ -31,6 +31,7 @@ from .mlm import (
     plot_eta_and_ftest,
     plot_scatter_and_distributions,
     plot_model_selection_performance,
+    plot_cluster_populations_by_split,
     plot_correlations_bar_charts,
 )
 from .selected_models import (
@@ -41,6 +42,7 @@ from .selected_models import (
     plot_aggregated_analysis,
     plot_p_values,
     plot_cluster_populations,
+    plot_kl_divergence_panel,
 )
 
 __all__ = [
@@ -81,6 +83,7 @@ __all__ = [
     "plot_eta_and_ftest",
     "plot_scatter_and_distributions",
     "plot_model_selection_performance",
+    "plot_cluster_populations_by_split",
     "plot_correlations_bar_charts",
     "plot_score_panel",
     "plot_minimax_panel",
@@ -89,4 +92,5 @@ __all__ = [
     "plot_aggregated_analysis",
     "plot_p_values",
     "plot_cluster_populations",
+    "plot_kl_divergence_panel",
 ]

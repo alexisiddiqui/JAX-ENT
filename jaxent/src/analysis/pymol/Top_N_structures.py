@@ -61,6 +61,7 @@ from utils import (  # noqa: E402
     align_pymol_object_to_coords,
     apply_render_settings,
     apply_bfactor_spectrum,
+    apply_putty_settings,
     ensure_nonzero_bfactors,
     get_reference_target_coords,
     load_trajectory,
@@ -155,31 +156,46 @@ class TopNVisualizer:
 
         try:
             logger.info("Loading weights: %s", os.path.basename(weights_path))
-            data = np.load(weights_path)
+            # allow_pickle=True handles some complex JAX/Numpy outputs if needed
+            data = np.load(weights_path, allow_pickle=True)
 
-            # Try common key names across different JAX-ENT run outputs
             raw: np.ndarray | None = None
-            for key in ("frame_weights", "weights"):
-                if key in data:
-                    raw = np.array(data[key], dtype=float)
-                    logger.info("  Found weights under key '%s'", key)
-                    break
 
-            if raw is None:
-                available = list(data.keys())
-                logger.warning(
-                    "No recognised key in weights file. Available: %s", available
-                )
-                if available:
-                    raw = np.array(data[available[0]], dtype=float)
-                    logger.info("  Using first available key: '%s'", available[0])
-                else:
-                    return
+            # 1) Handle .npy files (loaded directly as an array) or .npz with single array
+            if isinstance(data, np.ndarray):
+                raw = data.astype(float)
+                logger.info("  Loaded weights directly from array file (shape: %s)", raw.shape)
+            
+            # 2) Handle .npz files (dict-like NpzFile)
+            else:
+                # Try common key names across different JAX-ENT run outputs
+                # Added 'sequence_average' for pre-averaged sequence-based cross-val results
+                for key in ("frame_weights", "weights", "sequence_average", "ensemble_weights"):
+                    if key in data:
+                        raw = np.array(data[key], dtype=float)
+                        logger.info("  Found weights under key '%s' (shape: %s)", key, raw.shape)
+                        break
 
-            # Collapse (n_replicates, n_frames) → (n_frames,)
-            if raw.ndim == 2:
-                raw = np.mean(raw, axis=0)
-                logger.info("  Collapsed %s → mean per-frame weights", raw.shape)
+                if raw is None:
+                    available = list(data.keys())
+                    logger.warning(
+                        "No recognised key in weights file. Available: %s", available
+                    )
+                    if available:
+                        raw = np.array(data[available[0]], dtype=float)
+                        logger.info("  Using first available key: '%s' (shape: %s)", available[0], raw.shape)
+                    else:
+                        logger.error("  Weights file is empty or has no arrays.")
+                        return
+
+            # 3) Dimensionality reduction: Collapse (..., n_frames) → (n_frames,)
+            # We assume the last dimension is always the frame index.
+            if raw.ndim > 1:
+                # If we have (n_replicates, n_frames) or (n_sequences, n_replicates, n_frames)
+                # we take the mean over all but the last axis.
+                old_shape = raw.shape
+                raw = np.mean(raw, axis=tuple(range(raw.ndim - 1)))
+                logger.info("  Collapsed %s → mean per-frame weights %s", old_shape, raw.shape)
 
             # Sanitize
             if np.any(np.isnan(raw)):
@@ -336,6 +352,12 @@ class TopNVisualizer:
             cmd.set("cartoon_transparency", transparency, name)
             cmd.set("cartoon_putty_transform", self.cfg.render.putty_transform, name)
             lo, hi = self.cfg.render.putty_range
+            
+            # If spectrum range is inverted (negative scale), swap putty scales
+            # so the minimum B-factor (highest weight) gets the maximum thickness.
+            if spec_min > spec_max:
+                lo, hi = hi, lo
+                
             cmd.set("cartoon_putty_scale_min", lo, name)
             cmd.set("cartoon_putty_scale_max", hi, name)
             cmd.show("cartoon", name)
@@ -352,7 +374,7 @@ class TopNVisualizer:
     def _top_n_by_weight(
         self, n: int, n_states: int
     ) -> tuple[np.ndarray, list, float, float]:
-        """Select top-N frames by weight (descending). B-value = log-weight."""
+        """Select top-N frames by weight (descending). B-value = ΔF (kT), 0 at highest weight."""
         if len(self.weights) == 0:
             logger.warning("No weights available; using uniform weights")
             w = np.ones(n_states)
@@ -368,15 +390,19 @@ class TopNVisualizer:
         n = min(n, n_states)
         top_idx = np.argsort(w)[::-1][:n]
 
-        safe_w = np.maximum(w[top_idx], EPSILON)
-        bvals = np.log(safe_w * len(w) * 1e6)
+        safe_w_all = np.maximum(w, EPSILON)
+        log_w_all = np.log(safe_w_all)
+        log_w_max = float(np.max(log_w_all))
+        delta_f_all = log_w_max - log_w_all
+
+        bvals = list(delta_f_all[top_idx])
         b_min = float(np.min(bvals))
         b_max = float(np.max(bvals))
         if abs(b_max - b_min) < 0.1:
             b_max = b_min + 1.0
 
-        # Encode full weight range into background ensemble
-        set_bfactors_per_state(self.obj_name, w)
+        # Encode full weight range into background ensemble as ΔF
+        set_bfactors_per_state(self.obj_name, delta_f_all)
         apply_bfactor_spectrum(self.obj_name, self.cfg.render)
 
         logger.info(
@@ -449,6 +475,7 @@ class TopNVisualizer:
         cmd.set("all_states", 0)
         cmd.show("cartoon", self.obj_name)
         cmd.cartoon("putty", self.obj_name)
+        apply_putty_settings(self.obj_name, self.cfg.render)
         cmd.set("cartoon_transparency", self.cfg.render.trajectory_transparency, self.obj_name)
 
         # Top-N group is already enabled and styled

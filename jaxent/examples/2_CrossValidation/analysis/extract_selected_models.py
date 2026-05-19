@@ -87,6 +87,16 @@ def main():
         default=False,
         help="Interpret provided directories as absolute paths.",
     )
+    parser.add_argument(
+        "--max-convergence-threshold",
+        type=float,
+        default=None,
+        help=(
+            "If set, restrict metric selection to rows where convergence_value <= this value. "
+            "Use to select from tighter convergence steps only (e.g. 1e-7 for final step only, "
+            "1e-5 for last 3 steps). Default: include all convergence steps."
+        ),
+    )
     args = parser.parse_args()
 
     script_dir = os.path.dirname(__file__)
@@ -130,6 +140,13 @@ def main():
     # Convert split_idx to int just in case
     scores_df["split_idx"] = scores_df["split_idx"].astype(int)
 
+    # Restrict to a tighter convergence range if requested
+    if args.max_convergence_threshold is not None and "convergence_value" in scores_df.columns:
+        scores_df["convergence_value"] = pd.to_numeric(scores_df["convergence_value"], errors="coerce")
+        before = len(scores_df)
+        scores_df = scores_df[scores_df["convergence_value"] <= args.max_convergence_threshold].copy()
+        print(f"Convergence filter (<= {args.max_convergence_threshold}): {before} -> {len(scores_df)} rows")
+
     # First pass: catalog all arrays from processed data directories
     print("Cataloging processed runs...")
     all_run_info, _ = loading.load_processed_run_info(processed_data_dir, ENSEMBLE_PATTERN)
@@ -150,6 +167,21 @@ def main():
     # Determine grouping cols for selection
     possible_group_cols = ["ensemble", "split_type", "loss_function", "bv_reg_function"]
     group_cols = [c for c in possible_group_cols if c in scores_df.columns]
+
+    # Apply _filter_best_convergence: for each (ensemble, split_type, split_idx, maxent_value,
+    # loss_function) keep only the row with minimum val_loss across convergence steps.
+    # This matches the analysis script's selection logic and prevents partially-converged
+    # models from winning on any metric.
+    conv_group_cols = ["ensemble", "split_type", "split_idx", "maxent_value"]
+    for col in ("loss_function", "bv_reg_value", "bv_reg_function"):
+        if col in scores_df.columns:
+            conv_group_cols.append(col)
+    if "val_loss" in scores_df.columns:
+        scores_df = scores_df.copy()
+        scores_df["val_loss"] = pd.to_numeric(scores_df["val_loss"], errors="coerce")
+        scores_df = scores_df.sort_values("val_loss", ascending=True, na_position="last")
+        scores_df = scores_df.drop_duplicates(subset=conv_group_cols, keep="first")
+        scores_df = scores_df.sort_index()
 
     print("Extracting optimal slices based on selection criteria...")
     # Loop over all requested metrics and directions

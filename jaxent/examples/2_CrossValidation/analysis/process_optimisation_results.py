@@ -109,7 +109,7 @@ def main():
     ensemble_clustering_map = {"AF2_MSAss": "AF2_MSAss", "AF2_filtered": "AF2_Filtered"}
     loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     num_splits = 3
-    convergence_rates = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    convergence_rates = [1.0, 0.1, 0.01, 0.001, 1e-04, 1e-05, 1e-06, 1e-07, 1e-08]
 
     # Resolve paths
     resolved = resolve_script_paths(args, Path(__file__).parent)
@@ -239,8 +239,10 @@ def main():
                             print(f"    Skipping {run_id}: No history found.")
                             continue
 
+                        valid_states = history.states[1:] if len(history.states) > 1 else history.states
+
                         met_convergence_rates = []
-                        for i in range(len(history.states)):
+                        for i in range(len(valid_states)):
                             if i < len(convergence_rates):
                                 met_convergence_rates.append(convergence_rates[i])
 
@@ -250,7 +252,7 @@ def main():
                             for rate in met_convergence_rates:
                                 f.write(f"{rate}\n")
 
-                        for i, state in enumerate(history.states):
+                        for i, state in enumerate(valid_states):
                             if i < len(convergence_rates):
                                 convergence_val = convergence_rates[i]
                             else:

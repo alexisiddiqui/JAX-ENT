@@ -135,7 +135,7 @@ def plot_hdx_metrics(plot_data_list, output_dir, topology_resids=None):
     metrics = [
         ("k_obs", r"$k_{obs}$ ($min^{-1}$)", "Observed Rates"),
         ("k_int", r"$k_{int}$ ($min^{-1}$)", "Intrinsic Rates"),
-        ("log_PF", r"$\ln(PF)$", "Protection Factors")
+        ("log_PF", r"$\log(Pf)$", "Protection Factors")
     ]
     
     for i, (col, ylabel, title) in enumerate(metrics):

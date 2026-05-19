@@ -34,7 +34,11 @@ sweep:
     - 1.0
 
 results_prefix: "fitting/_optimise_aSyn_BV"
-features_dir: "data/_aSyn/a99sb_features"
+features_dir: "data/_aSyn/tris_MD/features"
+clustering_dir: "data/_cluster_inertia"
+trajectory_xtc: "data/_aSyn/tris_MD/tris_all_combined.xtc"
+top_pdb: "data/_aSyn/tris_MD/md_mol_center_coil.pdb"
+feature_npz: "data/_aSyn/tris_MD/features/aSyn_featurised.npz"
 datasplit_dir: "fitting/_datasplits"
 output_dir: "analysis/_analysis_loss_output"
 

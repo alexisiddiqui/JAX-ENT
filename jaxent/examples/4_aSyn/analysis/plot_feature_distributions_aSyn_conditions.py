@@ -15,20 +15,29 @@ Usage:
         --traj-xtc <path> \
         [--output-dir <path>] \
         [--config <path>] \
-        [--absolute-paths]
+        [--absolute-paths] \
+        [--shape-axes-npy <path>] \
+        [--macro-cluster-labels-npy <path>] \
+        [--ctail-rg-npy <path>] \
+        [--ctail-threshold <float>]
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import logging
 from pathlib import Path
 
+import matplotlib
+import matplotlib.patches as mpatches
+import matplotlib.patheffects
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
 import seaborn as sns
+from scipy.spatial.distance import cdist
 
 from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.plotting import setup_publication_style
@@ -40,12 +49,83 @@ from jaxent.examples.common.plotting import setup_publication_style
 NAC_RANGE = range(61, 96)  # residues 61-95
 P2_RANGE = range(45, 58)   # residues 45-57
 ALIGN_RANGE = range(1, 45)
+T1_RANGE = range(1, 61)
+T2_RANGE = range(96, 141)
+CTAIL_RANGE = range(115, 136)
+
+NHEAD_RG_RANGE = range(1, 61)
+NAC_RG_RANGE = range(61, 96)
+CTAIL_RG_RANGE = range(96, 141)
 
 FEATURE_NAMES = {
     "nc_distance": "N–C Distance (Å)",
     "nac_prot": "NAC Mean Log P$_f$",
     "p2_prot": "p2 Mean Log P$_f$",
+    "termini_contacts": "N–C Contacts",
+    "ctail_prot": "C-tail Mean Log P$_f$",
+    "nhead_rg": "N-head RadGyr (Å)",
+    "nac_rg": "NAC RadGyr (Å)",
+    "ctail_rg": "C-tail RadGyr (Å)"
 }
+
+# Macro-cluster display colours (matching inertia_moments_clustering.py)
+CLUSTER_COLOURS = {"Rod": "grey", "Wavy": "blue", "Compact": "orange"}
+MACRO_NAMES = ["Rod", "Wavy", "Compact"]
+CTAIL_THRESHOLD_DEFAULT = None  # None implies use median of data
+SUBTYPE_FEATURE_DIRECTIONS = {
+    "ctail_rg": 1.0,
+    "nc_distance": 1.0,
+    "termini_contacts": -1.0,
+    "ctail_prot": -1.0,
+}
+AFM_CONDITION_PRIORITY = {
+    "Tris_only": 4.0,
+    "Intracellular": 3.0,
+    "Lysosomal": 2.0,
+    "Extracellular": 1.0,
+}
+AFM_BROAD_TARGETS = {
+    "Tris_only": {"Rod": 0.16, "Wavy": 0.84, "Compact": 0.0},
+    "Intracellular": {"Rod": 0.25, "Wavy": 0.54, "Compact": 0.21},
+    "Lysosomal": {"Rod": 0.20, "Wavy": 0.0, "Compact": 0.80},
+    "Extracellular": {"Rod": 0.20, "Wavy": 0.0, "Compact": 0.80},
+}
+AFM_NARROW_TARGETS = {
+    "Tris_only": {"p1": 0.16, "p2a": 0.60, "p2b": 0.24, "p3a": 0.0, "p3b": 0.0},
+    "Intracellular": {"p1": 0.25, "p2a": 0.46, "p2b": 0.08, "p3a": 0.08, "p3b": 0.13},
+    "Lysosomal": {"p1": 0.20, "p2a": 0.0, "p2b": 0.0, "p3a": 0.59, "p3b": 0.21},
+    "Extracellular": {"p1": 0.20, "p2a": 0.0, "p2b": 0.0, "p3a": 0.0, "p3b": 0.80},
+}
+
+# Reference PDB Definitions (Consistency with analyse_aSyn_ensemble.py)
+# Define relative to the jaxent root
+_REFS_RAW = {
+    "Rod (AF)": "jaxent/examples/4_aSyn/data/_aSyn/AF-P37840-F1-model_v6.pdb",
+    "Hairpin": "jaxent/examples/4_aSyn/data/_aSyn/2kkw_1.pdb",
+    "Compact": "jaxent/examples/4_aSyn/data/_aSyn/aSyn_s20_r1_msa1-127_n12700_do1_20260329_025853_protonated_max_plddt_12691.pdb",
+}
+
+def resolve_reference_path(rel_path_str: str) -> Path:
+    """Try to find the file relative to CWD, then relative to repo root."""
+    p = Path(rel_path_str)
+    if p.exists():
+        return p
+    
+    # Try finding the 'jaxent' directory by climbing up from the script location
+    script_dir = Path(__file__).parent.resolve()
+    # Script is in jaxent/examples/4_aSyn/analysis/
+    # Root is up 4 levels
+    root_guess = script_dir.parents[3]
+    p_root = root_guess / rel_path_str
+    if p_root.exists():
+        return p_root
+        
+    return p # Fallback to original, which might still fail but we've tried
+
+REFERENCES = {name: resolve_reference_path(path) for name, path in _REFS_RAW.items()}
+
+REF_MARKERS = {"Rod (AF)": "*", "Hairpin": "D", "Compact": "^"}
+REF_COLORS = {"Rod (AF)": "#d62728", "Hairpin": "#1f77b4", "Compact": "#2ca02c"}
 
 # ============================================================================
 # Data loading functions
@@ -55,7 +135,7 @@ FEATURE_NAMES = {
 def load_topology_map(topo_path: Path) -> dict[int, int]:
     """Load topology JSON and build residue ID to log_Pf array index map.
 
-    Returns:
+    Returns:x
         dict: {pdb_residue_number: log_Pf_array_index}
     """
     with open(topo_path) as f:
@@ -122,6 +202,51 @@ def compute_nc_distances(
     return distances
 
 
+def compute_termini_contacts(
+    top_pdb: Path, traj_xtc: Path, range1: range, range2: range, cutoff: float = 8.0
+) -> np.ndarray:
+    """Compute number of CA-CA contacts between two residue ranges.
+
+    Returns:
+        np.ndarray: shape (n_frames,) — contact counts per frame
+    """
+    u = mda.Universe(str(top_pdb), str(traj_xtc))
+
+    sel1 = u.select_atoms(f"name CA and resid {' '.join(map(str, range1))}")
+    sel2 = u.select_atoms(f"name CA and resid {' '.join(map(str, range2))}")
+
+    if sel1.n_atoms == 0 or sel2.n_atoms == 0:
+        raise ValueError(
+            f"Selection empty: range1 has {sel1.n_atoms}, range2 has {sel2.n_atoms}"
+        )
+
+    contact_counts = np.empty(len(u.trajectory), dtype=np.int32)
+    for i, ts in enumerate(u.trajectory):
+        dists = cdist(sel1.positions, sel2.positions)
+        contact_counts[i] = np.sum(dists < cutoff)
+
+    return contact_counts
+
+
+def compute_radgyr(top_pdb: Path, traj_xtc: Path, resid_range: range) -> np.ndarray:
+    """Compute Radius of Gyration for a residue range from CA atoms.
+
+    Returns:
+        np.ndarray: shape (n_frames,) — RadGyr in Angstroms
+    """
+    u = mda.Universe(str(top_pdb), str(traj_xtc))
+    sel = u.select_atoms(f"name CA and resid {' '.join(map(str, resid_range))}")
+
+    if sel.n_atoms == 0:
+        raise ValueError(f"Selection empty for range {resid_range}")
+
+    rg_values = np.empty(len(u.trajectory), dtype=np.float32)
+    for i, ts in enumerate(u.trajectory):
+        rg_values[i] = sel.radius_of_gyration()
+
+    return rg_values
+
+
 # ============================================================================
 # Plotting helper
 # ============================================================================
@@ -133,9 +258,119 @@ def remove_top_right_spines(ax):
     ax.spines["right"].set_visible(False)
 
 
+def compute_reference_inertia_ratios(ref_dict: dict[str, Path], sel_str: str) -> dict[str, tuple[float, float]]:
+    """Compute I1/I3 and I2/I3 for reference PDB structures."""
+    ratios = {}
+    for name, pdb_path in ref_dict.items():
+        if not pdb_path.exists():
+            print(f"WARNING: Reference {name} PDB not found at {pdb_path}")
+            continue
+        try:
+            ref_u = mda.Universe(str(pdb_path))
+            sel = ref_u.select_atoms(sel_str)
+            if sel.n_atoms == 0:
+                print(f"WARNING: No atoms for reference {name} with selection '{sel_str}'")
+                continue
+            inertia_tensor = sel.moment_of_inertia()
+            eigenvalues = np.linalg.eigvalsh(inertia_tensor)
+            ratios[name] = (eigenvalues[0] / eigenvalues[2], eigenvalues[1] / eigenvalues[2])
+        except Exception as e:
+            print(f"ERROR computing ratios for reference {name}: {e}")
+    return ratios
+
+
+def _overlay_references(
+    ax: matplotlib.axes.Axes,
+    ref_ratios: dict[str, tuple[float, float]] | None = None,
+    is_legend: bool = False,
+) -> None:
+    """Overlay reference markers on ternary shape space plot."""
+    if ref_ratios is None:
+        return
+
+    for name, (xr, yr) in ref_ratios.items():
+        ax.scatter(
+            xr, yr,
+            marker=REF_MARKERS.get(name, "o"),
+            s=150,
+            color=REF_COLORS.get(name, "red"),
+            edgecolors="black",
+            linewidths=1.2,
+            zorder=15,
+            label=name if is_legend else None,
+        )
+
+
 # ============================================================================
 # Main plotting function
 # ============================================================================
+
+
+def weighted_stats(data: np.ndarray, weights: np.ndarray | None = None) -> tuple[float, float]:
+    """Compute mean and standard deviation, optionally weighted."""
+    if weights is None:
+        return np.mean(data), np.std(data)
+    mean = np.average(data, weights=weights)
+    var = np.average((data - mean)**2, weights=weights)
+    return mean, np.sqrt(var)
+
+
+def aggregate_weight_rows(
+    rows: np.ndarray,
+    aggregation: str = "mean",
+) -> np.ndarray:
+    """Aggregate selected weight rows into one per-frame vector."""
+    if rows.ndim != 2:
+        raise ValueError(f"Expected 2D weight array, got shape {rows.shape}")
+
+    if aggregation == "mean":
+        per_frame = np.nanmean(rows, axis=0)
+    elif aggregation == "median":
+        per_frame = np.nanmedian(rows, axis=0)
+    else:
+        raise ValueError(f"Unsupported aggregation mode: {aggregation}")
+
+    per_frame = np.nan_to_num(per_frame, nan=0.0)
+    total = np.sum(per_frame)
+    if total <= 0:
+        raise ValueError("Aggregated weights sum to zero.")
+    return per_frame / total
+
+
+def load_condition_bv_params(
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+) -> dict[str, tuple[float, float]]:
+    """Load and average fitted bv_bc and bv_bh parameters across replicates for each condition."""
+    condition_params: dict[str, tuple[float, float]] = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            condition_params[condition] = (0.35, 2.0)
+            continue
+
+        bcs = []
+        bhs = []
+        for npz_file in npz_files:
+            try:
+                data = np.load(npz_file)
+                if "bv_bc" in data and "bv_bh" in data:
+                    bcs.append(data["bv_bc"])
+                    bhs.append(data["bv_bh"])
+            except Exception as e:
+                print(f"WARNING: failed to load params from {npz_file}: {e}")
+
+        if bcs and bhs:
+            mean_bc = np.nanmean(np.concatenate(bcs))
+            mean_bh = np.nanmean(np.concatenate(bhs))
+            if np.isnan(mean_bc) or np.isnan(mean_bh):
+                condition_params[condition] = (0.35, 2.0)
+            else:
+                condition_params[condition] = (float(mean_bc), float(mean_bh))
+        else:
+            condition_params[condition] = (0.35, 2.0)
+
+    return condition_params
 
 
 def plot_feature_distributions_per_metric(
@@ -143,10 +378,16 @@ def plot_feature_distributions_per_metric(
     nc_dist: np.ndarray,
     nac_prot: np.ndarray,
     p2_prot: np.ndarray,
+    ctail_prot: np.ndarray,
+    termini_contacts: np.ndarray,
     cluster_labels: np.ndarray | None,
     n_per_cluster: np.ndarray | None,
     cfg: ExperimentConfig,
     output_dir: Path,
+    weight_aggregation: str,
+    heavy_contacts: np.ndarray | None = None,
+    acceptor_contacts: np.ndarray | None = None,
+    resid_to_idx: dict[int, int] | None = None,
 ):
     """Create 3×N_conditions figure showing weighted feature distributions.
 
@@ -155,6 +396,8 @@ def plot_feature_distributions_per_metric(
         nc_dist: shape (n_frames,)
         nac_prot: shape (n_frames,)
         p2_prot: shape (n_frames,)
+        ctail_prot: shape (n_frames,)
+        termini_contacts: shape (n_frames,)
         cluster_labels: shape (n_frames,) or None (if input matches clusters)
         n_per_cluster: counts per cluster or None
         cfg: ExperimentConfig with ensembles and style colours
@@ -163,41 +406,169 @@ def plot_feature_distributions_per_metric(
     metric_name = metric_dir.name  # e.g., "recovery_percent_max"
     n_conds = len(cfg.ensembles)
 
-    # Prepare the per-condition frame weights
-    condition_weights = {}
-    for condition in cfg.ensembles:
-        # Glob all matching NPZ files for this condition
-        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
-        if not npz_files:
-            print(f"WARNING: No extracted NPZ files found for {condition} in {metric_dir}")
-            condition_weights[condition] = None
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, len(nc_dist),
+        aggregation=weight_aggregation,
+    )
+    condition_params = load_condition_bv_params(metric_dir, cfg)
+
+    # Build figure: N_conditions rows × 5 feature columns
+    figsize = (20, 3 * n_conds)
+    fig, axes = plt.subplots(n_conds, 5, figsize=figsize, constrained_layout=True)
+    if n_conds == 1:
+        axes = axes.reshape(1, 5)
+
+    feature_keys = ["nc_distance", "nac_prot", "p2_prot", "ctail_prot", "termini_contacts"]
+
+    # Outer loop: conditions (rows), Inner loop: features (columns)
+    for row_idx, condition in enumerate(cfg.ensembles):
+        if condition_weights[condition] is None:
+            for col_idx in range(5):
+                ax = axes[row_idx, col_idx]
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"No data for {condition}",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    color="red",
+                )
+                ax.set_xticks([])
+                ax.set_yticks([])
             continue
 
-        # Load and stack frame_weights from all matching files
-        all_weights = []
-        for npz_file in npz_files:
-            data = np.load(npz_file)
-            fw = data["frame_weights"]  # shape (replicates, n_clusters)
-            all_weights.append(fw)
+        # Get weights and params for this condition
+        weights = condition_weights[condition]
+        color = cfg.style.ensemble_colors.get(condition, "#808080")
+        bc, bh = condition_params.get(condition, (0.35, 2.0))
+        print(f"  {condition}: weights ESS = {compute_effective_sample_size(weights):.1f}, fitted BV params: bc = {bc:.4f}, bh = {bh:.4f}")
 
-        stacked = np.vstack(all_weights)  # shape (total_replicates, n_clusters)
-        cluster_weights = np.nanmean(stacked, axis=0)  # shape (n_clusters,)
-
-        # Convert to per-frame weights
-        if cluster_labels is not None and n_per_cluster is not None:
-            # Map cluster-level weights back to original frames
-            per_frame = cluster_weights[cluster_labels] / n_per_cluster[cluster_labels]
+        # Compute condition-specific protection factors
+        if heavy_contacts is not None and acceptor_contacts is not None and resid_to_idx is not None:
+            log_pf_cond = bc * heavy_contacts + bh * acceptor_contacts
+            nac_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, NAC_RANGE)
+            p2_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, P2_RANGE)
+            ctail_prot_cond = compute_region_mean_log_pf(log_pf_cond, resid_to_idx, CTAIL_RANGE)
         else:
-            # Use weights directly (assuming frames match cluster count)
-            per_frame = cluster_weights
+            nac_prot_cond = nac_prot
+            p2_prot_cond = p2_prot
+            ctail_prot_cond = ctail_prot
 
-        # Data consistency check
-        if len(per_frame) != len(nc_dist):
-            print(f"WARNING: Weight count ({len(per_frame)}) mismatch with frame count ({len(nc_dist)}) for {condition}")
-            condition_weights[condition] = None
-            continue
+        feature_data = [nc_dist, nac_prot_cond, p2_prot_cond, ctail_prot_cond, termini_contacts]
 
-        condition_weights[condition] = per_frame
+        for col_idx, (feature_array, feature_key) in enumerate(zip(feature_data, feature_keys)):
+            ax = axes[row_idx, col_idx]
+
+            # Calculate stats
+            m_total, s_total = weighted_stats(feature_array)
+            m_weighted, s_weighted = weighted_stats(feature_array, weights=weights)
+
+            # Determine common bins for both histograms
+            bins = np.linspace(np.min(feature_array), np.max(feature_array), 25)
+
+            # Plot unweighted histogram behind (semi-transparent grey)
+            ax.hist(
+                feature_array,
+                bins=bins,
+                density=True,
+                alpha=0.3,
+                color="grey",
+                edgecolor="none",
+                label="Total Ensemble" if (row_idx == 0 and col_idx == 0) else None,
+            )
+
+            # Plot weighted histogram on top
+            ax.hist(
+                feature_array,
+                bins=bins,
+                weights=weights,
+                density=True,
+                alpha=0.8,
+                color=color,
+                edgecolor="none",
+                label=f"{condition} (Weighted)" if (row_idx == 0 and col_idx == 0) else None,
+            )
+
+            # Highlight threshold if this is ctail_rg
+            if feature_key == "ctail_rg" and ctail_threshold is not None:
+                ax.axvline(x=ctail_threshold, color="black", linestyle=":", lw=1.2, alpha=0.7)
+
+            # Annotate results
+            # Position at top right
+            stat_text_total = f"Total: {m_total:.1f} ± {s_total:.1f}"
+            stat_text_weighted = f"Weighted: {m_weighted:.1f} ± {s_weighted:.1f}"
+            
+            ax.text(0.95, 0.95, stat_text_total, transform=ax.transAxes, 
+                    va="top", ha="right", fontsize=7, color="grey")
+            ax.text(0.95, 0.85, stat_text_weighted, transform=ax.transAxes, 
+                    va="top", ha="right", fontsize=7, color="black", fontweight="bold")
+
+            # Labels: condition name on leftmost column, "Density" elsewhere
+            if col_idx == 0:
+                ax.set_ylabel(f"{condition}\nDensity", fontweight="bold")
+            else:
+                ax.set_ylabel("Density")
+
+            # Add legend to top-left panel only
+            if row_idx == 0 and col_idx == 0:
+                ax.legend(fontsize=8, framealpha=0.5)
+
+            # Feature x-label on bottom row only
+            if row_idx == n_conds - 1:
+                ax.set_xlabel(FEATURE_NAMES[feature_key])
+
+            # Feature name as column title on top row only
+            if row_idx == 0:
+                ax.set_title(FEATURE_NAMES[feature_key], fontsize=11, fontweight="bold", pad=10)
+
+            remove_top_right_spines(ax)
+
+    fig.suptitle(
+        f"Feature Distributions — {metric_name}",
+        fontsize=13,
+        fontweight="bold",
+    )
+
+    # Save
+    out_path = output_dir / f"feature_distributions_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_radgyr_distributions_per_metric(
+    metric_dir: Path,
+    nhead_rg: np.ndarray,
+    nac_rg: np.ndarray,
+    ctail_rg: np.ndarray,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    ctail_threshold: float | None = None,
+    weight_aggregation: str = "mean",
+):
+    """Create 3×N_conditions figure showing weighted RadGyr feature distributions.
+
+    Args:
+        metric_dir: directory containing {condition}_*_selected.npz files
+        nhead_rg: shape (n_frames,)
+        nac_rg: shape (n_frames,)
+        ctail_rg: shape (n_frames,)
+        cluster_labels: shape (n_frames,) or None (if input matches clusters)
+        n_per_cluster: counts per cluster or None
+        cfg: ExperimentConfig with ensembles and style colours
+        output_dir: where to save the figure
+    """
+    metric_name = metric_dir.name  # e.g., "recovery_percent_max"
+    n_conds = len(cfg.ensembles)
+
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, len(nhead_rg),
+        aggregation=weight_aggregation,
+    )
 
     # Build figure: N_conditions rows × 3 feature columns
     figsize = (12, 3 * n_conds)
@@ -205,8 +576,8 @@ def plot_feature_distributions_per_metric(
     if n_conds == 1:
         axes = axes.reshape(1, 3)
 
-    feature_data = [nc_dist, nac_prot, p2_prot]
-    feature_keys = ["nc_distance", "nac_prot", "p2_prot"]
+    feature_data = [nhead_rg, nac_rg, ctail_rg]
+    feature_keys = ["nhead_rg", "nac_rg", "ctail_rg"]
 
     # Outer loop: conditions (rows), Inner loop: features (columns)
     for row_idx, condition in enumerate(cfg.ensembles):
@@ -232,22 +603,59 @@ def plot_feature_distributions_per_metric(
             weights = condition_weights[condition]
             color = cfg.style.ensemble_colors.get(condition, "#808080")
 
-            # Plot weighted histogram
+            # Calculate stats
+            m_total, s_total = weighted_stats(feature_array)
+            m_weighted, s_weighted = weighted_stats(feature_array, weights=weights)
+
+            # Determine common bins for both histograms
+            bins = np.linspace(np.min(feature_array), np.max(feature_array), 25)
+
+            # Plot unweighted histogram behind (semi-transparent grey)
             ax.hist(
                 feature_array,
-                bins=50,
+                bins=bins,
+                density=True,
+                alpha=0.3,
+                color="grey",
+                edgecolor="none",
+                label="Total Ensemble" if (row_idx == 0 and col_idx == 0) else None,
+            )
+
+            # Plot weighted histogram on top
+            ax.hist(
+                feature_array,
+                bins=bins,
                 weights=weights,
                 density=True,
                 alpha=0.8,
                 color=color,
                 edgecolor="none",
+                label=f"{condition} (Weighted)" if (row_idx == 0 and col_idx == 0) else None,
             )
+
+            # Highlight threshold if this is ctail_rg
+            if feature_key == "ctail_rg" and ctail_threshold is not None:
+                ax.axvline(x=ctail_threshold, color="black", linestyle=":", lw=1.2, alpha=0.7)
+
+            # Annotate results
+            # Position at top right
+            stat_text_total = f"Total: {m_total:.1f} ± {s_total:.1f}"
+            stat_text_weighted = f"Weighted: {m_weighted:.1f} ± {s_weighted:.1f}"
+            
+            ax.text(0.95, 0.95, stat_text_total, transform=ax.transAxes, 
+                    va="top", ha="right", fontsize=7, color="grey")
+            ax.text(0.95, 0.85, stat_text_weighted, transform=ax.transAxes, 
+                    va="top", ha="right", fontsize=7, color="black", fontweight="bold")
 
             # Labels: condition name on leftmost column, "Density" elsewhere
             if col_idx == 0:
                 ax.set_ylabel(f"{condition}\nDensity", fontweight="bold")
             else:
                 ax.set_ylabel("Density")
+
+            # Add legend to top-left panel only
+            if row_idx == 0 and col_idx == 0:
+                ax.legend(fontsize=8, framealpha=0.5)
 
             # Feature x-label on bottom row only
             if row_idx == n_conds - 1:
@@ -260,17 +668,1527 @@ def plot_feature_distributions_per_metric(
             remove_top_right_spines(ax)
 
     fig.suptitle(
-        f"Feature Distributions — {metric_name}",
-        y=0.995,
+        f"RadGyr Feature Distributions — {metric_name}",
         fontsize=13,
         fontweight="bold",
     )
 
     # Save
-    out_path = output_dir / f"feature_distributions_{metric_name}.png"
+    out_path = output_dir / f"radgyr_distributions_{metric_name}.png"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved {out_path}")
+
+
+# ============================================================================
+# Shared weight-loading helper
+# ============================================================================
+
+
+def load_condition_weights(
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    n_frames: int,
+    aggregation: str = "mean",
+) -> dict[str, np.ndarray | None]:
+    """Load per-frame weights for each condition from extracted NPZ files."""
+    condition_weights: dict[str, np.ndarray | None] = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            condition_weights[condition] = None
+            continue
+
+        all_weights = []
+        for npz_file in npz_files:
+            data = np.load(npz_file)
+            all_weights.append(data["frame_weights"])
+
+        stacked = np.vstack(all_weights)
+        per_frame = aggregate_weight_rows(stacked, aggregation=aggregation)
+
+        if len(per_frame) != n_frames:
+            print(f"WARNING: Weight count ({len(per_frame)}) != frame count ({n_frames}) for {condition}")
+            condition_weights[condition] = None
+            continue
+
+        condition_weights[condition] = per_frame
+
+    return condition_weights
+
+
+def load_replicate_weights(
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+    n_frames: int,
+) -> dict[str, list[np.ndarray] | None]:
+    """Load per-replicate per-frame weights for each condition.
+
+    Returns a dict mapping condition → list of n_replicates arrays each of shape (n_frames,).
+    """
+    replicate_weights: dict[str, list[np.ndarray] | None] = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            replicate_weights[condition] = None
+            continue
+
+        rows = []
+        for npz_file in npz_files:
+            data = np.load(npz_file)
+            fw = data["frame_weights"]  # shape (n_replicates, n_frames)
+            for row in fw:
+                if len(row) == n_frames:
+                    rows.append(row)
+
+        if not rows:
+            replicate_weights[condition] = None
+            continue
+
+        replicate_weights[condition] = rows
+
+    return replicate_weights
+
+
+def compute_effective_sample_size(weights: np.ndarray) -> float:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        return 0.0
+    normed = weights / total
+    return float(1.0 / np.sum(normed ** 2))
+
+
+def top_frame_weight(weights: np.ndarray) -> float:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        return 0.0
+    return float(np.max(weights / total))
+
+
+def compute_label_fractions(
+    weights: np.ndarray,
+    labels: np.ndarray,
+    ordered_labels: list[str],
+) -> dict[str, float]:
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = np.sum(weights)
+    if total <= 0:
+        raise ValueError("Weights sum to zero when computing label fractions.")
+    fractions = {}
+    for label in ordered_labels:
+        fractions[label] = float(np.sum(weights[labels == label]) / total)
+    return fractions
+
+
+def build_subtype_labels(
+    macro_labels: np.ndarray,
+    feature_values: np.ndarray,
+    feature_name: str,
+) -> tuple[np.ndarray, dict[str, float]]:
+    direction = SUBTYPE_FEATURE_DIRECTIONS[feature_name]
+    subtype_labels = np.full(macro_labels.shape, "Unassigned", dtype=object)
+    thresholds: dict[str, float] = {}
+
+    for macro in MACRO_NAMES:
+        mask = macro_labels == macro
+        if not np.any(mask):
+            continue
+        threshold = float(np.median(feature_values[mask]))
+        thresholds[macro] = threshold
+        if direction > 0:
+            extended_mask = mask & (feature_values >= threshold)
+        else:
+            extended_mask = mask & (feature_values <= threshold)
+        compact_mask = mask & ~extended_mask
+        subtype_labels[compact_mask] = f"{macro}_a"
+        subtype_labels[extended_mask] = f"{macro}_b"
+
+    return subtype_labels, thresholds
+
+
+def extract_state_fractions(weights: np.ndarray, labels: np.ndarray) -> dict[str, float]:
+    state_names = [f"{macro}_{suffix}" for macro in MACRO_NAMES for suffix in ("a", "b")]
+    return compute_label_fractions(weights, labels, state_names)
+
+
+def broad_macro_fractions_from_state(state_fractions: dict[str, float]) -> dict[str, float]:
+    return {
+        macro: float(state_fractions.get(f"{macro}_a", 0.0) + state_fractions.get(f"{macro}_b", 0.0))
+        for macro in MACRO_NAMES
+    }
+
+
+def narrow_afm_fractions_from_state(state_fractions: dict[str, float]) -> dict[str, float]:
+    """Map current macro split fractions onto the AFM narrow labels."""
+    return {
+        "p1": float(state_fractions.get("Rod_a", 0.0) + state_fractions.get("Rod_b", 0.0)),
+        "p2a": float(state_fractions.get("Compact_a", 0.0)),
+        "p2b": float(state_fractions.get("Compact_b", 0.0)),
+        "p3a": float(state_fractions.get("Wavy_a", 0.0)),
+        "p3b": float(state_fractions.get("Wavy_b", 0.0)),
+    }
+
+
+def distribution_similarity(dist_a: dict[str, float], dist_b: dict[str, float], keys: list[str]) -> float:
+    vec_a = np.array([dist_a[k] for k in keys], dtype=float)
+    vec_b = np.array([dist_b[k] for k in keys], dtype=float)
+    return float(1.0 - 0.5 * np.sum(np.abs(vec_a - vec_b)))
+
+
+def ordering_score(condition_scores: dict[str, float]) -> float:
+    ordered_conditions = ["Tris_only", "Intracellular", "Lysosomal", "Extracellular"]
+    numer = 0.0
+    denom = 0.0
+    for idx, left in enumerate(ordered_conditions):
+        for right in ordered_conditions[idx + 1:]:
+            weight = AFM_CONDITION_PRIORITY[left]
+            denom += weight
+            numer += weight if condition_scores[left] >= condition_scores[right] else 0.0
+    return numer / denom if denom > 0 else 0.0
+
+
+def load_candidate_dirs(candidate_root: Path) -> list[Path]:
+    candidates = []
+    for child in sorted(candidate_root.iterdir()):
+        if child.is_dir() and (child / "coarse_cluster_labels.npy").exists():
+            candidates.append(child)
+    return candidates
+
+
+def summarize_candidate_model(
+    candidate_dir: Path,
+    metric_dir: Path,
+    cfg: ExperimentConfig,
+    macro_labels: np.ndarray,
+    proxy_features: dict[str, np.ndarray],
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+    rows: list[dict[str, object]] = []
+    stability_rows: list[dict[str, object]] = []
+    state_rows: list[dict[str, object]] = []
+    baseline_weights = np.full(len(macro_labels), 1.0 / len(macro_labels))
+
+    for proxy_name, feature_values in proxy_features.items():
+        subtype_labels, thresholds = build_subtype_labels(macro_labels, feature_values, proxy_name)
+        baseline_state = extract_state_fractions(baseline_weights, subtype_labels)
+        baseline_macro = broad_macro_fractions_from_state(baseline_state)
+        baseline_narrow = narrow_afm_fractions_from_state(baseline_state)
+
+        aggregate_macro_by_mode: dict[str, dict[str, dict[str, float]]] = {"mean": {}, "median": {}}
+        aggregate_state_by_mode: dict[str, dict[str, dict[str, float]]] = {"mean": {}, "median": {}}
+        divergence_values = []
+        ess_values = []
+        top_values = []
+
+        for aggregation in ("mean", "median"):
+            condition_weights = load_condition_weights(
+                metric_dir, cfg, cluster_labels, n_per_cluster, len(macro_labels),
+                aggregation=aggregation,
+            )
+            for condition in cfg.ensembles:
+                weights = condition_weights[condition]
+                if weights is None:
+                    continue
+                state_fractions = extract_state_fractions(weights, subtype_labels)
+                macro_fractions = broad_macro_fractions_from_state(state_fractions)
+                aggregate_macro_by_mode[aggregation][condition] = macro_fractions
+                aggregate_state_by_mode[aggregation][condition] = state_fractions
+                state_rows.append(
+                    {
+                        "candidate": candidate_dir.name,
+                        "metric": metric_dir.name,
+                        "proxy": proxy_name,
+                        "aggregation": aggregation,
+                        "condition": condition,
+                        **state_fractions,
+                    }
+                )
+
+        rep_weights = load_replicate_weights(metric_dir, cfg, len(macro_labels))
+        for condition in cfg.ensembles:
+            reps = rep_weights[condition]
+            if reps is None:
+                continue
+            for rep_idx, row in enumerate(reps, start=1):
+                ess = compute_effective_sample_size(row)
+                max_weight = top_frame_weight(row)
+                ess_values.append(ess)
+                top_values.append(max_weight)
+                stability_rows.append(
+                    {
+                        "candidate": candidate_dir.name,
+                        "metric": metric_dir.name,
+                        "proxy": proxy_name,
+                        "condition": condition,
+                        "series": f"replicate_{rep_idx}",
+                        "ess": ess,
+                        "top_frame_weight": max_weight,
+                    }
+                )
+
+            if condition in aggregate_macro_by_mode["mean"] and condition in aggregate_macro_by_mode["median"]:
+                divergence = 0.5 * np.sum(
+                    np.abs(
+                        np.array([aggregate_macro_by_mode["mean"][condition][macro] for macro in MACRO_NAMES]) -
+                        np.array([aggregate_macro_by_mode["median"][condition][macro] for macro in MACRO_NAMES])
+                    )
+                )
+                divergence_values.append(float(divergence))
+
+        mean_macro = aggregate_macro_by_mode["mean"]
+        mean_state = aggregate_state_by_mode["mean"]
+        if not mean_macro:
+            continue
+
+        native_similarity = {
+            condition: distribution_similarity(mean_macro[condition], baseline_macro, MACRO_NAMES)
+            for condition in mean_macro
+        }
+        afm_similarity = {
+            condition: distribution_similarity(mean_macro[condition], AFM_BROAD_TARGETS[condition], MACRO_NAMES)
+            for condition in mean_macro
+        }
+        narrow_similarity = {
+            condition: distribution_similarity(
+                narrow_afm_fractions_from_state(mean_state[condition]),
+                AFM_NARROW_TARGETS[condition],
+                list(AFM_NARROW_TARGETS[condition].keys()),
+            )
+            for condition in mean_state
+        }
+        subtype_separation = []
+        for macro in MACRO_NAMES:
+            mask = macro_labels == macro
+            if not np.any(mask):
+                continue
+            threshold = thresholds.get(macro)
+            if threshold is None:
+                continue
+            subtype_labels_macro = subtype_labels[mask]
+            values_macro = feature_values[mask]
+            mean_a = float(np.mean(values_macro[subtype_labels_macro == f"{macro}_a"]))
+            mean_b = float(np.mean(values_macro[subtype_labels_macro == f"{macro}_b"]))
+            denom = float(np.std(values_macro) + 1.0e-8)
+            subtype_separation.append(abs(mean_b - mean_a) / denom)
+
+        ordering = ordering_score(native_similarity)
+        afm_score = float(
+            np.average(
+                [afm_similarity[c] for c in sorted(afm_similarity)],
+                weights=[AFM_CONDITION_PRIORITY[c] for c in sorted(afm_similarity)],
+            )
+        )
+        narrow_score = float(
+            np.average(
+                [narrow_similarity[c] for c in sorted(narrow_similarity)],
+                weights=[AFM_CONDITION_PRIORITY[c] for c in sorted(narrow_similarity)],
+            )
+        )
+        stability_penalty = float(np.mean(divergence_values) + max(0.0, 5.0 - np.mean(ess_values or [0.0])) / 10.0)
+        subtype_score = float(np.mean(subtype_separation)) if subtype_separation else 0.0
+        total_score = ordering + 0.40 * afm_score + 0.40 * narrow_score - 0.30 * stability_penalty
+
+        rows.append(
+            {
+                "candidate": candidate_dir.name,
+                "metric": metric_dir.name,
+                "proxy": proxy_name,
+                "ordering_score": ordering,
+                "afm_broad_score": afm_score,
+                "afm_narrow_score": narrow_score,
+                "subtype_separation_score": subtype_score,
+                "mean_median_divergence": float(np.mean(divergence_values)) if divergence_values else 0.0,
+                "mean_ess": float(np.mean(ess_values)) if ess_values else 0.0,
+                "min_ess": float(np.min(ess_values)) if ess_values else 0.0,
+                "max_top_frame_weight": float(np.max(top_values)) if top_values else 0.0,
+                "stability_penalty": stability_penalty,
+                "total_score": total_score,
+                "tris_similarity": native_similarity.get("Tris_only", np.nan),
+                "intracellular_similarity": native_similarity.get("Intracellular", np.nan),
+                "lysosomal_similarity": native_similarity.get("Lysosomal", np.nan),
+                "extracellular_similarity": native_similarity.get("Extracellular", np.nan),
+            }
+        )
+
+    return rows, stability_rows, state_rows
+
+
+def compute_macro_fraction_rows(
+    weights: np.ndarray,
+    macro_labels: np.ndarray,
+    ctail_rg: np.ndarray,
+    ctail_threshold: float,
+) -> dict[str, float]:
+    """Return total, compact, and extended fractions for each macro-state."""
+    is_extended = ctail_rg >= ctail_threshold
+    total_w = np.sum(weights)
+    if total_w <= 0:
+        raise ValueError("Weights sum to zero when computing macro fractions.")
+
+    fractions: dict[str, float] = {}
+    for macro in MACRO_NAMES:
+        mask_total = macro_labels == macro
+        mask_compact = mask_total & ~is_extended
+        mask_extended = mask_total & is_extended
+        fractions[f"{macro}_total"] = float(np.sum(weights[mask_total]) / total_w)
+        fractions[f"{macro}_compact"] = float(np.sum(weights[mask_compact]) / total_w)
+        fractions[f"{macro}_extended"] = float(np.sum(weights[mask_extended]) / total_w)
+    return fractions
+
+
+# ============================================================================
+# New shape / meta-cluster plot functions
+# ============================================================================
+
+
+def plot_shape_order_per_metric(
+    metric_dir: Path,
+    shape_axes: np.ndarray,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    weight_aggregation: str,
+) -> None:
+    """N_conditions rows × 3 cols: weighted vs unweighted histograms of barycentric shape indices."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(shape_axes)
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, n_frames,
+        aggregation=weight_aggregation,
+    )
+
+    # Compute barycentric shape indices from x_ratio, y_ratio
+    x = shape_axes[:, 0]  # I1/I3
+    y = shape_axes[:, 1]  # I2/I3
+    w_rod = y - x
+    w_sphere = x + y - 1
+    w_disk = 2 * (1 - y)
+
+    axes_data = [w_rod, w_sphere, w_disk]
+    axes_labels = ["Rod Axis", "Sphere Axis", "Disk Axis"]
+
+    fig, axes = plt.subplots(n_conds, 3, figsize=(14, 3 * n_conds), constrained_layout=True)
+    if n_conds == 1:
+        axes = axes.reshape(1, 3)
+
+    for row_idx, condition in enumerate(cfg.ensembles):
+        for col_idx, (arr, xlabel) in enumerate(zip(axes_data, axes_labels)):
+            ax = axes[row_idx, col_idx]
+            weights = condition_weights[condition]
+
+            if weights is None:
+                ax.text(0.5, 0.5, f"No data for {condition}", transform=ax.transAxes,
+                        ha="center", va="center", fontsize=10, color="red")
+                ax.set_xticks([])
+                ax.set_yticks([])
+                continue
+
+            color = cfg.style.ensemble_colors.get(condition, "#808080")
+            bins = np.linspace(np.min(arr), np.max(arr), 30)
+
+            ax.hist(arr, bins=bins, density=True, alpha=0.3, color="grey",
+                    edgecolor="none")
+            ax.hist(arr, bins=bins, weights=weights, density=True, alpha=0.8,
+                    color=color, edgecolor="none")
+
+            m_uw, s_uw = np.mean(arr), np.std(arr)
+            m_w = np.average(arr, weights=weights)
+            s_w = np.sqrt(np.average((arr - m_w) ** 2, weights=weights))
+            ax.text(0.95, 0.95, f"Total: {m_uw:.2f} ± {s_uw:.2f}",
+                    transform=ax.transAxes, va="top", ha="right", fontsize=7, color="grey")
+            ax.text(0.95, 0.85, f"Weighted: {m_w:.2f} ± {s_w:.2f}",
+                    transform=ax.transAxes, va="top", ha="right", fontsize=7,
+                    color="black", fontweight="bold")
+
+            if col_idx == 0:
+                ax.set_ylabel(f"{condition}\nDensity", fontweight="bold")
+            else:
+                ax.set_ylabel("Density")
+
+            if row_idx == n_conds - 1:
+                ax.set_xlabel(xlabel)
+            if row_idx == 0:
+                ax.set_title(xlabel, fontsize=11, fontweight="bold", pad=10)
+
+            remove_top_right_spines(ax)
+
+    fig.suptitle(f"Shape Order (Barycentric Coordinates) — {metric_name}",
+                 fontsize=13, fontweight="bold")
+    out_path = output_dir / f"shape_order_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_free_energy_landscape_per_metric(
+    metric_dir: Path,
+    shape_axes: np.ndarray,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    gridsize: int = 20,
+    ref_ratios: dict[str, tuple[float, float]] | None = None,
+    weight_aggregation: str = "mean",
+) -> None:
+    """1 row × N_conditions cols: weighted free energy hexbin landscapes in shape space."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(shape_axes)
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, n_frames,
+        aggregation=weight_aggregation,
+    )
+
+    x = shape_axes[:, 0]  # I1/I3
+    y = shape_axes[:, 1]  # I2/I3
+
+    fig, axes = plt.subplots(1, n_conds, figsize=(5 * n_conds, 5), constrained_layout=True)
+    if n_conds == 1:
+        axes = [axes]
+
+    last_hb = None
+    for col_idx, condition in enumerate(cfg.ensembles):
+        ax = axes[col_idx]
+        weights = condition_weights[condition]
+
+        if weights is None:
+            ax.text(0.5, 0.5, f"No data for {condition}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=10, color="red")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(condition, fontsize=11, fontweight="bold")
+            continue
+
+        # Hexbin with weighted sums per bin
+        hb = ax.hexbin(x, y, C=weights, reduce_C_function=np.sum, gridsize=gridsize,
+                       mincnt=1, cmap="YlGnBu_r", edgecolors="none")
+        last_hb = hb
+
+        # Compute free energy from weighted counts
+        weighted_counts = hb.get_array()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            F = -np.log(weighted_counts)
+        F -= np.nanmin(F)
+
+        # Update hexbin with quantised free energy (0-8 levels)
+        norm = matplotlib.colors.BoundaryNorm(list(range(9)), ncolors=256, extend="max")
+        hb.set_array(F)
+        hb.set_norm(norm)
+
+        # Shape boundary triangle
+        triangle_x = [0, 1, 0.5, 0]
+        triangle_y = [1, 1, 0.5, 1]
+        ax.plot(triangle_x, triangle_y, "k--", lw=1.5, zorder=5)
+
+        # Vertex labels with white stroke
+        label_kw = dict(fontsize=10, zorder=6,
+                        path_effects=[matplotlib.patheffects.Stroke(linewidth=3, foreground='white'),
+                                       matplotlib.patheffects.Normal()])
+        ax.text(0, 1.04, r"Rod", ha="center", **label_kw)
+        ax.text(1, 1.04, r"Sphere", ha="center", **label_kw)
+        ax.text(0.5, 0.46, r"Disk", ha="center", **label_kw)
+
+        # Oblate/prolate guide line
+        ax.plot([0.5, 1], [0.5, 1], color="gray", lw=1, ls=":", alpha=0.7, zorder=4)
+
+        # Axes limits and labels
+        ax.set_xlim(-0.08, 1.12)
+        ax.set_ylim(0.42, 1.10)
+        ax.set_xlabel(r"$I_1/I_3$", fontsize=11)
+        if col_idx == 0:
+            ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
+
+        ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+
+        _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
+
+    # Shared colorbar from last valid hexbin
+    if last_hb is not None:
+        cbar = fig.colorbar(last_hb, ax=axes, pad=0.02, shrink=0.8)
+        cbar.set_label(r"$\Delta F / k_BT$", fontsize=12)
+        cbar.set_ticks(range(9))
+
+    fig.suptitle(f"Free Energy Landscape — {metric_name}",
+                 fontsize=13, fontweight="bold")
+    out_path = output_dir / f"free_energy_landscape_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_free_energy_difference_per_metric(
+    metric_dir: Path,
+    shape_axes: np.ndarray,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    gridsize: int = 20,
+    ref_ratios: dict[str, tuple[float, float]] | None = None,
+    weight_aggregation: str = "mean",
+) -> None:
+    """1 row × N_conditions cols: free energy difference (weighted − unweighted) in shape space."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(shape_axes)
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, n_frames,
+        aggregation=weight_aggregation,
+    )
+
+    x = shape_axes[:, 0]  # I1/I3
+    y = shape_axes[:, 1]  # I2/I3
+
+    # Compute reference (unweighted) free energy on a temporary figure
+    fig_tmp, ax_tmp = plt.subplots()
+    hb_ref = ax_tmp.hexbin(x, y, gridsize=gridsize, mincnt=1, cmap="YlGnBu_r", edgecolors="none")
+    counts_ref = hb_ref.get_array().copy()
+    plt.close(fig_tmp)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        F_ref = -np.log(counts_ref)
+    F_ref -= np.nanmin(F_ref)
+
+    fig, axes = plt.subplots(1, n_conds, figsize=(5 * n_conds, 5), constrained_layout=True)
+    if n_conds == 1:
+        axes = [axes]
+
+    last_hb = None
+    for col_idx, condition in enumerate(cfg.ensembles):
+        ax = axes[col_idx]
+        weights = condition_weights[condition]
+
+        if weights is None:
+            ax.text(0.5, 0.5, f"No data for {condition}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=10, color="red")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(condition, fontsize=11, fontweight="bold")
+            continue
+
+        # Hexbin with weighted sums per bin
+        hb = ax.hexbin(x, y, C=weights, reduce_C_function=np.sum, gridsize=gridsize,
+                       mincnt=1, cmap="PuOr", edgecolors="none")
+        last_hb = hb
+
+        # Compute weighted free energy
+        weighted_counts = hb.get_array().copy()
+        with np.errstate(divide="ignore", invalid="ignore"):
+            F_w = -np.log(weighted_counts)
+        F_w -= np.nanmin(F_w)
+
+        # Compute difference
+        diff = F_w - F_ref
+
+        # Symmetric color scaling
+        vlim = np.nanmax(np.abs(diff))
+        norm = matplotlib.colors.TwoSlopeNorm(vmin=-vlim, vcenter=0, vmax=vlim)
+        hb.set_array(diff)
+        hb.set_norm(norm)
+
+        # Shape boundary triangle
+        triangle_x = [0, 1, 0.5, 0]
+        triangle_y = [1, 1, 0.5, 1]
+        ax.plot(triangle_x, triangle_y, "k--", lw=1.5, zorder=5)
+
+        # Vertex labels with white stroke
+        label_kw = dict(fontsize=10, zorder=6,
+                        path_effects=[matplotlib.patheffects.Stroke(linewidth=3, foreground='white'),
+                                       matplotlib.patheffects.Normal()])
+        ax.text(0, 1.04, r"Rod", ha="center", **label_kw)
+        ax.text(1, 1.04, r"Sphere", ha="center", **label_kw)
+        ax.text(0.5, 0.46, r"Disk", ha="center", **label_kw)
+
+        # Oblate/prolate guide line
+        ax.plot([0.5, 1], [0.5, 1], color="gray", lw=1, ls=":", alpha=0.7, zorder=4)
+
+        # Axes limits and labels
+        ax.set_xlim(-0.08, 1.12)
+        ax.set_ylim(0.42, 1.10)
+        ax.set_xlabel(r"$I_1/I_3$", fontsize=11)
+        if col_idx == 0:
+            ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
+
+        ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+
+        _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
+
+    # Shared colorbar from last valid hexbin
+    if last_hb is not None:
+        cbar = fig.colorbar(last_hb, ax=axes, pad=0.02, shrink=0.8)
+        cbar.set_label(r"$\Delta\Delta F / k_BT$ (weighted − unweighted)", fontsize=12)
+
+    fig.suptitle(f"Free Energy Difference (Weighted − Unweighted) — {metric_name}",
+                 fontsize=13, fontweight="bold")
+    out_path = output_dir / f"free_energy_difference_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_free_energy_uncertainty_per_metric(
+    metric_dir: Path,
+    shape_axes: np.ndarray,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    gridsize: int = 20,
+    ref_ratios: dict[str, tuple[float, float]] | None = None,
+) -> None:
+    """1 row × N_conditions cols: std dev of free energy across weight replicates."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(shape_axes)
+    replicate_weights = load_replicate_weights(metric_dir, cfg, n_frames)
+
+    x = shape_axes[:, 0]  # I1/I3
+    y = shape_axes[:, 1]  # I2/I3
+
+    fig, axes = plt.subplots(1, n_conds, figsize=(5 * n_conds, 5), constrained_layout=True)
+    if n_conds == 1:
+        axes = [axes]
+
+    last_hb = None
+    for col_idx, condition in enumerate(cfg.ensembles):
+        ax = axes[col_idx]
+        reps = replicate_weights[condition]
+
+        if reps is None or len(reps) < 2:
+            ax.text(0.5, 0.5, f"No data for {condition}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=10, color="red")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(condition, fontsize=11, fontweight="bold")
+            continue
+
+        # Compute free energy for each replicate using a temporary figure
+        F_reps = []
+        for rep_weights in reps:
+            fig_tmp, ax_tmp = plt.subplots()
+            hb_tmp = ax_tmp.hexbin(x, y, C=rep_weights, reduce_C_function=np.sum,
+                                   gridsize=gridsize, mincnt=1, edgecolors="none")
+            wc = hb_tmp.get_array().copy()
+            plt.close(fig_tmp)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                F = -np.log(wc)
+            F -= np.nanmin(F)
+            F_reps.append(F)
+
+        # Std dev across replicates (bin-by-bin)
+        F_stack = np.stack(F_reps, axis=0)  # (n_reps, n_bins)
+        F_std = np.std(F_stack, axis=0)
+
+        # Draw on the panel using the first replicate's hexbin structure
+        hb = ax.hexbin(x, y, C=reps[0], reduce_C_function=np.sum, gridsize=gridsize,
+                       mincnt=1, cmap="Reds", edgecolors="none")
+        last_hb = hb
+        hb.set_array(F_std)
+        hb.set_norm(matplotlib.colors.Normalize(vmin=0, vmax=np.nanmax(F_std)))
+
+        # Shape boundary triangle
+        triangle_x = [0, 1, 0.5, 0]
+        triangle_y = [1, 1, 0.5, 1]
+        ax.plot(triangle_x, triangle_y, "k--", lw=1.5, zorder=5)
+
+        label_kw = dict(fontsize=10, zorder=6,
+                        path_effects=[matplotlib.patheffects.Stroke(linewidth=3, foreground='white'),
+                                       matplotlib.patheffects.Normal()])
+        ax.text(0, 1.04, r"Rod", ha="center", **label_kw)
+        ax.text(1, 1.04, r"Sphere", ha="center", **label_kw)
+        ax.text(0.5, 0.46, r"Disk", ha="center", **label_kw)
+
+        ax.plot([0.5, 1], [0.5, 1], color="gray", lw=1, ls=":", alpha=0.7, zorder=4)
+        ax.set_xlim(-0.08, 1.12)
+        ax.set_ylim(0.42, 1.10)
+        ax.set_xlabel(r"$I_1/I_3$", fontsize=11)
+        if col_idx == 0:
+            ax.set_ylabel(r"$I_2/I_3$", fontsize=11)
+        ax.set_title(condition, fontsize=11, fontweight="bold", pad=10)
+        # ax.grid(True, color="lightgray", lw=0.5, zorder=0)
+
+        _overlay_references(ax, ref_ratios, is_legend=(col_idx == 0))
+
+    if last_hb is not None:
+        cbar = fig.colorbar(last_hb, ax=axes, pad=0.02, shrink=0.8)
+        cbar.set_label(r"$\sigma(\Delta F) / k_BT$ across replicates", fontsize=12)
+
+    fig.suptitle(f"Free Energy Uncertainty (Replicate Std Dev) — {metric_name}",
+                 fontsize=13, fontweight="bold")
+    out_path = output_dir / f"free_energy_uncertainty_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_meta_cluster_fractions_per_metric(
+    metric_dir: Path,
+    macro_labels: np.ndarray,
+    ctail_rg: np.ndarray,
+    ctail_threshold: float,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    weight_aggregation: str,
+) -> None:
+    """1 row × N_conditions cols: weighted meta-cluster fractions split by C-tail Rg.
+
+    Bar height = weighted fraction of frames in each macro-cluster for the condition.
+    Solid bar = C-tail compact (< threshold); hatched bar stacked on top = extended (>= threshold).
+    """
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(macro_labels)
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, n_frames,
+        aggregation=weight_aggregation,
+    )
+
+    is_extended = ctail_rg >= ctail_threshold
+
+    fig, axes = plt.subplots(1, n_conds, figsize=(4 * n_conds, 5), constrained_layout=True)
+    if n_conds == 1:
+        axes = [axes]
+
+    x = np.arange(len(MACRO_NAMES))
+    width = 0.6
+
+    for col_idx, condition in enumerate(cfg.ensembles):
+        ax = axes[col_idx]
+        weights = condition_weights[condition]
+
+        if weights is None:
+            ax.text(0.5, 0.5, f"No data\nfor {condition}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=10, color="red")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+
+        total_w = np.sum(weights)
+
+        for i, macro in enumerate(MACRO_NAMES):
+            color = CLUSTER_COLOURS[macro]
+            mask_compact = (macro_labels == macro) & ~is_extended
+            mask_extended = (macro_labels == macro) & is_extended
+
+            frac_compact = np.sum(weights[mask_compact]) / total_w
+            frac_extended = np.sum(weights[mask_extended]) / total_w
+
+            ax.bar(x[i], frac_compact, width, color=color, edgecolor="black",
+                   alpha=0.85, linewidth=0.8)
+            ax.bar(x[i], frac_extended, width, bottom=frac_compact,
+                   color=color, edgecolor="black", hatch="//", alpha=0.85, linewidth=0.8)
+
+            total_frac = frac_compact + frac_extended
+            if total_frac > 0.02:
+                ax.text(x[i], total_frac + 0.005, f"{total_frac:.2f}",
+                        ha="center", va="bottom", fontsize=8, fontweight="bold")
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(MACRO_NAMES, fontsize=10, fontweight="bold")
+        ax.set_ylim(0, 1.0)
+        ax.set_ylabel("Weighted Fraction" if col_idx == 0 else "")
+        ax.set_title(condition, fontsize=11, fontweight="bold")
+        remove_top_right_spines(ax)
+
+    # Shared legend on first column
+    above_patch = mpatches.Patch(facecolor="white", edgecolor="black", hatch="//",
+                                  label=f"C-tail ≥ {ctail_threshold} Å")
+    below_patch = mpatches.Patch(facecolor="white", edgecolor="black",
+                                  label=f"C-tail < {ctail_threshold} Å")
+    axes[0].legend(handles=[above_patch, below_patch], fontsize=8, loc="upper right")
+
+    fig.suptitle(
+        f"Weighted Meta-Cluster Fractions — {metric_name}\n"
+        f"(C-tail threshold = {ctail_threshold} Å)",
+        fontsize=13,
+        fontweight="bold",
+    )
+    out_path = output_dir / f"meta_cluster_fractions_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_ctail_per_meta_cluster_per_metric(
+    metric_dir: Path,
+    ctail_rg: np.ndarray,
+    macro_labels: np.ndarray,
+    ctail_threshold: float,
+    cluster_labels: np.ndarray | None,
+    n_per_cluster: np.ndarray | None,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    weight_aggregation: str,
+) -> None:
+    """N_macro rows × N_conditions cols: per-meta-cluster weighted C-tail Rg histograms."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_macro = len(MACRO_NAMES)
+    n_frames = len(ctail_rg)
+    condition_weights = load_condition_weights(
+        metric_dir, cfg, cluster_labels, n_per_cluster, n_frames,
+        aggregation=weight_aggregation,
+    )
+
+    fig, axes = plt.subplots(n_macro, n_conds,
+                              figsize=(4 * n_conds, 3 * n_macro), constrained_layout=True)
+    if n_macro == 1 and n_conds == 1:
+        axes = np.array([[axes]])
+    elif n_macro == 1:
+        axes = axes.reshape(1, n_conds)
+    elif n_conds == 1:
+        axes = axes.reshape(n_macro, 1)
+
+    rg_all_min = np.min(ctail_rg)
+    rg_all_max = np.max(ctail_rg)
+    bins = np.linspace(rg_all_min, rg_all_max, 30)
+
+    for row_idx, macro in enumerate(MACRO_NAMES):
+        mask_macro = macro_labels == macro
+        rg_macro = ctail_rg[mask_macro]
+
+        for col_idx, condition in enumerate(cfg.ensembles):
+            ax = axes[row_idx, col_idx]
+            weights = condition_weights[condition]
+            color = cfg.style.ensemble_colors.get(condition, "#808080")
+
+            # Unweighted reference
+            ax.hist(rg_macro, bins=bins, density=True, alpha=0.3,
+                    color="grey", edgecolor="none")
+
+            if weights is not None:
+                weights_macro = weights[mask_macro]
+                w_sum = np.sum(weights_macro)
+                if w_sum > 0:
+                    ax.hist(rg_macro, bins=bins, weights=weights_macro,
+                            density=True, alpha=0.8, color=color, edgecolor="none")
+
+            ax.axvline(x=ctail_threshold, color="black", linestyle=":", lw=1.2, alpha=0.7)
+
+            if col_idx == 0:
+                ax.set_ylabel(f"{macro}\nDensity", fontweight="bold",
+                              color=CLUSTER_COLOURS.get(macro, "black"))
+            else:
+                ax.set_ylabel("Density")
+
+            if row_idx == 0:
+                ax.set_title(condition, fontsize=11, fontweight="bold")
+
+            if row_idx == n_macro - 1:
+                ax.set_xlabel(r"C-tail $R_g$ (Å)")
+
+            remove_top_right_spines(ax)
+
+    fig.suptitle(f"C-tail $R_g$ per Meta-Cluster — {metric_name}",
+                 fontsize=13, fontweight="bold")
+    out_path = output_dir / f"ctail_per_meta_cluster_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def plot_meta_cluster_replicates_per_metric(
+    metric_dir: Path,
+    macro_labels: np.ndarray,
+    ctail_rg: np.ndarray,
+    ctail_threshold: float,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    weight_aggregation: str,
+) -> None:
+    """Plot replicate-level macro fractions to expose averaging-induced dilution."""
+    metric_name = metric_dir.name
+    n_conds = len(cfg.ensembles)
+    n_frames = len(macro_labels)
+    replicate_weights = load_replicate_weights(metric_dir, cfg, n_frames)
+
+    fig, axes = plt.subplots(1, n_conds, figsize=(4 * n_conds, 4.5), constrained_layout=True)
+    if n_conds == 1:
+        axes = [axes]
+
+    x = np.arange(len(MACRO_NAMES))
+
+    for col_idx, condition in enumerate(cfg.ensembles):
+        ax = axes[col_idx]
+        reps = replicate_weights[condition]
+        if reps is None:
+            ax.text(0.5, 0.5, f"No data\nfor {condition}", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=10, color="red")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            continue
+
+        rep_rows = [np.asarray(row, dtype=float) for row in reps]
+        rep_colors = plt.cm.Blues(np.linspace(0.45, 0.85, len(rep_rows)))
+
+        for rep_idx, row in enumerate(rep_rows):
+            weights = np.nan_to_num(row, nan=0.0)
+            weights = weights / np.sum(weights)
+            fractions = compute_macro_fraction_rows(
+                weights, macro_labels, ctail_rg, ctail_threshold
+            )
+            y = [fractions[f"{macro}_total"] for macro in MACRO_NAMES]
+            ax.plot(
+                x, y, marker="o", lw=1.5, color=rep_colors[rep_idx],
+                label=f"Rep {rep_idx + 1}"
+            )
+
+        agg_weights = aggregate_weight_rows(np.vstack(rep_rows), aggregation=weight_aggregation)
+        agg_fractions = compute_macro_fraction_rows(
+            agg_weights, macro_labels, ctail_rg, ctail_threshold
+        )
+        agg_y = [agg_fractions[f"{macro}_total"] for macro in MACRO_NAMES]
+        ax.plot(
+            x, agg_y, marker="s", lw=2.5, color="black", linestyle="--",
+            label=f"{weight_aggregation.title()} aggregate"
+        )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(MACRO_NAMES, fontsize=10, fontweight="bold")
+        ax.set_ylim(0, 1.0)
+        ax.set_title(condition, fontsize=11, fontweight="bold")
+        ax.set_ylabel("Weighted Fraction" if col_idx == 0 else "")
+        remove_top_right_spines(ax)
+
+    axes[0].legend(fontsize=8, loc="upper right", framealpha=0.8)
+    fig.suptitle(
+        f"Replicate Macro Fractions — {metric_name}\n"
+        f"(aggregate = {weight_aggregation})",
+        fontsize=13, fontweight="bold",
+    )
+    out_path = output_dir / f"meta_cluster_replicates_{metric_name}.png"
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+def export_meta_cluster_fraction_summary_per_metric(
+    metric_dir: Path,
+    macro_labels: np.ndarray,
+    ctail_rg: np.ndarray,
+    ctail_threshold: float,
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    weight_aggregation: str,
+) -> None:
+    """Write per-condition aggregate and replicate macro fractions to CSV."""
+    metric_name = metric_dir.name
+    n_frames = len(macro_labels)
+    replicate_weights = load_replicate_weights(metric_dir, cfg, n_frames)
+    out_path = output_dir / f"meta_cluster_fraction_summary_{metric_name}.csv"
+
+    fieldnames = [
+        "condition", "series", "aggregation",
+        "Rod_total", "Rod_compact", "Rod_extended",
+        "Wavy_total", "Wavy_compact", "Wavy_extended",
+        "Compact_total", "Compact_compact", "Compact_extended",
+    ]
+
+    with open(out_path, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for condition in cfg.ensembles:
+            reps = replicate_weights[condition]
+            if reps is None:
+                continue
+
+            rep_rows = [np.asarray(row, dtype=float) for row in reps]
+            for rep_idx, row in enumerate(rep_rows):
+                weights = np.nan_to_num(row, nan=0.0)
+                weights = weights / np.sum(weights)
+                fractions = compute_macro_fraction_rows(
+                    weights, macro_labels, ctail_rg, ctail_threshold
+                )
+                writer.writerow(
+                    {
+                        "condition": condition,
+                        "series": f"replicate_{rep_idx + 1}",
+                        "aggregation": "none",
+                        **fractions,
+                    }
+                )
+
+            agg_weights = aggregate_weight_rows(np.vstack(rep_rows), aggregation=weight_aggregation)
+            agg_fractions = compute_macro_fraction_rows(
+                agg_weights, macro_labels, ctail_rg, ctail_threshold
+            )
+            writer.writerow(
+                {
+                    "condition": condition,
+                    "series": "aggregate",
+                    "aggregation": weight_aggregation,
+                    **agg_fractions,
+                }
+            )
+
+    print(f"Saved {out_path}")
+
+
+def export_candidate_model_ranking(
+    metric_dir: Path,
+    candidate_dirs: list[Path],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+    proxy_features: dict[str, np.ndarray],
+) -> None:
+    ranking_rows: list[dict[str, object]] = []
+    stability_rows: list[dict[str, object]] = []
+    state_rows: list[dict[str, object]] = []
+
+    for candidate_dir in candidate_dirs:
+        macro_labels = np.load(candidate_dir / "coarse_cluster_labels.npy", allow_pickle=True)
+        cluster_labels_path = candidate_dir / "cluster_labels.npy"
+        cluster_labels = np.load(cluster_labels_path) if cluster_labels_path.exists() else None
+        n_per_cluster = np.bincount(cluster_labels) if cluster_labels is not None else None
+        cand_rows, cand_stability, cand_states = summarize_candidate_model(
+            candidate_dir=candidate_dir,
+            metric_dir=metric_dir,
+            cfg=cfg,
+            macro_labels=macro_labels,
+            proxy_features=proxy_features,
+            cluster_labels=cluster_labels,
+            n_per_cluster=n_per_cluster,
+        )
+        ranking_rows.extend(cand_rows)
+        stability_rows.extend(cand_stability)
+        state_rows.extend(cand_states)
+
+    ranking_rows.sort(key=lambda row: row["total_score"], reverse=True)
+
+    if ranking_rows:
+        ranking_path = output_dir / f"candidate_model_summary_{metric_dir.name}.csv"
+        with open(ranking_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(ranking_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(ranking_rows)
+        print(f"Saved {ranking_path}")
+
+    if stability_rows:
+        stability_path = output_dir / f"candidate_replicate_stability_{metric_dir.name}.csv"
+        with open(stability_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(stability_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(stability_rows)
+        print(f"Saved {stability_path}")
+
+    if state_rows:
+        state_path = output_dir / f"candidate_condition_fractions_{metric_dir.name}.csv"
+        with open(state_path, "w", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(state_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(state_rows)
+        print(f"Saved {state_path}")
+
+
+def plot_residue_pf_distributions_per_metric(
+    metric_dir: Path,
+    log_pf: np.ndarray,
+    heavy_contacts: np.ndarray | None,
+    acceptor_contacts: np.ndarray | None,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-mean protection factor distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black), original unweighted prior (grey dashed),
+    unweighted fitted (transparent teal), and experimental target (orange).
+    """
+    from jaxent.src.custom_types.HDX import HDX_protection_factor
+    from jaxent.src.custom_types.datapoint import ExpD_Datapoint
+
+    # Determine paths for target experimental data
+    # metric_dir: examples/4_aSyn/fitting/_processed_.../_extracted_.../val_mse_min
+    # exp_dir is 4 levels up: examples/4_aSyn
+    exp_dir = metric_dir.parents[3]
+    data_dir = exp_dir / "data" / "_aSyn"
+
+    target_pfs = {}
+    for condition in cfg.ensembles:
+        cond_safe = condition.replace(" ", "_").replace("/", "_")
+        json_path = data_dir / f"aSyn_PF_{cond_safe}.json"
+        csv_path = data_dir / f"aSyn_PF_{cond_safe}.csv"
+        
+        if json_path.exists() and csv_path.exists():
+            try:
+                hdx_data = ExpD_Datapoint.load_list_from_files(
+                    json_path=str(json_path),
+                    csv_path=str(csv_path),
+                    datapoint_class=HDX_protection_factor
+                )
+                target_pf = {dp.top.residues[0]: float(np.atleast_1d(dp.protection_factor)[0]) for dp in hdx_data}
+                target_pfs[condition] = target_pf
+            except Exception as e:
+                print(f"Error loading target data for {condition}: {e}")
+                target_pfs[condition] = {}
+        else:
+            print(f"WARNING: target files not found for {condition} at {json_path} and {csv_path}")
+            target_pfs[condition] = {}
+
+    # Load selection files containing replicate data
+    replicate_pfs = {}
+    replicate_bc = {}
+    replicate_bh = {}
+
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if not npz_files:
+            continue
+        
+        npz_file = npz_files[0]
+        data = np.load(npz_file)
+        
+        # Load pred_ln_pf (shape: n_replicates, n_residues)
+        if "pred_ln_pf" in data:
+            replicate_pfs[condition] = data["pred_ln_pf"]
+        elif "bv_bc" in data and "bv_bh" in data and "frame_weights" in data and heavy_contacts is not None and acceptor_contacts is not None:
+            # Fallback computation if pred_ln_pf was somehow missing
+            bc_arr = data["bv_bc"]
+            bh_arr = data["bv_bh"]
+            weights_arr = data["frame_weights"]
+            pfs = []
+            for bc, bh, w in zip(bc_arr, bh_arr, weights_arr):
+                pfs.append((bc * heavy_contacts + bh * acceptor_contacts) @ w)
+            replicate_pfs[condition] = np.stack(pfs)
+
+        if "bv_bc" in data:
+            replicate_bc[condition] = data["bv_bc"]
+        if "bv_bh" in data:
+            replicate_bh[condition] = data["bv_bh"]
+
+    active_conditions = [c for c in cfg.ensembles if c in replicate_pfs]
+    if not active_conditions:
+        print("No active conditions found for residue PF plots. Skipping.")
+        return
+
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    def get_blocks(resids):
+        if not resids: return []
+        resids = sorted(resids)
+        blocks = []
+        start = resids[0]
+        for i in range(1, len(resids)):
+            if resids[i] != resids[i-1] + 1:
+                blocks.append((start, resids[i-1]))
+                start = resids[i]
+        blocks.append((start, resids[-1]))
+        return blocks
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        target_pf = target_pfs.get(condition, {})
+        pred_pfs = replicate_pfs[condition]
+        
+        # Fitted Ensemble metrics
+        fitted_mean = np.mean(pred_pfs, axis=0)
+        fitted_sd = np.std(pred_pfs, axis=0)
+        
+        # Align all values to full_range
+        x_vals = full_range
+        y_target = [target_pf.get(r, np.nan) for r in x_vals]
+        
+        y_fitted_mean = [fitted_mean[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        y_fitted_sd = [fitted_sd[resid_to_idx[r]] if r in resid_to_idx else 0.0 for r in x_vals]
+        
+        # Unweighted Original Prior
+        prior_vals = log_pf.mean(axis=1)
+        y_prior = [prior_vals[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        
+        # Unweighted Fitted
+        if condition in replicate_bc and condition in replicate_bh and heavy_contacts is not None and acceptor_contacts is not None:
+            bc_vals = replicate_bc[condition]
+            bh_vals = replicate_bh[condition]
+            unweighted_fitted_reps = []
+            for bc, bh in zip(bc_vals, bh_vals):
+                unweighted_fitted_reps.append((bc * heavy_contacts + bh * acceptor_contacts).mean(axis=1))
+            unweighted_fitted_mean = np.mean(unweighted_fitted_reps, axis=0)
+            y_unweighted_fitted = [unweighted_fitted_mean[resid_to_idx[r]] if r in resid_to_idx else np.nan for r in x_vals]
+        else:
+            y_unweighted_fitted = None
+            
+        # Draw lines
+        ax.plot(x_vals, y_prior, color="grey", linestyle="--", label="Unweighted/Original Params")
+        
+        if y_unweighted_fitted is not None:
+            ax.plot(x_vals, y_unweighted_fitted, color="teal", alpha=0.5, label="Unweighted Fitted Params")
+            
+        ax.plot(x_vals, y_fitted_mean, color="black", linestyle="-", label="Fitted Ensemble")
+        
+        y_fitted_mean = np.array(y_fitted_mean)
+        y_fitted_sd = np.array(y_fitted_sd)
+        ax.fill_between(x_vals, y_fitted_mean - y_fitted_sd, y_fitted_mean + y_fitted_sd, color="black", alpha=0.15)
+        
+        ax.plot(x_vals, y_target, color="darkorange", marker="o", markersize=3, linestyle="-", label="Experimental Target")
+        
+        # Draw boxes for missing target residues
+        missing_resids = [r for r in x_vals if r not in target_pf]
+        missing_blocks = get_blocks(missing_resids)
+        for start, end in missing_blocks:
+            ax.axvspan(start - 0.5, end + 0.5, color='grey', alpha=0.15, lw=0, label="Missing Target Data" if start == missing_blocks[0][0] else "")
+            
+        # Style row subplot
+        ax.set_ylabel(r"$\log(Pf)$")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"residue_pf_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"residue_pf_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved residue PF plots to {png_path} and {pdf_path}")
+    plt.close()
+
+
+def plot_tris_bound_distributions_per_metric(
+    metric_dir: Path,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-wise Tris bound distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
+    """
+    exp_dir = metric_dir.parents[3]
+    tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
+    if not tris_npz_path.exists():
+        print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris bound plot.")
+        return
+
+    # Load tris bound data
+    tris_data = np.load(tris_npz_path)
+    resids = tris_data["resids"]  # shape (140,)
+    tris_bound_all = tris_data["tris_bound"]  # shape (n_frames, 140)
+    tris_resid_to_idx = {r: i for i, r in enumerate(resids)}
+
+    # Filter residues to active residue numbers
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    # Filter tris_bound array to match full_range
+    X = []
+    for r in full_range:
+        if r in tris_resid_to_idx:
+            X.append(tris_bound_all[:, tris_resid_to_idx[r]])
+        else:
+            X.append(np.zeros(tris_bound_all.shape[0]))
+    X = np.stack(X, axis=1).astype(float)  # shape (n_frames, len(full_range))
+
+    # Calculate unweighted mean and SD
+    unweighted_mean = X.mean(axis=0)
+    unweighted_sd = X.std(axis=0)
+
+    # Identify active conditions (those with selected model npz files)
+    active_conditions = []
+    replicate_weights = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if npz_files:
+            active_conditions.append(condition)
+            data = np.load(npz_files[0])
+            if "frame_weights" in data:
+                replicate_weights[condition] = data["frame_weights"]
+
+    if not active_conditions:
+        print("No active conditions found for Tris bound plots. Skipping.")
+        return
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        # Plot unweighted mean + SD (grey dashed + transparent grey band)
+        ax.plot(full_range, unweighted_mean, color="grey", linestyle="--", label="Unweighted")
+        ax.fill_between(full_range, unweighted_mean - unweighted_sd, unweighted_mean + unweighted_sd, color="grey", alpha=0.15)
+        
+        # Calculate reweighted mean + SD per replicate
+        weights_arr = replicate_weights.get(condition)
+        if weights_arr is not None:
+            reweighted_means = []
+            reweighted_sds = []
+            for w in weights_arr:
+                mu_j = X.T @ w
+                var_j = ((X - mu_j)**2).T @ w
+                sd_j = np.sqrt(np.maximum(var_j, 0.0))
+                reweighted_means.append(mu_j)
+                reweighted_sds.append(sd_j)
+            
+            # Replicate average
+            mean_reps = np.mean(reweighted_means, axis=0)
+            mean_sds = np.mean(reweighted_sds, axis=0)
+            
+            # Plot reweighted replicate mean + SD (black + transparent black band)
+            ax.plot(full_range, mean_reps, color="black", linestyle="-", label="Fitted Ensemble")
+            ax.fill_between(full_range, mean_reps - mean_sds, mean_reps + mean_sds, color="black", alpha=0.15)
+
+        # Style row subplot
+        ax.set_ylabel("Average Bound Tris")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"tris_bound_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"tris_bound_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved Tris bound plots to {png_path} and {pdf_path}")
+    plt.close()
+
+
+def plot_tris_contacts_distributions_per_metric(
+    metric_dir: Path,
+    resid_to_idx: dict[int, int],
+    cfg: ExperimentConfig,
+    output_dir: Path,
+) -> None:
+    """Plot residue-wise Tris contacts distributions across all conditions.
+
+    Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
+    """
+    exp_dir = metric_dir.parents[3]
+    tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
+    if not tris_npz_path.exists():
+        print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris contacts plot.")
+        return
+
+    # Load tris bound data
+    tris_data = np.load(tris_npz_path)
+    resids = tris_data["resids"]  # shape (140,)
+    if "tris_contacts" in tris_data:
+        tris_contacts_all = tris_data["tris_contacts"]  # shape (n_frames, 140)
+    else:
+        print("WARNING: 'tris_contacts' not found in tris_residue_contacts.npz. Skipping Tris contacts plot.")
+        return
+        
+    tris_resid_to_idx = {r: i for i, r in enumerate(resids)}
+
+    # Filter residues to active residue numbers
+    residue_numbers = sorted(resid_to_idx.keys())
+    res_min, res_max = min(residue_numbers), max(residue_numbers)
+    full_range = np.arange(res_min, res_max + 1)
+
+    # Filter tris_contacts array to match full_range
+    X = []
+    for r in full_range:
+        if r in tris_resid_to_idx:
+            X.append(tris_contacts_all[:, tris_resid_to_idx[r]])
+        else:
+            X.append(np.zeros(tris_contacts_all.shape[0]))
+    X = np.stack(X, axis=1).astype(float)  # shape (n_frames, len(full_range))
+
+    # Calculate unweighted mean and SD
+    unweighted_mean = X.mean(axis=0)
+    unweighted_sd = X.std(axis=0)
+
+    # Identify active conditions (those with selected model npz files)
+    active_conditions = []
+    replicate_weights = {}
+    for condition in cfg.ensembles:
+        npz_files = list(metric_dir.glob(f"{condition}_*_selected.npz"))
+        if npz_files:
+            active_conditions.append(condition)
+            data = np.load(npz_files[0])
+            if "frame_weights" in data:
+                replicate_weights[condition] = data["frame_weights"]
+
+    if not active_conditions:
+        print("No active conditions found for Tris contacts plots. Skipping.")
+        return
+
+    n_rows = len(active_conditions)
+    fig, axes = plt.subplots(n_rows, 1, figsize=(15, 2.5 * n_rows), sharex=True)
+    if n_rows == 1:
+        axes = [axes]
+
+    for row_idx, condition in enumerate(active_conditions):
+        ax = axes[row_idx]
+        
+        # Plot unweighted mean + SD (grey dashed + transparent grey band)
+        ax.plot(full_range, unweighted_mean, color="grey", linestyle="--", label="Unweighted")
+        ax.fill_between(full_range, unweighted_mean - unweighted_sd, unweighted_mean + unweighted_sd, color="grey", alpha=0.15)
+        
+        # Calculate reweighted mean + SD per replicate
+        weights_arr = replicate_weights.get(condition)
+        if weights_arr is not None:
+            reweighted_means = []
+            reweighted_sds = []
+            for w in weights_arr:
+                mu_j = X.T @ w
+                var_j = ((X - mu_j)**2).T @ w
+                sd_j = np.sqrt(np.maximum(var_j, 0.0))
+                reweighted_means.append(mu_j)
+                reweighted_sds.append(sd_j)
+            
+            # Replicate average
+            mean_reps = np.mean(reweighted_means, axis=0)
+            mean_sds = np.mean(reweighted_sds, axis=0)
+            
+            # Plot reweighted replicate mean + SD (black + transparent black band)
+            ax.plot(full_range, mean_reps, color="black", linestyle="-", label="Fitted Ensemble")
+            ax.fill_between(full_range, mean_reps - mean_sds, mean_reps + mean_sds, color="black", alpha=0.15)
+
+        # Style row subplot
+        ax.set_ylabel("Average Tris Contacts")
+        ax.set_title(condition, fontsize=11, fontweight="bold", loc="left")
+        ax.grid(True, alpha=0.15)
+        ax.set_xlim(res_min - 1, res_max + 1)
+        ax.set_xticks(np.arange(res_min, res_max + 1, 10))
+        
+        if row_idx == 0:
+            ax.legend(bbox_to_anchor=(1.01, 1.0), loc="upper left")
+
+    axes[-1].set_xlabel("Residue ID")
+    plt.tight_layout()
+    
+    png_path = output_dir / f"tris_contacts_distributions_{metric_dir.name}.png"
+    pdf_path = output_dir / f"tris_contacts_distributions_{metric_dir.name}.pdf"
+    
+    plt.savefig(png_path, dpi=300, bbox_inches='tight')
+    plt.savefig(pdf_path, bbox_inches='tight')
+    print(f"Saved Tris contacts plots to {png_path} and {pdf_path}")
+    plt.close()
 
 
 # ============================================================================
@@ -291,6 +2209,28 @@ def main():
     parser.add_argument("--output-dir", default=None, help="Output directory (default: <extracted-dir>/plots_feature_distributions)")
     parser.add_argument("--config", default=None, help="Path to config YAML (default: ../config.yaml)")
     parser.add_argument("--absolute-paths", action="store_true", help="Interpret paths as absolute")
+    parser.add_argument(
+        "--weight-aggregation",
+        default="mean",
+        choices=["mean", "median"],
+        help="How to aggregate multiple selected weight rows into one condition-level weight vector",
+    )
+    # Shape / meta-cluster args (all optional — skipped if not provided)
+    parser.add_argument("--shape-axes-npy", default=None,
+                        help="Path to shape_axes.npy from inertia_moments_clustering.py")
+    parser.add_argument("--macro-cluster-labels-npy", default=None,
+                        help="Path to macro_cluster_labels.npy from inertia_moments_clustering.py")
+    parser.add_argument("--candidate-cluster-root", default=None,
+                        help="Directory containing candidate_shape_* outputs from inertia_moments_clustering.py")
+    parser.add_argument("--ctail-rg-npy", default=None,
+                        help="Path to ctail_rg.npy (all-atom) from clustering script; "
+                             "if omitted the CA-based ctail_rg already computed is used")
+    parser.add_argument("--ctail-threshold", type=float, default=CTAIL_THRESHOLD_DEFAULT,
+                        help=f"C-tail Rg threshold in Å for extended/compact split (default: data median)")
+    parser.add_argument("--shape-sel", default="resid 1-114 and name CA",
+                        help="Selection range for inertia tensor shape-space plots (default: 'resid 1-114 and name CA')")
+    parser.add_argument("--metrics", nargs="+", default="val_mse_min",
+                        help="Optional list of metric subdirectories to process (e.g. 'bv_bh_max'). If omitted, all detected are processed.")
     args = parser.parse_args()
 
     # Resolve paths
@@ -298,11 +2238,11 @@ def main():
     exp_dir = script_dir.parent
 
     extracted_dir = Path(args.extracted_dir)
-    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_aSyn/a99sb_features/aSyn_featurised.npz"
-    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_aSyn/a99sb_features/topology.json"
+    feature_npz = Path(args.feature_npz) if args.feature_npz else script_dir.parent / "data/_aSyn/tris_MD/features/aSyn_featurised.npz"
+    topology_json = Path(args.topology_json) if args.topology_json else script_dir.parent / "data/_aSyn/tris_MD/features/topology.json"
     cluster_labels_npy = Path(args.cluster_labels_npy) if args.cluster_labels_npy else None
-    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_aSyn/a99sb.pdb"  # Fallback to topology.json if needed
-    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_aSyn/a99sb.pdb"
+    top_pdb = Path(args.top_pdb) if args.top_pdb else script_dir.parent / "data/_aSyn/tris_MD/md_mol_center_coil.pdb"  # Fallback to topology.json if needed
+    traj_xtc = Path(args.traj_xtc) if args.traj_xtc else script_dir.parent / "data/_aSyn/tris_MD/tris_all_combined.xtc"
 
     # Specific override for PDB if it's explicitly provided or if internal topology.json is actually what's needed
     if not args.top_pdb and not top_pdb.exists():
@@ -327,6 +2267,17 @@ def main():
     else:
         config_path = exp_dir / "config.yaml"
 
+    def _resolve_optional(path_str: str | None) -> Path | None:
+        if path_str is None:
+            return None
+        p = Path(path_str)
+        return p if args.absolute_paths else (script_dir / p).resolve()
+
+    shape_axes_npy = _resolve_optional(args.shape_axes_npy)
+    macro_cluster_labels_npy = _resolve_optional(args.macro_cluster_labels_npy)
+    candidate_cluster_root = _resolve_optional(args.candidate_cluster_root)
+    ctail_rg_npy = _resolve_optional(args.ctail_rg_npy)
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"extracted_dir:    {extracted_dir}")
@@ -335,6 +2286,12 @@ def main():
     print(f"cluster_labels:   {cluster_labels_npy}")
     print(f"top_pdb:          {top_pdb}")
     print(f"traj_xtc:         {traj_xtc}")
+    print(f"shape_axes_npy:   {shape_axes_npy}")
+    print(f"macro_labels_npy: {macro_cluster_labels_npy}")
+    print(f"candidate_root:   {candidate_cluster_root}")
+    print(f"ctail_rg_npy:     {ctail_rg_npy}")
+    print(f"ctail_threshold:  {args.ctail_threshold} Å")
+    print(f"weight_aggregation: {args.weight_aggregation}")
     print(f"output_dir:       {output_dir}")
     print(f"config:           {config_path}")
     print("-" * 60)
@@ -362,9 +2319,22 @@ def main():
     print("Loading protection factors...")
     log_pf = load_log_pf(feature_npz)
 
+    print("Loading contact features...")
+    heavy_contacts = None
+    acceptor_contacts = None
+    features_npz_path = Path(feature_npz).parent / "features.npz"
+    if features_npz_path.exists():
+        print(f"Loading contact features from {features_npz_path}...")
+        feat_data = np.load(features_npz_path, allow_pickle=True)
+        heavy_contacts = feat_data["heavy_contacts"]
+        acceptor_contacts = feat_data["acceptor_contacts"]
+    else:
+        print(f"WARNING: contact features not found at {features_npz_path}. Will fall back to default prior protection factors.")
+
     print("Computing regional mean log Pf...")
     nac_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, NAC_RANGE)
     p2_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, P2_RANGE)
+    ctail_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, CTAIL_RANGE)
 
     cluster_labels = None
     n_per_cluster = None
@@ -379,6 +2349,59 @@ def main():
     print("Computing N-C distances (this may take a minute)...")
     nc_dist = compute_nc_distances(top_pdb, traj_xtc, resid_to_idx)
 
+    print("Computing Termini contacts...")
+    termini_contacts = compute_termini_contacts(top_pdb, traj_xtc, T1_RANGE, T2_RANGE)
+
+    print("Computing RadGyr features...")
+    nhead_rg = compute_radgyr(top_pdb, traj_xtc, NHEAD_RG_RANGE)
+    nac_rg = compute_radgyr(top_pdb, traj_xtc, NAC_RG_RANGE)
+    ctail_rg = compute_radgyr(top_pdb, traj_xtc, CTAIL_RG_RANGE)
+
+    # Load optional shape / meta-cluster data from inertia_moments_clustering.py outputs
+    shape_axes: np.ndarray | None = None
+    macro_labels: np.ndarray | None = None
+    ctail_rg_for_bar = ctail_rg  # default: CA-based from above
+    candidate_dirs: list[Path] = []
+
+    if shape_axes_npy is not None:
+        if shape_axes_npy.exists():
+            print(f"Loading shape axes from {shape_axes_npy}...")
+            shape_axes = np.load(shape_axes_npy)
+        else:
+            print(f"WARNING: --shape-axes-npy not found at {shape_axes_npy}, skipping shape plots")
+
+    if macro_cluster_labels_npy is not None:
+        if macro_cluster_labels_npy.exists():
+            print(f"Loading macro cluster labels from {macro_cluster_labels_npy}...")
+            macro_labels = np.load(macro_cluster_labels_npy, allow_pickle=True)
+        else:
+            print(f"WARNING: --macro-cluster-labels-npy not found at {macro_cluster_labels_npy}, skipping bar chart")
+
+    if ctail_rg_npy is not None:
+        if ctail_rg_npy.exists():
+            print(f"Loading C-tail Rg from {ctail_rg_npy}...")
+            ctail_rg_for_bar = np.load(ctail_rg_npy)
+        else:
+            print(f"WARNING: --ctail-rg-npy not found at {ctail_rg_npy}, using CA-based ctail_rg")
+
+    if candidate_cluster_root is not None:
+        if candidate_cluster_root.exists():
+            candidate_dirs = load_candidate_dirs(candidate_cluster_root)
+            print(f"Loaded {len(candidate_dirs)} candidate cluster directories from {candidate_cluster_root}")
+        else:
+            print(f"WARNING: --candidate-cluster-root not found at {candidate_cluster_root}, skipping candidate ranking")
+
+    if args.ctail_threshold is None:
+        args.ctail_threshold = np.median(ctail_rg_for_bar)
+        print(f"Set ctail_threshold to data midpoint (median): {args.ctail_threshold:.1f} Å")
+    else:
+        print(f"Using provided ctail_threshold: {args.ctail_threshold:.1f} Å")
+
+    ref_ratios = None
+    if shape_axes is not None:
+        print(f"Computing reference inertia ratios (selection: '{args.shape_sel}')...")
+        ref_ratios = compute_reference_inertia_ratios(REFERENCES, args.shape_sel)
+
     # Loop over metric subdirectories (filter for {metric}_{direction} pattern)
     # Expected pattern: e.g., "recovery_percent_max", "spearman_mean_max"
     # Skip directories that start with underscore (like _extracted_*) or match output pattern
@@ -392,6 +2415,7 @@ def main():
                 and "_" in d.name
                 and not d.name.startswith("_")
                 and not d.name.startswith("plots_")
+                and (args.metrics is None or d.name in args.metrics)
             )
         ]
     )
@@ -409,10 +2433,157 @@ def main():
             nc_dist,
             nac_prot,
             p2_prot,
+            ctail_prot,
+            termini_contacts,
             cluster_labels,
             n_per_cluster,
             cfg,
             output_dir,
+            args.weight_aggregation,
+            heavy_contacts=heavy_contacts,
+            acceptor_contacts=acceptor_contacts,
+            resid_to_idx=resid_to_idx,
+        )
+
+        plot_radgyr_distributions_per_metric(
+            metric_dir,
+            nhead_rg,
+            nac_rg,
+            ctail_rg,
+            cluster_labels,
+            n_per_cluster,
+            cfg,
+            output_dir,
+            ctail_threshold=args.ctail_threshold,
+            weight_aggregation=args.weight_aggregation,
+        )
+
+        if shape_axes is not None:
+            plot_shape_order_per_metric(
+                metric_dir,
+                shape_axes,
+                cluster_labels,
+                n_per_cluster,
+                cfg,
+                output_dir,
+                args.weight_aggregation,
+            )
+
+            plot_free_energy_landscape_per_metric(
+                metric_dir,
+                shape_axes,
+                cluster_labels,
+                n_per_cluster,
+                cfg,
+                output_dir,
+                ref_ratios=ref_ratios,
+                weight_aggregation=args.weight_aggregation,
+            )
+
+            plot_free_energy_difference_per_metric(
+                metric_dir,
+                shape_axes,
+                cluster_labels,
+                n_per_cluster,
+                cfg,
+                output_dir,
+                ref_ratios=ref_ratios,
+                weight_aggregation=args.weight_aggregation,
+            )
+
+            plot_free_energy_uncertainty_per_metric(
+                metric_dir,
+                shape_axes,
+                cfg,
+                output_dir,
+                ref_ratios=ref_ratios,
+            )
+
+        if macro_labels is not None:
+            plot_meta_cluster_fractions_per_metric(
+                metric_dir,
+                macro_labels,
+                ctail_rg_for_bar,
+                args.ctail_threshold,
+                cluster_labels,
+                n_per_cluster,
+                cfg,
+                output_dir,
+                args.weight_aggregation,
+            )
+
+            plot_ctail_per_meta_cluster_per_metric(
+                metric_dir,
+                ctail_rg_for_bar,
+                macro_labels,
+                args.ctail_threshold,
+                cluster_labels,
+                n_per_cluster,
+                cfg,
+                output_dir,
+                args.weight_aggregation,
+            )
+
+            plot_meta_cluster_replicates_per_metric(
+                metric_dir,
+                macro_labels,
+                ctail_rg_for_bar,
+                args.ctail_threshold,
+                cfg,
+                output_dir,
+                args.weight_aggregation,
+            )
+
+            export_meta_cluster_fraction_summary_per_metric(
+                metric_dir,
+                macro_labels,
+                ctail_rg_for_bar,
+                args.ctail_threshold,
+                cfg,
+                output_dir,
+                args.weight_aggregation,
+            )
+
+        if candidate_dirs:
+            proxy_features = {
+                "ctail_rg": ctail_rg_for_bar,
+                "nc_distance": nc_dist,
+                "termini_contacts": termini_contacts.astype(float),
+                "ctail_prot": ctail_prot,
+            }
+            export_candidate_model_ranking(
+                metric_dir=metric_dir,
+                candidate_dirs=candidate_dirs,
+                cfg=cfg,
+                output_dir=output_dir,
+                proxy_features=proxy_features,
+            )
+
+        # Plot sequence-wise residue protection factors
+        plot_residue_pf_distributions_per_metric(
+            metric_dir=metric_dir,
+            log_pf=log_pf,
+            heavy_contacts=heavy_contacts,
+            acceptor_contacts=acceptor_contacts,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
+
+        # Plot sequence-wise Tris bound distributions
+        plot_tris_bound_distributions_per_metric(
+            metric_dir=metric_dir,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
+        )
+
+        # Plot sequence-wise Tris contacts distributions
+        plot_tris_contacts_distributions_per_metric(
+            metric_dir=metric_dir,
+            resid_to_idx=resid_to_idx,
+            cfg=cfg,
+            output_dir=output_dir,
         )
 
     print("\nAll plots saved to:", output_dir)

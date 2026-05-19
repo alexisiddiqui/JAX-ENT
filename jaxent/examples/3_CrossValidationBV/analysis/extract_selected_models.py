@@ -167,6 +167,21 @@ def main():
     possible_group_cols = ["ensemble", "split_type", "loss_function", "bv_reg_function"]
     group_cols = [c for c in possible_group_cols if c in scores_df.columns]
 
+    # Apply _filter_best_convergence: for each (ensemble, split_type, split_idx, maxent_value,
+    # loss_function, bv_reg_value, bv_reg_function) keep only the row with minimum val_loss
+    # across convergence steps. This matches the analysis script's selection logic and prevents
+    # partially-converged (nearly-uniform) models from winning on any metric.
+    conv_group_cols = ["ensemble", "split_type", "split_idx", "maxent_value"]
+    for col in ("loss_function", "bv_reg_value", "bv_reg_function"):
+        if col in scores_df.columns:
+            conv_group_cols.append(col)
+    if "val_loss" in scores_df.columns:
+        scores_df = scores_df.copy()
+        scores_df["val_loss"] = pd.to_numeric(scores_df["val_loss"], errors="coerce")
+        scores_df = scores_df.sort_values("val_loss", ascending=True, na_position="last")
+        scores_df = scores_df.drop_duplicates(subset=conv_group_cols, keep="first")
+        scores_df = scores_df.sort_index()
+
     print("Extracting optimal slices based on selection criteria...")
     # Loop over all requested metrics and directions
     for _, sel_row in tqdm(selection_df.drop_duplicates(subset=["score_metric", "direction"]).iterrows()):
