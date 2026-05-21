@@ -5,12 +5,12 @@ Generates per-frame clustering outputs for all 5 new (md_source × time) combina
 needed for the ensemble-size benchmark. tris_MD 1.0us is the reference and already
 has complete outputs in data/_cluster_inertia/.
 
-Combos handled:
-  tris_MD  0.25us  → slice first N//4 frames from _cluster_inertia/ arrays
-  tris_MD  0.5us   → slice first N//2 frames from _cluster_inertia/ arrays
-  control_MD 0.25us → MDAnalysis inertia + project onto tris GMM
-  control_MD 0.5us  → MDAnalysis inertia + project onto tris GMM
-  control_MD 1.0us  → MDAnalysis inertia + project onto tris GMM
+Combos handled (all via MDAnalysis on the already-truncated trajectories):
+  tris_MD  0.25us  → tris_all_combined_0.25us.xtc + project onto tris GMM
+  tris_MD  0.5us   → tris_all_combined_0.5us.xtc  + project onto tris GMM
+  control_MD 0.25us → control_all_combined_0.25us.xtc + project onto tris GMM
+  control_MD 0.5us  → control_all_combined_0.5us.xtc  + project onto tris GMM
+  control_MD 1.0us  → control_all_combined.xtc         + project onto tris GMM
                        (skipped by default if _cluster_inertia_control/ exists;
                         use --overwrite to regenerate)
 
@@ -81,7 +81,7 @@ def _save_clustering(
     return True
 
 
-def _project_control(
+def _project_trajectory(
     top: Path,
     traj: Path,
     time_label: str,
@@ -90,6 +90,7 @@ def _project_control(
     gmm,
     rev_map: dict[int, str],
     ref_metadata: dict,
+    source: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
     print(f"  Loading Universe: {traj.name} ...")
     u = mda.Universe(str(top), str(traj))
@@ -103,7 +104,7 @@ def _project_control(
     )
     metadata = {
         **ref_metadata,
-        "source": "control_MD",
+        "source": source,
         "time_us": float(time_label.replace("us", "")),
         "n_frames": int(len(cluster_labels)),
         "method": "projected_from_tris_gmm",
@@ -116,12 +117,7 @@ def main(dry_run: bool, overwrite: bool, base_dir: Path) -> None:
     tris_dir = base_dir / "data/_aSyn/tris_MD"
     ctrl_dir = base_dir / "data/_aSyn/control_MD"
 
-    print(f"Loading reference clustering from {ref_dir} ...")
-    tris_shape_axes = np.load(ref_dir / "shape_axes.npy")
-    tris_cluster_lbls = np.load(ref_dir / "cluster_labels.npy")
-    tris_ctail_rg = np.load(ref_dir / "ctail_rg.npy")
-    tris_macro_lbls = np.load(ref_dir / "macro_cluster_labels.npy", allow_pickle=True)
-
+    print(f"Loading reference clustering metadata from {ref_dir} ...")
     with open(ref_dir / "macro_cluster_map.json") as f:
         macro_cluster_map: dict = json.load(f)
     with open(ref_dir / "cluster_method.json") as f:
@@ -132,58 +128,36 @@ def main(dry_run: bool, overwrite: bool, base_dir: Path) -> None:
     gmm = joblib.load(ref_dir / "gmm_model.pkl")
     rev_map = _build_reverse_map(macro_cluster_map)
 
-    n_full = len(tris_shape_axes)
-    n_050 = n_full // 2
-    n_025 = n_full // 4
-    print(f"  Full tris frames : {n_full}")
-    print(f"  0.5us slice      : {n_050}")
-    print(f"  0.25us slice     : {n_025}")
+    print(f"  Full tris frames (reference): {len(tris_shape_axes)}")
 
-    # ── tris sub-trajectories: numpy slicing only ──────────────────────────
-    print("\n=== tris_MD 0.25us (slice) ===")
-    _save_clustering(
-        base_dir / "data/_cluster_inertia_tris_0.25us",
-        tris_shape_axes[:n_025],
-        tris_cluster_lbls[:n_025],
-        tris_ctail_rg[:n_025],
-        tris_macro_lbls[:n_025],
-        macro_cluster_map,
-        {**ref_metadata, "source": "tris_MD", "time_us": 0.25,
-         "n_frames": n_025, "method": "slice_of_tris_1.0us"},
-        dry_run, overwrite,
-    )
-
-    print("\n=== tris_MD 0.5us (slice) ===")
-    _save_clustering(
-        base_dir / "data/_cluster_inertia_tris_0.5us",
-        tris_shape_axes[:n_050],
-        tris_cluster_lbls[:n_050],
-        tris_ctail_rg[:n_050],
-        tris_macro_lbls[:n_050],
-        macro_cluster_map,
-        {**ref_metadata, "source": "tris_MD", "time_us": 0.5,
-         "n_frames": n_050, "method": "slice_of_tris_1.0us"},
-        dry_run, overwrite,
-    )
-
-    # ── control_MD: project onto tris GMM via MDAnalysis ──────────────────
-    ctrl_combos = [
-        ("0.25us", ctrl_dir / "control_all_combined_0.25us.xtc",
+    # ── all combos: project truncated trajectories onto tris GMM ──────────
+    all_combos = [
+        ("tris_MD",    "0.25us", tris_dir / "tris_all_combined_0.25us.xtc",
+         tris_dir / "md_mol_center_coil.pdb",
+         base_dir / "data/_cluster_inertia_tris_0.25us"),
+        ("tris_MD",    "0.5us",  tris_dir / "tris_all_combined_0.5us.xtc",
+         tris_dir / "md_mol_center_coil.pdb",
+         base_dir / "data/_cluster_inertia_tris_0.5us"),
+        ("control_MD", "0.25us", ctrl_dir / "control_all_combined_0.25us.xtc",
+         ctrl_dir / "md.gro.pdb",
          base_dir / "data/_cluster_inertia_control_0.25us"),
-        ("0.5us", ctrl_dir / "control_all_combined_0.5us.xtc",
+        ("control_MD", "0.5us",  ctrl_dir / "control_all_combined_0.5us.xtc",
+         ctrl_dir / "md.gro.pdb",
          base_dir / "data/_cluster_inertia_control_0.5us"),
-        ("1.0us", ctrl_dir / "control_all_combined.xtc",
+        ("control_MD", "1.0us",  ctrl_dir / "control_all_combined.xtc",
+         ctrl_dir / "md.gro.pdb",
          base_dir / "data/_cluster_inertia_control"),
     ]
 
-    for time_label, traj_path, out_dir in ctrl_combos:
-        print(f"\n=== control_MD {time_label} (project onto tris GMM) ===")
+    for source, time_label, traj_path, top_path, out_dir in all_combos:
+        print(f"\n=== {source} {time_label} (project onto tris GMM) ===")
         if not traj_path.exists():
             print(f"  WARNING: trajectory not found: {traj_path} — skipping.")
             continue
-        sa, cl, cr, ml, meta = _project_control(
-            ctrl_dir / "md.gro.pdb", traj_path,
+        sa, cl, cr, ml, meta = _project_trajectory(
+            top_path, traj_path,
             time_label, shape_sel, ctail_sel, gmm, rev_map, ref_metadata,
+            source=source,
         )
         _save_clustering(out_dir, sa, cl, cr, ml, macro_cluster_map, meta, dry_run, overwrite)
 
