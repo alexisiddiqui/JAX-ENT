@@ -128,8 +128,6 @@ def main(dry_run: bool, overwrite: bool, base_dir: Path) -> None:
     gmm = joblib.load(ref_dir / "gmm_model.pkl")
     rev_map = _build_reverse_map(macro_cluster_map)
 
-    print(f"  Full tris frames (reference): {len(tris_shape_axes)}")
-
     # ── all combos: project truncated trajectories onto tris GMM ──────────
     all_combos = [
         ("tris_MD",    "0.25us", tris_dir / "tris_all_combined_0.25us.xtc",
