@@ -20,7 +20,7 @@ BV_REG_VALUES_STR="0.25,0.5,0.75,1.0"
 BV_REG_LOSSES_STR="L1"
 RUN_ANALYSIS=1
 
-DIR_NAME="_optimise_aSyn_BV_FIGURE_5000"
+DIR_NAME="_optimise_aSyn_BV_FIGURE_TRIS_5000"
 N_STEPS=5000
 INITIAL_STEPS=0
 INITIAL_LR=1.0
@@ -29,7 +29,8 @@ EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
 MODEL_PARAMETERS_LR_SCALE=1.0
 
-DEFAULT_CONDITIONS_STR="Tris_only,Extracellular,Intracellular,Lysosomal"
+# DEFAULT_CONDITIONS_STR="Tris_only,Extracellular,Intracellular,Lysosomal"
+DEFAULT_CONDITIONS_STR="Tris_only"
 
 CONDITIONS_STR="$DEFAULT_CONDITIONS_STR"
 LOSSES_STR="MSE"
@@ -163,7 +164,7 @@ OUTPUT_DIR="${DIR_NAME}${time_data}"
 OPT_OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
 echo "Output directory: $OPT_OUTPUT_DIR"
 mkdir -p "${OPT_OUTPUT_DIR}/logs"
-
+START_TIME=$(date +%s)
 for CONDITION in "${CONDITIONS[@]}"; do
   echo "Running condition: $CONDITION"
   for SPLIT in "${SPLIT_TYPES[@]}"; do
@@ -205,7 +206,9 @@ done
 wait  # Final wait for any remaining jobs
 echo "All optimisation tasks completed."
 echo "Results saved in: $OPT_OUTPUT_DIR"
-
+END_TIME=$(date +%s)
+echo "Total time: $((END_TIME - START_TIME)) seconds"
+echo "minutes: $((END_TIME - START_TIME))/60"
 if [ "$RUN_ANALYSIS" -eq 1 ]; then
   ANALYSIS_RUNNER="${DIR_WD}/../run_comprehensive_analysis.sh"
   ANALYSIS_LOG="${OPT_OUTPUT_DIR}/logs/comprehensive_analysis_launcher.log"
