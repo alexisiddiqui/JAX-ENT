@@ -31,8 +31,10 @@ TOTAL_NS=1080
 
 # ---------------------------------------------------------------------------
 # truncate_by_frames <label> <top> <out> <target_ns> <rep1> [<rep2> ...]
-#   Writes the first N = round(n_total_frames * target_ns / TOTAL_NS) frames
-#   from the ordered replicate list, regardless of trajectory time metadata.
+#   From each replicate, takes the first round(n_rep * target_ns / TOTAL_NS)
+#   frames — i.e. a proportional prefix of each replicate (each 120 ns).
+#   This ensures all conformations (rod/coil/hairpin) contribute at every
+#   trajectory length, rather than exhausting early replicates first.
 # ---------------------------------------------------------------------------
 truncate_by_frames() {
     local label="$1"
@@ -73,28 +75,28 @@ for f in rep_files:
     frame_counts.append(len(u.trajectory))
 
 total_frames = sum(frame_counts)
-n_target = round(total_frames * target_ns / total_ns)
 print(f"  Total frames across {len(rep_files)} replicates: {total_frames}")
-print(f"  Target: {n_target} frames ({target_ns}/{total_ns} ns)")
+print(f"  Fraction: {target_ns}/{total_ns} ns — taking proportional prefix of each replicate")
 
-# Write n_target frames in replicate order
+# Take proportional prefix from each replicate so all conformations contribute.
+# n_from = round(n_rep * fraction) for each replicate individually.
 written = 0
 W = None
 for rep_file, n_rep in zip(rep_files, frame_counts):
-    if written >= n_target:
-        break
+    n_from = round(n_rep * target_ns / total_ns)
+    if n_from == 0:
+        continue
     u = mda.Universe(top, rep_file)
-    n_from = min(n_rep, n_target - written)
     if W is None:
         W = mda.Writer(out_path, n_atoms=u.atoms.n_atoms)
     for ts in u.trajectory[:n_from]:
         W.write(u.atoms)
     written += n_from
-    print(f"  {rep_file.rsplit('/', 1)[-1]}: {n_from} frames (running: {written})")
+    print(f"  {rep_file.rsplit('/', 1)[-1]}: {n_from}/{n_rep} frames")
 
 if W is not None:
     W.close()
-print(f"  Done: {written} frames -> {out_path}")
+print(f"  Done: {written} total frames -> {out_path}")
 PYEOF
 
     echo "[DONE] ${label}"
