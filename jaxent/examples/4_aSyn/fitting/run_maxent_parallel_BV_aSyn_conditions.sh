@@ -112,7 +112,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Extract features_dir from the selected config to pass to the optimizer.
-FEATURES_DIR=$(python -c "import yaml; c=yaml.safe_load(open('${CONFIG_YAML}')); print(c.get('features_dir',''))" 2>/dev/null || echo "")
+FEATURES_DIR_REL=$(python -c "import yaml; c=yaml.safe_load(open('${CONFIG_YAML}')); print(c.get('features_dir',''))" 2>/dev/null || echo "")
+if [[ -n "$FEATURES_DIR_REL" ]]; then
+  CONFIG_DIR=$(cd "$(dirname "${CONFIG_YAML}")" && pwd)
+  FEATURES_DIR="${CONFIG_DIR}/${FEATURES_DIR_REL}"
+else
+  FEATURES_DIR=""
+fi
 
 echo "Config:               $CONFIG_YAML"
 echo "Features dir:         ${FEATURES_DIR:-<from config.yaml>}"
