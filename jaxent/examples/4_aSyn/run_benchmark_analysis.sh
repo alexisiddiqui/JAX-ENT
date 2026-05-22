@@ -39,14 +39,16 @@ if [[ -z "$BENCHMARK_ROOT" ]]; then
   exit 1
 fi
 
-declare -A CONFIG_MAP=(
-    [tris_0.25us]="${SCRIPT_DIR}/config_benchmark_tris_0.25us.yaml"
-    [tris_0.5us]="${SCRIPT_DIR}/config_benchmark_tris_0.5us.yaml"
-    [tris_1.0us]="${SCRIPT_DIR}/config_benchmark_tris_1.0us.yaml"
-    [control_0.25us]="${SCRIPT_DIR}/config_benchmark_control_0.25us.yaml"
-    [control_0.5us]="${SCRIPT_DIR}/config_benchmark_control_0.5us.yaml"
-    [control_1.0us]="${SCRIPT_DIR}/config_benchmark_control_1.0us.yaml"
-)
+get_config() {
+    case "$1" in
+        "tris_0.25us")    echo "${SCRIPT_DIR}/config_benchmark_tris_0.25us.yaml" ;;
+        "tris_0.5us")     echo "${SCRIPT_DIR}/config_benchmark_tris_0.5us.yaml" ;;
+        "tris_1.0us")     echo "${SCRIPT_DIR}/config_benchmark_tris_1.0us.yaml" ;;
+        "control_0.25us") echo "${SCRIPT_DIR}/config_benchmark_control_0.25us.yaml" ;;
+        "control_0.5us")  echo "${SCRIPT_DIR}/config_benchmark_control_0.5us.yaml" ;;
+        "control_1.0us")  echo "${SCRIPT_DIR}/config_benchmark_control_1.0us.yaml" ;;
+    esac
+}
 
 ALL_COMBO_KEYS=( "tris_0.25us" "tris_0.5us" "tris_1.0us" "control_0.25us" "control_0.5us" "control_1.0us" )
 
@@ -66,7 +68,7 @@ echo ""
 
 for KEY in "${COMBO_KEYS[@]}"; do
     COMBO_DIR="${BENCHMARK_ROOT}/${KEY}"
-    CONFIG="${CONFIG_MAP[$KEY]}"
+    CONFIG=$(get_config "$KEY")
 
     echo "=============================="
     echo "[RUN] ${KEY}"

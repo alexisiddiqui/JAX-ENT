@@ -34,8 +34,8 @@ ANALYSIS_RUNNER="${BASE_DIR}/run_comprehensive_analysis.sh"
 
 # ── sweep hyperparameters (match run_maxent_parallel_BV_aSyn_conditions.sh) ──
 PARALLEL_JOBS=10
-MAXENT_VALUES_STR="1,5,10,50,100,500,1000,10000,100000"
-BV_REG_VALUES_STR="0.5,1.0"
+DEFAULT_MAXENT_VALUES_STR="1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100,1000"
+BV_REG_VALUES_STR="0.25,0.5,0.75,1.0"
 BV_REG_LOSSES_STR="L1"
 N_STEPS=500
 INITIAL_STEPS=0
@@ -86,33 +86,42 @@ done
 # ── combo definitions ──────────────────────────────────────────────────────
 ALL_COMBO_KEYS=( "tris_0.25us" "tris_0.5us" "tris_1.0us" "control_0.25us" "control_0.5us" "control_1.0us" )
 
-declare -A FEATURES_DIR_MAP=(
-    [tris_0.25us]="${DATA_DIR}/tris_MD/features_0.25us"
-    [tris_0.5us]="${DATA_DIR}/tris_MD/features_0.5us"
-    [tris_1.0us]="${DATA_DIR}/tris_MD/features"
-    [control_0.25us]="${DATA_DIR}/control_MD/features_0.25us"
-    [control_0.5us]="${DATA_DIR}/control_MD/features_0.5us"
-    [control_1.0us]="${DATA_DIR}/control_MD/features"
-)
+get_features_dir() {
+    case "$1" in
+        "tris_0.25us")    echo "${DATA_DIR}/tris_MD/features_0.25us" ;;
+        "tris_0.5us")     echo "${DATA_DIR}/tris_MD/features_0.5us" ;;
+        "tris_1.0us")     echo "${DATA_DIR}/tris_MD/features" ;;
+        "control_0.25us") echo "${DATA_DIR}/control_MD/features_0.25us" ;;
+        "control_0.5us")  echo "${DATA_DIR}/control_MD/features_0.5us" ;;
+        "control_1.0us")  echo "${DATA_DIR}/control_MD/features" ;;
+    esac
+}
 
-declare -A CONFIG_MAP=(
-    [tris_0.25us]="${BASE_DIR}/config_benchmark_tris_0.25us.yaml"
-    [tris_0.5us]="${BASE_DIR}/config_benchmark_tris_0.5us.yaml"
-    [tris_1.0us]="${BASE_DIR}/config_benchmark_tris_1.0us.yaml"
-    [control_0.25us]="${BASE_DIR}/config_benchmark_control_0.25us.yaml"
-    [control_0.5us]="${BASE_DIR}/config_benchmark_control_0.5us.yaml"
-    [control_1.0us]="${BASE_DIR}/config_benchmark_control_1.0us.yaml"
-)
+get_config() {
+    case "$1" in
+        "tris_0.25us")    echo "${BASE_DIR}/config_benchmark_tris_0.25us.yaml" ;;
+        "tris_0.5us")     echo "${BASE_DIR}/config_benchmark_tris_0.5us.yaml" ;;
+        "tris_1.0us")     echo "${BASE_DIR}/config_benchmark_tris_1.0us.yaml" ;;
+        "control_0.25us") echo "${BASE_DIR}/config_benchmark_control_0.25us.yaml" ;;
+        "control_0.5us")  echo "${BASE_DIR}/config_benchmark_control_0.5us.yaml" ;;
+        "control_1.0us")  echo "${BASE_DIR}/config_benchmark_control_1.0us.yaml" ;;
+    esac
+}
 
-declare -A MD_SOURCE_MAP=(
-    [tris_0.25us]="tris"   [tris_0.5us]="tris"   [tris_1.0us]="tris"
-    [control_0.25us]="control" [control_0.5us]="control" [control_1.0us]="control"
-)
+get_md_source() {
+    case "$1" in
+        "tris_0.25us"|"tris_0.5us"|"tris_1.0us") echo "tris" ;;
+        "control_0.25us"|"control_0.5us"|"control_1.0us") echo "control" ;;
+    esac
+}
 
-declare -A TIME_US_MAP=(
-    [tris_0.25us]="0.25"  [tris_0.5us]="0.5"  [tris_1.0us]="1.0"
-    [control_0.25us]="0.25" [control_0.5us]="0.5" [control_1.0us]="1.0"
-)
+get_time_us() {
+    case "$1" in
+        "tris_0.25us"|"control_0.25us") echo "0.25" ;;
+        "tris_0.5us"|"control_0.5us")   echo "0.5" ;;
+        "tris_1.0us"|"control_1.0us")   echo "1.0" ;;
+    esac
+}
 
 # Apply --combos filter
 if [[ -n "$COMBOS_STR" ]]; then
@@ -151,10 +160,10 @@ wait_for_slot() {
 
 # ── main loop ───────────────────────────────────────────────────────────────
 for KEY in "${COMBO_KEYS[@]}"; do
-    FEAT_DIR="${FEATURES_DIR_MAP[$KEY]}"
-    COMBO_CFG="${CONFIG_MAP[$KEY]}"
-    MD_SRC="${MD_SOURCE_MAP[$KEY]}"
-    TIME="${TIME_US_MAP[$KEY]}"
+    FEAT_DIR=$(get_features_dir "$KEY")
+    COMBO_CFG=$(get_config "$KEY")
+    MD_SRC=$(get_md_source "$KEY")
+    TIME=$(get_time_us "$KEY")
     COMBO_OUT="${BENCHMARK_ROOT}/${KEY}"
 
     echo "=============================="
