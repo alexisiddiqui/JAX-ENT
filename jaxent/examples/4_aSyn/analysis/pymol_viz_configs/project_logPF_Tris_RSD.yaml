@@ -13,9 +13,9 @@ render:
   ray_trace_mode: 0
   ray_transparency_oblique: true
   view: [
-     0.914935648,   -0.310222954,    0.258174568,
-     0.045961432,    0.715604126,    0.696991920,
-    -0.400973916,   -0.625836968,    0.668990552,
+     0.754874766,    0.655764580,   -0.011591607,
+    -0.626169205,    0.725840986,    0.284723699,
+     0.195125163,   -0.207672730,    0.958540916,
      0.000000000,    0.000000000, -225.683685303,
     86.123039246,  -61.275497437,   35.712631226,
    121.841857910,  329.525848389,   20.000000000
@@ -37,6 +37,6 @@ output:
 
 project_logpfs:
   reference_data: "data/_aSyn/aSyn_PF_Tris_only.dat"
-  target_data: "fitting/_processed__optimise_aSyn_BV_test_5000_20260519_015112/_extracted__processed__optimise_aSyn_BV_test_5000_20260519_015112/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
+  target_data: "fitting/_processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/_extracted__processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
   target_topology: "data/_aSyn/tris_MD/md_mol_center_coil.pdb"
   metric: "uncertainty_rsd"  # Options: protection_factor, uncertainty_sd, uncertainty_rsd, difference_signed, difference_absolute

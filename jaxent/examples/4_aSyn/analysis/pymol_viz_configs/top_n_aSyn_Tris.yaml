@@ -21,10 +21,18 @@ render:
   reference_transparency: 0.7
   transparency_mode: 1
   orthoscopic_view: true
-  antialias: 1
-  ray_trace_mode: 0
-  ray_transparency_oblique: false
-  ray_trace_on_save: false
+  ambient: 0.5
+  antialias: 4
+  ray_trace_mode: 1
+  ray_transparency_oblique: true
+  view: [
+     0.997327805,    0.022934997,    0.069376633,
+    -0.008219078,    0.978643894,   -0.205389723,
+    -0.072606139,    0.204270765,    0.976217270,
+    -0.000001937,   -0.000001203, -445.275817871,
+    39.923847198,  -30.274959564,   41.547569275,
+   354.551971436,  535.999633789,   20.000000000
+  ]
 
 
 general:
@@ -55,7 +63,7 @@ output:
 
 top_n:
   trajectory: "data/_aSyn/tris_MD/tris_all_combined.xtc,data/_aSyn/tris_MD/md_mol_center_coil.pdb"
-  weights: "fitting/_processed__optimise_aSyn_BV_test_5000_20260519_015112/_extracted__processed__optimise_aSyn_BV_test_5000_20260519_015112/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
+  weights: "fitting/_processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/_extracted__processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/val_mse_min/Tris_only_MSE_sequence_cluster_L1_selected.npz"
   colour_metric: "weight"     
   top_n: 20 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  
