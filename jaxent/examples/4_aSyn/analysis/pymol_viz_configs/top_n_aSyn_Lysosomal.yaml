@@ -9,18 +9,26 @@
 #   run Top_N_structures.py test_configs/top_n_MoPrP_weights.yaml
 
 render:
-  spectrum_colours: "blue_cyan_yellow"
-  spectrum_range: [0.0, 8.0]      # free energy scale (kT units): 0 = highest weight, 8 = ~3000x below max
+  spectrum_colours: "white_greencyan_teal_francium_black"
+  spectrum_range: [4.0, 0.0]     # adjust to actual weight range if needed
   putty_transform: 7
-  putty_range: [1.5, 1.5]
+  putty_range: [1.0, 1.0]
   trajectory_transparency: 0.1
   reference_transparency: 0.7
   transparency_mode: 1
   orthoscopic_view: true
-  antialias: 1
-  ray_trace_mode: 0
-  ray_transparency_oblique: false
-  ray_trace_on_save: false
+  ambient: 0.5
+  antialias: 4
+  ray_trace_mode: 1
+  ray_transparency_oblique: true
+  view: [
+     0.997327805,    0.022934997,    0.069376633,
+    -0.008219078,    0.978643894,   -0.205389723,
+    -0.072606139,    0.204270765,    0.976217270,
+    -0.000001937,   -0.000001203, -445.275817871,
+    39.923847198,  -30.274959564,   41.547569275,
+   396.320892334,  494.230743408,   20.000000000
+  ]
 
 
 general:
@@ -50,7 +58,7 @@ output:
 
 top_n:
   trajectory: "data/_aSyn/tris_MD/tris_all_combined.xtc,data/_aSyn/tris_MD/md_mol_center_coil.pdb"
-  weights: "fitting/_processed__optimise_aSyn_BV_test_5000_20260519_015112/_extracted__processed__optimise_aSyn_BV_test_5000_20260519_015112/val_mse_min/Lysosomal_MSE_sequence_cluster_L1_selected.npz"
+  weights: "fitting/_processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/_extracted__processed__optimise_aSyn_BV_FIGURE_5000_20260522_020324/val_mse_min/Lysosomal_MSE_sequence_cluster_L1_selected.npz"
   colour_metric: "weight"     
   top_n: 10 # top-N = frames with highest replicate-average weight
   transparency_range: [0.2, 0.6]  
