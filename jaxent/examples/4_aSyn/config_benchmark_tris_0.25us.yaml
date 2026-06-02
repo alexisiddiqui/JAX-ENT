@@ -35,7 +35,7 @@ features_dir: "data/_aSyn/tris_MD/features_0.25us"
 clustering_dir: "data/_cluster_inertia_tris_0.25us"
 trajectory_xtc: "data/_aSyn/tris_MD/tris_all_combined_0.25us.xtc"
 top_pdb: "data/_aSyn/tris_MD/md_mol_center_coil.pdb"
-feature_npz: "data/_aSyn/tris_MD/features_0.25us/tris_featurised_0.25us.npz"
+feature_npz: "data/_aSyn/tris_MD/features_0.25us/features.npz"
 datasplit_dir: "fitting/_datasplits"
 output_dir: "analysis/_analysis_loss_output"
 

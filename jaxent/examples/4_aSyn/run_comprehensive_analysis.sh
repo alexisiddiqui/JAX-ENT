@@ -105,7 +105,7 @@ else
 fi
 
 BASENAME="$(basename "$RESULTS_DIR")"
-PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
+PROCESSED_DIR="$(dirname "$RESULTS_DIR")/_processed_${BASENAME}"
 
 if run_step "score_models" "$LOG_DIR/score_models.log" \
   python "$ANA_DIR/score_models_aSyn_conditions.py" \
