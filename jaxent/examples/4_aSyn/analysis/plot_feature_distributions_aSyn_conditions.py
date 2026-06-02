@@ -145,13 +145,16 @@ def load_topology_map(topo_path: Path) -> dict[int, int]:
     return resid_to_idx
 
 
-def load_log_pf(feat_path: Path) -> np.ndarray:
+def load_log_pf(feat_path: Path) -> np.ndarray | None:
     """Load log protection factors from npz file.
 
     Returns:
-        np.ndarray: shape (133, 12700) — log_Pf per residue per frame
+        np.ndarray: shape (133, 12700) — log_Pf per residue per frame, or None if not present.
     """
     feat = np.load(feat_path, allow_pickle=True)
+    if "log_Pf" not in feat.files:
+        print(f"WARNING: 'log_Pf' key not found in {feat_path}. Skipping log-Pf-dependent plots.")
+        return None
     return feat["log_Pf"]
 
 
@@ -1289,9 +1292,8 @@ def plot_free_energy_difference_per_metric(
         # Compute difference
         diff = F_w - F_ref
 
-        # Symmetric color scaling
-        vlim = np.nanmax(np.abs(diff))
-        norm = matplotlib.colors.TwoSlopeNorm(vmin=-vlim, vcenter=0, vmax=vlim)
+        # Fixed symmetric color scale: -8 to +8 kBT
+        norm = matplotlib.colors.TwoSlopeNorm(vmin=-8, vcenter=0, vmax=8)
         hb.set_array(diff)
         hb.set_norm(norm)
 
@@ -1392,7 +1394,7 @@ def plot_free_energy_uncertainty_per_metric(
                        mincnt=1, cmap="Reds", edgecolors="none")
         last_hb = hb
         hb.set_array(F_std)
-        hb.set_norm(matplotlib.colors.Normalize(vmin=0, vmax=np.nanmax(F_std)))
+        hb.set_norm(matplotlib.colors.Normalize(vmin=0, vmax=40))
 
         # Shape boundary triangle
         triangle_x = [0, 1, 0.5, 0]
@@ -2331,10 +2333,13 @@ def main():
     else:
         print(f"WARNING: contact features not found at {features_npz_path}. Will fall back to default prior protection factors.")
 
-    print("Computing regional mean log Pf...")
-    nac_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, NAC_RANGE)
-    p2_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, P2_RANGE)
-    ctail_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, CTAIL_RANGE)
+    if log_pf is not None:
+        print("Computing regional mean log Pf...")
+        nac_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, NAC_RANGE)
+        p2_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, P2_RANGE)
+        ctail_prot = compute_region_mean_log_pf(log_pf, resid_to_idx, CTAIL_RANGE)
+    else:
+        nac_prot = p2_prot = ctail_prot = None
 
     cluster_labels = None
     n_per_cluster = None
@@ -2559,16 +2564,17 @@ def main():
                 proxy_features=proxy_features,
             )
 
-        # Plot sequence-wise residue protection factors
-        plot_residue_pf_distributions_per_metric(
-            metric_dir=metric_dir,
-            log_pf=log_pf,
-            heavy_contacts=heavy_contacts,
-            acceptor_contacts=acceptor_contacts,
-            resid_to_idx=resid_to_idx,
-            cfg=cfg,
-            output_dir=output_dir,
-        )
+        # Plot sequence-wise residue protection factors (requires log_Pf in feature npz)
+        if log_pf is not None:
+            plot_residue_pf_distributions_per_metric(
+                metric_dir=metric_dir,
+                log_pf=log_pf,
+                heavy_contacts=heavy_contacts,
+                acceptor_contacts=acceptor_contacts,
+                resid_to_idx=resid_to_idx,
+                cfg=cfg,
+                output_dir=output_dir,
+            )
 
         # Plot sequence-wise Tris bound distributions
         plot_tris_bound_distributions_per_metric(

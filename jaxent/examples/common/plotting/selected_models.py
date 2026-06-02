@@ -367,11 +367,13 @@ def plot_fixed_effects(summary_df, score_name, output_dir, style: PlotStyle | No
         alpha=0.8,
     )
 
+    ax = plt.gca()
     for _, row in display_df.iterrows():
-        plt.text(
-            row["Performance_Percentile"],
-            row["Inconsistency"] + 0.05,
+        ax.annotate(
             row["score_metric"],
+            xy=(row["Performance_Percentile"], row["Inconsistency"]),
+            xytext=(0, 5),
+            textcoords="offset points",
             fontsize=9,
             ha="center",
             va="bottom",
@@ -387,7 +389,6 @@ def plot_fixed_effects(summary_df, score_name, output_dir, style: PlotStyle | No
     plt.grid(True, linestyle="--", alpha=0.3)
     plt.xlim(0, 105)
     plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left", title="Metric")
-    plt.tight_layout()
 
     out_plot = os.path.join(output_dir, f"fixed_effects_scatter_{score_name}.png")
     plt.savefig(out_plot, dpi=300, bbox_inches="tight")

@@ -77,13 +77,13 @@ for KEY in "${COMBO_KEYS[@]}"; do
 
     if [[ ! -d "${COMBO_DIR}" ]]; then
         echo "  [SKIP] results directory not found"
-        (( SKIP++ ))
+        SKIP=$(( SKIP + 1 ))
         echo ""
         continue
     fi
     if [[ ! -f "${CONFIG}" ]]; then
         echo "  [SKIP] config file not found: ${CONFIG}"
-        (( SKIP++ ))
+        SKIP=$(( SKIP + 1 ))
         echo ""
         continue
     fi
@@ -94,10 +94,10 @@ for KEY in "${COMBO_KEYS[@]}"; do
     if bash "${ANALYSIS_RUNNER}" --config "${CONFIG}" "${COMBO_DIR}" \
         2>&1 | tee "${LOG}"; then
         echo "[DONE] ${KEY}"
-        (( PASS++ ))
+        PASS=$(( PASS + 1 ))
     else
         echo "[FAIL] ${KEY} — see ${LOG}"
-        (( FAIL++ ))
+        FAIL=$(( FAIL + 1 ))
     fi
     echo ""
 done

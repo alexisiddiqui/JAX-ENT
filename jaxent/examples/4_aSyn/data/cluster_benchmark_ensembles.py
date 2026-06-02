@@ -74,7 +74,10 @@ def _save_clustering(
     np.save(outdir / "cluster_labels.npy", cluster_labels)
     np.save(outdir / "ctail_rg.npy", ctail_rg)
     np.save(outdir / "macro_cluster_labels.npy", macro_labels)
+    np.save(outdir / "coarse_cluster_labels.npy", macro_labels)
     with open(outdir / "macro_cluster_map.json", "w") as f:
+        json.dump(cluster_map, f, indent=2)
+    with open(outdir / "coarse_cluster_map.json", "w") as f:
         json.dump(cluster_map, f, indent=2)
     with open(outdir / "cluster_method.json", "w") as f:
         json.dump(metadata, f, indent=2)
@@ -118,7 +121,7 @@ def main(dry_run: bool, overwrite: bool, base_dir: Path) -> None:
     ctrl_dir = base_dir / "data/_aSyn/control_MD"
 
     print(f"Loading reference clustering metadata from {ref_dir} ...")
-    with open(ref_dir / "macro_cluster_map.json") as f:
+    with open(ref_dir / "coarse_cluster_map.json") as f:
         macro_cluster_map: dict = json.load(f)
     with open(ref_dir / "cluster_method.json") as f:
         ref_metadata: dict = json.load(f)
