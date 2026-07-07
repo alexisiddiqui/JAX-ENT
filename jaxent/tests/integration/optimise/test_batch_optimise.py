@@ -98,8 +98,9 @@ def _clone_simulation_with_params(
     simulation: Simulation,
     params: Simulation_Parameters,
 ) -> Simulation:
-    _, aux_data = simulation.tree_flatten()
-    return Simulation.tree_unflatten(aux_data, (params, tuple()))
+    dynamic_values, aux_data = simulation.tree_flatten()
+    _, _, input_features = dynamic_values
+    return Simulation.tree_unflatten(aux_data, (params, tuple(), input_features))
 
 
 def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:

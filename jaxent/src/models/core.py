@@ -153,6 +153,7 @@ class Simulation:
 
         _, aux_data = sim.tree_flatten()
         new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
+        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
 
         if mutate:
             sim.params = new_sim.params
@@ -226,6 +227,7 @@ class Simulation:
             self.forwardpass,
             self.length,
             self._jit_forward_pure,
+            self.raise_jit_failure,
         )
 
         return dynamic_values, aux_data
@@ -248,9 +250,11 @@ class Simulation:
             forwardpass,
             length,
             _jit_forward_pure,
+            raise_jit_failure,
         ) = aux_data
 
         # Unpack dynamic values
+        (params, outputs, _input_features) = dynamic_values
         (params, outputs, _input_features) = dynamic_values
 
         # Create a new instance

@@ -11,7 +11,10 @@ from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
+from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 
 
 # Mock implementations for dependencies
@@ -168,6 +171,44 @@ def create_default_simulation_params(num_models: int = 1) -> Simulation_Paramete
     )
 
 
+def create_bv_simulation(
+    heavy_contacts: jax.Array,
+    acceptor_contacts: jax.Array,
+    k_ints: jax.Array,
+) -> Simulation:
+    config = BV_model_Config()
+    features = [
+        BV_input_features(
+            heavy_contacts=heavy_contacts,
+            acceptor_contacts=acceptor_contacts,
+            k_ints=k_ints,
+        )
+    ]
+    models = [BV_model(config)]
+    n_frames = heavy_contacts.shape[-1]
+    params = Simulation_Parameters(
+        frame_weights=jnp.ones(n_frames, dtype=jnp.float32) / n_frames,
+        frame_mask=jnp.ones(n_frames, dtype=jnp.float32),
+        model_parameters=[config.forward_parameters],
+        forward_model_weights=jnp.ones(1, dtype=jnp.float32),
+        forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
+        normalise_loss_functions=jnp.ones(1, dtype=jnp.float32),
+    )
+
+    simulation = Simulation(input_features=features, forward_models=models, params=params)
+    simulation.initialise()
+    return simulation
+
+
+def _contains_array_equal(tree, expected: jax.Array) -> bool:
+    return any(
+        isinstance(leaf, jax.Array)
+        and leaf.shape == expected.shape
+        and bool(jnp.array_equal(leaf, expected))
+        for leaf in jax.tree_util.tree_leaves(tree)
+    )
+
+
 # Test cases
 @pytest.mark.parametrize("raise_jit_failure", [True, False])
 class TestSimulation:
@@ -315,3 +356,46 @@ class TestSimulation:
             reconstructed_simulation.outputs[0].output_data,
             original_simulation.outputs[0].output_data,
         )
+
+
+def test_bv_contact_features_are_dynamic_simulation_leaves() -> None:
+    heavy_1 = jnp.asarray([[0.2, 0.4, 0.6], [0.8, 1.0, 1.2]], dtype=jnp.float32)
+    acceptor_1 = jnp.asarray([[1.1, 1.0, 0.9], [0.7, 0.5, 0.3]], dtype=jnp.float32)
+    k_ints_1 = jnp.asarray([0.05, 0.15], dtype=jnp.float32)
+
+    heavy_2 = heavy_1 + 2.0
+    acceptor_2 = acceptor_1 + 3.0
+    k_ints_2 = k_ints_1 + 0.4
+
+    simulation_1 = create_bv_simulation(heavy_1, acceptor_1, k_ints_1)
+    simulation_2 = create_bv_simulation(heavy_2, acceptor_2, k_ints_2)
+
+    dynamic_values_1, aux_data_1 = simulation_1.tree_flatten()
+    dynamic_values_2, _ = simulation_2.tree_flatten()
+    simulation_2_same_aux = Simulation.tree_unflatten(aux_data_1, dynamic_values_2)
+
+    assert _contains_array_equal(dynamic_values_1, heavy_1)
+    assert _contains_array_equal(dynamic_values_1, acceptor_1)
+    assert _contains_array_equal(dynamic_values_1, k_ints_1)
+    assert not _contains_array_equal(aux_data_1, heavy_1)
+    assert not _contains_array_equal(aux_data_1, acceptor_1)
+    assert not _contains_array_equal(aux_data_1, k_ints_1)
+
+    _, treedef_1 = jax.tree_util.tree_flatten(simulation_1)
+    _, treedef_2 = jax.tree_util.tree_flatten(simulation_2_same_aux)
+    assert treedef_1 == treedef_2
+
+    @jax.jit
+    def contact_total(simulation: Simulation) -> jax.Array:
+        features = simulation._input_features[0]
+        return (
+            jnp.sum(features.heavy_contacts)
+            + jnp.sum(features.acceptor_contacts)
+            + jnp.sum(features.k_ints)
+        )
+
+    total_1 = contact_total(simulation_1)
+    total_2 = contact_total(simulation_2_same_aux)
+
+    assert not jnp.allclose(total_1, total_2)
+    assert contact_total._cache_size() == 1

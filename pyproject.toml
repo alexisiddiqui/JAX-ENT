@@ -8,24 +8,32 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "beartype>=0.22.9",
-    "chex>=0.1.88",
+    "beartype",
+    "chex",
     "gdown>=5.2.1",
-    "h5py>=3.14.0",
+    "h5py",
     "hdxrate>=0.2.2",
     "icecream>=2.1.4",
+<<<<<<< Updated upstream
     "jax==0.4.35",
     "jaxtyping>=0.2.37",
     "matplotlib>=3.10.0",
     "MDAnalysis>=2.8.0",
     "networkx[default]>=3.4.2",
+=======
+    "jax",
+    "jaxtyping",
+    "matplotlib",
+    "MDAnalysis",
+    "networkx[default]",
+>>>>>>> Stashed changes
     "numpy",
     "optax>=0.2.4",
-    "pyyaml>=6.0.3",
-    "scikit-learn>=1.6.1",
-    "scipy>=1.15.1",
-    "seaborn>=0.13.2",
-    "statsmodels>=0.14.6",
+    "pyyaml",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
+    "statsmodels",
 ]
 [project.scripts]
 jaxent-featurise = "jaxent.cli.featurise:main"
