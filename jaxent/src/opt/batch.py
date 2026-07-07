@@ -85,7 +85,8 @@ def batch_optimise(
         simulation,
         optimisable_funcs=optimisable_funcs,
     )
-    _, base_aux = simulation.tree_flatten()
+    base_dynamic, base_aux = simulation.tree_flatten()
+    _, _, base_input_features = base_dynamic
 
     n_hparams = hparam_batch.forward_model_weights.shape[0]
     n_pad = (-n_hparams) % batch_size
@@ -113,7 +114,7 @@ def batch_optimise(
             forward_model_weights=forward_model_weights,
             forward_model_scaling=forward_model_scaling,
         )
-        run_sim = Simulation.tree_unflatten(base_aux, (run_params, tuple()))
+        run_sim = Simulation.tree_unflatten(base_aux, (run_params, tuple(), base_input_features))
         run_state = OptimizationState(
             params=run_params,
             opt_state=base_opt_state.opt_state,

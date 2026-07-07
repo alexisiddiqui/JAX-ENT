@@ -152,7 +152,7 @@ class Simulation:
         )
 
         _, aux_data = sim.tree_flatten()
-        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs))
+        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
 
         if mutate:
             sim.params = new_sim.params
@@ -215,16 +215,16 @@ class Simulation:
             - dynamic_values: Parameters that will be transformed by JAX
             - aux_data: Static data that won't be transformed by JAX
         """
-        # Dynamic values (leaves) - typically parameters that change during optimization
-        dynamic_values = (self.params, self.outputs)
+        # Dynamic values (leaves) - parameters, outputs, and input feature arrays
+        # can all change between optimisation calls without changing the static
+        # compiled structure.
+        dynamic_values = (self.params, self.outputs, self._input_features)
 
         # Static auxiliary data - configuration that doesn't change during optimization
         aux_data = (
-            self.input_features,
             self.forward_models,
             self.forwardpass,
             self.length,
-            self._input_features,
             self._jit_forward_pure,
         )
 
@@ -244,19 +244,17 @@ class Simulation:
         """
         # Unpack auxiliary data
         (
-            input_features,
             forward_models,
             forwardpass,
             length,
-            _input_features,
             _jit_forward_pure,
         ) = aux_data
 
         # Unpack dynamic values
-        (params, outputs) = dynamic_values
+        (params, outputs, _input_features) = dynamic_values
 
         # Create a new instance
-        instance = cls(input_features, forward_models, params)
+        instance = cls(_input_features, forward_models, params)
         instance.forwardpass = forwardpass
         instance.length = length
         instance.outputs = tuple(outputs)
