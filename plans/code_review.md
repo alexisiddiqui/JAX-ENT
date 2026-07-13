@@ -1,145 +1,124 @@
-# JAX-ENT Codebase Review
+# JAX-ENT Code Review
 
-Comprehensive code review of the JAX-ENT codebase — a JAX-based Maximum Entropy framework for reweighting MD simulation trajectories against HDX-MS experimental data. The review covers correctness, numerical stability, JAX purity, security, test coverage, and code quality across ~74 Python files and ~15k lines of code.
+This code review highlights critical bugs, JAX-specific performance improvements, code quality issues, and structural concerns across the `/jaxent/src/` codebase.
 
----
+## 1. Critical Bugs & Logic Flaws
 
-## Critical Issues (Bugs / Correctness)
-
-<!-- ### 1. NaN/Inf comparison bug — `src/opt/run.py:203`
+### 1.1. `predict.py` Broken Initialization with Sequence Parameters
+In `predict.py`, `run_predict` takes a `model_parameters` argument that can be a `Sequence[Model_Parameters]` or a `Simulation_Parameters` object. However, when initializing the `Simulation` object:
 ```python
-if (current_loss < tolerance) or (current_loss == jnp.nan) or (current_loss == jnp.inf):
+simulation = Simulation(
+    input_features=input_features_list,
+    forward_models=forward_models_list,
+    params=model_parameters if isinstance(model_parameters, Simulation_Parameters) else None,
+    # ...
+)
 ```
-`x == jnp.nan` is **always False** per IEEE 754. This means NaN losses will never trigger the convergence break, causing the optimization loop to run to `n_steps` with garbage values.
-
-**Fix:** `jnp.isnan(current_loss) or jnp.isinf(current_loss)`
-
-### [x] 7. Boolean context for JAX arrays — `src/opt/run.py:203`
-`current_loss < tolerance` produces a JAX array used in Python `if`. Works in eager mode but would fail under `jax.jit`. If this path is ever JIT-compiled, it will break. -->
-
-
-
-
----
-
-## High Priority Issues
-
-### 4. Forward pass computed inside loss function (performance) — `src/opt/losses.py:27,63,101,137`
-Each loss function recomputes `model.outputs` instead of receiving pre-computed predictions. In the optimization loop with N loss functions, this means N redundant forward passes per step. -> Fixed to use more flexible model interface - need to update this so that features are selected in an efficient and extendable way.
-
-
-### 6. Python for-loop over frame dimension — `src/models/core.py:187-206`
+If `model_parameters` is a sequence, `params` is passed as `None`.
+In `models/core.py`, `Simulation.initialise()` expects `self.params` to not be `None` and raises a `ValueError` unconditionally:
 ```python
-for frame_idx in range(n_frames):
-    frame_data[feat_name] = feat_array[..., frame_idx : frame_idx + 1]
+if self.params is None:
+    raise ValueError("No simulation parameters were provided. Exiting.")
 ```
-This creates N separate trace calls instead of using `jax.vmap` or `jax.lax.scan`, losing JIT performance.
+**Fix:** Provide a valid `Simulation_Parameters` (or a mock/default state) to the `Simulation` initialization, or rework `initialise()` to support sequence initialization.
 
-
----
-
-## Medium Priority Issues
-
-
-### 10. Inconsistent error handling
-- `src/interfaces/builder.py` uses bare `assert` (stripped in `-O` mode, no error messages)
-- `src/data/splitting/sparse_map.py` uses `chex.assert_equal()` (good)
-- `src/models/core.py` uses `chex.assert_*()` (good)
-- Should standardize on chex or explicit `raise ValueError()`
-
-### 11. Print statements instead of logging
-15+ `print()` calls across production code (data loaders, models, optimization). Should use Python `logging` module for controllable verbosity.
-
-### 12. Large blocks of commented-out code
-- `src/models/func/contacts.py:13-110` — entire old function (~100 lines)
-- `src/models/core.py:52-54` — commented post_init
-- `src/models/HDX/forward.py` — extensive commented sections
-
----
-
-## Test Coverage Gaps
-
-### Well-covered (no action needed)
-- Topology system (11 tests) — comprehensive with known-answer tests
-- Data splitting (13+ tests) — excellent coverage including edge cases
-- Sparse mapping (6 tests) — gold-standard known-answer validation
-
-### Critical gaps
-#### Potential Module tests
-| Component | Tests | Issue |
-|-----------|-------|-------|
-| Optimization convergence | 5 integration | Tests run but don't assert loss decreases or converges |
-
-#### Potential Unit tests
-| Component | Tests | Issue |
-|-----------|-------|-------|
-| Forward models (BV, netHDX) | 2 (1 broken) | No numerical correctness validation, no gradient checks |
-| Loss function correctness | 4 | Tests timing/creation but not mathematical correctness |
-| Gradient flow | 0 | No finite-difference gradient verification anywhere |
-
-### Broken/disabled tests
-- `tests/integration/HDX/test_forwardmodel.py` — marked `# TODO: NOTWORKING 06/02/25`
-- `tests/slow/optimise/broken/` — 2 broken test files
-- Multiple `OLD*.py` test files that are stale
-
----
-
-## Low Priority / Housekeeping / Performance
-
-- `m_key = NewType("m_key", str)` provides no runtime enforcement
-- `HDX_peptide.dfrac` accepts overly permissive types without 0-1 range validation
-- `Partial_Topology` doesn't validate `peptide_trim > length` or negative residues
-- CLI files lack return type hints
-- `efficient_k_cluster.py` doesn't validate `chunk_size > 0`
-- Unused imports: `TypedDict` in `opt/run.py`, `sys` in `utils/hdf.py`
-- `opt/loss/legacy.py` usage unclear — may be dead code
-- `pyproject.toml` sets `mypy ignore_missing_imports = true` — suppresses external type errors
-### 5. Print statements in JIT-traced code — `src/models/core.py:87-88, 115, 123`
-`print()` calls inside `initialise()` execute during JAX tracing, not at runtime. These should be removed or gated behind a debug flag outside traced paths. Since initialise is only called outside of the jit path, this is not a problem.
-
-### 2. HDF5 deserialization allows arbitrary class loading — `src/utils/hdf.py:114-117`
+### 1.2. Context Manager Leak in `predict_forward.py`
+In `run_forward`, the `jit_Guard` context manager wraps `simulation`:
 ```python
-class_info = group.attrs["class_info"]
-module_name, class_name = class_info.rsplit(".", 1)
-module = importlib.import_module(module_name)
-cls = getattr(module, class_name)
+with jit_Guard(simulation, cleanup_on_exit=True) as sim:
+    # ...
+    for params in tqdm(simulation_parameters, desc="Forward prediction"):
+        sim, outputs = sim.forward(sim, params, mutate=False)
 ```
-An untrusted HDF5 file can inject arbitrary `class_info` strings, leading to arbitrary code execution via `importlib.import_module`. This is a **deserialization vulnerability**.
+Using `mutate=False` means `sim.forward` returns a **new instance** of `Simulation` (`new_sim`). 
+Rebinding `sim = new_sim` within the loop does **not** update the `jit_Guard`'s tracked object (`self.simulation_obj`). The original object is preserved by the context manager, and the loop-generated `sim` objects might not benefit from `jit_Guard` cleanup on exit.
+**Fix:** If you are treating the simulation state immutably (`mutate=False`), you need to ensure any caches associated with intermediate instances are managed correctly, or use `mutate=True` within the guarded block. Reassigning the context manager variable (`sim`) is a Python anti-pattern.
 
-**Fix:** Validate `class_info` against a whitelist of allowed classes before import.
-
-### 3. Sparse matrix converted to dense — `src/data/splitting/sparse_map.py:235`
+### 1.3. Exception Swallowing in `utils/jit_fn.py`
+In `jit_Guard.clear_caches_after`:
 ```python
-return jnp.squeeze(sparse_map.todense() @ features)
+if original_exception:
+    raise cleanup_error from original_exception
 ```
-Defeats the purpose of BCOO sparse representation. For large systems this causes unnecessary memory allocation.
-
-**Fix:** Use `sparse_map @ features` directly (JAX BCOO supports matmul).
-
----
-
-## Architectural Strengths
-
-- Clean module separation with no circular imports
-- Good use of `TYPE_CHECKING` blocks for forward references
-- Sophisticated runtime config system with 5 preset modes and env var support
-- Robust topology system with factory pattern, serialization, and pairwise comparisons
-- JIT Guard (`utils/jit_fn.py`) is well-designed with context manager, decorator variants, and proper cleanup
-- Examples are thoroughly documented with README, INSTRUCTIONS, and shell scripts
-- Key-based dispatch (`m_key → ForwardPass`) is elegant and extensible
-- Beartype integration via `beartype_this_package()` for runtime type checking
+This syntax causes the original exception to be nested/suppressed as the secondary context of the new `cleanup_error`. When execution blows up, the developer sees `cleanup_error` as the primary cause instead of the actual domain logic error.
+**Fix:** Standard practice is to log the cleanup error but raise the `original_exception` as the primary failure, or carefully chain them using `raise original_exception from cleanup_error`.
 
 ---
 
-## Recommended Priority Order
+## 2. JAX Usage & Performance
 
-1. **[x] Fix NaN comparison bug** (`opt/run.py:203`) — correctness, trivial fix
-2. **Add HDF5 class whitelist** (`utils/hdf.py`) — security
-3. **Use sparse matmul** (`sparse_map.py:235`) — correctness/performance
-<!-- 4. **Add gradient verification tests** — testing gap, prevents regression -->
-5. **Fix forward pass in loss loop** (`opt/losses.py`) — performance
-6. **Remove prints from JIT path** (`models/core.py`) — JAX correctness
-7. **Add epsilon to weight division** (`opt/loss/base.py`) — numerical stability
-8. **Standardize error handling** — maintainability
-9. **Replace print with logging** — observability
-10. **Clean dead code** — maintainability
+### 2.1. Unnecessary Array Copying
+In `jaxent/src/models/HDX/forward.py` (`linear_BV_ForwardPass`):
+```python
+heavy_contacts = jnp.array(input_features.heavy_contacts)
+```
+`jnp.array` unconditionally copies data. The other classes correctly use `jnp.asarray`, which avoids the copy if the data is already a compatible JAX array.
+**Fix:** Replace `jnp.array` with `jnp.asarray`.
+
+### 2.2. Overriding PyTree Nodes Uncleanly
+In `models/core.py`, `Simulation.tree_unflatten`:
+```python
+instance = cls(input_features, forward_models, params)
+instance.forwardpass = forwardpass
+instance.length = length
+# ...
+```
+Because the `__init__` method performs setup (like re-deriving `self.forwardpass`), dynamically overriding properties straight after `__init__` causes redundant initializations and could lead to state mismatches. 
+**Fix:** Refactor `__init__` to explicitly accept these internal states (e.g., as private kwargs) if they are known, or skip executing setup logic if data is already populated.
+
+---
+
+## 3. Code Quality & Typing Issues
+
+### 3.1. Dynamic Attributes Lacking Hints
+In `models/core.py` (`Simulation`), attributes such as `self.length` and `self._input_features` are dynamically assigned in `.initialise()` but are never hinted or initialized (`= None`) at the class level. This breaks type checkers (like mypy/pyright) and IDE autocomplete.
+
+### 3.2. Dead/Unused Code in Core Simulation
+`Simulation.__init__` has several lingering commented-out blocks:
+```python
+# self.model_name_index: list[tuple[m_key, int, m_id]] = model_name_index
+# self.outputs: Sequence[Array]
+```
+These should be removed for a clean codebase.
+
+### 3.3. Generator vs List Comprehensions
+In `models/core.py` and `predict.py`, you have expressions like:
+```python
+tuple([feature.cast_to_jax() for feature in self.input_features])
+```
+Passing a list comprehension to `tuple()` creates an intermediate list in memory.
+**Fix:** Use generator expressions directly: `tuple(feature.cast_to_jax() for feature in ...)`
+
+---
+
+## 4. Error Handling & Standardization
+
+### 4.1. Icecream (`ic`) in Production Modules
+`predict.py`, `predict_forward.py`, and `featurise.py` use `ic()` statements paired with `ic.disable()`. If an end user enables `ic` globally, they will be flooded with library debug output.
+**Fix:** Remove `icecream` from production library files. Use `logging` instead, which is already correctly configured and utilized in `models/core.py` and `opt/run.py`.
+
+### 4.2. Invalid Exception Throwing
+In `featurise.py`:
+```python
+raise UserWarning("Name is required")
+```
+`UserWarning` is a warning category designed for the `warnings` module (`warnings.warn()`), not an `Exception` subclass meant for direct raising to halt execution.
+**Fix:** Raise `ValueError` instead.
+
+### 4.3. Dummy Exception Objects
+In `opt/run.py`:
+```python
+if forward_models:
+    Warning("forward_models arg not yet implemented in run_optimise")
+```
+This merely instantiates a `Warning` object and immediately discards it; it does not actually emit a warning.
+**Fix:** Replace with `import warnings; warnings.warn("...", UserWarning)`.
+
+### 4.4. `print` inside Exception Handlers
+Modules like `predict.py` catch errors and print messages:
+```python
+except Exception as e:
+    print(f"Failed to run prediction: {e}")
+    raise e
+```
+**Fix:** This breaks unified log handling. Use `LOGGER.error(f"Failed to run prediction: {e}")` before re-raising.
