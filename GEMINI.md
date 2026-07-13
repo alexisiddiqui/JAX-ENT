@@ -2,7 +2,7 @@
 
 By default the Python environment is found in `.venv`.
 
-JAX-ENT is a JAX-based library for ensemble modeling and optimization in structural biology/biophysics, with a strong focus on HDX-MS workflows. This document is a codebase-oriented guide for a mixed audience: contributors who need architectural detail and users who need practical workflow grounding.
+JAX-ENT is a JAX-based library for ensemble modeling and optimization in structural experimental/physics, with a strong focus on HDX-MS workflows. This document is a codebase-oriented guide for a mixed audience: contributors who need architectural detail and users who need practical workflow grounding.
 
 ## What this guide prioritizes
 

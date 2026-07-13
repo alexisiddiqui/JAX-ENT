@@ -13,4 +13,4 @@ beartype_this_package(conf=_runtime_config.beartype_conf)
 # Finalize JAX configuration (after JAX is imported by other modules)
 finalize_runtime_config()
 
-"""Jaxent: JAX-based symbolic and differentiable biophysics fitting library."""
+"""Jaxent: JAX-based symbolic and differentiable physics fitting library."""
