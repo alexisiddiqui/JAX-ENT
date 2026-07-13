@@ -7,7 +7,7 @@ Initial release expected in the next few months. Want to stay up to date? Questi
 ### Feedback and Mailing list: 
 https://forms.gle/UDzjdfViMC8i8A1X8
 
-## Maximum Entropy Optimisation for Experimental Biophysics-Simulation Ensemble Integration using JAX.
+## Maximum Entropy Optimisation for Experimental physics-Simulation Ensemble Integration using JAX.
 
 ### Overview 
 This package is aimed at bioinformatics researchers who wish to integrate biophysical data with structural simulations.
@@ -90,7 +90,7 @@ All experiments presented in the paper can be found in the examples folder. Thes
 
 On a modern laptop these examples should take 20-60 minutes each on the CPU, GPUs not yet tested.
 
-For users looking to just perform integration of biophysics-simulation ensembles we would recommend using the CLI methods.
+For users looking to just perform integration of physics-simulation ensembles we would recommend using the CLI methods.
 
 
 

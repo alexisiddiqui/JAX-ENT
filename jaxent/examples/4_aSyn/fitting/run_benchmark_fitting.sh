@@ -33,7 +33,7 @@ DATA_DIR="${BASE_DIR}/data/_aSyn"
 ANALYSIS_RUNNER="${BASE_DIR}/run_comprehensive_analysis.sh"
 
 # ── sweep hyperparameters (match run_maxent_parallel_BV_aSyn_conditions.sh) ──
-PARALLEL_JOBS=10
+PARALLEL_JOBS=4
 MAXENT_VALUES_STR="1,2,3,4,5,6,7,8,9,10,20,30,40,50,60,70,80,90,100,1000"
 BV_REG_VALUES_STR="0.5,1.0"
 BV_REG_LOSSES_STR="L1"
