@@ -112,6 +112,8 @@ From `hdxrate.k_int_from_sequence` (Linderstrøm-Lang / Englander chemistry;
 `jaxent/src/models/func/uptake.py::calculate_intrinsic_rates`), canonical exPfact 3-Ala reference
 rates at MoPrP conditions (pD 4). Per residue:
 
+**Correction (2026-07-23):** this pointer is stale for the MoPrP pipeline — see §9.4.
+
 ```
 k_int  =  10^lgkA + 10^lgkB + 10^lgkW
 lgkA   =  lgkAref − (EaA/ln10/R)(1/Texp − 1/Tref)  +  adj_L_acid  + adj_R_acid  − pD
@@ -144,7 +146,12 @@ mean of `k_{i,f}` (Jensen gap). **Which coordinate `k̄_i` is computed in is a l
 
 `M ∈ R^{P×N}` (peptides × residues), the **trim-one exPfact** map: each peptide row is the incidence
 (summation) over its exchange-competent residues, dropping the N-terminal residue(s) and prolines
-that do not report. Overlapping peptides share residues → `M` has overlapping support, which is the
+that do not report.
+
+**Correction (2026-07-23):** confirmed row-normalized (`1/N_active` per member residue), not a raw
+incidence sum — see §9.3.
+
+Overlapping peptides share residues → `M` has overlapping support, which is the
 only lever that lets residue-level `D` be partially resolved from peptide-level curves. Built via
 the topology subsystem (`jaxent/src/interfaces/topology/`, `create_sparse_map` in
 `jaxent/src/data/splitting/sparse_map.py`). MoPrP: 14 peptides, 97 residues (incl. residue 101);
@@ -286,12 +293,23 @@ Core numerics (all tested; `jaxent/tests/unit/analysis/`):
 - `jaxent/src/models/HDX/forward.py`, `jaxent/src/models/func/{contacts,uptake}.py`,
   `jaxent/src/models/config.py` — the BV forward model, contacts, intrinsic rates, radii.
 - `jaxent/src/data/splitting/sparse_map.py`, `jaxent/src/interfaces/topology/` — the peptide map `M`.
+- **(added 2026-07-23) `jaxent/src/analysis/hdx_ex2.py`** — the isotope-envelope forward model:
+  `PeptideExchangeMap` (row-normalized `M`, enforced), `load_intrinsic_rate_file` (the actual MoPrP
+  k_int source), `peptide_deuteron_count_distribution` / `thin_deuteron_count_distribution` /
+  `convolve_isotope_and_deuteron_distributions` (Poisson-binomial envelope, quench thinning, isotope
+  convolution). See §9.5.
+- **(added 2026-07-23) `jaxent/src/analysis/hdx_rate_mixture.py`** — a third, separate shared-rate-
+  mixture peptide kinetic embedding, independent of both the BV/D-only and EX2/envelope tracks.
 
 Runners (`jaxent/examples/2_CrossValidation/fitting/jaxENT/`):
 - `validate_moprp_target_variance.py` (reads `published_bc/bh` from settings — the corrected re-run
   passed scaled_published / constrained_optimum), `investigate_moprp_target_variance_sweep.py`
   (hardcodes `common.PUBLISHED_BC/BH` at the call site — override there for a corrected sweep),
   `_moprp_recovery_common.py` (`PUBLISHED_BC=0.35`, `PUBLISHED_BH=2.0`, feature/rate loaders).
+- **(added 2026-07-23) `investigate_moprp_ex2_physics.py`** — the EX2/envelope/rate-mixture runner;
+  `_peptide1_envelope_scores` already scores real peptide-1 raw spectra. Output:
+  `_moprp_ex2_physics_bv_v2/` (`peptide1_envelope_calibration.json`, `peptide1_envelope_scores.csv`).
+  See §9.5.
 
 Latest corrected artifacts (2026-07-23):
 - `_moprp_target_variance_scaled_published_20260723/` and `_moprp_target_variance_constrained_optimum_20260723/`
@@ -314,6 +332,12 @@ Var_f(z_i)` and the uptake Jacobians differ by exactly a factor `−k`: `∂u/�
 (`k`, `z = log PF`, or `log k`) is `D` most identifiable and physically meaningful, and is the fixed
 mean `k̄_i` currently consistent with that choice (average-first vs average-after; Jensen gap)? This
 is the most likely place for a silent inconsistency.
+
+**Update (2026-07-23):** the code-side half is answered — see §9.2. `mean_rates` is computed as
+`E_f[k]` (average-after, rate-space), which is internally consistent with both estimators but
+mismatched with production `average_first_uptake` at the eventual Stage-5 reweighting boundary. The
+physics question — which coordinate is most identifiable/meaningful — is still open for the
+deep-research agent.
 
 ### 7.2 What physically *is* `d_i`?
 Since `k_int,i` is conformation-independent, `Var_f(k_i) = k_int,i² · Var_f(e^{−z_{i,f}})` — `D` is
@@ -343,6 +367,10 @@ peptide broadens the **isotope envelope** — a *second-moment* observable that 
 **Question:** is envelope-width (or bimodality / EX1 signature) data available or derivable for
 TeaA/MoPrP, and would it identify `D` (or even `R`) where centroids provably cannot? This may decide
 whether the whole `D`-from-centroids programme is well-posed or fundamentally underdetermined.
+
+**Update (2026-07-23):** yes — envelope inference already exists (`hdx_ex2.py`) and has already been
+run once on real peptide-1 raw spectra, with a mixed, construction-sensitive result. See §9.5 before
+building anything new here.
 
 ### 7.6 Is the geometry failure fundamental or construction-limited?
 `R = corr(Σ_uniform)` is population-free but Stage C found the *magnitude/structure* population-
@@ -378,3 +406,134 @@ isotope-envelope information content; elastic-network (ANM/GNM) covariance as an
   remaining internal gate.
 - Preserve all former Stage J and pilot artifacts as provenance; the MoPrP launch guard stays
   fail-closed.
+
+---
+
+## 9. Codebase-grounding findings (2026-07-23)
+
+A codebase-exploration pass cross-checked every equation in §§2–4 against the exact §6 pointers, then
+traced the actual MoPrP call sites (not just the module definitions) for the places most likely to
+hide drift. Two findings are corrections to this document (§9.3, §9.4), one resolves the code-side
+half of §7.1 (§9.2), and one materially changes the framing of §7.5 (§9.5).
+
+### 9.1 Confirmed accurate (no action needed)
+
+Contacts (§2.1: `contacts.py::calc_BV_contacts_universe`, hard-cutoff `sum(dists<=radius)` at line
+251, the `1/(1+(r/r0)^6)` switch at lines 228–231, chain-aware `residue_ignore` window at lines
+209–220, defaults in `config.py:20-24`), log-PF/effective-rate (§2.2: `forward.py::BV_ForwardPass`
+line 31, `hdx_target_variance.py::effective_rates` lines 69–78), the uptake forward map (§2.3:
+`forward.py::BV_uptake_ForwardPass` line 74, `pf_variance.py::uptake_from_log_pf` lines 228–238), the
+`d_i = k̄_i² exp(β_i)` parametrisation and `[-18,8]` bounds (§4), the regularisation penalty (§4.3:
+`_regularization_penalty`, lines 366–376, exact match including the `0.01` centering weight), all six
+geometry constructions (§4.4: `build_rate_geometries`, lines 198–236 — `r_c=8Å`, `ρ=0.25`,
+Schur-product combination, permutation shuffle), the qualification-gate thresholds (§4.5), and the
+`published` coefficient row `(0.35, 2.0)` (§2.5, confirmed as `PUBLISHED_BC`/`PUBLISHED_BH` in
+`_moprp_recovery_common.py:54-55`) all match the transcribed equations exactly.
+
+### 9.2 §7.1 partially resolved: `mean_rates` is a rate-space mean, not average-first-log-PF
+
+`validate_moprp_target_variance.py:110-111`:
+
+```python
+rates = effective_rates(log_pf, inputs.k_ints)   # k_int * exp(-log_pf), per frame
+mean_rates = np.mean(rates, axis=1)               # E_f[k_i], uniform frame weights
+```
+
+This is a true rate-space mean (`E_f[k_i]`), **not** the "average-first-in-log-PF" convention
+(`average_first_uptake`, `z̄_i = Σ w_f z_{i,f}` then transform) that production BV semantics use
+elsewhere (`BV_ForwardPass.average_first=True`). That said, it is *not* a bug in isolation: both
+estimators' own constructions are delta-method/two-moment expansions around the true first moment of
+the rate, so `E_f[k]` is the internally-correct pivot for `curve_moment`'s Gamma closure and
+`structured_residual`'s Jacobian linearisation. **The exposure is at the module boundary, not
+inside it.** `E_f[k] - k(z̄) ≈ ½k̄·Var_f(z)` — a correction the *same order* as `D` itself — so when
+§5's `diag(D)` target is eventually matched against the production `average_first_uptake` mean-fit
+loss, the two "mean curves" will not coincide, and part of `D`'s own signal will already be absorbed
+into that gap. **Action before Stage 5 wiring:** pick one canonical pivot (`E_f[k]` or `k(z̄)`) for
+both the D-only fit and whatever mean-fit loss consumes `diag(D)`, and document it at the
+`mean_rates` call site. This is Stage 4 of `plans/research/secondorder_HDX_physics.md` ("handle the
+Jensen/coordinate bias explicitly... essentially free, do it regardless"), now scoped to one line.
+
+### 9.3 Correction to §3: `M` is a row-normalized average, not a summation
+
+§3 (pre-correction) described `M` as "the incidence (summation) over exchange-competent residues."
+The code enforces the opposite: `sparse_map.py::create_sparse_map` weights each entry
+`overlap_count / exp_residue_count` (line 173); `_moprp_recovery_common.py:9` documents "the
+trim-one exPfact peptide map... row-normalized over active amides"; and
+`hdx_ex2.py::PeptideExchangeMap.__post_init__` (lines 113–114) *hard-fails* unless
+`matrix.sum(axis=1) == 1.0`, with its own module docstring stating the forward model as
+`D_p(t) = mean_i[1 - exp(-k_int_i * exp(-lnP_i) * t)]` (line 6) — a mean, not a sum.
+**Consequence:** the Thread-3 identifiability argument in `secondorder_HDX_physics.md` is unaffected
+(rescaling every row by a known constant carries no information), but absolute-scale reasoning is
+not — in particular `noise_variance=1e-4` in `propagated_uptake_covariance` (§4.2) only makes sense
+as a noise floor on a *fractional* (≤1) observable, which is further evidence the row-normalized
+convention is the one actually in force. Read §2.3/§3's `M_{p,i}` as `1/N_active` per member residue,
+not `1`.
+
+### 9.4 Correction to §2.4: intrinsic-rate provenance is external, not `uptake.py`
+
+§2.4 (pre-correction) cited `uptake.py::calculate_intrinsic_rates` and described it as wrapping
+`hdxrate.k_int_from_sequence`. That wrapper is actually a different function in the same file,
+`calculate_HDXrate` (lines 12–89); `calculate_intrinsic_rates` (lines 93–248) is a separate
+hand-rolled reimplementation with **hardcoded `pD=7.4`** (line 123), not a parameter. Neither is on
+the MoPrP critical path: `_moprp_recovery_common.py` imports `hdx_ex2.load_intrinsic_rate_file`
+(`hdx_ex2.py:222-239`), which reads a flat two-column (`residue_id`, `rate/min`) file — k_int
+provenance for the reported MoPrP results is an **external exPfact-generated file**, not computed
+anywhere in this codebase. `load_expfact_dataset`'s defaults (`experimental_pd=4.0,
+intrinsic_rate_ph=4.4`, lines 292–293) are consistent with this document's "pD 4" claim, but this
+does not confirm the rate file's own generation — flagged, not confirmed; would need the rate file
+itself (`expfact_kint_pH4p4_298K_min.dat`, referenced in `investigate_moprp_ex2_physics.py`'s
+manifest) traced back to its generating command.
+
+### 9.5 Major finding: an isotope-envelope track already exists and has already been run (updates §7.4/§7.5)
+
+§7.5 (pre-update) asked whether envelope-width/bimodality data is "available or derivable" for
+MoPrP — it is not an open question, it is built and has already produced a real (mixed) result,
+entirely outside this document's §6 pointer list:
+
+- `jaxent/src/analysis/hdx_ex2.py` implements the full Stage-1 forward model from
+  `secondorder_HDX_physics.md`: `peptide_deuteron_count_distribution` (Poisson-binomial pre-quench
+  deuteron counts per peptide/timepoint, lines 374–409), `thin_deuteron_count_distribution`
+  (binomial back-exchange/quench thinning, lines 412–434), `convolve_isotope_and_deuteron_distributions`
+  (natural-isotope convolution to a spectrum-comparable envelope, lines 437–455).
+- `jaxent/examples/2_CrossValidation/fitting/jaxENT/investigate_moprp_ex2_physics.py` (989 lines,
+  committed — `ada0a75`) exercises this against **real raw peptide-1 mass spectra** (protonated
+  control, 3 exchange timepoints, fully-deuterated control) via `_peptide1_envelope_scores`
+  (lines 643–759).
+- A third, separate track, `jaxent/src/analysis/hdx_rate_mixture.py` (shared-rate-mixture peptide
+  kinetic embedding), is used alongside EX2 in the same script.
+
+Latest local run artifacts (`_moprp_ex2_physics_bv_v2/`, 2026-07-21): back-exchange calibration is
+solid (effective survival ≈0.498, control R²≈0.987), but predicted-vs-observed envelope R² is
+timepoint- and BV-construction-dependent — reported per condition, not pooled:
+
+| BV construction | t=1 min | t=60 min | t=1440 min |
+|---|---|---|---|
+| `BV_hard` | R²=0.77 | R²=**−1.30** | R²=0.04 |
+| `BV_legacy_switched_missing_c` | R²=0.80 | R²=0.37 | R²=0.77 |
+
+The sign flip at t≥60min is construction-dependent, independently corroborating §1's own finding
+that BV mean-model discrepancy is currently confounded with what gets attributed to `D`. Only
+peptide 1 has raw-spectra data referenced locally (via an external `--expfact-validation-dir` CLI
+arg, not committed in-repo) — n=1 peptide is thin evidence for any covariance claim; coverage for
+more MoPrP peptides or TeaA is unconfirmed.
+
+**Implication:** Stage 1 of `secondorder_HDX_physics.md` ("add the isotopic envelope as an
+observable") is not a blank-slate build — the forward model exists and has already run once. The
+next step there is diagnostic (why does R² go negative at t≥60min, and is it construction or
+back-exchange calibration) before it's treated as a usable second-moment signal, per
+`hdx-investigation-follow-data-not-hypothesis` (build/verify/compare/fit before concluding).
+
+### 9.6 Updated priority order given 9.1–9.5
+
+1. Fix the pivot convention (§9.2) — cheap, do first, blocks nothing else.
+2. Diagnose the existing envelope run (§9.5) before writing any new envelope-inference code — don't
+   re-derive what's already been tried.
+3. If the envelope signal survives (2): add it as a third estimator in `hdx_target_variance.py`,
+   reusing the frozen `identity`/`shuffled_geometry` controls and `qualification_gate` so a real "R
+   beats shuffled on truth" result is comparable to the existing verdict table, not a new
+   incommensurate metric.
+4. Peptide 1 is already both the D-only held-out peptide (`peptide_partitions` in
+   `validate_moprp_target_variance.py:56-67`) and the one with real envelope spectra — use this
+   doubly-independent channel deliberately rather than as an audit-script side effect.
+5. Check envelope-data coverage beyond peptide 1 (more MoPrP peptides, or TeaA) before leaning on
+   n=1 for any R claim.
