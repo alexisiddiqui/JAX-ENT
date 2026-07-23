@@ -454,8 +454,6 @@ def augment_best_models_with_metrics(
         split_idx = int(row["split"])
         maxent_val = row["maxent_value"]
         conv_step = int(row["convergence_step"])
-        split_type = row.get("split_type", None)
-
         # Navigate nested dict
         history = None
         entry = results.get(ensemble, {}).get(loss_func, {}).get(split_idx, None)
@@ -723,6 +721,58 @@ def load_HDXer_kints(kint_path: str) -> tuple[Array, list[pt.Partial_Topology]]:
     return kints, topology_list
 
 
+def align_kints_to_feature_topology(
+    kint_data: tuple[Array, list[pt.Partial_Topology]],
+    feature_topology: list[pt.Partial_Topology],
+) -> Array:
+    """Align a residue-rate provider exactly to a featurised topology.
+
+    Extra provider residues are permitted because non-exchanging N termini and
+    prolines may be present in source rate files.  Duplicate provider keys,
+    missing feature keys, multi-residue entries, and nonpositive active rates
+    are rejected rather than positionally padded or truncated.
+    """
+
+    rates, rate_topology = kint_data
+    rates_array = np.asarray(rates, dtype=float)
+    if rates_array.ndim != 1 or len(rates_array) != len(rate_topology):
+        raise ValueError("intrinsic rates and rate topology must be aligned vectors")
+
+    rate_by_key: dict[tuple[str, int], float] = {}
+    for rate, topology in zip(rates_array, rate_topology):
+        residues = topology._get_active_residues(check_trim=False)
+        if len(residues) != 1:
+            raise ValueError("intrinsic-rate topology entries must each contain one residue")
+        key = (str(topology.chain), int(residues[0]))
+        if key in rate_by_key:
+            raise ValueError(f"duplicate intrinsic rate for topology key {key}")
+        rate_by_key[key] = float(rate)
+
+    aligned = []
+    missing = []
+    for topology in feature_topology:
+        residues = topology._get_active_residues(check_trim=False)
+        if len(residues) != 1:
+            raise ValueError("feature topology entries must each contain one residue")
+        key = (str(topology.chain), int(residues[0]))
+        if key not in rate_by_key:
+            missing.append(key)
+        else:
+            aligned.append(rate_by_key[key])
+
+    if missing:
+        raise ValueError(f"intrinsic-rate provider is missing feature residues: {missing}")
+    aligned_array = np.asarray(aligned, dtype=float)
+    if np.any(~np.isfinite(aligned_array)) or np.any(aligned_array <= 0):
+        bad = [
+            (str(topology.chain), int(topology._get_active_residues(check_trim=False)[0]))
+            for topology, rate in zip(feature_topology, aligned_array)
+            if not np.isfinite(rate) or rate <= 0
+        ]
+        raise ValueError(f"feature residues require finite positive intrinsic rates: {bad}")
+    return jnp.asarray(aligned_array)
+
+
 def featurise_trajectory(
     trajectory_path: str,
     topology_path: str,
@@ -778,20 +828,12 @@ def featurise_trajectory(
     print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
     print(f"Kints length: {len(features.k_ints)}")
 
-    _kints, _kint_topology = kint_data
-    _kint_topology = pt.TopologyFactory.merge(_kint_topology)
-
-    for top in feature_topology:
-        if not pt.PairwiseTopologyComparisons.intersects(top, _kint_topology):
-            raise ValueError(
-                f"Topology {top} does not intersect with kint topology {_kint_topology}. "
-                "Ensure that the kint topology matches the feature topology."
-            )
+    aligned_kints = align_kints_to_feature_topology(kint_data, feature_topology)
 
     features = BV_input_features(
         heavy_contacts=features.heavy_contacts,
         acceptor_contacts=features.acceptor_contacts,
-        k_ints=_kints,
+        k_ints=aligned_kints,
     )
 
     features_path = os.path.join(output_dir, f"features_{output_name}.npz")

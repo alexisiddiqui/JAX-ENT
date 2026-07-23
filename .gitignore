@@ -224,3 +224,11 @@ notebooks/**/HDXer/
 .claude
 
 !_archive
+
+*.bundle
+
+# Keep the numeric, provenance-labelled exPfact rate reference used by the
+# physics-first MoPrP audit while leaving the local experimental bundle ignored.
+!jaxent/examples/2_CrossValidation/data/_MoPrP/
+jaxent/examples/2_CrossValidation/data/_MoPrP/*
+!jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat

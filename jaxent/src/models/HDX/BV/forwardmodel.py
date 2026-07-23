@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from beartype.typing import cast
 
 import jax.numpy as jnp
-import MDAnalysis as mda
 from MDAnalysis import Universe
 from MDAnalysis.core.groups import AtomGroup, ResidueGroup
 
@@ -10,6 +9,7 @@ from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology, mda_TopologyAdapter, rank_and_index
+from jaxent.src.interfaces.topology.mda_adapter import TerminalExclusion
 from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_HDXrate
@@ -31,10 +31,12 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     base_include_selection: str = "protein"
     base_exclude_selection: str = "resname PRO"
-    exclude_termini: bool = True
+    # A protein N terminus is not a backbone amide; the C-terminal residue is.
+    exclude_termini: TerminalExclusion = "n"
 
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
+        self.base_exclude_selection = config.mda_selection_exclusion
         self.common_k_ints: list[float]
         self.forward: dict[m_key, ForwardPass] = {
             m_key("HDX_resPF"): BV_ForwardPass(),
@@ -128,6 +130,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             ensemble,
             include_selection=self.final_include_selection,
             exclude_selection=self.final_exclude_selection,
+            exclude_termini=self.exclude_termini,
             renumber_residues=True,
         )[0]
 
@@ -260,7 +263,9 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=n_atoms,
                 contact_selection="heavy",
                 radius=HEAVY_RADIUS,
+                residue_ignore=self.config.residue_ignore,
                 switch=self.config.switch,
+                environment_selection=self.config.mda_contact_environment,
             )
 
             # Calculate O atom contacts (H-bond acceptors) using H atoms
@@ -269,15 +274,37 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=h_atoms,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
+                residue_ignore=self.config.residue_ignore,
                 switch=self.config.switch,
+                environment_selection=self.config.mda_contact_environment,
             )
 
             # --- Ensure ordering matches self.topology_order ---
-            # Get reordering indices for this universe
-            reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(n_atoms)
-            # Reorder contacts accordingly
-            _heavy_contacts = [_heavy_contacts[i] for i in reorder_indices]
-            _o_contacts = [_o_contacts[i] for i in reorder_indices]
+            n_reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(n_atoms)
+            h_reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(h_atoms)
+            _heavy_contacts = [_heavy_contacts[i] for i in n_reorder_indices]
+            _o_contacts = [_o_contacts[i] for i in h_reorder_indices]
+
+            ordered_n_atoms = n_atoms[n_reorder_indices]
+            ordered_h_atoms = h_atoms[h_reorder_indices]
+            n_keys = [
+                (mda_TopologyAdapter._get_chain_id(atom), int(atom.resid))
+                for atom in ordered_n_atoms
+            ]
+            h_keys = [
+                (mda_TopologyAdapter._get_chain_id(atom), int(atom.resid))
+                for atom in ordered_h_atoms
+            ]
+            if len(set(n_keys)) != len(n_keys) or len(set(h_keys)) != len(h_keys):
+                raise ValueError("each represented BV residue must have exactly one N and H/HN")
+            if n_keys != h_keys:
+                raise ValueError(
+                    "amide N and H/HN contact targets do not have identical residue ordering"
+                )
+            if len(n_keys) != len(self.topology_order):
+                raise ValueError(
+                    "BV target atoms do not align one-to-one with the feature topology"
+                )
             # ---------------------------------------------------
 
             heavy_contacts.append(_heavy_contacts)

@@ -65,6 +65,43 @@ def create_test_universe(n_frames=2):
     return u
 
 
+def create_chain_aware_universe():
+    """Create protein chains with non-contiguous and repeated residue IDs."""
+    coordinates = np.array(
+        [
+            [
+                [0.5, 0.0, 0.0],  # A:10, ordinal neighbour of target
+                [0.0, 0.0, 0.0],  # A:20, target
+                [0.7, 0.0, 0.0],  # B:10, same resid but another chain
+                [0.8, 0.0, 0.0],  # B:20, another chain
+                [0.4, 0.0, 0.0],  # solvent oxygen
+            ]
+        ],
+        dtype=np.float32,
+    )
+    universe = mda.Universe.empty(
+        5,
+        n_residues=5,
+        n_segments=3,
+        atom_resindex=np.arange(5),
+        residue_segindex=[0, 0, 1, 1, 2],
+        trajectory=False,
+    )
+    universe.add_TopologyAttr("names", ["N", "N", "N", "N", "O"])
+    universe.add_TopologyAttr("types", ["N", "N", "N", "N", "O"])
+    universe.add_TopologyAttr("resids", [10, 20, 10, 20, 1])
+    universe.add_TopologyAttr("resnames", ["ALA", "GLY", "ALA", "GLY", "HOH"])
+    universe.add_TopologyAttr("segids", ["A", "B", "W"])
+
+    from MDAnalysis.coordinates.memory import MemoryReader
+
+    universe.trajectory = MemoryReader(
+        coordinates,
+        dimensions=np.array([[50, 50, 50, 90, 90, 90]], dtype=np.float32),
+    )
+    return universe
+
+
 class TestCalcBVContacts(unittest.TestCase):
     def setUp(self):
         """Set up a test universe before each test."""
@@ -283,6 +320,50 @@ class TestCalcBVContacts(unittest.TestCase):
 
         expected = np.array([[0.0, 1.0], [0.0, 1.0]])
         np.testing.assert_allclose(contacts, expected, atol=1e-5)
+
+    def test_sequence_mask_uses_chain_ordinal_not_numeric_resid(self):
+        universe = create_chain_aware_universe()
+        target = universe.select_atoms("segid A and resid 20")
+
+        contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="protein",
+        )
+
+        # A:10 is the preceding sequence residue despite the numeric gap and is
+        # masked. Both nearby B-chain residues remain valid protecting atoms.
+        np.testing.assert_allclose(contacts, [[2.0]])
+
+    def test_protein_environment_excludes_nearby_solvent(self):
+        universe = create_chain_aware_universe()
+        target = universe.select_atoms("segid A and resid 20")
+
+        protein_contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="protein",
+        )
+        all_contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="all",
+        )
+
+        np.testing.assert_allclose(protein_contacts, [[2.0]])
+        np.testing.assert_allclose(all_contacts, [[3.0]])
 
 
 if __name__ == "__main__":

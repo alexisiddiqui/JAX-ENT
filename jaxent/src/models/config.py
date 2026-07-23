@@ -25,7 +25,11 @@ class BV_model_Config(BaseConfig):
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
     peptide: bool = False
     switch: bool = False
-    mda_selection_exclusion: str = "resname PRO or resid 1"
+    # Protein N termini are handled chain-wise by BV_model's terminal policy.
+    mda_selection_exclusion: str = "resname PRO"
+    # General featurisation may include explicitly modelled solvent/cosolutes.
+    # Protein-only parity analyses must opt in as protocol metadata.
+    mda_contact_environment: str = "all"
 
     def __init__(self, num_timepoints: int | None = None, timepoints: Array | None = None, switch: bool | None = None) -> None:
         super().__init__()

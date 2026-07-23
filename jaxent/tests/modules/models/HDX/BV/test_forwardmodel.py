@@ -322,10 +322,10 @@ class TestBVModel:
         assert hasattr(self.model, "n_frames")
         assert hasattr(self.model, "topology_order")
 
-        # With 20 residues: MET(1) excluded as first, THR(20) excluded as last, PRO(11) excluded
+        # The N terminus and PRO(11) are excluded; the C-terminal amide remains.
         # Expected residues: ALA(2), GLY(3), SER(4), VAL(5), LEU(6), ILE(7), PHE(8), TYR(9), TRP(10),
-        # ASP(12), GLU(13), LYS(14), ARG(15), HIS(16), ASN(17), GLN(18), CYS(19) = 17 residues
-        expected_residue_count = 17
+        # ASP(12), GLU(13), LYS(14), ARG(15), HIS(16), ASN(17), GLN(18), CYS(19), THR(20) = 18 residues
+        expected_residue_count = 18
         assert len(self.model.common_k_ints) == expected_residue_count
 
         # All intrinsic rates should be positive and finite
@@ -345,8 +345,8 @@ class TestBVModel:
         assert hasattr(self.model, "common_k_ints")
 
         # Should process common residues across ensemble
-        # With 20 residues: excluding first (MET), last (THR), and PRO -> 17 residues
-        expected_residue_count = 17
+        # With 20 residues: exclude the N terminus and PRO, retaining the C terminus.
+        expected_residue_count = 18
         assert len(self.model.common_k_ints) == expected_residue_count
 
         # Check total frame count
@@ -442,13 +442,11 @@ class TestBVModel:
         assert success is True
 
         # 3. Check the initial topology order from `initialise`
-        # After exclusion (resid 1 and 5 from each chain) and renumbering, we expect:
-        # Chain A: [CYS(1), THR(2), PHE(3)]
-        # Chain B: [ALA(1), GLY(2), SER(3)]
+        # After N-terminal-only exclusion, chain A retains residues 2--5.
         # Ranking is by chain ID, so A comes before B.
-        assert len(self.model.topology_order) == 3  # (5-2) + (5-2)
-        expected_chains = ["A"] * 3
-        expected_resids = [2, 3, 4]
+        assert len(self.model.topology_order) == 4
+        expected_chains = ["A"] * 4
+        expected_resids = [2, 3, 4, 5]
         actual_chains = [t.chain for t in self.model.topology_order]
         actual_resids = [t.residues[0] for t in self.model.topology_order]
 
@@ -544,10 +542,10 @@ class TestBVModel:
         success = self.model.initialise([pro_universe])
         assert success is True
 
-        # With 25 residues: MET(1) excluded as first, GLU(25) excluded as last
+        # With 25 residues: MET(1) is excluded and GLU(25) is retained.
         # PRO residues at positions 3, 9, 15, 23 excluded
-        # Expected: 25 - 2 (termini) - 4 (PRO) = 19 residues
-        expected_count = 19
+        # Expected: 25 - 1 (N terminus) - 4 (PRO) = 20 residues
+        expected_count = 20
         assert len(self.model.common_k_ints) == expected_count
 
     def test_no_proline_sequence(self):
@@ -557,10 +555,10 @@ class TestBVModel:
         success = self.model.initialise([no_pro_universe])
         assert success is True
 
-        # With 15 residues: MET(1) excluded as first, HIS(15) excluded as last
+        # With 15 residues: only the N terminus is excluded.
         # No PRO residues to exclude
-        # Expected: 15 - 2 = 13 residues
-        expected_count = 13
+        # Expected: 15 - 1 = 14 residues
+        expected_count = 14
         assert len(self.model.common_k_ints) == expected_count
 
     def test_different_universe_compatibility(self):
@@ -589,16 +587,15 @@ class TestBVModel:
 
     def test_single_residue_universe(self):
         """Test with universe containing only three residues to test terminal exclusion."""
-        # Use three residues to properly test exclude_termini=True behavior
+        # Use three residues to test the BV N-terminal-only policy.
         three_res = ["ALA", "GLY", "SER"]
         three_universe = create_test_universe(three_res)
 
         success = self.model.initialise([three_universe])
         assert success is True
 
-        # With exclude_termini=True, first (ALA) and last (SER) residues should be excluded
-        # Only middle residue (GLY) should remain
-        assert len(self.model.common_k_ints) == 1
+        # ALA is excluded; GLY and the C-terminal SER amide remain.
+        assert len(self.model.common_k_ints) == 2
 
         # The remaining residue should have a finite intrinsic rate
         assert np.isfinite(self.model.common_k_ints[0])
@@ -634,9 +631,8 @@ class TestBVModel:
         success = self.model.initialise([aa_universe])
         assert success is True
 
-        # With 21 residues: first (MET) and last (VAL) excluded, PRO excluded
-        # Expected: 21 - 2 (termini) - 1 (PRO) = 18 residues
-        expected_count = 18
+        # With 21 residues: N-terminal MET and PRO are excluded; VAL21 remains.
+        expected_count = 19
         assert len(self.model.common_k_ints) == expected_count
 
     def test_large_protein_simulation(self):
@@ -699,9 +695,8 @@ class TestBVModel:
         success = self.model.initialise([large_universe])
         assert success is True
 
-        # With 50 residues: first (MET) and last (LYS) excluded, PRO(38) excluded
-        # Expected: 50 - 2 (termini) - 1 (PRO) = 47 residues
-        expected_count = 47
+        # With 50 residues: N-terminal MET and PRO38 are excluded; LYS50 remains.
+        expected_count = 48
         assert len(self.model.common_k_ints) == expected_count
 
         # Test featurization with larger sequence
@@ -724,16 +719,16 @@ class TestBVModel:
         success1 = self.model.initialise([universe1])
         assert success1 is True
         count1 = len(self.model.common_k_ints)
-        # 5 residues - 2 termini = 3 residues
-        assert count1 == 3
+        # Five residues minus the N terminus.
+        assert count1 == 4
 
         # Reset model for second test
         self.model = BV_model(self.config)
         success2 = self.model.initialise([universe2])
         assert success2 is True
         count2 = len(self.model.common_k_ints)
-        # 5 residues - 2 termini = 3 residues
-        assert count2 == 3
+        # Five residues minus the N terminus.
+        assert count2 == 4
 
 
 class TestBVModelEdgeCases:

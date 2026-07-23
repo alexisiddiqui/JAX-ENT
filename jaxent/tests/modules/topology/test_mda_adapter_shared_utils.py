@@ -227,6 +227,27 @@ class TestSharedUtilityMethods:
         # Should have fewer residues when excluding termini
         assert len(sorted_residues_excl) <= len(sorted_residues)
 
+        n_only, _, n_only_ids = mda_TopologyAdapter._process_chain_residues(
+            bpti_universe,
+            chain_id,
+            chain_atoms,
+            exclude_termini="n",
+            renumber_residues=True,
+        )
+        c_only, _, c_only_ids = mda_TopologyAdapter._process_chain_residues(
+            bpti_universe,
+            chain_id,
+            chain_atoms,
+            exclude_termini="c",
+            renumber_residues=True,
+        )
+        assert len(n_only) == len(sorted_residues) - 1
+        assert len(c_only) == len(sorted_residues) - 1
+        assert sorted_residues[0].resid not in n_only_ids
+        assert sorted_residues[-1].resid in n_only_ids
+        assert sorted_residues[0].resid in c_only_ids
+        assert sorted_residues[-1].resid not in c_only_ids
+
         # Test without renumbering
         _, mapping_no_renum, _ = mda_TopologyAdapter._process_chain_residues(
             bpti_universe, chain_id, chain_atoms, exclude_termini=False, renumber_residues=False

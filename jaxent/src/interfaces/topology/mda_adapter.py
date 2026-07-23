@@ -34,8 +34,8 @@ Key Improvements:
 
 from collections.abc import Mapping
 from beartype.typing import Optional, Union
+from typing import Literal
 
-import MDAnalysis as mda
 import numpy as np
 from MDAnalysis import Universe
 from MDAnalysis.core.groups import Atom, AtomGroup, Residue, ResidueGroup
@@ -46,6 +46,9 @@ from jaxent.src.interfaces.topology.factory import TopologyFactory
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 from jaxent.src.interfaces.topology.utils import group_set_by_chain
 from jaxent.src.models.func.common import compute_trajectory_average_com_distances
+
+
+TerminalExclusion = bool | Literal["none", "n", "c", "both"]
 
 
 class mda_TopologyAdapter:
@@ -328,8 +331,8 @@ class mda_TopologyAdapter:
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str], None] = None,
         termini_chain_selection: Union[str, list[str]] = "protein",
-        exclude_termini: Union[bool, list[bool]] = True,
-    ) -> tuple[list[str], list[Optional[str]], list[str], list[bool]]:
+        exclude_termini: Union[TerminalExclusion, list[TerminalExclusion]] = True,
+    ) -> tuple[list[str], list[Optional[str]], list[str], list[TerminalExclusion]]:
         """Normalize selection parameters to lists matching ensemble length.
 
         Args:
@@ -379,7 +382,7 @@ class mda_TopologyAdapter:
             termini_list = list(termini_chain_selection)
 
         # Normalize exclude_termini
-        if isinstance(exclude_termini, bool):
+        if isinstance(exclude_termini, (bool, str)):
             exclude_termini_list = [exclude_termini] * ensemble_len
         else:
             if len(exclude_termini) != ensemble_len:
@@ -387,6 +390,19 @@ class mda_TopologyAdapter:
             exclude_termini_list = list(exclude_termini)
 
         return include_list, exclude_list, termini_list, exclude_termini_list
+
+    @staticmethod
+    def _normalize_terminal_exclusion(policy: TerminalExclusion) -> Literal["none", "n", "c", "both"]:
+        """Normalize legacy Boolean and explicit terminal-exclusion policies."""
+        if policy is True:
+            return "both"
+        if policy is False:
+            return "none"
+        if policy not in {"none", "n", "c", "both"}:
+            raise ValueError(
+                "exclude_termini must be a bool or one of 'none', 'n', 'c', 'both'"
+            )
+        return policy
 
     @staticmethod
     def _apply_selection_pipeline(
@@ -444,7 +460,7 @@ class mda_TopologyAdapter:
         universe: Universe,
         chain_id: str,
         selected_atoms: list[Atom | Residue | AtomGroup] | ResidueGroup | AtomGroup,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
     ) -> tuple[list[Residue], dict[IntLike, IntLike], set[IntLike]]:
@@ -456,7 +472,8 @@ class mda_TopologyAdapter:
             universe: MDAnalysis Universe object
             chain_id: Chain identifier
             selected_atoms: List of atoms in the chain after selections
-            exclude_termini: Whether to exclude terminal residues
+            exclude_termini: Terminal policy. Legacy ``True`` excludes both and
+                ``False`` excludes neither.
             termini_chain_selection: Selection string for terminal identification
             renumber_residues: Whether to renumber residues from 1
 
@@ -520,11 +537,18 @@ class mda_TopologyAdapter:
         else:
             residue_mapping: dict[IntLike, IntLike] = {res.resid: res.resid for res in selected_residues}
 
-        # Apply terminal exclusion
-        if exclude_termini and len(full_chain_residues) > 2:
-            included_residues = full_chain_residues[1:-1]
-        else:
-            included_residues = full_chain_residues
+        # Apply terminal exclusion using chain positions, not residue numbers.
+        terminal_policy = mda_TopologyAdapter._normalize_terminal_exclusion(exclude_termini)
+        excluded_terminal_resids = set()
+        if full_chain_residues and terminal_policy in {"n", "both"}:
+            excluded_terminal_resids.add(full_chain_residues[0].resid)
+        if full_chain_residues and terminal_policy in {"c", "both"}:
+            excluded_terminal_resids.add(full_chain_residues[-1].resid)
+        included_residues = [
+            residue
+            for residue in full_chain_residues
+            if residue.resid not in excluded_terminal_resids
+        ]
 
         # Get set of included residue IDs
         included_resids = {res.resid for res in included_residues}
@@ -631,7 +655,7 @@ class mda_TopologyAdapter:
         mda_group: Union[ResidueGroup, AtomGroup, object],
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
         fragment_name_template: str = "auto",
@@ -793,7 +817,7 @@ class mda_TopologyAdapter:
     @staticmethod
     def _build_renumbering_mapping(
         universe: Universe,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
     ) -> dict[tuple[str, int], int]:
         """Build mapping from (chain, renumbered_resid) to original_resid.
@@ -837,7 +861,7 @@ class mda_TopologyAdapter:
     def _validate_topology_containment(
         topology: Partial_Topology,
         universe: Universe,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
     ) -> None:
@@ -969,7 +993,7 @@ class mda_TopologyAdapter:
         include_selection: list[str] = ["protein"],
         exclude_selection: list[str] = ["resname SOL"],
         termini_chain_selection: list[str] = ["protein"],
-        exclude_termini: list[bool] = [True],
+        exclude_termini: list[TerminalExclusion] = [True],
         renumber_residues: bool = True,
     ) -> list[list[Partial_Topology]]:
         """Extract included chain topologies from each universe in the ensemble."""
@@ -1091,7 +1115,7 @@ class mda_TopologyAdapter:
         mode: str = "residue",
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         fragment_name_template: str = "auto",
         renumber_residues: bool = True,
@@ -1144,7 +1168,7 @@ class mda_TopologyAdapter:
         universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = False,
         mda_atom_filtering: Optional[str] = None,
@@ -1261,7 +1285,7 @@ class mda_TopologyAdapter:
         include_selection: Union[str, list[str]] = "protein",
         exclude_selection: Union[str, list[str], None] = "resname SOL",
         termini_chain_selection: Union[str, list[str]] = "protein",
-        exclude_termini: Union[bool, list[bool]] = True,
+        exclude_termini: Union[TerminalExclusion, list[TerminalExclusion]] = True,
         renumber_residues: bool = True,
     ) -> tuple[set[Partial_Topology], set[Partial_Topology]]:
         """Find common residues across an ensemble of MDAnalysis Universe objects.
@@ -1352,7 +1376,7 @@ class mda_TopologyAdapter:
         target_topologies: Optional[list[Partial_Topology]] = None,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
         check_trim: bool = True,
@@ -1438,7 +1462,7 @@ class mda_TopologyAdapter:
         universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
         start: Optional[int] = None,
@@ -1500,7 +1524,7 @@ class mda_TopologyAdapter:
         universe: Universe,
         include_selection: str = "protein",
         exclude_selection: Optional[str] = None,
-        exclude_termini: bool = True,
+        exclude_termini: TerminalExclusion = True,
         termini_chain_selection: str = "protein",
         renumber_residues: bool = True,
     ) -> dict[Union[str, int], list[int]]:

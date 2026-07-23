@@ -597,24 +597,24 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beartype", specifier = ">=0.22.9" },
-    { name = "chex", specifier = ">=0.1.88" },
+    { name = "beartype" },
+    { name = "chex" },
     { name = "gdown", specifier = ">=5.2.1" },
-    { name = "h5py", specifier = ">=3.14.0" },
+    { name = "h5py" },
     { name = "hdxrate", specifier = ">=0.2.2" },
     { name = "icecream", specifier = ">=2.1.4" },
-    { name = "jax", specifier = "==0.4.35" },
-    { name = "jaxtyping", specifier = ">=0.2.37" },
-    { name = "matplotlib", specifier = ">=3.10.0" },
-    { name = "mdanalysis", specifier = ">=2.8.0" },
-    { name = "networkx", extras = ["default"], specifier = ">=3.4.2" },
+    { name = "jax" },
+    { name = "jaxtyping" },
+    { name = "matplotlib" },
+    { name = "mdanalysis" },
+    { name = "networkx", extras = ["default"] },
     { name = "numpy" },
     { name = "optax", specifier = ">=0.2.4" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "scikit-learn", specifier = ">=1.6.1" },
-    { name = "scipy", specifier = ">=1.15.1" },
-    { name = "seaborn", specifier = ">=0.13.2" },
-    { name = "statsmodels", specifier = ">=0.14.6" },
+    { name = "pyyaml" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "seaborn" },
+    { name = "statsmodels" },
 ]
 
 [package.metadata.requires-dev]
