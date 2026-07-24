@@ -14,6 +14,7 @@ from jaxent.src.analysis.hdx_target_variance import (
     build_rate_geometries,
     distance_sequence_support_kernel,
     effective_rates,
+    fisher_timepoint_weights,
     fit_curve_moment_variance,
     fit_structured_residual_variance,
     load_frozen_settings,
@@ -24,6 +25,7 @@ from jaxent.src.analysis.hdx_target_variance import (
     predict_fixed_mean_uptake,
     propagated_uptake_covariance,
     qualification_gate,
+    structured_residual_nll,
     wendland_distance_kernel,
     write_frozen_settings,
 )
@@ -82,6 +84,56 @@ def test_zero_variance_recovers_fixed_mean_limit():
     expected = 1.0 - np.exp(-times[:, None] * means[None, :])
     np.testing.assert_allclose(positive_two_moment_uptake(means, np.zeros(3), times), expected)
     np.testing.assert_allclose(predict_fixed_mean_uptake(means, times, mapping), expected.T)
+
+
+def test_fisher_timepoint_weights_match_analytic_profile_and_sum_to_timepoints():
+    means = np.asarray([0.15, 0.7, 1.3])
+    times = np.asarray([0.0, 0.2, 1.0, 5.0])
+    sensitivity = means[:, None] * times[None, :] * np.exp(-means[:, None] * times[None, :])
+    expected = np.sum(sensitivity**2, axis=0)
+    expected *= times.size / expected.sum()
+    np.testing.assert_allclose(fisher_timepoint_weights(means, times), expected)
+    np.testing.assert_allclose(fisher_timepoint_weights(means, times).sum(), times.size)
+
+
+def test_uniform_weighting_reproduces_unweighted_fit_and_structured_nll():
+    means = np.asarray([0.2, 0.6])
+    times = np.asarray([0.2, 1.0, 5.0])
+    mapping = np.asarray([[1.0, 0.0], [0.5, 0.5]])
+    geometry = np.asarray([[1.0, 0.3], [0.3, 1.0]])
+    observed = predict_fixed_mean_uptake(means, times, mapping) + 0.01
+    plain_curve = fit_curve_moment_variance(observed, means, times, mapping, geometry, maxiter=80)
+    uniform_curve = fit_curve_moment_variance(
+        observed, means, times, mapping, geometry, timepoint_weighting="uniform", maxiter=80
+    )
+    plain_structured = fit_structured_residual_variance(
+        observed, means, times, mapping, geometry, maxiter=80
+    )
+    uniform_structured = fit_structured_residual_variance(
+        observed, means, times, mapping, geometry, timepoint_weighting="uniform", maxiter=80
+    )
+    np.testing.assert_array_equal(plain_curve.variances, uniform_curve.variances)
+    np.testing.assert_array_equal(plain_structured.variances, uniform_structured.variances)
+    assert plain_curve.objective == uniform_curve.objective
+    assert plain_structured.objective == uniform_structured.objective
+    covariance = build_hdx_covariance(np.asarray([0.01, 0.04]), geometry)
+    plain_nll = structured_residual_nll(observed, means, times, mapping, covariance)
+    uniform_nll = structured_residual_nll(
+        observed, means, times, mapping, covariance, timepoint_weighting="uniform"
+    )
+    assert plain_nll == uniform_nll
+
+
+def test_zero_variance_fixed_mean_limit_is_unchanged_by_fisher_weighting():
+    means = np.asarray([0.15, 0.7, 1.3])
+    times = np.asarray([0.2, 1.0, 5.0])
+    mapping = np.eye(3)
+    expected = predict_fixed_mean_uptake(means, times, mapping)
+    for weighting in ("uniform", "fisher"):
+        weights = np.ones(times.size) if weighting == "uniform" else fisher_timepoint_weights(means, times)
+        zero_variance_prediction = predict_curve_moment_uptake(means, np.zeros_like(means), times, mapping)
+        weighted_error = np.sum(weights[None, :] * np.square(zero_variance_prediction - expected))
+        assert weighted_error == 0.0
 
 
 def test_curve_moment_estimator_recovers_small_positive_rate_mixture_moments():

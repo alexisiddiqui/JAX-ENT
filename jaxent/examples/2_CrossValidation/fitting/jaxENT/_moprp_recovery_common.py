@@ -17,6 +17,7 @@ Nothing here fits anything; it only assembles inputs and validates their alignme
 from __future__ import annotations
 
 import hashlib
+import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -59,6 +60,17 @@ PEPTIDE1_INDEX = 0  # peptide 1 is completely held out
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def array_sha256(array: np.ndarray) -> str:
+    """Hash an array using the target-variance artifact convention."""
+
+    contiguous = np.ascontiguousarray(array)
+    digest = hashlib.sha256()
+    digest.update(str(contiguous.dtype).encode())
+    digest.update(np.asarray(contiguous.shape, dtype=np.int64).tobytes())
+    digest.update(contiguous.tobytes())
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True)
@@ -225,3 +237,78 @@ def input_hashes() -> dict[str, str]:
         hashes[f"features_{stem}_hard.npz"] = sha256(FEATURES_V2 / f"features_{stem}_hard.npz")
         hashes[f"topology_{stem}_hard.json"] = sha256(FEATURES_V2 / f"topology_{stem}_hard.json")
     return hashes
+
+
+def load_selected_diag_d_target(
+    artifact_dir: str | Path,
+    ensemble: str,
+    feature_residue_ids: np.ndarray,
+    *,
+    peptide_fold: int = 0,
+    time_fold: int = 0,
+) -> tuple[np.ndarray, dict[str, object]]:
+    """Load the selected blinded residue-variance candidate for one ensemble.
+
+    The artifact selection is an HDX-only selection of estimator, geometry, and
+    regularization.  The matching candidate row supplies the archived
+    ``candidate_id__variances`` array.  No NMR diagnostic file is read here.
+    """
+
+    artifact_dir = Path(artifact_dir)
+    manifest = json.loads((artifact_dir / "blinded_selection_manifest.json").read_text())
+    try:
+        selection = manifest["selection"]
+        estimator = str(selection["estimator"])
+        geometry = str(selection["geometry"])
+        regularization = float(selection["regularization"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(f"{artifact_dir}: malformed blinded selection") from error
+
+    with (artifact_dir / "blinded_hdx_sweep.csv").open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    matches = [
+        row
+        for row in rows
+        if row.get("ensemble") == ensemble
+        and row.get("estimator") == estimator
+        and row.get("geometry") == geometry
+        and np.isclose(float(row["regularization"]), regularization)
+        and int(row["peptide_fold"]) == peptide_fold
+        and int(row["time_fold"]) == time_fold
+    ]
+    if not matches:
+        raise ValueError(
+            f"{artifact_dir}: no selected candidate for {ensemble}, fold "
+            f"({peptide_fold}, {time_fold})"
+        )
+    if len(matches) != 1:
+        raise ValueError(f"{artifact_dir}: duplicate selected candidates for {ensemble}")
+
+    row = matches[0]
+    candidate_id = row["candidate_id"]
+    with np.load(artifact_dir / "blinded_variances.npz") as data:
+        key = f"{candidate_id}__variances"
+        if key not in data:
+            raise ValueError(f"{artifact_dir}: missing archived array {key}")
+        variances = np.asarray(data[key], dtype=np.float64)
+
+    feature_residue_ids = np.asarray(feature_residue_ids, dtype=int)
+    if variances.shape != feature_residue_ids.shape:
+        raise ValueError(
+            f"{artifact_dir}: {candidate_id} variances shape {variances.shape} does not "
+            f"match feature residues {feature_residue_ids.shape}"
+        )
+    if not np.isfinite(variances).all() or np.any(variances <= 0.0):
+        raise ValueError(f"{artifact_dir}: selected variances are not finite and positive")
+
+    expected_hash = manifest.get("input_hashes", {}).get(f"{ensemble}__feature_residue_ids")
+    if expected_hash is not None and expected_hash != array_sha256(feature_residue_ids):
+        raise ValueError(f"{artifact_dir}: selected variances are not aligned to feature residues")
+    return variances, {
+        "candidate_id": candidate_id,
+        "estimator": estimator,
+        "geometry": geometry,
+        "regularization": regularization,
+        "peptide_fold": peptide_fold,
+        "time_fold": time_fold,
+    }

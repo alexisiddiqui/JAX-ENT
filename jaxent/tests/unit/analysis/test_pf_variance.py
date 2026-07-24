@@ -24,6 +24,7 @@ from jaxent.src.analysis.pf_variance import (
     peptide_overlap_similarity,
     projected_log_euclidean_covariance_loss,
     shrink_covariance,
+    scale_free_log_ratio_profile_loss,
     uptake_from_log_pf,
     uptake_log_pf_jacobian,
     weighted_population_covariance,
@@ -280,6 +281,23 @@ def test_weighted_profile_loss_is_symmetric_and_zero_at_truth():
     np.testing.assert_allclose(
         weighted_variance_log_ratio_loss(predicted, target, weights),
         weighted_variance_log_ratio_loss(target, predicted, weights),
+    )
+
+
+def test_scale_free_log_ratio_profile_loss_ignores_global_scale_and_is_zero_at_proportionality():
+    target = jnp.asarray([0.2, 1.0, 3.0])
+    predicted = jnp.asarray([0.4, 2.0, 6.0])
+
+    np.testing.assert_allclose(scale_free_log_ratio_profile_loss(predicted, target), 0.0, atol=1e-12)
+    np.testing.assert_allclose(
+        scale_free_log_ratio_profile_loss(7.0 * predicted, target),
+        scale_free_log_ratio_profile_loss(predicted, target),
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        scale_free_log_ratio_profile_loss(predicted, 5.0 * target),
+        scale_free_log_ratio_profile_loss(predicted, target),
+        atol=1e-12,
     )
 
 

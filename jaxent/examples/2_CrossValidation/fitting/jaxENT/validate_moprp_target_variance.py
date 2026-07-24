@@ -108,7 +108,8 @@ def infer_blinded(
     bh = float(settings.get("published_bh", common.PUBLISHED_BH))
     log_pf = inputs.log_pf_by_frame(bc, bh)
     rates = effective_rates(log_pf, inputs.k_ints)
-    mean_rates = np.mean(rates, axis=1)
+    # Canonical pivot k(z̄) for Stage 5; see handoff §9.2/§10.
+    mean_rates = inputs.k_ints * np.exp(-np.mean(log_pf, axis=1))
     geometries = build_rate_geometries(
         rates,
         _coordinates(inputs.feature_residue_ids),
@@ -261,6 +262,7 @@ def run(args: argparse.Namespace) -> None:
         "settings": settings,
         "input_hashes": common.blinded_input_hashes(),
         "nmr_used_for_inference": False,
+        "timepoint_weighting": "uniform",
         "ensemble_reweighting_performed": False,
         "bv_coefficients_optimized": False,
     }

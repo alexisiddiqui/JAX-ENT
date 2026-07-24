@@ -370,6 +370,22 @@ def kl_to_uniform(weights: ArrayLike) -> Array:
     return jnp.sum(safe_weights * (jnp.log(safe_weights) + jnp.log(weights.size)))
 
 
+def scale_free_log_ratio_profile_loss(predicted: ArrayLike, target: ArrayLike) -> Array:
+    """Return squared log-profile error after removing a global scale offset.
+
+    The residual is ``r = log(predicted / target)`` and the mean residual is removed
+    before taking the mean square.  Thus the loss is zero when ``predicted`` is
+    proportional to ``target`` and is invariant to multiplying either profile by a
+    positive scalar.
+    """
+
+    predicted = jnp.asarray(predicted)
+    target = jnp.asarray(target)
+    residual = jnp.log(predicted / target)
+    centered = residual - jnp.mean(residual)
+    return jnp.mean(jnp.square(centered))
+
+
 def jensen_shannon_divergence(probabilities: ArrayLike, target: ArrayLike) -> Array:
     """Return base-2 JSD, bounded between zero and one.
 

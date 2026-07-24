@@ -232,3 +232,5 @@ notebooks/**/HDXer/
 !jaxent/examples/2_CrossValidation/data/_MoPrP/
 jaxent/examples/2_CrossValidation/data/_MoPrP/*
 !jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat
+!jaxent/examples/2_CrossValidation/data/_MoPrP/spectra/
+!jaxent/examples/2_CrossValidation/data/_MoPrP/spectra/*

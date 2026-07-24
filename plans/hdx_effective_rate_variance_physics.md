@@ -273,7 +273,9 @@ D-only target would plug into (`jaxent/src/analysis/state_population.py`,
   ```
 - **`diag(D)` match (the reduced-scope target)**: compare the weighted marginal effective-rate
   variance `diag(Cov_f[k_{i,f}; w])` to the inferred `d_i`, e.g. the symmetric log-ratio profile loss
-  `log_ratio_profile_loss(pred, target) = mean( (log(pred/target))² )`.
+  `log_ratio_profile_loss(pred, target) = mean( (log(pred/target))² )`. The pivot-consistent
+  target artifacts are `_moprp_target_variance_scaled_published_20260724/` and
+  `_moprp_target_variance_constrained_optimum_20260724/` (see §10.6).
 - **Recovery diagnostic (never a training signal)**: `100 · (1 − √JSD₂(population(w), target))`,
   `population(w) = membership @ w`; and `ESS = 1 / Σ_f w_f²`.
 
@@ -333,11 +335,11 @@ Var_f(z_i)` and the uptake Jacobians differ by exactly a factor `−k`: `∂u/�
 mean `k̄_i` currently consistent with that choice (average-first vs average-after; Jensen gap)? This
 is the most likely place for a silent inconsistency.
 
-**Update (2026-07-23):** the code-side half is answered — see §9.2. `mean_rates` is computed as
-`E_f[k]` (average-after, rate-space), which is internally consistent with both estimators but
-mismatched with production `average_first_uptake` at the eventual Stage-5 reweighting boundary. The
-physics question — which coordinate is most identifiable/meaningful — is still open for the
-deep-research agent.
+**Update (2026-07-24):** the canonical pivot is closed as
+`k(z̄) = k_int·exp(−E_f[ln PF])`, matching production `average_first_uptake`. Both MoPrP
+runners use this uniform-frame pivot; regenerated D-only artifacts are the `_20260724`
+directories listed in §10.6. The archived `_20260723` directories remain unchanged as
+provenance.
 
 ### 7.2 What physically *is* `d_i`?
 Since `k_int,i` is conformation-independent, `Var_f(k_i) = k_int,i² · Var_f(e^{−z_{i,f}})` — `D` is
@@ -436,22 +438,13 @@ Schur-product combination, permutation shuffle), the qualification-gate threshol
 
 ```python
 rates = effective_rates(log_pf, inputs.k_ints)   # k_int * exp(-log_pf), per frame
-mean_rates = np.mean(rates, axis=1)               # E_f[k_i], uniform frame weights
+mean_rates = inputs.k_ints * np.exp(-np.mean(log_pf, axis=1))  # k(z̄), uniform frame weights
 ```
 
-This is a true rate-space mean (`E_f[k_i]`), **not** the "average-first-in-log-PF" convention
-(`average_first_uptake`, `z̄_i = Σ w_f z_{i,f}` then transform) that production BV semantics use
-elsewhere (`BV_ForwardPass.average_first=True`). That said, it is *not* a bug in isolation: both
-estimators' own constructions are delta-method/two-moment expansions around the true first moment of
-the rate, so `E_f[k]` is the internally-correct pivot for `curve_moment`'s Gamma closure and
-`structured_residual`'s Jacobian linearisation. **The exposure is at the module boundary, not
-inside it.** `E_f[k] - k(z̄) ≈ ½k̄·Var_f(z)` — a correction the *same order* as `D` itself — so when
-§5's `diag(D)` target is eventually matched against the production `average_first_uptake` mean-fit
-loss, the two "mean curves" will not coincide, and part of `D`'s own signal will already be absorbed
-into that gap. **Action before Stage 5 wiring:** pick one canonical pivot (`E_f[k]` or `k(z̄)`) for
-both the D-only fit and whatever mean-fit loss consumes `diag(D)`, and document it at the
-`mean_rates` call site. This is Stage 4 of `plans/research/secondorder_HDX_physics.md` ("handle the
-Jensen/coordinate bias explicitly... essentially free, do it regardless"), now scoped to one line.
+This is now the canonical average-first-in-log-PF pivot (`k(z̄)`) used by production
+`average_first_uptake`. Both runners document this choice at their `mean_rates` call sites.
+**Action before Stage 5 wiring: done.** This closes Stage 4 of
+`plans/research/secondorder_HDX_physics.md`.
 
 ### 9.3 Correction to §3: `M` is a row-normalized average, not a summation
 
@@ -513,9 +506,12 @@ timepoint- and BV-construction-dependent — reported per condition, not pooled:
 
 The sign flip at t≥60min is construction-dependent, independently corroborating §1's own finding
 that BV mean-model discrepancy is currently confounded with what gets attributed to `D`. Only
-peptide 1 has raw-spectra data referenced locally (via an external `--expfact-validation-dir` CLI
-arg, not committed in-repo) — n=1 peptide is thin evidence for any covariance claim; coverage for
-more MoPrP peptides or TeaA is unconfirmed.
+peptide 1 has raw-spectra data recovered locally at
+`jaxent/examples/2_CrossValidation/data/_MoPrP/spectra/`, downloaded from
+`pacilab/exPfact`'s `validation/pep1.1.txt` through `validation/pep1.5.txt` on 2026-07-23;
+the directory's `README.json` records source URLs, sizes, and SHA-256 hashes. It remains n=1
+peptide and is thin evidence for any covariance claim; coverage for more MoPrP peptides or TeaA
+is unconfirmed.
 
 **Implication:** Stage 1 of `secondorder_HDX_physics.md` ("add the isotopic envelope as an
 observable") is not a blank-slate build — the forward model exists and has already run once. The
@@ -523,17 +519,502 @@ next step there is diagnostic (why does R² go negative at t≥60min, and is it 
 back-exchange calibration) before it's treated as a usable second-moment signal, per
 `hdx-investigation-follow-data-not-hypothesis` (build/verify/compare/fit before concluding).
 
+**Second-moment fork update (2026-07-23):** `diagnose_moprp_ex2_second_moment.py` performs the
+centroid/shape diagnostic without fitting an estimator or reweighting frames. It consumes the
+committed pre-quench distributions and recovered spectra, and writes `_moprp_ex2_second_moment/`.
+The raw-spectrum anchors are reproduced: at t=60, `experimental_EX2_fit` rank 0 gives
+R²=`0.996846`, while `BV_hard`/`average_first` gives R²=`-1.296763` (survival `0.498054`).
+The moment table (centroid / variance) is:
+
+| time (min) | observed | BV_hard average_first | BV_hard frame_mixture |
+|---:|---:|---:|---:|
+| 1 | 0.734 / 0.780 | 0.438 / 0.664 | 0.555 / 0.851 |
+| 60 | 1.996 / 1.361 | 0.648 / 0.845 | 0.943 / 1.477 |
+| 1440 | 2.665 / 1.314 | 1.606 / 1.360 | 1.516 / 1.600 |
+
+At t=60, the primary 10-bin (windowed) treatment assigns 64.4% of the BV_hard/average_first SSE to
+the centroid shift; after alignment its width ratio is `0.621`, versus `1.084` for frame_mixture.
+Shifting on padded pre-truncation support instead assigns 94.7% of the same SSE to the centroid and
+gives width ratios `0.804` (average_first) / `1.259` (frame_mixture). Either way the centroid is the
+robustly dominant mismatch, so the verdict is `mean_confounded` at t=60
+(`flagged_latent_width_signal=true`, `proceed_to_envelope_estimator=false`).
+
+**Precision framing (corrected 2026-07-23):** the **expected precision of the envelope width channel
+is ~20–25%** — so the `experimental_EX2_fit` ceiling's centroid-aligned width ratio of `1.213`
+(21% high while fitting the shape at R²=0.997) is the *physical precision floor of the observable, not
+a broken statistic*. Read against a ±25% band (≈0.75–1.25): under the faithful windowed observation
+model, `average_first` (0.621) is **beyond precision — genuinely too narrow**, while `frame_mixture`
+(1.084) matches observed *within* precision. That mean-only-too-narrow / conformer-spread-matches
+separation is exactly the conformational second-moment signature, and it **exceeds** the precision
+floor. It is **not** in-principle unresolvable; the only thing that breaks it is boundary handling —
+under the padded mode `average_first` (0.804) re-enters the band and the separation collapses. So the
+limiter is the width-metric's **boundary convention**, not measurement precision. The latent
+conformational second moment is therefore *plausibly present and beyond precision*, gated on a
+resolvable metric-convention choice plus coverage — not on a physical wall. The result remains
+exploratory because this is one peptide (§9.6 item 5).
+
+**Stage (b) boundary resolution (2026-07-23): pass; proceed to item 5.** The ad hoc windowed/padded
+pair has been replaced by one physical observation order,
+`true_mass_shift_then_fixed_window`: conservatively translate the full convolution by a sub-bin
+mass shift, then select and normalize the fixed observed window. The diagnostic now writes
+`edge_mass_check.csv` as well as a single-convention `centroid_shape_decomposition.csv`.
+
+- The committed 10-bin window is adequate. The last-bin and above-window intensity fractions are
+  zero for both controls and every timepoint. Bin 0 carries 71.1% (protonated control), 50.3%
+  (1 min), 8.85% (60 min), 2.99% (1440 min), and 3.52% (fully-deuterated control), as expected
+  because it is the physical zero-isotope/deuteron boundary rather than a missing lower window.
+  Raw intensity below that boundary is 0–0.918% and is recorded separately as baseline/noise;
+  no widening is required at the 1% containment tolerance.
+- At t=60, centroid alignment requires shifts of `+1.348` bins for
+  `BV_hard`/`average_first`, `+1.054` for `BV_hard`/`frame_mixture`, and only `−0.147` for the
+  `experimental_EX2_fit` ceiling; the post-alignment centroid gaps are <`5e-10` bins. The ceiling's
+  aligned width ratio is `1.235`, which defines the empirical ±25% band `[0.927, 1.544]`.
+  `average_first` remains beyond precision on the narrow side (`0.788`), while `frame_mixture`
+  remains within precision (`1.120`). The separation survives the faithful convention **but is
+  reinterpreted after the item-5 synthetic control (2026-07-24): it is attributed to BV mean-model
+  under-dispersion, not conformational heterogeneity — see the reinterpretation note below.**
+- The mean confound is not removed: centroid alignment explains 92.6% of the t=60
+  `BV_hard`/`average_first` SSE (76.1% for `frame_mixture`). The Stage-(b) result is therefore
+  `mean_confounded_with_independent_width_signal`, not permission to build the estimator.
+  `second_moment_verdict.json` records `proceed_to_item_5=true`,
+  `proceed_to_envelope_estimator=false`.
+
 ### 9.6 Updated priority order given 9.1–9.5
 
-1. Fix the pivot convention (§9.2) — cheap, do first, blocks nothing else.
-2. Diagnose the existing envelope run (§9.5) before writing any new envelope-inference code — don't
-   re-derive what's already been tried.
-3. If the envelope signal survives (2): add it as a third estimator in `hdx_target_variance.py`,
-   reusing the frozen `identity`/`shuffled_geometry` controls and `qualification_gate` so a real "R
-   beats shuffled on truth" result is comparable to the existing verdict table, not a new
-   incommensurate metric.
+1. Fix the pivot convention (§9.2) — **done**; `k(z̄)` is implemented and the `_20260724`
+   artifacts supersede `_20260723` while retaining the latter as provenance.
+2. Diagnose the existing envelope run (§9.5) before writing any new envelope-inference code — **done**.
+   `diagnose_moprp_ex2_envelope.py` consumes the committed `_moprp_ex2_physics_bv_v2/` artifacts and
+   writes `_moprp_ex2_envelope_diagnosis/`. The `experimental_EX2_fit` control remains the live
+   positive control: with the same effective survival calibration (`0.498054`) and the same active
+   peptide-1 residue set, it gives R²≈0.995–0.997 at t=1/60 min and ≈0.973 at 1440 min. The anchor
+   is reproduced at t=60 (`BV_hard` R²=−1.2968; EX2-fit R²=0.9968). Thus back-exchange calibration
+   (a) and residue activation (b) are ruled out. BV's predicted centroid already misses the EX2-fit
+   reference, and the residue-level t=60 probability comparison remains construction-sensitive
+   (`BV_switched` is closer than `BV_hard` but still mismatched): the cause is `bv_mean_model`.
+   This is the same BV mean-model discrepancy already confounding `D` (§1, §7.4), re-exposed by a
+   more sensitive observable, not a new failure mode.
+3. **Gated — deferred (one condition passed, two remain):** the second-moment fork is
+`mean_confounded_with_independent_width_signal` at the max-information point (t=60). The
+conformer-spread width signal is beyond the ~20–25% expected precision and survives the resolved
+physical observation convention (§ above), so it is plausibly real rather than a precision or
+boundary artifact. Do **not** add the envelope as a third estimator in `hdx_target_variance.py`
+until **all three** conditions hold:
+   - **(a) BV mean-model correction** — the centroid explains 64–95% of t=60 SSE, so an envelope
+     estimator would re-fit mean error, not width, until the mean is fixed (this is the same
+     `bv_mean_model` confound as §1/§7.4; note it lies outside the D-only guardrails, which forbid BV
+     coefficient optimisation).
+   - **(b) width-metric boundary convention resolved — passed 2026-07-23.** Edge-mass containment
+     validates the 10-bin window, and full-support sub-bin translation followed by that fixed window
+     retains the t=60 separation (`average_first=0.788`, `frame_mixture=1.120`; empirical ceiling
+     band `[0.927, 1.544]`).
+   - **item 5 — coverage beyond peptide 1** — n=1 cannot distinguish a real signal from a
+     single-peptide coincidence.
+   **Item 5 synthetic control (2026-07-24): failed closed.**
+   `validate_second_moment_synthetic.py` writes
+   `_moprp_ex2_second_moment_synthetic/` and exercises the shared Stage-(b) decomposition on
+   independent observed/model frame draws for N={4,6,9}, ten injected log-PF variance levels
+   (`D_true=0...3.2`), and three seeds. The zero-heterogeneity negative control passes for every
+   geometry/seed: no separation is called, and the maximum average-first/frame-mixture width-ratio
+   gap is `1.78e-15`. The physical resolved convention is at least as conservative as the retired
+   padded sensitivity (both call zero positives).
+
+   The forward chain does carry the injected truth: the frame-mixture aligned width ratio stays
+   near one, the average-first ratio decreases monotonically, and their recovered width excess has
+   Spearman `rho=1.0` in every geometry. However, the required per-envelope EX2-analog ceiling
+   fitted with `fit_ex2_solution_set` narrows in parallel with average-first. Its ratio falls from
+   about one at `D_true=0` to `0.718/0.596/0.466` at the most extreme draws (N=4/6/9), instead of
+   remaining in the expected `1.0--1.25` precision regime. Consequently its ±25% band follows the
+   missing width, `separation_survives` is false in all 90 cases, and no finite `D_min` exists under
+   the specified decision rule. This remains true across the range implied by peptide-1's selected
+   D-only artifacts: converting `d_i` to the comparable log-rate coordinate as
+   `log(1+d_i/kbar_i^2)` gives medians `2.964` (AF2_MSAss) and `2.045` (AF2_filtered).
+
+   `synthetic_second_moment_validation.json` therefore records `method_validated=false`,
+   `finite_detectability_floor=false`, and `ex2_floor_sanity_passes=false`. This does not erase the
+   observed monotonic width channel; it shows that the same-envelope EX2 ceiling is not an
+   independent precision floor and makes the current beyond-precision decision self-masking on
+   known truth. Per the mandatory negative/positive control gate, item 3 remains false and is
+   **not** gated solely on stage (a). Revisit the decomposition/precision calibration before any BV
+   mean-fix or envelope-estimator work.
+
+   The sequenced next action is therefore to repair and independently validate the precision-floor
+   definition, not stage (a).
+
+   **Reinterpretation of the real peptide-1 Stage-(b) signal (2026-07-24).** The synthetic control
+   shows *why* the real signal is not what it appeared. EX2 fits a single per-residue PF vector — it
+   is a single-conformer / mean-structure model and physically cannot represent conformational
+   (across-frame) heterogeneity. Under genuine injected heterogeneity the EX2-analog width ratio
+   therefore **narrows** in lockstep with `average_first` (falls to `0.60–0.72`). But on real
+   peptide-1 the EX2 ceiling stayed **wide** (`1.235`), and EX2 reproduced the observed envelope at
+   R²≈0.99 — i.e. the real observed envelope is well described by a *single conformer* and carries
+   **no conformational-mixture broadening**. Consequently `average_first` being narrow on real data
+   reflects **BV under-dispersing its per-residue rates within the mean structure** (a contact /
+   mean-model deficiency), **not** conformational `D`. The apparent "independent width signal" is the
+   same `bv_mean_model` confound as §1/§7.4, re-exposed once more — the envelope did **not** certify
+   conformational second-moment signal for MoPrP peptide-1.
+
+   **Re-gate for item 3.** Item 3 is no longer gated solely on stage (a). It now requires, in order:
+   (i) **replace the EX2-analog precision floor with a measurement-noise-based floor** (ion-counting /
+   replicate spread — note the synthetic ran with `poisson_counting_noise=false`, so EX2 was the only
+   precision source, which is why the degeneracy was total); (ii) re-evaluate real peptide-1 under
+   that floor; (iii) only if a signal survives, the stage-(a) BV mean fix (out of D-only scope) and
+   item-5 coverage. Given real peptide-1's single-conformer-reproducible envelope, the expected
+   finding under a corrected floor is *little conformational signal to detect* — so item 3 moves from
+   "parked" toward **"retire unless re-specified."**
+   Stage (a) remains explicitly outside the D-only guardrails and must not start without a separate
+   scope decision. If all gates eventually pass, reuse the frozen `identity`/`shuffled_geometry`
+   controls and `qualification_gate` so a real "R beats shuffled on truth" result is comparable to
+   the existing verdict table, not a new incommensurate metric.
 4. Peptide 1 is already both the D-only held-out peptide (`peptide_partitions` in
    `validate_moprp_target_variance.py:56-67`) and the one with real envelope spectra — use this
    doubly-independent channel deliberately rather than as an audit-script side effect.
 5. Check envelope-data coverage beyond peptide 1 (more MoPrP peptides, or TeaA) before leaning on
    n=1 for any R claim.
+
+## 10. Stage 4: pivot-convention experiment
+
+### 10.1 Definitions and canonical pivot choice
+
+- `k̄_after_i = E_f[k_i]` (rate-space mean over frames).
+- `k̄_first_i = k_int,i · exp(-E_f[ln PF_i])` (average-first-in-log-PF).
+- Canonical Stage-5 target for a future rerun is `k̄_first` to match production `average_first`
+  uptake semantics; this is the boundary documented at the `infer_blinded()` pivot line in
+  `validate_moprp_target_variance.py`.
+- Stage 4 is closed: both runners now use `k̄_first = k(z̄)` with uniform frame weights.
+  The deferred diagnostic sweep is code-fixed; its artifacts remain pending as an optional
+  parallelized rerun.
+
+### 10.2 Tier-1 protocol (fast census)
+
+- Load fixed per-ensemble blinded MoPrP inputs via `_moprp_recovery_common.load_blinded_ensemble_inputs`
+  and coefficient settings from `_moprp_recovery_coefficient_lock/coefficient_lock.json`.
+- For each coefficient setting and ensemble:
+  - Build `rates = effective_rates(log_pf, k_ints)` with `log_pf = bc*heavy + bh*acceptor`.
+  - Compute `k̄_after` and `k̄_first`.
+  - Write `pivot_gap.csv` with per-cell median / p90 / max of:
+    - `rel_gap = abs(k̄_after-k̄_first)/k̄_first`,
+    - `jensen_guard = k̄_after >= k̄_first` (tolerance check),
+    - `abs(rel_gap - 0.5·Var(log_pf))` sanity residual.
+- Tier-1 thresholds: `median_rel_gap<=0.02`, `p90_rel_gap<=0.05`.
+- Replay a single archived `E_f[k]` cell with the same primary estimator/geometry/regularisation to
+  lock script wiring; abort on replay mismatch (`RMSE > 1e-6` or objective diff > 1e-6).
+
+### 10.3 Tier-2 protocol (conditional)
+
+- Run only when Tier-1 fails or `--force-tier2`.
+- For each cell, estimator, and geometry (`primary_geometry_from_artifact`, `shuffled_geometry`):
+  - fit with `k̄_first` (`fit_curve_moment_variance`, `fit_structured_residual_variance`),
+  - no BV tuning, no reweighting, no NMR inputs,
+  - holdout score via peptide-1 only (`heldout_mean_mse_ratio`),
+  - constant-D control always included.
+- Compare each row to archived `E_f[k]` counterpart by:
+  - `log_variance_spearman`, `mapped_variance_log_rmse`, `constant_mapped_variance_log_rmse`,
+  - mapped `d_i` ordering and `Δβ = log(d_i / k̄^2)` summaries.
+
+### 10.4 Decision logic
+
+- Build `pivot_refit_gate.csv` with rows in `qualification_gate` schema plus:
+  - `coefficient`, `panel="pivot"`, comparison deltas (`objective_vs_archived`, `mapped_rmse_vs_archived`,
+    `d_rmse_vs_archived`, `d_ordering_spearman_vs_archived`, `beta_delta_*`).
+- Call:
+  - `qualification_gate(..., required_panels=("pivot",), required_ensembles=("AF2_MSAss","AF2_filtered"))`
+- `pivot_decision.json` should include `tiers_executed`, full Tier-1 counters, replay rows, and Tier-2
+  qualification/cell decisions.
+- Set `decision`:
+  - `"future_correctness"` if all thresholds/gates pass and comparison deltas are non-degrading.
+  - `"investigation_wide"` if any gate check fails or any archived comparison degrades beyond tolerances.
+
+### 10.5 Expected output shape
+
+- Expected per-cell gate rows: 16 (`2 coefficient settings × 2 ensembles × 2 estimators × 2 geometries`).
+- Output files:
+  - `_pivot_convention/pivot_gap.csv`,
+  - `_pivot_convention/pivot_refit_gate.csv` (Tier-2 only),
+  - `_pivot_convention/pivot_decision.json`.
+- Placeholder keys to persist in `pivot_decision.json`: `decision`, `tiers_executed`, `tier1`,
+  `replay`, `tier2`, `pivot_gap_path`.
+
+### 10.6 Closure and regenerated artifacts (2026-07-24)
+
+- **Pivot closed:** `k(z̄)` is the canonical D-only coordinate. Both runners are fixed, and
+  manifest provenance records the actual frozen coefficient setting.
+- The selected D-only artifacts in
+  `_moprp_target_variance_scaled_published_20260724/` and
+  `_moprp_target_variance_constrained_optimum_20260724/` supersede the matching `_20260723`
+  directories, which are retained unchanged as provenance. Section 5's future `diag(D)` target
+  points to these `_20260724` artifacts.
+- Verdicts are pivot-invariant: both settings retain
+  `diagnostic_variance_gate_passes=false`, `beats_constant=true`, and overall
+  `beats_shuffled=false`. New truth-recovery medians are scaled-published
+  (MSAss 0.837, filtered 0.863) and constrained-optimum (MSAss 0.811, filtered 0.845).
+- D ordering shifts localize to AF2_MSAss (structured-residual replay ≈0.76–0.79 versus archived;
+  AF2_filtered ≈0.97–0.98). The AF2_MSAss objective is near-flat (d-RMSE 0.0029 at
+  Δobjective 3e−14), so the reshuffle is not treated as fully pivot-driven signal.
+- Deferred 2-D sweep: **code-fixed, artifacts pending**. Run its four independent branches in
+  parallel when needed; it is not required for closing Stage 4 or selecting `diag(D)`.
+
+## 11. Information-weighted D-only timepoints
+
+Uniform objective mass is materially misaligned with the single-exponential sensitivity. On the
+committed canonical-pivot MoPrP inputs, the five lowest-information timepoints receive about 33%
+of uniform objective mass but only about 15% of summed Fisher information in
+`scaled_published` (about 27% / 8% for `constrained_optimum`). The dominant mismatch is the early
+end: four timepoints with `t <= 1 min` and `u <= 0.1` receive about 27% of objective mass but only
+about 9% of information; saturation is a smaller issue for MoPrP. Information peaks near
+160--240 min (`u` about 0.66--0.72).
+
+The D-only estimators now expose opt-in `timepoint_weighting="fisher"` and an explicit
+`timepoint_weights` override. `fisher_timepoint_weights` uses only the fixed mean rates and
+computes the residue-summed `(k̄ t exp(-k̄ t))²` profile, normalized to the number of timepoints.
+The default uniform branch is retained for exact archived-artifact replay, and fit provenance
+records the selected weighting. This reallocates objective emphasis; it does not change geometry
+`R`, address the frame-permutation/R-identifiability wall, or implement parked envelope item 3.
+The related epsilon-noise-floor / heteroscedastic-noise question remains distinct and is tracked in
+`plans/hdx_heteroscedastic_nll_investigation.md`.
+
+The per-cell experiment is in
+`examples/2_CrossValidation/fitting/jaxENT/investigate_moprp_timepoint_weighting.py` and writes
+`_moprp_timepoint_weighting/timepoint_weighting_decision.json`. The `_20260724` uniform anchors
+all replayed exactly (`d_rmse=0`, objective differences at machine precision). Across both
+coefficient settings, both ensembles, and primary/shuffled geometries, Fisher weighting increased
+curve-vs-structured D Spearman agreement by `0.0013--0.0308`, did not reduce NMR truth-recovery
+Spearman, and improved the mean mapped-profile RMSE delta in every cell. Per-cell decisions are
+therefore `reduces_leakage`; `beats_shuffled` remains false throughout, including AF2_MSAss, whose
+near-flat marginal-D caveat is not treated as resolved. The headline agreement deltas and all
+controls remain per-cell in the emitted CSV/JSON rather than pooled.
+
+**Bounded reading (do not over-read `reduces_leakage`).** On the *physical* primary geometry
+(`covariance_only`) the cross-estimator agreement gain is small — about +0.001–0.009 Spearman per cell;
+the larger deltas up to +0.031 are on the `shuffled_geometry` control and are not physically meaningful.
+The substantive support for the leakage mechanism is not magnitude but an **asymmetry**: the
+structured-residual estimator — the mean-contaminated one that is selected on real MoPrP — improves its
+NMR truth-recovery Spearman (e.g. scaled/MSAss 0.837→0.852) and its mapped RMSE (~3–6% lower) in every
+cell under Fisher weighting, while curve-moment is essentially unchanged (~0.889→0.889). That is exactly
+what de-contaminating the leaky estimator predicts, and 8/8 same-sign is unlikely under a true null.
+Net: Fisher weighting is a directionally-correct, downside-free **refinement** that slightly
+de-contaminates the structured estimator; it does **not** dent the dominant BV mean-model confound, and
+`beats_shuffled` stays false. The `reduces_leakage` label should be read as "small, consistent, no
+downside," resting on cross-cell consistency plus the estimator asymmetry — not on any single cell's
+delta (a +0.0013 cell is within noise).
+
+---
+
+## 12. Investigation checkpoint (2026-07-24)
+
+Three independent tracks pursued after the D-only verdict have all terminated on the **same
+finding: BV mean-model error is the dominant confound**, and none rescued a certified conformational
+geometry or a second moment beyond it.
+
+| Track | Status | Terminal finding |
+|---|---|---|
+| **Pivot convention** (§10) | Closed | `k(z̄)` canonical; verdict pivot-invariant; D shift localizes to AF2_MSAss (near-flat/weakly identified). No new signal. |
+| **Envelope second moment** (§9.5–9.6, §above) | Effectively retired | Negative t≥60 R² = BV mean-model error (item 2). Stage-(b) width "signal" downgraded to BV per-residue **under-dispersion**, not conformational `D` (item-5 synthetic proved the EX2 precision floor is self-masking; real peptide-1 envelope is single-conformer-reproducible). |
+| **Fisher timepoint weighting** (§11) | Landed as opt-in | Small, consistent, downside-free de-contamination of the structured estimator; does not dent the confound; verdict unchanged. |
+
+**Consolidated picture.** HDX centroid curves identify the marginal variance **amplitude** `D`, but
+on real MoPrP that `D` is currently a **model-discrepancy** quantity (BV mean error absorbed), not
+certified conformational variance (§1). The geometry `R` remains unrecovered (never beats shuffled on
+truth). The isotope envelope — the one observable that could in principle carry a second moment
+centroids discard — shows, for MoPrP peptide-1, **no conformational-mixture broadening** a single
+conformer can't reproduce; its apparent width signal is the same BV mean-model deficiency again.
+
+**What this means for next steps.** Every remaining lever now points at the **BV mean model itself**
+(contact→log-PF map: hard-count features, `Bh→0`, per-residue rate under-dispersion), which is
+**outside the D-only guardrails** (§8 forbids BV coefficient/feature optimisation). So the D-only
+scope is at a genuine checkpoint: within it, the productive work (pivot, weighting) is done and the
+verdict is stable; beyond it, progress requires an explicit decision to reopen BV mean-model work as
+its own investigation. **Stage 6 below is that scoped reopening: the joint-BV phase relaxes only the
+BV `(Bc,Bh)` freeze.** The envelope thread should not be resumed without first replacing the
+EX2-analog precision floor with a measurement-noise floor (§9.6 item 3 re-gate).
+
+**Data-provenance note.** MoPrP raw envelope spectra exist for **peptide 1 only**
+(`data/_MoPrP/spectra/`, from `pacilab/exPfact` `validation/`); other peptides have centroids but no
+raw spectra. Any confirmatory second-moment or `R` claim needs a new external blinded system (§8);
+MoPrP is exhausted as a confirmatory blind and TeaA/ISO registered multi-fold qualification remains
+the open internal gate.
+
+## 13. Stage 5 — `diag(D)` reweighting (2026-07-24)
+
+The terminal in-scope D-only deliverable is implemented in
+`examples/2_CrossValidation/fitting/jaxENT/moprp_diag_d_reweighting.py`. It loads the selected
+HDX-only `structured_residual / covariance_only / λ=0.1` candidate from each `_20260724` artifact,
+asserts the candidate's feature-residue hash and 97-residue shape, and reweights each
+ensemble × coefficient cell independently. The mean term is production average-first `k(z̄)`;
+the predicted target is the weighted marginal effective-rate variance
+`diag(Cov_f[k_int exp(-log-PF)])`. `baseline`, `full_R_shape`, `diag_d_absolute`, and
+`diag_d_scalefree` are all retained as separate arms. Recovery and ESS below are post-fit
+validation diagnostics only; they never entered loss construction or gamma/eta selection.
+
+The completed run used the full five-fold × gamma/eta grid with four parallel cell workers and a
+bounded execution budget of 400 Adam steps and one start per optimization (`reweighting_manifest.json`;
+the runner defaults remain 2000 steps and two starts). Selected per-cell recovery percent / ESS:
+
+| coefficient / ensemble | baseline | full_R_shape | diag_d_absolute | diag_d_scalefree |
+|---|---:|---:|---:|---:|
+| scaled_published / AF2_MSAss | 56.2 / 2.3 | 40.6 / 1.0 | 30.4 / 7.9 | **90.1 / 2.0** |
+| scaled_published / AF2_filtered | 92.1 / 1.1 | 89.4 / 1.0 | 52.4 / 13.5 | 88.5 / 4.6 |
+| constrained_optimum / AF2_MSAss | 72.7 / 1.6 | 90.1 / 1.0 | 65.8 / 9.0 | **88.4 / 1.1** |
+| constrained_optimum / AF2_filtered | 66.4 / 1.9 | 90.1 / 1.0 | 54.3 / 11.9 | 88.0 / 8.4 |
+
+Absolute amplitude matching is not supported by this reweighting evidence: its selected gamma
+failed the 1.05 held-out mean-MSE gate in every cell (fallback selection), and its recovery fell
+below baseline in every cell despite its larger ESS. The scale-free arm is the better-supported
+target form: it improved recovery over baseline in three of four cells and consistently avoided
+the approximately unit ESS produced by the retired full-`R` shape arm. Its ESS is still low in
+absolute terms, and it also fails the mean gate in both AF2_filtered cells, so this is evidence for
+the scale-free form rather than a claim of a generally safe production prior.
+
+The new `scale_free_log_ratio_profile_loss` is covered in
+`tests/unit/analysis/test_pf_variance.py`; the focused variance/reweighting tests pass, and the
+analysis suite passes (`198 passed`, with only existing Beartype deprecation warnings). This closes the D-only program: on real
+MoPrP, `D` remains partly model-discrepancy (§1/§12), so the shipped prior is honest-but-imperfect.
+Its confirmatory test must use the new external blinded system, not MoPrP; reopening BV mean-model
+work is outside the D-only verdict. Stage 6 below is the explicitly scoped reopening of that work.
+
+## 14. Stage 6 — joint-BV phase (2026-07-24)
+
+Stage 6 is the named follow-on to the exhausted D-only scope. It relaxes exactly one guardrail: the
+shared BV coefficients `(Bc,Bh)` are fitted jointly with per-ensemble frame logits. Blind inference
+and selection, per-cell analysis (never pooled), the live controls, peptide-1 holdout, and the frozen
+non-circular target discipline remain in force. NMR/state information is used only for post-fit
+recovery, ESS, and decoy diagnostics. The phase tests three falsifiable questions:
+
+1. whether the mean can adapt enough for a frozen `diag(D)` target to pass the mean gate;
+2. whether the covariance target identifies `Bh>0` where mean-only fitting approached the `Bh=0`
+   degeneracy; and
+3. whether absolute `diag(D)` matching becomes viable once the mean is free to move.
+
+### 14.1 Experiment 1 — frozen scaled-published target, coarse v1 first pass
+
+`moprp_joint_diag_d_fit.py` writes
+`examples/2_CrossValidation/fitting/jaxENT/_moprp_joint_diag_d_fit/` (the preserved v1 directory). It loads the selected
+structured-residual / covariance-only / λ=0.1 residue target from
+`_moprp_target_variance_scaled_published_20260724` once per ensemble, drops peptide 1 from the mean
+map, and optimizes the two arms (`diag_d_absolute`, `diag_d_scalefree`) over
+`γ={0,.01,.03,.1,.3,1,3,10,30}` and `η={0,.01,.1}`. Every row records fitted `(Bc,Bh)`, mean
+gate, recovery, ESS, decoy, and `val_diag_d_loss`; `cliff_comparison.csv` compares pass boundaries
+with the fixed-coefficient Stage-5 raw sweep.
+
+The recorded artifact used the bounded execution budget in its manifest (`400` Adam steps, one
+start; runner defaults remain 2000 steps and five starts). The γ=0/η=.01 full-budget ablation was
+also replayed against `moprp_joint_reweight_fit.py`: both give `(Bc,Bh)=(0.23925,0.15026)` and
+per-ensemble `val_mse` 0.029034 (AF2_MSAss) / 0.034382 (AF2_filtered), establishing the mean-only
+anchor. The bounded grid's largest passing cells were:
+
+| arm / ensemble | pass-boundary γ | fitted `(Bc,Bh)` at boundary | `val_diag_d_loss` | recovery / ESS | decoy |
+|---|---:|---:|---:|---:|---:|
+| absolute / AF2_MSAss | 0 | (0.20849, 0.85335) | 16.093 | 57.1% / 4.0 | 0.167 |
+| absolute / AF2_filtered | 0 | (0.20101, 0.87200) | 71.062 | 91.0% / 1.0 | 0.0004 |
+| scale-free / AF2_MSAss | 0.03 | (0.20888, 0.51946) | 3.411 | 89.7% / 1.1 | 4.0e-6 |
+| scale-free / AF2_filtered | 0.01 | (0.19909, 0.80294) | 2.398 | 88.4% / 1.8 | 0.0032 |
+
+The gate cliff therefore moved only for the scale-free arm: the joint pass boundaries were 0.03
+(AF2_MSAss) and 0.01 (AF2_filtered), versus Stage-5's 0.1 in AF2_MSAss and no tested positive
+gamma in AF2_filtered. Absolute matching did not recover: no positive-gamma absolute row passed
+the joint mean gate, and no positive Stage-5 absolute gamma passed either. The free mean remained
+positive in every bounded cell; the scale-free covariance-constrained cells moved to
+`Bh=0.519--0.803`, above the full-budget mean-only `Bh=0.150`, so the result supports movement away
+from the mean-only near-zero-H-bond solution but does not by itself establish unique H-bond
+identification. The large absolute losses (16.1 and 71.1 at the γ=0 rows shown) likewise do not
+support absolute amplitude matching.
+
+These are joint-BV results, not a revision of the D-only verdict: the extra mean degrees of freedom
+make the test less falsifiable, and all coefficient movement is auditable in the row-level CSV.
+
+The v1 result was deliberately a coarse first pass: one split, η only at `{0,.01,.1}`, and a bounded
+`400`-step / one-start artifact. Its ESS≈1 gate-valid cells therefore did not resolve whether the
+frontier was a split artifact, an η-resolution artifact, or an optimizer basin.
+
+### 14.2 Experiment 1 refined re-run — split replicates and finer η
+
+The refined artifact is preserved at
+`examples/2_CrossValidation/fitting/jaxENT/_moprp_joint_diag_d_fit_replicated/`; the attempted
+diagnostics-first regeneration is
+`examples/2_CrossValidation/fitting/jaxENT/_moprp_joint_diag_d_fit_replicated_diag/`. It preserves the
+same frozen target, arms, blind/per-cell controls, peptide-1 holdout, and 1.05 mean gate, but uses
+`γ={0,.01,.03,.1,.3,1,3}`, `η={0,.01,.022,.046,.1}`, three disjoint diagonal interleaved
+peptide×timepoint split pairs, and the agreed `2000` Adam steps / `5` starts. The final directory
+contains split rows (`joint_diag_d_fit_replicates.csv`), mean±std aggregates
+(`joint_diag_d_fit.csv`), and `restart_diagnostics.csv`; the production run used four parallel
+workers and was merged only after all 420 expected split/arm/grid/ensemble rows were present.
+
+At the conservative cliff boundary (all three held-out replicates must pass), the aggregate rows are:
+
+| arm / ensemble | pass-boundary γ | fitted `Bc` | fitted `Bh` | held-out `val_mse` | ESS | recovery | `val_diag_d_loss` |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| absolute / AF2_MSAss | 0 | 0.224±0.032 | 0.387±0.482 | 0.03588±0.01468 | 1.08±0.06 | 53.5±37.5% | 33.56 |
+| absolute / AF2_filtered | 0 | 0.224±0.032 | 0.387±0.482 | 0.03624±0.01042 | 1.002±0.0001 | 60.3±39.5% | 134.02 |
+| scale-free / AF2_MSAss | 0.03 | 0.214±0.011 | 0.429±0.229 | 0.03264±0.01359 | 1.003±0.0005 | 88.0±0.01% | 3.21 |
+| scale-free / AF2_filtered | 0.01 | 0.199±0.004 | 0.770±0.381 | 0.03308±0.01269 | 1.002±0.0003 | 87.9±0.001% | 2.19 |
+
+The ESS/gate frontier at the scale-free boundary γ is the decisive readout (entries are
+`mean_gate_passed` fraction, then ESS mean±std across the three splits):
+
+| ensemble / γ | η=0 | η=.01 | η=.022 | η=.046 | η=.1 |
+|---|---:|---:|---:|---:|---:|
+| AF2_MSAss / .03 | 1 / 1.00±0.00 | 1/3 / 9.81±6.20 | 1/3 / 67.65±32.83 | 1/3 / 249.94±7.95 | 1/3 / 343.57±1.02 |
+| AF2_filtered / .01 | 1 / 1.00±0.00 | 2/3 / 9.27±10.29 | 1/3 / 137.19±81.91 | 1/3 / 338.05±22.85 | 1/3 / 436.14±2.16 |
+
+ESS is monotone in η for every arm/ensemble/γ cell in the refined aggregate. There is no cell with
+both all-three-replicate gate validity and ESS≥5: the all-pass boundary remains at ESS≈1, while the
+first healthy-ESS points lose one or more held-out replicates. Thus the gate↔ESS anti-alignment
+survives finer η resolution and split replication; it is not explained by v1's single split or coarse
+η grid. Absolute matching still has no positive-γ all-replicate pass (although isolated one-third
+passes occur), so absolute recovery is not supported. `Bh` is positive but not stable across splits
+at the gate boundary (`0.429±0.229` and `0.770±0.381` for the scale-free ensembles), and therefore
+the covariance target still does not identify a unique H-bond channel.
+
+At γ=0 the two arms reuse exactly the same fit in every split/grid cell, so fitted coefficients,
+held-out mean metrics, gate flags, recovery, ESS, and restart diagnostics are identical; only the
+reported arm-specific `val_diag_d_loss` differs by definition. Their refined free-mean anchor is
+`Bc=0.224±0.032`, `Bh=0.387±0.482` at η=0; the full-data v1/mean-only anchor
+`(0.23925,0.15026)` lies within the split scatter, while held-out MSE is reported separately in the
+aggregate CSV. The five-start diagnostic shows substantial restart ESS spread in some cells
+(maximum aggregate spread 8.68) and the best-objective restart is the lowest-ESS restart only for a
+fraction of cells, so ESS≈1 is also a recurring optimization basin rather than a universally unique
+minimum. This does not rescue a healthy-ESS gate cell: the pass boundary remains at ESS≈1.
+
+The refined result changes the Experiment-2 framing. Target staleness is no longer the first blocker:
+the frozen-target joint-BV phase already loses the mean gate when η raises ESS into the useful range.
+Experiment 2 remains queued, but if run it should explicitly test whether block-coordinate target
+updates alter that KL/ESS floor, not assume that fitted-target consistency alone will produce a
+healthy-ESS gate-valid solution.
+
+### 14.3 Joint-BV diagnostics and figures are first-class outputs
+
+The post-fit diagnostics are implemented once in
+`examples/2_CrossValidation/fitting/jaxENT/joint_diag_d_diagnostics.py` and are shared by the
+frozen-target runner and the queued block-coordinate fitted-target runner. Each split row persists
+`ess_<state>` and `mass_<state>` for every state in `FULL_STATE_SUPPORT`, together with the dominant
+frame's raw cluster label and weight. These fields are post-hoc only: state and cluster labels never
+enter the loss, mean gate, or cell selection. The aggregate CSV carries the corresponding mean/std
+numeric fields and the dominant-cluster mode.
+
+`plot_joint_diag_d_fit.py` consumes only the persisted aggregate and split tables and writes the ESS,
+recovery, held-out-MSE, decoy-mass, gate-ratio-versus-η, and per-cluster ESS figures into the artifact
+directory. Gate-pass fractions are drawn on heatmap cells, and split standard deviations are used for
+gate-ratio error bars. The same schema and plotter are intended for Experiment 2, so its
+block-coordinate rounds can be compared without a second diagnostic implementation.
+
+The regenerated diagnostics record the qualitative cluster result that was previously only an
+ad-hoc scratchpad observation: gate-valid ESS≈1 collapse lands on target-state frames, while decoy
+leakage appears only as η is raised into the high-ESS regime. This supports the refined frontier read
+above and does not turn the post-fit cluster assignment into evidence used by the fit. The preserved
+v2 tables remain the numeric reproduction anchor. The generated `_replicated_diag` directory has the
+complete first-class diagnostics and figures, but its first run under the single-threaded CPU
+contention workaround differed from v2 at small floating-point levels (maximum aggregate deltas:
+`Bc 1.23e-10`, `Bh 1.30e-11`, `val_mse 1.08e-8`, `recovery 2.17e-4`, `ESS 1.65e-4`). A second run in
+the default environment was started for the exact anchor but exceeded the available execution window
+inside the JAX scan and was stopped before writing workers. Therefore `_replicated_diag` is not yet
+accepted as a numeric supersession; the mismatch is recorded as reproducibility/nondeterminism to
+resolve rather than silently overwriting the v2 cited values.
+
+### 14.4 Experiment 2 — fitted consistent target (queued)
+
+Reserved slot. If Experiment 1 demonstrates a useful gate movement, run the block-coordinate
+variant from both frozen starting priors (`scaled_published` and `constrained_optimum`): fit
+`(Bc,Bh)` and weights at a frozen target, re-infer the target once with the D-only estimator, and
+repeat outer rounds until coefficient and target deltas reach a fixed point. Re-inference must stay
+between rounds, never inside gradient steps; report per-round deltas and an oscillation check before
+interpreting fitted coefficients or recovery.

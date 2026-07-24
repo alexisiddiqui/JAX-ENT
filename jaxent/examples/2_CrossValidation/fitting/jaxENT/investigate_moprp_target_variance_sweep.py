@@ -511,10 +511,10 @@ def run(args: argparse.Namespace) -> None:
         fit_rows = np.asarray(partitions["fit_rows"], dtype=int)
         mapping = inputs.mapping[fit_rows]
         observed = inputs.observed_uptake[fit_rows]
-        rates = effective_rates(
-            inputs.log_pf_by_frame(fixed_bv_mean["bc"], fixed_bv_mean["bh"]), inputs.k_ints
-        )
-        mean_rates = np.mean(rates, axis=1)
+        log_pf = inputs.log_pf_by_frame(fixed_bv_mean["bc"], fixed_bv_mean["bh"])
+        rates = effective_rates(log_pf, inputs.k_ints)
+        # Canonical pivot k(z̄) for Stage 5; see handoff §9.2/§10.
+        mean_rates = inputs.k_ints * np.exp(-np.mean(log_pf, axis=1))
         coordinates = validation._coordinates(inputs.feature_residue_ids)
         geometries = build_rate_geometries(
             rates,
@@ -644,6 +644,7 @@ def run(args: argparse.Namespace) -> None:
                                 "psd": bool(np.linalg.eigvalsh(fit.covariance).min() >= -1e-9),
                                 "iterations": fit.iterations,
                                 "objective": fit.objective,
+                                "timepoint_weighting": fit.timepoint_weighting,
                                 "constant_variance": constant_fit["variance"],
                                 "constant_objective": constant_fit["objective"],
                                 "constant_success": constant_fit["success"],
@@ -693,13 +694,14 @@ def run(args: argparse.Namespace) -> None:
         "bv_coefficients_optimized": False,
         "fixed_bv_mean": fixed_bv_mean,
         "published_reference_bv_coefficients": {
-            "bc": common.PUBLISHED_BC,
-            "bh": common.PUBLISHED_BH,
+            "bc": fixed_bv_mean["bc"],
+            "bh": fixed_bv_mean["bh"],
         },
         "distance_cutoff_angstrom": 8.0,
         "sequence_neighbor_strength": NEIGHBOR_STRENGTH,
         "shuffle_seed": SHUFFLE_SEED,
         "noise_variance": NOISE_VARIANCE,
+        "timepoint_weighting": "uniform",
         "initial_relative_variance": INITIAL_VARIANCE,
         "constant_control": "training-HDX-fitted scalar absolute D retaining candidate R",
         "fold_scheme": args.fold_scheme,

@@ -576,7 +576,10 @@ def _published_cluster_comparisons(
         return pd.DataFrame(columns=columns)
     mclust = validation_dir / "mclust"
     if not mclust.is_dir():
-        raise FileNotFoundError(f"published mclust directory not found: {mclust}")
+        # The local spectra bundle may intentionally contain only pep1.*.txt.
+        # Cluster comparisons are supplementary; envelope scoring below needs
+        # only those five raw spectra.
+        return pd.DataFrame(columns=columns)
     rows = []
     for model_path in sorted(mclust.glob("*.mod")):
         models = pd.read_csv(model_path, sep=r"\s+", index_col=0)

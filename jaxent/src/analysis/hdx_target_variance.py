@@ -52,6 +52,7 @@ class TargetVarianceFit:
     """Result of one no-reweighting target-variance fit."""
 
     estimator: str
+    timepoint_weighting: str
     geometry_name: str
     regularization: float
     variances: np.ndarray
@@ -336,6 +337,49 @@ def predict_fixed_mean_uptake(
     )
 
 
+def fisher_timepoint_weights(mean_rates: np.ndarray, timepoints: np.ndarray) -> np.ndarray:
+    """Return blind Fisher-information weights for uptake timepoints.
+
+    The profile is the residue-summed squared sensitivity to log rate,
+    ``(k̄ t exp(-k̄ t))²``, normalized to sum to the number of timepoints.
+    """
+
+    means = np.asarray(mean_rates, dtype=float)
+    times = np.asarray(timepoints, dtype=float)
+    if means.ndim != 1 or times.ndim != 1 or means.size == 0 or times.size == 0:
+        raise ValueError("mean_rates and timepoints must be non-empty one-dimensional arrays")
+    if not np.isfinite(means).all() or np.any(means <= 0):
+        raise ValueError("mean_rates must be finite and positive")
+    if not np.isfinite(times).all() or np.any(times < 0):
+        raise ValueError("timepoints must be finite and non-negative")
+    sensitivity = means[:, None] * times[None, :] * np.exp(-means[:, None] * times[None, :])
+    information = np.sum(np.square(sensitivity), axis=0)
+    total = float(np.sum(information))
+    if not np.isfinite(total) or total <= 0:
+        raise ValueError("timepoints have zero Fisher information for the supplied mean_rates")
+    return information * (times.size / total)
+
+
+def _resolve_timepoint_weights(
+    mean_rates: np.ndarray,
+    timepoints: np.ndarray,
+    timepoint_weighting: str,
+    timepoint_weights: np.ndarray | None,
+) -> tuple[np.ndarray, str]:
+    if timepoint_weights is not None:
+        weights = np.asarray(timepoint_weights, dtype=float)
+        if weights.shape != np.asarray(timepoints).shape or not np.isfinite(weights).all():
+            raise ValueError("timepoint_weights must be finite and timepoint-aligned")
+        if np.any(weights < 0) or not float(np.sum(weights)) > 0:
+            raise ValueError("timepoint_weights must be non-negative with positive sum")
+        return weights * (weights.size / np.sum(weights)), "explicit"
+    if timepoint_weighting == "uniform":
+        return np.ones(np.asarray(timepoints).size, dtype=float), "uniform"
+    if timepoint_weighting == "fisher":
+        return fisher_timepoint_weights(mean_rates, timepoints), "fisher"
+    raise ValueError("timepoint_weighting must be 'uniform' or 'fisher'")
+
+
 def _validate_fit_inputs(
     observed_uptake: np.ndarray,
     mean_rates: np.ndarray,
@@ -399,6 +443,8 @@ def fit_curve_moment_variance(
     observation_mask: np.ndarray | None = None,
     initial_variance: float | np.ndarray = 0.1,
     maxiter: int = 1000,
+    timepoint_weighting: str = "uniform",
+    timepoint_weights: np.ndarray | None = None,
 ) -> TargetVarianceFit:
     """Fit positive rate variances with the Gamma two-moment uptake model."""
 
@@ -413,12 +459,21 @@ def fit_curve_moment_variance(
     mapping_j = jnp.asarray(peptide_map)
     geometry_j = jnp.asarray(geometry)
     mask_j = jnp.asarray(mask)
+    weights, weighting_name = _resolve_timepoint_weights(
+        means, times, timepoint_weighting, timepoint_weights
+    )
+    weights_j = jnp.asarray(weights)
 
     def components(parameters: jax.Array) -> tuple[jax.Array, jax.Array]:
         variances = jnp.square(means_j) * jnp.exp(parameters)
         residue = _gamma_two_moment_uptake_jax(means_j, variances, times_j)
         predicted = mapping_j @ residue.T
-        data = jnp.mean(jnp.square((predicted - observed_j)[mask_j]))
+        if weighting_name == "uniform":
+            data = jnp.mean(jnp.square((predicted - observed_j)[mask_j]))
+        else:
+            squared = jnp.square(predicted - observed_j)
+            weighted_mask = weights_j[None, :] * mask_j
+            data = jnp.sum(squared * weighted_mask) / jnp.sum(weighted_mask)
         penalty = _regularization_penalty(parameters, geometry_j)
         return data, penalty
 
@@ -446,6 +501,7 @@ def fit_curve_moment_variance(
     data_value, penalty_value = components(jnp.asarray(result.x))
     return TargetVarianceFit(
         estimator="curve_moment",
+        timepoint_weighting=weighting_name,
         geometry_name=geometry_name,
         regularization=float(regularization),
         variances=variances,
@@ -490,6 +546,8 @@ def structured_residual_nll(
     noise_variance: float = 1e-4,
     observation_mask: np.ndarray | None = None,
     predicted_uptake: np.ndarray | None = None,
+    timepoint_weighting: str = "uniform",
+    timepoint_weights: np.ndarray | None = None,
 ) -> float:
     """Evaluate a normalized propagated-covariance Gaussian predictive score.
 
@@ -513,6 +571,9 @@ def structured_residual_nll(
     )
     if mask.shape != observed.shape or not mask.any():
         raise ValueError("observation_mask must select at least one observation")
+    weights, weighting_name = _resolve_timepoint_weights(
+        means, times, timepoint_weighting, timepoint_weights
+    )
     total = 0.0
     count = 0
     for time_index, timepoint in enumerate(times):
@@ -527,12 +588,13 @@ def structured_residual_nll(
         sign, logdet = np.linalg.slogdet(sigma)
         if sign <= 0:
             return float("inf")
-        total += 0.5 * (
+        contribution = 0.5 * (
             float(residual @ np.linalg.solve(sigma, residual))
             + float(logdet)
             + indices.size * np.log(2.0 * np.pi)
         )
-        count += indices.size
+        total += contribution if weighting_name == "uniform" else weights[time_index] * contribution
+        count += indices.size if weighting_name == "uniform" else weights[time_index] * indices.size
     return float(total / count)
 
 
@@ -549,6 +611,8 @@ def fit_structured_residual_variance(
     observation_mask: np.ndarray | None = None,
     initial_variance: float | np.ndarray = 0.1,
     maxiter: int = 1000,
+    timepoint_weighting: str = "uniform",
+    timepoint_weights: np.ndarray | None = None,
 ) -> TargetVarianceFit:
     """Fit structured-residual amplitudes with quadratic and log-det terms.
 
@@ -568,6 +632,10 @@ def fit_structured_residual_variance(
     geometry_j = jnp.asarray(geometry)
     residual_j = jnp.asarray(residual)
     selections = tuple(np.flatnonzero(mask[:, index]) for index in range(times.size))
+    weights, weighting_name = _resolve_timepoint_weights(
+        means, times, timepoint_weighting, timepoint_weights
+    )
+    weights_j = jnp.asarray(weights)
 
     def components(parameters: jax.Array) -> tuple[jax.Array, jax.Array]:
         variances = jnp.square(means_j) * jnp.exp(parameters)
@@ -588,12 +656,13 @@ def fit_structured_residual_variance(
             factor = jnp.linalg.cholesky(sigma)
             selected_residual = residual_j[indices, time_index]
             solved = jax.scipy.linalg.cho_solve((factor, True), selected_residual)
-            nll = nll + 0.5 * (
+            contribution = 0.5 * (
                 selected_residual @ solved
                 + 2.0 * jnp.sum(jnp.log(jnp.diag(factor)))
                 + indices.size * jnp.log(2.0 * jnp.pi)
             )
-            observations += indices.size
+            nll = nll + (contribution if weighting_name == "uniform" else weights_j[time_index] * contribution)
+            observations += indices.size if weighting_name == "uniform" else weights[time_index] * indices.size
         nll = nll / max(observations, 1)
         penalty = _regularization_penalty(parameters, geometry_j)
         return nll, penalty
@@ -622,6 +691,7 @@ def fit_structured_residual_variance(
     data_value, penalty_value = components(jnp.asarray(result.x))
     return TargetVarianceFit(
         estimator="structured_residual_model_discrepancy",
+        timepoint_weighting=weighting_name,
         geometry_name=geometry_name,
         regularization=float(regularization),
         variances=variances,
