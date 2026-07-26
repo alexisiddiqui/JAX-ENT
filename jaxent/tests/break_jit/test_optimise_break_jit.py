@@ -15,7 +15,6 @@ jax.config.update("jax_platform_name", "cpu")
 os.environ["JAX_PLATFORM_NAME"] = "cpu"
 
 import jax.numpy as jnp
-from jax.experimental import sparse
 from MDAnalysis import Universe
 
 import jaxent.src.interfaces.topology as pt
@@ -79,152 +78,124 @@ class OptimizationTestEnvironment:
 
     def setup_environment(self):
         """Set up the complete environment for testing."""
-        try:
-            # Load MD data
-            test_universe = Universe(str(self.topology_path), str(self.trajectory_path))
-            self.universes = [test_universe]
+        # Load MD data
+        test_universe = Universe(str(self.topology_path), str(self.trajectory_path))
+        self.universes = [test_universe]
 
-            # Set up models
-            bv_config = BV_model_Config()
-            self.models = [BV_model(bv_config)]
+        # Set up models
+        bv_config = BV_model_Config()
+        self.models = [BV_model(bv_config)]
 
-            # Featurize
-            featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-            ensemble = Experiment_Builder(self.universes, self.models)
-            self.features, self.feature_topology = run_featurise(ensemble, featuriser_settings)
+        # Featurize
+        featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
+        ensemble = Experiment_Builder(self.universes, self.models)
+        self.features, self.feature_topology = run_featurise(ensemble, featuriser_settings)
 
-            # Validate featurization results
-            if not self.features or not self.feature_topology:
-                raise ValueError("Featurization failed - empty features or topology")
+        # Validate featurization results
+        if not self.features or not self.feature_topology:
+            raise ValueError("Featurization failed - empty features or topology")
 
-            if not self.feature_topology[0]:
-                raise ValueError("Feature topology is empty")
+        if not self.feature_topology[0]:
+            raise ValueError("Feature topology is empty")
 
-            # Create base parameters
-            BV_features = self.features[0]
-            trajectory_length = BV_features.features_shape[1]
+        # The BV fixture is expected to expose one feature row for each of its
+        # 53 non-PRO residues (the terminal policy retains the C-terminus).
+        bv_features = self.features[0]
+        if bv_features.features_shape[0] != 53:
+            raise ValueError(
+                f"Unexpected BV feature dimension: {bv_features.features_shape}; expected 53 residues"
+            )
+        if len(self.feature_topology[0]) != 53:
+            raise ValueError(
+                f"Unexpected BV feature topology size: {len(self.feature_topology[0])}; expected 53"
+            )
+        trajectory_length = bv_features.features_shape[-1]
 
-            self.base_params = Simulation_Parameters(
-                frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-                frame_mask=jnp.ones(trajectory_length),
-                model_parameters=[bv_config.forward_parameters],
-                forward_model_weights=jnp.ones(1),
-                forward_model_scaling=jnp.ones(1),
-                normalise_loss_functions=jnp.ones(1),
+        self.base_params = Simulation_Parameters(
+            frame_weights=jnp.ones(trajectory_length) / trajectory_length,
+            frame_mask=jnp.ones(trajectory_length),
+            model_parameters=[bv_config.forward_parameters],
+            forward_model_weights=jnp.ones(1),
+            forward_model_scaling=jnp.ones(1),
+            normalise_loss_functions=jnp.ones(1),
+        )
+
+        # Use the same topology policy as BV featurisation when constructing
+        # experimental datapoints.  This keeps residue IDs comparable after
+        # the N-terminus is excluded and residues are renumbered.
+        top_segments, _ = pt.mda_TopologyAdapter.find_common_residues(
+            self.universes,
+            exclude_selection="resname PRO",
+            exclude_termini="n",
+            renumber_residues=True,
+        )
+        top_segments = sorted(top_segments, key=lambda x: x.residue_start)
+        feature_topologies = self.feature_topology[0]
+        experimental_membership = {
+            (top.chain, tuple(top.residues)) for top in top_segments
+        }
+        feature_membership = {
+            (top.chain, tuple(top.residues)) for top in feature_topologies
+        }
+        if experimental_membership != feature_membership:
+            raise ValueError("Experimental and featurised topology residue membership differs")
+        if len(top_segments) != len(feature_topologies):
+            raise ValueError(
+                f"Experimental topology size {len(top_segments)} does not match feature topology size "
+                f"{len(feature_topologies)}"
             )
 
-            # Create experimental data with validation
-            try:
-                top_segments = pt.mda_TopologyAdapter.find_common_residues(
-                    self.universes, ignore_mda_selection="(resname PRO or resid 1) "
-                )
+        self.exp_data = [
+            HDX_protection_factor(protection_factor=10.0 + i * 0.5, top=top)
+            for i, top in enumerate(top_segments, start=1)
+        ]
 
-                if not top_segments or not top_segments[0]:
-                    raise ValueError("No common residues found")
+        # Set up dataset
+        self.dataset = ExpD_Dataloader(data=self.exp_data)
+        self._setup_data_splits()
 
-                top_segments = top_segments[0]
-                top_segments = sorted(top_segments, key=lambda x: x.residue_start)
-
-                # Ensure we have matching topology segments
-                if len(self.feature_topology[0]) != len(top_segments):
-                    # Use the minimum length to avoid index errors
-                    min_length = min(len(self.feature_topology[0]), len(top_segments))
-                    self.feature_topology[0] = self.feature_topology[0][:min_length]
-                    top_segments = top_segments[:min_length]
-
-                self.exp_data = [
-                    HDX_protection_factor(protection_factor=10.0 + i * 0.5, top=top)
-                    for i, top in enumerate(self.feature_topology[0], start=1)
-                ]
-
-            except Exception as e:
-                print(f"Error creating experimental data: {e}")
-                # Fallback: create minimal experimental data
-                if self.feature_topology[0]:
-                    self.exp_data = [
-                        HDX_protection_factor(
-                            protection_factor=10.0, top=self.feature_topology[0][0]
-                        )
-                    ]
-                else:
-                    raise ValueError("Cannot create experimental data - no valid topology")
-
-            # Set up dataset
-            self.dataset = ExpD_Dataloader(data=self.exp_data)
-            self._setup_data_splits()
-
-            return True
-
-        except Exception as e:
-            print(f"Environment setup failed: {e}")
-            import traceback
-
-            print(f"Traceback: {traceback.format_exc()}")
-            return False
+        return True
 
     def _setup_data_splits(self):
         """Set up train/val/test splits."""
-        try:
-            splitter = DataSplitter(
-                self.dataset,
-                random_seed=42,
-                ensemble=self.universes,
-                common_residues=set(self.feature_topology[0]),
-            )
-            train_data, val_data = splitter.random_split()
+        splitter = DataSplitter(
+            self.dataset,
+            random_seed=42,
+            ensemble=self.universes,
+            common_residues=set(self.feature_topology[0]),
+        )
+        train_data, val_data = splitter.random_split()
+        if not train_data or not val_data:
+            raise ValueError("DataSplitter returned an empty train or validation split")
 
-            # Validate split data
-            if not train_data:
-                train_data = self.exp_data[:1]  # Use first item as fallback
-            if not val_data:
-                val_data = self.exp_data[-1:]  # Use last item as fallback
-
-            # Create sparse maps with error handling
-            try:
-                train_sparse_map = create_sparse_map(
-                    self.features[0], self.feature_topology[0], train_data
+        train_sparse_map = create_sparse_map(self.features[0], self.feature_topology[0], train_data)
+        val_sparse_map = create_sparse_map(self.features[0], self.feature_topology[0], val_data)
+        test_sparse_map = create_sparse_map(self.features[0], self.feature_topology[0], self.exp_data)
+        for name, data, sparse_map in (
+            ("train", train_data, train_sparse_map),
+            ("val", val_data, val_sparse_map),
+            ("test", self.exp_data, test_sparse_map),
+        ):
+            if sparse_map.shape != (len(data), 53):
+                raise ValueError(
+                    f"{name} sparse map has shape {sparse_map.shape}; expected ({len(data)}, 53)"
                 )
-                val_sparse_map = create_sparse_map(
-                    self.features[0], self.feature_topology[0], val_data
-                )
-                test_sparse_map = create_sparse_map(
-                    self.features[0], self.feature_topology[0], self.exp_data
-                )
-            except Exception as e:
-                print(f"Error creating sparse maps: {e}")
-                # Create minimal fallback maps
-                _fallback = sparse.bcoo_fromdense(jnp.zeros((1, 1), dtype=jnp.float32))
-                train_sparse_map = _fallback
-                val_sparse_map = _fallback
-                test_sparse_map = _fallback
 
-            # Set up dataset splits
-            self.dataset.train = Dataset(
-                data=train_data,
-                y_true=jnp.array([data.extract_features() for data in train_data]),
-                data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
-            )
-            self.dataset.val = Dataset(
-                data=val_data,
-                y_true=jnp.array([data.extract_features() for data in val_data]),
-                data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
-            )
-            self.dataset.test = Dataset(
-                data=self.exp_data,
-                y_true=jnp.array([data.extract_features() for data in self.exp_data]),
-                data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
-            )
-
-        except Exception as e:
-            print(f"Error setting up data splits: {e}")
-            # Create minimal fallback datasets
-            self.dataset.train = Dataset(
-                data=self.exp_data[:1],
-                y_true=jnp.array([10.0]),
-                data_mapping=SparseFragmentMapping(sparse_map=sparse.bcoo_fromdense(jnp.zeros((1, 1), dtype=jnp.float32))),
-            )
-            self.dataset.val = self.dataset.train
-            self.dataset.test = self.dataset.train
+        self.dataset.train = Dataset(
+            data=train_data,
+            y_true=jnp.array([data.extract_features() for data in train_data]),
+            data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
+        )
+        self.dataset.val = Dataset(
+            data=val_data,
+            y_true=jnp.array([data.extract_features() for data in val_data]),
+            data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
+        )
+        self.dataset.test = Dataset(
+            data=self.exp_data,
+            y_true=jnp.array([data.extract_features() for data in self.exp_data]),
+            data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
+        )
 
     def create_simulation(self, params: Optional[Simulation_Parameters] = None) -> Simulation:
         """Create a new simulation instance."""
@@ -358,11 +329,7 @@ def test_jit_optimization_stress_comprehensive():
 
     try:
         with timeout_context(180):  # 3 minute timeout for setup
-            setup_success = test_env.setup_environment()
-
-        if not setup_success:
-            pytest.fail("Failed to set up test environment - skipping stress test")
-            return
+            test_env.setup_environment()
 
         # Create parameter variants
         param_variants = test_env.create_parameter_variants(4)
@@ -415,8 +382,21 @@ def test_jit_optimization_stress_comprehensive():
 
         # Analyze and display results
         _analyze_optimization_stress_results(results)
+        failures = [
+            (scenario, result)
+            for scenario, scenario_results in results.items()
+            for result in scenario_results
+            if not result.get("success", False)
+        ]
+        if failures:
+            summary = "; ".join(
+                f"{scenario}/{result.get('operation', result.get('scenario', '<unknown>'))}: "
+                f"{result.get('error', 'operation reported failure')}"
+                for scenario, result in failures
+            )
+            pytest.fail(f"JIT/optimization stress test failures ({len(failures)}): {summary}")
 
-        return results
+        return None
 
     finally:
         test_env.cleanup()
@@ -452,7 +432,7 @@ def _test_optimize_before_jit_stress(
         for i, params in enumerate(param_variants):
             try:
                 with timeout_context(30):
-                    simulation.forward(params)
+                    Simulation.forward(simulation, params)
                 results.append(
                     {"operation": f"post_opt_forward_{i}", "success": True, "param_variant": i}
                 )
@@ -488,7 +468,7 @@ def _test_jit_stress_then_optimize(
         for i, params in enumerate(param_variants[:3]):
             try:
                 with timeout_context(20):
-                    simulation.forward(params)
+                    Simulation.forward(simulation, params)
                 results.append(
                     {"operation": f"pre_opt_forward_{i}", "success": True, "param_variant": i}
                 )
@@ -530,7 +510,7 @@ def _test_interleaved_jit_optimization(
             # Forward pass
             try:
                 with timeout_context(20):
-                    simulation.forward(param_variants[i])
+                    Simulation.forward(simulation, param_variants[i])
                 results.append(
                     {"operation": f"interleaved_forward_{i}", "success": True, "param_variant": i}
                 )
@@ -587,7 +567,7 @@ def _test_rapid_param_switching_with_opt(
                 params = param_variants[int(idx)]
 
                 with timeout_context(10):
-                    simulation.forward(params)
+                    Simulation.forward(simulation, params)
 
                 # Occasional optimization
                 if iteration % 3 == 0:
@@ -660,8 +640,13 @@ def _test_optimization_state_persistence(
                         opt_state=opt_state,
                         optimizer=optimizer,
                     )
-                    # Update state for next iteration
-                    opt_state = result_optimizer
+                    # _optimise returns the optimizer rather than its internal
+                    # state; the last recorded state is the continuation point
+                    # for the next optimization segment.
+                    if not result_optimizer.history.states:
+                        raise RuntimeError("Optimization produced no persisted state")
+                    simulation = result_simulation
+                    opt_state = result_optimizer.history.states[-1]
 
                 results.append(
                     {"operation": f"persistent_opt_{i}", "success": True, "param_variant": i}
@@ -712,7 +697,9 @@ def _test_multi_simulation_optimization(
                 # Test cross-parameter application
                 if i > 0:
                     with timeout_context(15):
-                        simulation.forward(param_variants[(i - 1) % len(param_variants)])
+                        Simulation.forward(
+                            simulation, param_variants[(i - 1) % len(param_variants)]
+                        )
                     results.append({"operation": f"multi_sim_cross_forward_{i}", "success": True})
 
             except Exception as e:
