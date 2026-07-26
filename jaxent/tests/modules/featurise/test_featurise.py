@@ -322,27 +322,10 @@ class TestRunFeaturise:
         assert len(features) == 1
         assert len(feat_top) == 1
 
-        # Proline residues should be excluded from topology
+        # Proline residues and only the protein N-terminus should be excluded.
         topology = feat_top[0]
-        # Check the fragment_sequence instead of resname
-        topology_sequences = [topo.fragment_sequence for topo in topology]
-
-        # Should not contain PRO residues - check if any sequence contains 'P' (proline single letter code)
-        # Convert 3-letter codes to single letter for comparison
-        single_letter_sequences = []
-        for seq in topology_sequences:
-            if isinstance(seq, str) and len(seq) == 1:
-                single_letter_sequences.append(seq)
-            elif isinstance(seq, list) and len(seq) == 1:
-                # Convert common 3-letter to 1-letter codes
-                aa_map = {"PRO": "P", "GLY": "G", "ALA": "A", "SER": "S"}
-                single_letter_sequences.append(aa_map.get(seq[0], seq[0]))
-
-        # Should not contain PRO residues
-        assert "P" not in single_letter_sequences
-
-        # Should contain non-PRO, non-terminal residues
-        assert "G" in single_letter_sequences
+        assert len(topology) == 2
+        assert {residue for topo in topology for residue in topo.residues} == {3, 5}
 
     def test_run_featurise_large_protein(self):
         """Test run_featurise with a larger protein sequence."""
@@ -497,19 +480,10 @@ class TestRunFeaturise:
         assert len(features) == 1
         assert len(feat_top) == 1
 
-        # Should have only the middle residue after terminal exclusion
+        # The N-terminal residue is excluded, while the C-terminal residue is retained.
         topology = feat_top[0]
-        assert len(topology) == 1
-
-        # Check fragment_sequence instead of resname
-        sequence = topology[0].fragment_sequence
-        if isinstance(sequence, str) and len(sequence) == 1:
-            assert sequence == "G"  # Single letter code for GLY
-        elif isinstance(sequence, list) and len(sequence) == 1:
-            assert sequence[0] == "GLY"
-        else:
-            # Fallback check - just ensure we have one residue
-            assert len(topology) == 1
+        assert len(topology) == 2
+        assert {residue for topo in topology for residue in topo.residues} == {2, 3}
 
     def test_run_featurise_feature_validation(self):
         """Test that returned features have valid properties."""

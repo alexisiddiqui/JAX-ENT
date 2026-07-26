@@ -164,7 +164,10 @@ def test_compare_splitting_approaches():
 
     # Method 2: Universe approach (original)
     common_residues_universe = pt.mda_TopologyAdapter.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
+        universes,
+        exclude_selection="resname PRO",
+        exclude_termini="n",
+        renumber_residues=True,
     )[0]
 
     print(f"Feature topology common residues: {len(common_residues_features)}")

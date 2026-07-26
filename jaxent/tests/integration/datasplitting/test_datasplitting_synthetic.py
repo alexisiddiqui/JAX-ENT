@@ -59,7 +59,10 @@ def test_create_sparse_map():
 
     # create top segments from universe
     top_segments = pt.mda_TopologyAdapter.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
+        universes,
+        exclude_selection="resname PRO",
+        exclude_termini="n",
+        renumber_residues=True,
     )[0]
     print(len(top_segments))
     top_segments = list(top_segments)
@@ -138,7 +141,10 @@ def test_create_sparse_map_ensemble():
 
     # create top segments from universe
     top_segments = pt.mda_TopologyAdapter.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
+        universes,
+        exclude_selection="resname PRO",
+        exclude_termini="n",
+        renumber_residues=True,
     )[0]
     print(len(top_segments))
     top_segments = list(top_segments)
@@ -208,7 +214,10 @@ def test_random_split():
 
     # Get common residues
     top_segments = pt.mda_TopologyAdapter.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
+        universes,
+        exclude_selection="resname PRO",
+        exclude_termini="n",
+        renumber_residues=True,
     )[0]
     print("top_segments", len(top_segments))
 
