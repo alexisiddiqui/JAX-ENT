@@ -20,6 +20,24 @@ class BV_Model_Parameters(Model_Parameters):
     timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
 
+    def __post_init__(self):
+        if self.timepoints is not None and not isinstance(self.timepoints, tuple):
+            object.__setattr__(self, "timepoints", tuple(float(value) for value in self.timepoints))
+
+    def tree_flatten(self):
+        arrays, static_data = Model_Parameters.tree_flatten(self)
+        static_slots = self._get_grouped_slots()[1]
+        static_data = tuple(
+            tuple(value) if slot == "timepoints" and value is not None else value
+            for slot, value in zip(static_slots, static_data)
+        )
+        return arrays, static_data
+
+    @classmethod
+    def tree_unflatten(cls, static_data, arrays):
+        instance = Model_Parameters.tree_unflatten.__func__(cls, static_data, arrays)
+        return instance
+
     def __mul__(self, scalar: float | Array) -> "BV_Model_Parameters":
         scalar = jnp.asarray(scalar)
 
@@ -72,6 +90,24 @@ class linear_BV_Model_Parameters(Model_Parameters):
     temperature: float = 300.0
     timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "timepoints", "key"}
+
+    def __post_init__(self):
+        if self.timepoints is not None and not isinstance(self.timepoints, tuple):
+            object.__setattr__(self, "timepoints", tuple(float(value) for value in self.timepoints))
+
+    def tree_flatten(self):
+        arrays, static_data = Model_Parameters.tree_flatten(self)
+        static_slots = self._get_grouped_slots()[1]
+        static_data = tuple(
+            tuple(value) if slot == "timepoints" and value is not None else value
+            for slot, value in zip(static_slots, static_data)
+        )
+        return arrays, static_data
+
+    @classmethod
+    def tree_unflatten(cls, static_data, arrays):
+        instance = Model_Parameters.tree_unflatten.__func__(cls, static_data, arrays)
+        return instance
 
     def __mul__(self, scalar: float | Array) -> "linear_BV_Model_Parameters":
         return linear_BV_Model_Parameters(

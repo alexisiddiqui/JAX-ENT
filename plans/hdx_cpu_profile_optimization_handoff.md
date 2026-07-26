@@ -83,47 +83,31 @@ uv run python profiling/run_hdx_cpu_scaling.py \
 Run the full suite again after the final stage by replacing `--suite stage` with
 `--suite full`.
 
-## Status
+## Clean Single-Configuration Baseline (2026-07-26)
 
-The corrected fixed-step profiling run completed all 1,000 requested optimisation
-steps. The earlier run was invalid because the harness could stop early; that issue
-was fixed before collecting these artifacts.
+The Stage 0 baseline was measured on the current tree with the timing harness,
+using the anchor fixture `(144 residues, 500 frames, 5 timepoints)`, 1,000 fixed
+steps, one cold sample, and three warm samples. Each path was run in a separate
+process with no profiler or trace enabled.
 
-Profile artifacts:
+Commands:
 
-- Report: `/tmp/jaxent-hdx-cpu-profile-1000/profile_report.json`
-- cProfile data: `/tmp/jaxent-hdx-cpu-profile-1000/{eager,jit,pure}.prof`
-- JAX traces: `/tmp/jaxent-hdx-cpu-profile-1000/trace_{eager,jit,pure}/`
+```text
+uv run python profiling/profile_hdx_cpu.py --mode timing --path pure --steps 1000
+uv run python profiling/profile_hdx_cpu.py --mode timing --path jit --steps 1000
+uv run python profiling/profile_hdx_cpu.py --mode timing --path eager --steps 1000
+```
 
-Reported profiling wall times:
+Warm median results:
 
 | Path | Wall time | Compiles | Host materialisations |
 |---|---:|---:|---:|
-| Eager | 133.7 s | 123 | 7,001 |
-| JIT step | 9.21 s | 9 | 4,004 |
-| Pure compiled loop | 2.95 s | 9 | 0 |
+| Eager | 11.374 s | 0 | 7,001 |
+| JIT step | 0.706 s | 0 | 4,001 |
+| Pure compiled loop | 0.418 s | 0 | 0 |
 
-The pure path is the correct architectural direction. It eliminates Python-loop
-overhead and per-step device-to-host synchronization.
-
-## Important Measurement Caveat
-
-The reported wall times are profiling workloads, not clean production benchmarks:
-
-- Wall timing includes JAX trace finalization and export.
-- Eager produced a 1.1 GB XPlane trace; JIT produced 81 MB and pure produced
-  16 MB.
-- cProfile was active during execution.
-- Eager recorded 71.7 million profiled Python calls, JIT 4.88 million, and pure
-  0.57 million.
-- cProfile execution time was 40.4 seconds for eager, 3.05 seconds for JIT, and
-  1.06 seconds for pure.
-- The eager and JIT JSON event streams reached approximately one million events
-  and are truncated.
-
-The qualitative conclusion that pure is substantially faster is sound. The exact
-45x eager/pure and 3.1x JIT/pure ratios must be confirmed with an unprofiled
-benchmark that has tracing disabled.
+The clean pure path is 1.69x faster than the JIT-step path and has zero host
+materialisations; eager has 7.001 host materialisations per step and JIT has 4.001.
 
 ## Main Conclusion
 

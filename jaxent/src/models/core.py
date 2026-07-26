@@ -31,7 +31,7 @@ class Simulation:
         input_features: Sequence[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
-        raise_jit_failure: bool = False,
+        raise_jit_failure: bool = True,
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
         self.input_features: Sequence[Input_Features[Any]] = input_features

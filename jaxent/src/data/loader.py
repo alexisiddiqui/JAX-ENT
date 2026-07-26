@@ -269,10 +269,16 @@ class ExpD_Dataloader(Generic[T_ExpD]):
                 - auxiliary_data: Metadata that JAX won't transform
         """
         # Only Dataset objects are JAX-traceable and need to be transformed
-        leaves = (self.train, self.val, self.test)
+        leaves = (
+            self.train,
+            self.val,
+            self.test,
+            jnp.asarray(self.y_true),
+            None if self.covariance_matrix is None else jnp.asarray(self.covariance_matrix),
+        )
 
         # Everything else is metadata that doesn't need transformation
-        aux_data = (self.data, self.y_true, self.top, self.key, self.id, self.covariance_matrix)
+        aux_data = (self.data, self.top, self.key, self.id)
 
         return leaves, aux_data
 
@@ -292,10 +298,16 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         instance = object.__new__(cls)
 
         # Set attributes from transformed leaves
-        instance.train, instance.val, instance.test = leaves
+        (
+            instance.train,
+            instance.val,
+            instance.test,
+            instance.y_true,
+            instance.covariance_matrix,
+        ) = leaves
 
         # Set attributes from auxiliary data
-        instance.data, instance.y_true, instance.top, instance.key, instance.id, instance.covariance_matrix = aux_data
+        instance.data, instance.top, instance.key, instance.id = aux_data
 
         return instance
 
