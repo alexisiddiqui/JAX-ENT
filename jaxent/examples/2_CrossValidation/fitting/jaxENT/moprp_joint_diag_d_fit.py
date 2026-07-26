@@ -28,6 +28,7 @@ import pandas as pd
 import _moprp_recovery_common as common
 import moprp_covariance_recovery as R
 from joint_diag_d_diagnostics import (
+    fixed_ess_weights,
     load_frame_cluster_labels,
     per_state_weight_diagnostics,
     plot_joint_diag_d_fit,
@@ -52,6 +53,8 @@ STAGE5_RAW = HERE / "_moprp_diag_d_reweighting" / "diag_d_reweighting_raw.csv"
 REF_BC, REF_BH = 0.35, 2.0
 GAMMAS = (0.0, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0)
 ETAS = (0.0, 0.01, 0.022, 0.046, 0.1)
+ESS_TARGETS = (1.0, 5.0, 15.0, 30.0, 60.0)
+FIXED_ESS_GAMMAS = GAMMAS
 MEAN_GATE_FACTOR = 1.05
 STEPS, LR, N_START = 2000, 0.03, 5
 TARGET_STATES = ("Folded", "PUF1", "PUF2")
@@ -207,11 +210,34 @@ def _diag_d(cell: dict, log_pf, weights):
     return jnp.diag(weighted_population_covariance(rates, weights))
 
 
-def _loss_fn(cells: dict[str, dict], gamma: float, eta: float, arm: str):
+def _diag_d_loss(predicted_d, target, arm: str, *, finite_floor: bool = False):
+    """Evaluate the selected profile loss, optionally flooring zero variances."""
+
+    if finite_floor:
+        # At the nominal E=1 open boundary, finite-precision softmax may retain
+        # only two frames. Contact-identical residues can then have exact zero
+        # variance even though total ESS is 1+δ. The log-profile objective is
+        # undefined at zero, so use the same absolute scale as the covariance
+        # utilities' numerical ridge.
+        predicted_d = jnp.maximum(predicted_d, 1e-12)
+    if arm == "diag_d_absolute":
+        return log_ratio_profile_loss(predicted_d, target)
+    return scale_free_log_ratio_profile_loss(predicted_d, target)
+
+
+def _loss_fn(
+    cells: dict[str, dict],
+    gamma: float,
+    eta: float,
+    arm: str,
+    diversity_control: str = "kl",
+):
     """Build the differentiable joint objective used by both arms."""
 
     if arm not in ARMS:
         raise ValueError(f"unknown arm {arm!r}")
+    if diversity_control not in {"kl", "fixed_ess"}:
+        raise ValueError(f"unknown diversity control {diversity_control!r}")
     if gamma < 0.0 or eta < 0.0:
         raise ValueError("gamma and eta must be non-negative")
     names = tuple(cells)
@@ -221,18 +247,26 @@ def _loss_fn(cells: dict[str, dict], gamma: float, eta: float, arm: str):
         total = jnp.asarray(0.0)
         for name in names:
             cell = cells[name]
-            weights = jax.nn.softmax(params["logits"][name])
+            weights = (
+                fixed_ess_weights(params["logits"][name], eta)
+                if diversity_control == "fixed_ess"
+                else jax.nn.softmax(params["logits"][name])
+            )
             log_pf = bc * cell["heavy"] + bh * cell["acceptor"]
             mean = R._mean_mse(
                 _predict_mean(cell, log_pf, weights), cell.get("train_observed", cell["observed"])
             )
             mean = mean / cell["mean_ref"]
             predicted_d = _diag_d(cell, log_pf, weights)
-            if arm == "diag_d_absolute":
-                d_loss = log_ratio_profile_loss(predicted_d, cell["target"])
-            else:
-                d_loss = scale_free_log_ratio_profile_loss(predicted_d, cell["target"])
-            total = total + mean + gamma * d_loss + eta * kl_to_uniform(weights)
+            d_loss = _diag_d_loss(
+                predicted_d,
+                cell["target"],
+                arm,
+                finite_floor=diversity_control == "fixed_ess",
+            )
+            total = total + mean + gamma * d_loss
+            if diversity_control == "kl":
+                total = total + eta * kl_to_uniform(weights)
         return total
 
     return loss
@@ -262,10 +296,11 @@ def _run_with_diagnostics(
     steps: int = STEPS,
     lr: float = LR,
     n_start: int = N_START,
+    diversity_control: str = "kl",
 ):
     """Fit one arm/grid cell and retain the five-start ESS diagnostic."""
 
-    loss = _loss_fn(cells, gamma, eta, arm)
+    loss = _loss_fn(cells, gamma, eta, arm, diversity_control)
     grad_fn = jax.vmap(jax.grad(loss))
     objective_fn = jax.vmap(loss)
     optimizer = optax.adam(lr)
@@ -298,7 +333,11 @@ def _run_with_diagnostics(
     for seed in range(n_start):
         objective = float(objectives[seed])
         for name in cells:
-            weights = np.asarray(jax.nn.softmax(params["logits"][name][seed]))
+            weights = np.asarray(
+                fixed_ess_weights(params["logits"][name][seed], eta)
+                if diversity_control == "fixed_ess"
+                else jax.nn.softmax(params["logits"][name][seed])
+            )
             restart_rows.append(
                 {
                     "restart": seed,
@@ -341,8 +380,29 @@ def _run(
     return _run_with_diagnostics(cells, gamma, eta, arm, steps, lr, n_start)["params"]
 
 
+def _payload_id(
+    split: int,
+    arm: str,
+    gamma: float,
+    control: float,
+    ensemble: str,
+) -> str:
+    """Return the stable row key used by first-party fitted-array artifacts."""
+
+    return (
+        f"split_{int(split)}__{arm}__gamma_{float(gamma):.17g}"
+        f"__control_{float(control):.17g}__{ensemble}"
+    )
+
+
 def _report(
-    cells: dict[str, dict], fit: dict, gamma: float, eta: float, arm: str
+    cells: dict[str, dict],
+    fit: dict,
+    gamma: float,
+    eta: float,
+    arm: str,
+    diversity_control: str = "kl",
+    payload: dict[str, np.ndarray] | None = None,
 ) -> list[dict]:
     """Report blind fit metrics; recovery fields are filled after NMR reveal."""
 
@@ -350,26 +410,41 @@ def _report(
     bc, bh = (float(value) for value in _coeffs_from_theta(params["theta"]))
     rows = []
     for name, cell in cells.items():
-        weights = np.asarray(jax.nn.softmax(params["logits"][name]))
+        weights = np.asarray(
+            fixed_ess_weights(params["logits"][name], eta)
+            if diversity_control == "fixed_ess"
+            else jax.nn.softmax(params["logits"][name])
+        )
         log_pf = bc * cell["heavy"] + bh * cell["acceptor"]
+        val_prediction = _predict_mean(
+            cell, log_pf, jnp.asarray(weights), partition="val"
+        )
         val_mse = float(
             R._mean_mse(
-                _predict_mean(cell, log_pf, jnp.asarray(weights), partition="val"),
-                cell.get("val_observed", cell["observed"]),
+                val_prediction, cell.get("val_observed", cell["observed"])
             )
         )
         predicted_d = _diag_d(cell, log_pf, jnp.asarray(weights))
-        d_loss = (
-            log_ratio_profile_loss(predicted_d, cell["target"])
-            if arm == "diag_d_absolute"
-            else scale_free_log_ratio_profile_loss(predicted_d, cell["target"])
+        d_loss = _diag_d_loss(
+            predicted_d,
+            cell["target"],
+            arm,
+            finite_floor=diversity_control == "fixed_ess",
         )
+        payload_id = _payload_id(
+            cell.get("split", 0), arm, gamma, eta, name
+        )
+        if payload is not None:
+            payload[f"{payload_id}__weights"] = weights
+            payload[f"{payload_id}__val_prediction"] = np.asarray(val_prediction)
         rows.append(
             {
                 "arm": arm,
                 "gamma": gamma,
                 "eta": eta,
+                "diversity_axis": eta,
                 "ensemble": name,
+                "payload_id": payload_id,
                 "split": cell.get("split", 0),
                 "peptide_fold": cell.get("peptide_fold", 0),
                 "time_fold": cell.get("time_fold", 0),
@@ -381,6 +456,8 @@ def _report(
                 **fit["diagnostics"][name],
             }
         )
+        if diversity_control == "fixed_ess":
+            rows[-1]["ess_target"] = eta
     return rows
 
 
@@ -388,6 +465,7 @@ def _add_recovery_metrics(
     rows: list[dict],
     base_cells: dict[str, dict],
     fits_by_cell: dict[tuple, dict],
+    diversity_control: str = "kl",
 ) -> None:
     """Add NMR-derived diagnostics only after blind rows and gates exist."""
 
@@ -409,7 +487,11 @@ def _add_recovery_metrics(
         params = fit["params"]
         name = row["ensemble"]
         states, support, targets, _, cluster_labels = revealed[name]
-        weights = np.asarray(jax.nn.softmax(params["logits"][name]))
+        weights = np.asarray(
+            fixed_ess_weights(params["logits"][name], row["eta"])
+            if diversity_control == "fixed_ess"
+            else jax.nn.softmax(params["logits"][name])
+        )
         populations = np.asarray(state_populations(weights, states, support))
         row["recovery"] = float(strict_recovery_percent(weights, states, support, targets))
         row["decoy"] = float(
@@ -433,6 +515,10 @@ def _aggregate_replicates(frame: pd.DataFrame) -> pd.DataFrame:
     """Aggregate split rows while retaining pass fractions and finite error bars."""
 
     keys = ["arm", "gamma", "eta", "ensemble"]
+    if "ess_target" in frame.columns:
+        keys.insert(3, "ess_target")
+    if "diversity_axis" in frame.columns:
+        keys.insert(-1, "diversity_axis")
     metrics = [
         "bc",
         "bh",
@@ -526,9 +612,107 @@ def _stage5_cliff_comparison(rows: pd.DataFrame, stage5_raw: Path) -> pd.DataFra
     return pd.DataFrame(output)
 
 
+def _fixed_ess_frontier(frame: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Build the definitive Experiment-1a gate-ratio frontier and verdict."""
+
+    rows = frame.copy()
+    rows["gate_ratio"] = rows["val_mse"] / rows["mean_gate_reference_mse"]
+    frontier = (
+        rows.groupby(["arm", "gamma", "ess_target", "ensemble"], sort=True)["gate_ratio"]
+        .agg(["mean", lambda values: values.std(ddof=0)])
+        .reset_index()
+        .rename(columns={"mean": "gate_ratio", "<lambda_0>": "gate_ratio_std"})
+    )
+    groups = []
+    for key, group in frontier.groupby(["arm", "gamma", "ensemble"], sort=True):
+        ordered = group.sort_values("ess_target")
+        ratios = ordered["gate_ratio"].to_numpy()
+        controls = ordered["ess_target"].to_numpy()
+        monotone = bool(np.all(np.diff(ratios) >= -1e-10))
+        passing = ordered[ordered["gate_ratio"] <= MEAN_GATE_FACTOR]
+        max_passing = float(passing["ess_target"].max()) if not passing.empty else None
+        crossing = None
+        above = np.flatnonzero(ratios > MEAN_GATE_FACTOR)
+        if above.size:
+            right = int(above[0])
+            if right == 0:
+                crossing = float(controls[0])
+            else:
+                left = right - 1
+                fraction = (MEAN_GATE_FACTOR - ratios[left]) / (
+                    ratios[right] - ratios[left]
+                )
+                crossing = float(
+                    controls[left] + fraction * (controls[right] - controls[left])
+                )
+        groups.append(
+            {
+                "arm": key[0],
+                "gamma": float(key[1]),
+                "ensemble": key[2],
+                "monotone_non_decreasing": monotone,
+                "maximum_gate_valid_ess": max_passing,
+                "interpolated_1p05_crossing_ess": crossing,
+            }
+        )
+    healthy = frontier[
+        (frontier["ess_target"] >= 5.0)
+        & (frontier["gate_ratio"] <= MEAN_GATE_FACTOR)
+    ]
+    anchor = rows[(rows["ess_target"] == 1.0) & (rows["gamma"] == 0.0)]
+    anchor_all_folded = bool((anchor["dominant_cluster"] == 0).all())
+    anchor_all_gate_valid = bool(anchor["mean_gate_passed"].all())
+    anchor_maximum_decoy = float(anchor["decoy"].max())
+    all_monotone = bool(
+        all(group["monotone_non_decreasing"] for group in groups)
+    )
+    continuity_verified = bool(
+        anchor_all_gate_valid and anchor_all_folded and anchor_maximum_decoy <= 0.01
+    )
+    healthy_exists = bool(not healthy.empty)
+    definitive = bool(all_monotone and continuity_verified)
+    summary = {
+        "gate_threshold": MEAN_GATE_FACTOR,
+        "healthy_ess_definition": "ess_target >= 5",
+        "healthy_gate_valid_point_exists": healthy_exists,
+        "healthy_gate_valid_cells": healthy.to_dict(orient="records"),
+        "all_frontiers_monotone_non_decreasing": all_monotone,
+        "frontier_groups": groups,
+        "ess_1_anchor": {
+            "all_realized_ess_exact": bool(
+                np.all(np.abs(anchor["ess"] - 1.0) <= 1e-3)
+            ),
+            "gamma": 0.0,
+            "all_gate_valid": anchor_all_gate_valid,
+            "all_dominant_clusters_folded": anchor_all_folded,
+            "maximum_decoy_mass": anchor_maximum_decoy,
+            "minimum_folded_mass": (
+                float(anchor["mass_Folded"].min())
+                if "mass_Folded" in anchor.columns
+                else None
+            ),
+            "continuity_with_experiment_1_verified": continuity_verified,
+        },
+        "definitive_frontier_checks_passed": definitive,
+        "scientific_verdict": (
+            "A healthy gate-valid ESS>=5 point was observed."
+            if healthy_exists
+            else (
+                "No healthy gate-valid ESS>=5 aggregate point was observed, but the "
+                "hard Pareto wall is not established because the preregistered "
+                "monotonicity and/or E=1 continuity checks failed."
+                if not definitive
+                else "No healthy gate-valid ESS>=5 point exists on the validated frontier."
+            )
+        ),
+    }
+    return frontier, summary
+
+
 def _write_final_artifacts(
     frame: pd.DataFrame,
     restart_rows,
+    payload: dict[str, np.ndarray],
     base_cells: dict[str, dict],
     specs: tuple[dict[str, object], ...],
     args: argparse.Namespace,
@@ -542,14 +726,28 @@ def _write_final_artifacts(
     frame["mean_gate_passed"] = (
         frame["val_mse"] <= MEAN_GATE_FACTOR * frame["mean_gate_reference_mse"]
     )
-    frame = frame.sort_values(["split", "arm", "gamma", "eta", "ensemble"]).reset_index(drop=True)
+    axis_column = "ess_target" if "ess_target" in frame.columns else "eta"
+    frame = frame.sort_values(
+        ["split", "arm", "gamma", axis_column, "ensemble"]
+    ).reset_index(drop=True)
     frame.to_csv(args.output_dir / "joint_diag_d_fit_replicates.csv", index=False)
     aggregate = _aggregate_replicates(frame)
     aggregate.to_csv(args.output_dir / "joint_diag_d_fit.csv", index=False)
     pd.DataFrame(restart_rows).to_csv(args.output_dir / "restart_diagnostics.csv", index=False)
+    np.savez_compressed(
+        args.output_dir / "joint_diag_d_fit_payload.npz",
+        **payload,
+    )
 
     comparison = _stage5_cliff_comparison(aggregate, args.stage5_raw)
     comparison.to_csv(args.output_dir / "cliff_comparison.csv", index=False)
+    frontier_summary = None
+    if args.diversity_control == "fixed_ess":
+        frontier, frontier_summary = _fixed_ess_frontier(frame)
+        frontier.to_csv(args.output_dir / "fixed_ess_frontier.csv", index=False)
+        (args.output_dir / "fixed_ess_frontier_summary.json").write_text(
+            json.dumps(frontier_summary, indent=2) + "\n"
+        )
     first_cell = next(iter(base_cells.values()))
     manifest = {
         "artifact_type": "moprp_joint_bv_diag_d_fit_replicated",
@@ -569,9 +767,11 @@ def _write_final_artifacts(
         "target_manifest": [
             {"ensemble": name, **cell["target_info"]} for name, cell in base_cells.items()
         ],
-        "arms": list(ARMS),
-        "gammas": list(GAMMAS),
-        "etas": list(ETAS),
+        "arms": list(args.arms),
+        "gammas": list(args.gammas),
+        "diversity_control": args.diversity_control,
+        "diversity_axis_column": axis_column,
+        "diversity_axis_values": list(args.control_values),
         "mean_gate": (
             f"per split val_mse <= {MEAN_GATE_FACTOR} * minimum gamma=0 free-coefficient "
             "held-out val_mse per ensemble; aggregate mean_gate_passed is the 3-split pass fraction"
@@ -611,19 +811,39 @@ def _write_final_artifacts(
             "shared_coefficients": True,
             "per_ensemble_logits": True,
             "batched_restarts": True,
+            "fixed_ess_projection": (
+                "48-step log-temperature bisection with stop-gradient temperature; no KL term"
+                if args.diversity_control == "fixed_ess"
+                else None
+            ),
         },
         "stage5_raw_source": str(args.stage5_raw),
         "outputs": {
             "fit_rows": "joint_diag_d_fit.csv",
             "replicate_rows": "joint_diag_d_fit_replicates.csv",
             "restart_diagnostics": "restart_diagnostics.csv",
+            "fitted_arrays": (
+                "joint_diag_d_fit_payload.npz; weights and held-out predictions "
+                "keyed by each row's payload_id"
+            ),
             "cliff_comparison": "cliff_comparison.csv",
+            "fixed_ess_frontier": (
+                "fixed_ess_frontier.csv"
+                if args.diversity_control == "fixed_ess"
+                else None
+            ),
+            "fixed_ess_frontier_summary": (
+                "fixed_ess_frontier_summary.json"
+                if args.diversity_control == "fixed_ess"
+                else None
+            ),
             "figures": [
                 "{arm}_{metric}.png for each persisted arm and metric",
-                "{arm}_gate_ratio_vs_eta.png",
+                f"{{arm}}_gate_ratio_vs_{axis_column}.png",
                 "{arm}_per_cluster_ess.png",
             ],
         },
+        "fixed_ess_verdict": frontier_summary,
     }
     (args.output_dir / "joint_diag_d_fit_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n"
@@ -639,7 +859,7 @@ def _write_final_artifacts(
             )
         )
     print(f"wrote {args.output_dir / 'joint_diag_d_fit.csv'}")
-    plot_joint_diag_d_fit(args.output_dir)
+    plot_joint_diag_d_fit(args.output_dir, control_axis=axis_column)
 
 
 def merge_worker_outputs(worker_dirs: list[Path], args: argparse.Namespace) -> None:
@@ -652,7 +872,13 @@ def merge_worker_outputs(worker_dirs: list[Path], args: argparse.Namespace) -> N
         [pd.read_csv(directory / "joint_diag_d_fit_replicates.csv") for directory in worker_dirs],
         ignore_index=True,
     )
-    expected = N_SPLITS * len(ARMS) * len(GAMMAS) * len(ETAS) * len(common.ENSEMBLES)
+    expected = (
+        N_SPLITS
+        * len(args.arms)
+        * len(args.gammas)
+        * len(args.control_values)
+        * len(common.ENSEMBLES)
+    )
     key_columns = ["split", "arm", "gamma", "eta", "ensemble"]
     if len(raw) != expected or raw.duplicated(key_columns).any():
         raise ValueError(
@@ -662,12 +888,32 @@ def merge_worker_outputs(worker_dirs: list[Path], args: argparse.Namespace) -> N
         [pd.read_csv(directory / "restart_diagnostics.csv") for directory in worker_dirs],
         ignore_index=True,
     )
+    payload: dict[str, np.ndarray] = {}
+    for directory in worker_dirs:
+        with np.load(directory / "joint_diag_d_fit_payload.npz") as worker_payload:
+            overlap = set(payload).intersection(worker_payload.files)
+            if overlap:
+                raise ValueError(
+                    f"duplicated fitted-array payload keys: {sorted(overlap)[:3]}"
+                )
+            payload.update(
+                {key: np.asarray(worker_payload[key]) for key in worker_payload.files}
+            )
+    expected_payload_keys = {
+        f"{payload_id}__{kind}"
+        for payload_id in raw["payload_id"]
+        for kind in ("weights", "val_prediction")
+    }
+    if set(payload) != expected_payload_keys:
+        raise ValueError(
+            "worker fitted-array payload is incomplete or has unexpected keys"
+        )
     base_cells = {name: _load_cell(name, args.target_artifact) for name in common.ENSEMBLES}
     specs = _split_specs(
         next(iter(base_cells.values()))["mapping"].shape[0],
         next(iter(base_cells.values()))["timepoints"].shape[0],
     )
-    _write_final_artifacts(raw, restart, base_cells, specs, args)
+    _write_final_artifacts(raw, restart, payload, base_cells, specs, args)
 
 
 def run(args: argparse.Namespace) -> None:
@@ -680,6 +926,14 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("require worker_count >= 1 and 0 <= worker_index < worker_count")
 
     base_cells = {name: _load_cell(name, args.target_artifact) for name in common.ENSEMBLES}
+    if args.diversity_control == "fixed_ess":
+        maximum_target = max(args.control_values)
+        minimum_frames = min(cell["n_frames"] for cell in base_cells.values())
+        if maximum_target >= minimum_frames:
+            raise ValueError(
+                f"ESS targets must be below every ensemble size; got {maximum_target:g} "
+                f"with minimum n_frames={minimum_frames}"
+            )
     specs = _split_specs(
         next(iter(base_cells.values()))["mapping"].shape[0],
         next(iter(base_cells.values()))["timepoints"].shape[0],
@@ -690,6 +944,7 @@ def run(args: argparse.Namespace) -> None:
     rows: list[dict] = []
     fits_by_cell: dict[tuple, dict] = {}
     restart_rows: list[dict] = []
+    payload: dict[str, np.ndarray] = {}
 
     # γ=0 is arm-invariant by construction. Reuse its complete fit record so
     # fitted coefficients, mean metrics, and restart diagnostics match between
@@ -698,10 +953,10 @@ def run(args: argparse.Namespace) -> None:
     for split_index, cells in cells_by_split.items():
         jobs = [
             (gamma, eta, arm)
-            for gamma in GAMMAS
-            for eta in ETAS
-            for arm in ARMS
-            if gamma != 0.0 or arm == ARMS[0]
+            for gamma in args.gammas
+            for eta in args.control_values
+            for arm in args.arms
+            if gamma != 0.0 or arm == args.arms[0]
         ]
         for job_index, (gamma, eta, fit_arm) in enumerate(jobs):
             if job_index % args.worker_count != args.worker_index:
@@ -715,9 +970,10 @@ def run(args: argparse.Namespace) -> None:
                 args.steps,
                 args.learning_rate,
                 args.n_start,
+                args.diversity_control,
             )
             fits_by_cell[fit_key] = fit
-            report_arms = ARMS if gamma == 0.0 else (fit_arm,)
+            report_arms = args.arms if gamma == 0.0 else (fit_arm,)
             for arm in report_arms:
                 key = (split_index, arm, gamma, eta)
                 fits_by_cell[key] = fit
@@ -728,28 +984,59 @@ def run(args: argparse.Namespace) -> None:
                             "arm": arm,
                             "gamma": gamma,
                             "eta": eta,
+                            "diversity_axis": eta,
+                            **(
+                                {"ess_target": eta}
+                                if args.diversity_control == "fixed_ess"
+                                else {}
+                            ),
                             **restart,
                         }
                     )
-                rows.extend(_report(cells, fit, gamma, eta, arm))
+                rows.extend(
+                    _report(
+                        cells,
+                        fit,
+                        gamma,
+                        eta,
+                        arm,
+                        args.diversity_control,
+                        payload,
+                    )
+                )
 
     # The blind rows are complete before the post-fit NMR reveal.
-    _add_recovery_metrics(rows, base_cells, fits_by_cell)
+    _add_recovery_metrics(
+        rows, base_cells, fits_by_cell, args.diversity_control
+    )
     frame = pd.DataFrame(rows)
+    if args.diversity_control == "fixed_ess":
+        errors = np.abs(frame["ess"].to_numpy() - frame["ess_target"].to_numpy())
+        if np.max(errors) > 1e-3:
+            worst = int(np.argmax(errors))
+            raise AssertionError(
+                "fixed-ESS projection missed its target: "
+                f"target={frame.iloc[worst].ess_target:g}, "
+                f"realized={frame.iloc[worst].ess:.8g}, error={errors[worst]:.3g}"
+            )
     if args.worker_count > 1:
         frame["mean_gate_reference_mse"] = np.nan
         frame["mean_gate_passed"] = np.nan
         frame.to_csv(args.output_dir / "joint_diag_d_fit_replicates.csv", index=False)
         pd.DataFrame(restart_rows).to_csv(args.output_dir / "restart_diagnostics.csv", index=False)
+        np.savez_compressed(
+            args.output_dir / "joint_diag_d_fit_payload.npz",
+            **payload,
+        )
         print(f"wrote worker {args.worker_index} rows to {args.output_dir}")
         return
-    _write_final_artifacts(frame, restart_rows, base_cells, specs, args)
+    _write_final_artifacts(frame, restart_rows, payload, base_cells, specs, args)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--output-dir", type=Path, default=HERE / "_moprp_joint_diag_d_fit_replicated"
+        "--output-dir", type=Path
     )
     parser.add_argument("--target-artifact", type=Path, default=TARGET_ARTIFACT)
     parser.add_argument("--stage5-raw", type=Path, default=STAGE5_RAW)
@@ -760,7 +1047,30 @@ def main() -> None:
     parser.add_argument("--worker-index", type=int, default=0)
     parser.add_argument("--worker-count", type=int, default=1)
     parser.add_argument("--merge-workers", nargs="+", type=Path)
+    parser.add_argument(
+        "--diversity-control",
+        choices=("kl", "fixed_ess"),
+        default="kl",
+        help="KL-weight sweep (Experiment 1) or exact ESS projection (Experiment 1a)",
+    )
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        choices=ARMS,
+        help="arms to run; fixed-ESS defaults to the primary scale-free arm",
+    )
     args = parser.parse_args()
+    if args.output_dir is None:
+        args.output_dir = HERE / (
+            "_moprp_joint_diag_d_fit_fixedess"
+            if args.diversity_control == "fixed_ess"
+            else "_moprp_joint_diag_d_fit_replicated"
+        )
+    args.gammas = FIXED_ESS_GAMMAS if args.diversity_control == "fixed_ess" else GAMMAS
+    args.control_values = ESS_TARGETS if args.diversity_control == "fixed_ess" else ETAS
+    args.arms = tuple(args.arms) if args.arms else (
+        ("diag_d_scalefree",) if args.diversity_control == "fixed_ess" else ARMS
+    )
     if args.merge_workers:
         merge_worker_outputs(args.merge_workers, args)
     else:

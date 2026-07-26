@@ -11,10 +11,81 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
 from jaxent.src.analysis.state_population import FULL_STATE_SUPPORT
+
+
+def effective_sample_size(weights):
+    """Return ``1 / sum(weights**2)`` for a normalized weight vector."""
+
+    weights = jnp.asarray(weights)
+    return jnp.reciprocal(jnp.sum(jnp.square(weights)))
+
+
+def fixed_ess_weights(
+    logits,
+    ess_target,
+    *,
+    bisection_steps: int = 48,
+    edge_delta: float = 5e-4,
+):
+    """Project logits to a requested ESS using a stop-gradient temperature.
+
+    The temperature is solved by fixed-iteration bisection in log-space.  Its
+    value is stop-gradiented, implementing the projected-gradient update used by
+    Experiment 1a: logits receive the ordinary softmax gradient at the current
+    projected temperature and the projection is solved again on the next step.
+
+    Exactly uniform logits have ESS ``n`` at every temperature, so lower targets
+    are mathematically unreachable; that degenerate input remains uniform.
+    Targets at or below one use the tiny-temperature open-boundary limit
+    ``1 + edge_delta``.  This keeps covariance-based losses finite while
+    remaining within the fixed-ESS acceptance tolerance. Other targets are
+    clamped to the open feasible interval.
+    """
+
+    logits = jnp.asarray(logits)
+    if logits.ndim != 1:
+        raise ValueError("logits must be one-dimensional")
+    if logits.shape[0] < 1:
+        raise ValueError("logits must contain at least one frame")
+    if bisection_steps < 1:
+        raise ValueError("bisection_steps must be positive")
+    n_frames = logits.shape[0]
+    if n_frames == 1:
+        return jnp.ones_like(logits)
+
+    target = jnp.asarray(ess_target, dtype=logits.dtype)
+    target = jnp.clip(target, 1.0 + edge_delta, float(n_frames) - edge_delta)
+    centered = logits - jnp.max(logits)
+    is_uniform = jnp.max(logits) - jnp.min(logits) <= jnp.finfo(logits.dtype).eps
+
+    def ess_at_log_temperature(log_temperature):
+        return effective_sample_size(
+            jax.nn.softmax(centered / jnp.exp(log_temperature))
+        )
+
+    low = jnp.asarray(-20.0, dtype=logits.dtype)
+    high = jnp.asarray(20.0, dtype=logits.dtype)
+
+    def bisect(_, bounds):
+        lower, upper = bounds
+        midpoint = (lower + upper) * 0.5
+        midpoint_ess = ess_at_log_temperature(midpoint)
+        return jax.lax.cond(
+            midpoint_ess < target,
+            lambda: (midpoint, upper),
+            lambda: (lower, midpoint),
+        )
+
+    low, high = jax.lax.fori_loop(0, bisection_steps, bisect, (low, high))
+    solved_log_temperature = jax.lax.stop_gradient((low + high) * 0.5)
+    projected = jax.nn.softmax(centered / jnp.exp(solved_log_temperature))
+    return jnp.where(is_uniform, jax.nn.softmax(logits), projected)
 
 
 def per_state_weight_diagnostics(
@@ -113,8 +184,9 @@ def _annotated_heatmap(
     title: str,
     cmap: str = "viridis",
     value_fmt: str | None = None,
+    control_axis: str = "eta",
 ):
-    """Draw an η×γ heatmap and border cells by persisted gate-pass fraction.
+    """Draw a diversity-control×γ heatmap with persisted gate-pass borders.
 
     Cell text defaults to the gate-pass fraction (percent).  When ``value_fmt``
     is given, the panel ``value`` is annotated instead (formatted by that spec),
@@ -125,19 +197,21 @@ def _annotated_heatmap(
     import matplotlib.patches as patches
 
     gammas = sorted(data["gamma"].unique())
-    etas = sorted(data["eta"].unique())
-    grid = data.pivot(index="eta", columns="gamma", values=value).reindex(
-        index=etas, columns=gammas
+    controls = sorted(data[control_axis].unique())
+    grid = data.pivot(index=control_axis, columns="gamma", values=value).reindex(
+        index=controls, columns=gammas
     )
     image = ax.imshow(grid.to_numpy(dtype=float), aspect="auto", cmap=cmap)
     ax.set_xticks(range(len(gammas)), [f"{v:g}" for v in gammas])
-    ax.set_yticks(range(len(etas)), [f"{v:g}" for v in etas])
+    ax.set_yticks(range(len(controls)), [f"{v:g}" for v in controls])
     ax.set_xlabel("γ")
-    ax.set_ylabel("η")
+    ax.set_ylabel("η" if control_axis == "eta" else "target ESS")
     ax.set_title(title)
-    for row_index, eta in enumerate(etas):
+    for row_index, control in enumerate(controls):
         for col_index, gamma in enumerate(gammas):
-            cell = data[(data.eta == eta) & (data.gamma == gamma)]
+            cell = data[
+                (data[control_axis] == control) & (data["gamma"] == gamma)
+            ]
             if cell.empty:
                 continue
             gate = float(cell["mean_gate_passed"].iloc[0])
@@ -178,6 +252,7 @@ def _plot_heatmap_family(
     title: str,
     cmap: str,
     value_fmt: str | None = None,
+    control_axis: str = "eta",
 ) -> Path:
     plt = _import_pyplot()
     subset = aggregate[aggregate["arm"] == arm]
@@ -191,6 +266,7 @@ def _plot_heatmap_family(
             f"{ensemble}: {title}",
             cmap,
             value_fmt=value_fmt,
+            control_axis=control_axis,
         )
         figure.colorbar(image, ax=axis, shrink=0.8)
     figure.suptitle(f"{arm} — {title}")
@@ -201,7 +277,13 @@ def _plot_heatmap_family(
     return path
 
 
-def _plot_gate_ratio(aggregate: pd.DataFrame, replicate: pd.DataFrame | None, input_dir: Path, arm: str) -> Path:
+def _plot_gate_ratio(
+    aggregate: pd.DataFrame,
+    replicate: pd.DataFrame | None,
+    input_dir: Path,
+    arm: str,
+    control_axis: str = "eta",
+) -> Path:
     plt = _import_pyplot()
     source = replicate if replicate is not None else aggregate
     subset = source[source["arm"] == arm].copy()
@@ -211,7 +293,7 @@ def _plot_gate_ratio(aggregate: pd.DataFrame, replicate: pd.DataFrame | None, in
     for axis, ensemble in zip(axes[0], ensembles):
         current = subset[subset.ensemble == ensemble]
         for gamma, gamma_rows in current.groupby("gamma", sort=True):
-            grouped = gamma_rows.groupby("eta")["gate_ratio"]
+            grouped = gamma_rows.groupby(control_axis)["gate_ratio"]
             means = grouped.mean()
             errors = grouped.std(ddof=0) if replicate is not None else means * 0.0
             axis.errorbar(
@@ -224,20 +306,27 @@ def _plot_gate_ratio(aggregate: pd.DataFrame, replicate: pd.DataFrame | None, in
             )
         axis.axhline(1.05, color="tab:red", linestyle="--", label="1.05 gate")
         axis.set_title(ensemble)
-        axis.set_xlabel("η")
+        axis.set_xlabel("η" if control_axis == "eta" else "target ESS")
         axis.set_ylabel("held-out val MSE / γ=0 reference")
-        axis.set_xscale("symlog", linthresh=1e-3)
+        if control_axis == "eta":
+            axis.set_xscale("symlog", linthresh=1e-3)
         axis.legend()
         axis.grid(alpha=0.25)
-    figure.suptitle(f"{arm} — mean-gate ratio versus η")
+    axis_label = "η" if control_axis == "eta" else "ESS (= target, exact)"
+    figure.suptitle(f"{arm} — mean-gate ratio versus {axis_label}")
     figure.tight_layout()
-    path = input_dir / f"{arm}_gate_ratio_vs_eta.png"
+    path = input_dir / f"{arm}_gate_ratio_vs_{control_axis}.png"
     figure.savefig(path, dpi=180)
     plt.close(figure)
     return path
 
 
-def _plot_per_state_ess(aggregate: pd.DataFrame, input_dir: Path, arm: str) -> Path:
+def _plot_per_state_ess(
+    aggregate: pd.DataFrame,
+    input_dir: Path,
+    arm: str,
+    control_axis: str = "eta",
+) -> Path:
     plt = _import_pyplot()
     states = ("PUF3", "unfolded", "PUF2-like")
     subset = aggregate[aggregate["arm"] == arm]
@@ -253,7 +342,13 @@ def _plot_per_state_ess(aggregate: pd.DataFrame, input_dir: Path, arm: str) -> P
                 axis.set_axis_off()
                 continue
             image = _annotated_heatmap(
-                axis, current, column, f"{ensemble}: {state}", "magma", value_fmt=".1f"
+                axis,
+                current,
+                column,
+                f"{ensemble}: {state}",
+                "magma",
+                value_fmt=".1f",
+                control_axis=control_axis,
             )
             figure.colorbar(image, ax=axis, shrink=0.8)
     figure.suptitle(f"{arm} — per-state ESS (post-fit audit)")
@@ -264,11 +359,19 @@ def _plot_per_state_ess(aggregate: pd.DataFrame, input_dir: Path, arm: str) -> P
     return path
 
 
-def plot_joint_diag_d_fit(input_dir: str | Path, arm: str | None = None) -> list[Path]:
+def plot_joint_diag_d_fit(
+    input_dir: str | Path,
+    arm: str | None = None,
+    control_axis: str | None = None,
+) -> list[Path]:
     """Generate all persisted-table figures for one arm or all arms."""
 
     input_dir = Path(input_dir)
     aggregate, replicate = _load_tables(input_dir)
+    if control_axis is None:
+        control_axis = "ess_target" if "ess_target" in aggregate.columns else "eta"
+    if control_axis not in aggregate.columns:
+        raise ValueError(f"control axis {control_axis!r} is not present in persisted tables")
     arms = [arm] if arm is not None else list(aggregate["arm"].drop_duplicates())
     unknown = set(arms) - set(aggregate["arm"].unique())
     if unknown:
@@ -277,12 +380,12 @@ def plot_joint_diag_d_fit(input_dir: str | Path, arm: str | None = None) -> list
     for selected_arm in arms:
         paths.extend(
             [
-                _plot_heatmap_family(aggregate, input_dir, selected_arm, "ess", "{}_ess_heatmap.png".format(selected_arm), "ESS", "viridis", value_fmt=".1f"),
-                _plot_heatmap_family(aggregate, input_dir, selected_arm, "recovery", "{}_recovery_heatmap.png".format(selected_arm), "recovery (%)", "cividis", value_fmt=".1f"),
-                _plot_heatmap_family(aggregate, input_dir, selected_arm, "val_mse", "{}_val_mse_heatmap.png".format(selected_arm), "held-out val MSE", "plasma", value_fmt=".4f"),
-                _plot_heatmap_family(aggregate, input_dir, selected_arm, "decoy", "{}_decoy_mass_heatmap.png".format(selected_arm), "decoy mass", "Reds", value_fmt=".3f"),
-                _plot_gate_ratio(aggregate, replicate, input_dir, selected_arm),
-                _plot_per_state_ess(aggregate, input_dir, selected_arm),
+                _plot_heatmap_family(aggregate, input_dir, selected_arm, "ess", "{}_ess_heatmap.png".format(selected_arm), "ESS", "viridis", value_fmt=".1f", control_axis=control_axis),
+                _plot_heatmap_family(aggregate, input_dir, selected_arm, "recovery", "{}_recovery_heatmap.png".format(selected_arm), "recovery (%)", "cividis", value_fmt=".1f", control_axis=control_axis),
+                _plot_heatmap_family(aggregate, input_dir, selected_arm, "val_mse", "{}_val_mse_heatmap.png".format(selected_arm), "held-out val MSE", "plasma", value_fmt=".4f", control_axis=control_axis),
+                _plot_heatmap_family(aggregate, input_dir, selected_arm, "decoy", "{}_decoy_mass_heatmap.png".format(selected_arm), "decoy mass", "Reds", value_fmt=".3f", control_axis=control_axis),
+                _plot_gate_ratio(aggregate, replicate, input_dir, selected_arm, control_axis),
+                _plot_per_state_ess(aggregate, input_dir, selected_arm, control_axis),
             ]
         )
     return paths

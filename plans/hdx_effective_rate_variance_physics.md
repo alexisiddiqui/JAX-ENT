@@ -1010,9 +1010,104 @@ inside the JAX scan and was stopped before writing workers. Therefore `_replicat
 accepted as a numeric supersession; the mismatch is recorded as reproducibility/nondeterminism to
 resolve rather than silently overwriting the v2 cited values.
 
-### 14.4 Experiment 2 — fitted consistent target (queued)
+### 14.4 Experiment 1a — exact fixed-ESS frontier
 
-Reserved slot. If Experiment 1 demonstrates a useful gate movement, run the block-coordinate
+Experiment 1a supersedes the nonlinear η sweep as the definitive ESS/mean-fit frontier read. The
+same `moprp_joint_diag_d_fit.py` runner now accepts `--diversity-control fixed_ess` and writes a new,
+non-overwriting artifact at
+`examples/2_CrossValidation/fitting/jaxENT/_moprp_joint_diag_d_fit_fixedess/`. The frozen
+`scaled_published` target, joint shared `(Bc,Bh)`, peptide-1 holdout, three blind split replicates,
+five starts, 2000 steps, per-ensemble weights, and post-hoc-only NMR diagnostics are unchanged.
+Only the diversity control changes: the KL term is removed and each ensemble's logits are projected
+at every optimizer step through a stop-gradient temperature whose value is solved by 48 fixed
+log-temperature bisection iterations. The nominal E=1 anchor uses the open-boundary
+`E=1+5e-4` tiny-temperature limit (reported as target E=1 and accepted within `1e-3`) so the
+positive-γ covariance loss does not become singular at exactly zero total variance. Because
+finite-precision weights can still give exact zero variance at contact-identical individual
+residues, the fixed-ESS path floors predicted `diag(D)` at `1e-12` inside the log-profile loss,
+matching the covariance utilities' existing absolute numerical ridge. This is a numerical domain
+guard, not an ESS penalty or additional sweep parameter.
+
+The primary scale-free run sweeps exact target ESS
+`E={1,5,15,30,60}` while retaining Experiment 1's
+`γ={0,.01,.03,.1,.3,1,3}` grid; the absolute arm remains available explicitly
+through `--arms diag_d_absolute`. Every accepted run asserts `|realized ESS - E| <= 1e-3` before
+writing final artifacts. `fixed_ess_frontier.csv` records replicate mean±SD gate ratios by
+ensemble, γ, and E, while `fixed_ess_frontier_summary.json` records monotonicity, the interpolated
+1.05 crossing, the E=1 Folded/decoy anchor, and the direct verdict
+`healthy_gate_valid_point_exists` for E≥5. The shared plotter detects `ess_target` and writes the
+value-annotated heatmaps, post-hoc state ESS panels, and the primary
+`diag_d_scalefree_gate_ratio_vs_ess_target.png` frontier with the 1.05 threshold.
+
+The production scale-free grid completed with all 210 expected split/γ/E/ensemble rows and maximum
+absolute ESS error `5.0e-4`. No replicate-mean E≥5 cell has gate ratio ≤1.05. At γ=0, the first
+linear-interpolated 1.05 crossings lie at E≈2.03 (AF2_MSAss) and E≈2.15 (AF2_filtered), between the
+sampled E=1 and E=5 points.
+
+This observation does **not** establish the intended definitive hard Pareto wall because two
+preregistered checks fail. Only 2 of the 14 γ/ensemble gate-ratio curves are monotone
+non-decreasing over E. The γ=0/E=1 anchor is gate-valid in all three splits, but only splits 1 and 2
+collapse onto Folded; split 0 selects a PUF3 frame in AF2_MSAss and a PUF1 frame in AF2_filtered.
+Thus the fixed-temperature projected-gradient parameterization shows material optimizer-basin
+dependence at low ESS and does not reproduce the Experiment-1 Folded anchor consistently. The
+scientific verdict is therefore: **no healthy gate-valid E≥5 point was observed, but the fixed-ESS
+run is inconclusive as a definitive frontier and cannot supersede the η sweep without resolving the
+failed continuity/monotonicity checks.** Experiment 2 remains queued and should not use this run as
+evidence that target staleness has been ruled out.
+
+### 14.5 Prerequisite validation-score identifiability study
+
+Before Experiment 2, `moprp_val_score_correlation.py` tested whether a better observed-only
+held-out mean score identifies higher state recovery. To make this analysis reproducible without
+embedding an optimizer in a diagnostic script, `moprp_joint_diag_d_fit.py` now treats fitted arrays
+as first-class outputs: every split row has a stable `payload_id`, and
+`joint_diag_d_fit_payload.npz` stores its frame weights and held-out prediction matrix. Worker merge
+rejects missing, unexpected, or duplicate payload keys. Two-worker, full-budget reruns produced:
+
+- `_moprp_joint_diag_d_fit_fixedess_payload_20260724`: 210 rows and 420 fitted arrays;
+- `_moprp_joint_diag_d_fit_replicated_payload_20260724`: 420 rows and 840 fitted arrays.
+
+The scoring script is deliberately read-only and has no refit/worker path. It consumes those
+payloads and writes `_moprp_val_score_correlation_20260724/`. The six candidates are plain MSE,
+observed-uptake sensitivity-weighted MSE, observed binomial-variance quasi-χ², mapping-only
+redundancy-weighted MSE, their combined weighting, and `1-Spearman(pred,obs)`. Every weighting is a
+function only of held-out observed uptake and the peptide mapping; fitted-weight/ensemble variance
+never enters a score, avoiding an ESS reward. Structured-residual NLL was excluded because it
+requires a separately fitted covariance model and is not an observed-only reweighting of the same
+mean residual.
+
+The stored predictions reproduce persisted `val_mse` to maximum relative differences
+`3.82e-15` (fixed ESS) and `3.86e-15` (KL). At fixed ESS, the median per-condition Spearman
+correlations (lower score versus higher recovery should be negative) are:
+
+| score | median ρ | IQR | fraction ρ<0 |
+|---|---:|---:|---:|
+| MSE | -0.107 | [-0.313, 0.313] | 0.567 |
+| redundancy MSE | -0.107 | [-0.313, 0.313] | 0.567 |
+| sensitivity MSE | -0.018 | [-0.286, 0.295] | 0.500 |
+| binomial MSE | -0.018 | [-0.286, 0.321] | 0.500 |
+| combined MSE | 0.000 | [-0.286, 0.214] | 0.500 |
+| shape distance | +0.374 | [0.021, 0.663] | 0.261 |
+
+Every candidate flips correlation sign across conditions. The KL robustness analysis likewise has
+sign flips for every candidate/arm except scale-free shape distance, whose correlation is
+consistently in the wrong (positive) direction. Most decisively, at E=1 in AF2_MSAss split 0 all
+six scores retain the decoy win. The best Folded versus decoy values are respectively: MSE
+`0.02605` vs `0.02190`, sensitivity `0.02903` vs `0.02885`, binomial `0.02167` vs `0.01267`,
+redundancy `0.02605` vs `0.02190`, combined `0.03996` vs `0.02678`, and shape distance `0.09286`
+vs `0.08214`; the Folded pairwise win fraction is zero for every score.
+
+**Decision:** no observed-only mean-fidelity score qualifies as an Experiment-2 gate. Variance,
+timepoint sensitivity, redundancy, their combination, and shape scoring do not resolve the E=1
+physical-state degeneracy and do not correlate consistently with recovery at equal diversity.
+Experiment 2 must not run as currently framed: fitting the target cannot repair an
+under-identified mean/recovery relationship. Reconsider the reweight-against-the-mean premise
+before further target tuning.
+
+### 14.6 Experiment 2 — fitted consistent target (blocked by §14.5)
+
+Reserved design only; do not execute without a new identifying observable or validated gate. The
+previous proposal was to run the block-coordinate
 variant from both frozen starting priors (`scaled_published` and `constrained_optimum`): fit
 `(Bc,Bh)` and weights at a frozen target, re-infer the target once with the D-only estimator, and
 repeat outer rounds until coefficient and target deltas reach a fixed point. Re-inference must stay
