@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""Benchmark or profile the HDX-only BV optimisation paths on CPU."""
+"""Benchmark or profile one synthetic HDX uptake optimisation path on CPU."""
 
 from __future__ import annotations
 
 import argparse
 import cProfile
 import contextlib
+import hashlib
 import json
+import platform
 import pstats
 import sys
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -26,18 +28,16 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.opt import optimiser as optimiser_module
-from jaxent.src.opt.run import _optimise_pure, run_optimise
+from jaxent.src.opt.base import OptimizationHistory, OptimizationState
+from jaxent.src.opt.run import _optimise, _optimise_pure
 
 
+SCHEMA_VERSION = 2
 PATHS = ("eager", "jit", "pure")
 OPTIMIZERS = ("adam", "sgd", "adagrad", "adamw", "rmsprop", "lbfgs")
-
-
-def parse_paths(value: str) -> list[str]:
-    paths = [part.strip().lower() for part in value.split(",") if part.strip()]
-    if not paths or len(set(paths)) != len(paths) or any(path not in PATHS for path in paths):
-        raise argparse.ArgumentTypeError("paths must be a comma-separated subset of eager,jit,pure")
-    return paths
+PARITY_RTOL = 1e-4
+PARITY_ATOL = 1e-5
+TIMEPOINT_MINUTES = (0.167, 120.0)
 
 
 def positive_int(value: str) -> int:
@@ -57,15 +57,15 @@ def nonnegative_int(value: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("timing", "profile"), default="timing")
+    parser.add_argument("--path", choices=PATHS, required=True)
     parser.add_argument("--steps", type=positive_int, default=None)
     parser.add_argument("--frames", type=positive_int, default=500)
-    parser.add_argument("--residues", type=positive_int, default=140)
+    parser.add_argument("--residues", type=positive_int, default=144)
+    parser.add_argument("--timepoints", type=positive_int, default=5)
     parser.add_argument("--seed", type=nonnegative_int, default=0)
     parser.add_argument("--target-frame", type=nonnegative_int, default=0)
     parser.add_argument("--optimizer", choices=OPTIMIZERS, default="adam")
     parser.add_argument("--learning-rate", type=float, default=1e-4)
-    parser.add_argument("--paths", type=parse_paths, default=None)
-    parser.add_argument("--path", choices=PATHS, default=None)
     parser.add_argument("--warm-repeats", type=positive_int, default=3)
     parser.add_argument("--trace", action="store_true")
     parser.add_argument("--trace-path", type=Path, default=None)
@@ -73,39 +73,93 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("profiling-output"))
     parser.add_argument("--allow-early-stop", action="store_true")
     parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument("--terminal-npz", type=Path, default=None)
     return parser
 
 
-def _make_fixture(frames: int, residues: int, seed: int, target_frame: int) -> tuple[Any, list, tuple, list[int], list[Callable]]:
+@dataclass(frozen=True)
+class Fixture:
+    simulation: Simulation
+    models: tuple[Any, ...]
+    data: tuple[Any, ...]
+    indexes: tuple[int, ...]
+    losses: tuple[Callable, ...]
+    timepoint_values: tuple[float, ...]
+
+
+def _timepoint_values(count: int) -> jax.Array:
+    return jnp.asarray(
+        np.geomspace(TIMEPOINT_MINUTES[0], TIMEPOINT_MINUTES[1], count, dtype=np.float32)
+    )
+
+
+def _make_fixture(
+    frames: int,
+    residues: int,
+    timepoints: int,
+    seed: int,
+    target_frame: int,
+) -> Fixture:
     if target_frame >= frames:
         raise ValueError(f"target-frame must be less than frames ({frames})")
+
     rng = np.random.default_rng(seed)
     residue_axis = np.linspace(0.6, 1.6, residues, dtype=np.float32)[:, None]
     frame_axis = np.linspace(0.75, 1.25, frames, dtype=np.float32)[None, :]
     noise = rng.normal(0.0, 0.01, size=(residues, frames)).astype(np.float32)
     heavy = jnp.asarray(residue_axis * frame_axis + 0.2 + noise)
-    acceptor = jnp.asarray(residue_axis * np.flip(frame_axis, axis=1) + 0.1 + noise[::-1])
+    acceptor = jnp.asarray(
+        residue_axis * np.flip(frame_axis, axis=1) + 0.1 + noise[::-1]
+    )
     k_ints = jnp.asarray(np.linspace(0.3, 1.1, residues, dtype=np.float32))
-    feature = BV_input_features(heavy_contacts=heavy, acceptor_contacts=acceptor, k_ints=k_ints)
-    model_config = BV_model_Config()
+    feature = BV_input_features(
+        heavy_contacts=heavy,
+        acceptor_contacts=acceptor,
+        k_ints=k_ints,
+    )
+
+    timepoint_array = _timepoint_values(timepoints)
+    model_config = BV_model_Config(
+        num_timepoints=timepoints,
+        timepoints=timepoint_array,
+    )
     model = BV_model(model_config)
+    model_parameters = model_config.forward_parameters
     params = Simulation_Parameters(
         frame_weights=jnp.ones(frames, dtype=jnp.float32) / frames,
         frame_mask=jnp.ones(frames, dtype=jnp.float32),
-        model_parameters=[model_config.forward_parameters],
+        model_parameters=[model_parameters],
         forward_model_weights=jnp.ones(1, dtype=jnp.float32),
         forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
         normalise_loss_functions=jnp.ones(1, dtype=jnp.float32),
     )
-    simulation = Simulation(input_features=[feature], forward_models=[model], params=params)
+    simulation = Simulation(
+        input_features=[feature],
+        forward_models=[model],
+        params=params,
+        raise_jit_failure=True,
+    )
     simulation.initialise()
     simulation = Simulation.forward(simulation, simulation.params)
-    target = (jnp.asarray(model_config.forward_parameters.bv_bc) * heavy[:, target_frame]
-              + jnp.asarray(model_config.forward_parameters.bv_bh) * acceptor[:, target_frame])
-    return simulation, [model], (target,), [0], [_loss]
+
+    target_log_pf = (
+        jnp.asarray(model_parameters.bv_bc) * heavy[:, target_frame]
+        + jnp.asarray(model_parameters.bv_bh) * acceptor[:, target_frame]
+    )
+    target = 1.0 - jnp.exp(
+        -timepoint_array[:, None] * k_ints[None, :] / jnp.exp(target_log_pf)[None, :]
+    )
+    return Fixture(
+        simulation=simulation,
+        models=(model,),
+        data=(target,),
+        indexes=(0,),
+        losses=(_loss,),
+        timepoint_values=tuple(float(value) for value in np.asarray(timepoint_array)),
+    )
 
 
-def _loss(model: Simulation, target: Any, index: int):
+def _loss(model: Simulation, target: Any, index: int) -> tuple[jax.Array, jax.Array]:
     prediction = jnp.asarray(model.outputs[index].y_pred())
     loss = jnp.mean(jnp.square(prediction - target))
     return loss, loss
@@ -121,15 +175,18 @@ def _block_tree(tree: Any) -> None:
 def count_host_materialisation() -> Iterator[Counter[str]]:
     counts: Counter[str] = Counter()
     array_types = {jax.Array, type(jnp.asarray(0.0))}
-    originals = {}
+    originals: dict[tuple[type, str], Any] = {}
     for array_type in array_types:
         for name in ("__float__", "__int__", "__bool__", "item"):
             if hasattr(array_type, name):
                 originals[(array_type, name)] = getattr(array_type, name)
+
     for (array_type, name), original in originals.items():
+
         def counted(self, *args, _original=original, _name=name, **kwargs):
             counts[f"{type(self).__name__}.{_name}"] += 1
             return _original(self, *args, **kwargs)
+
         setattr(array_type, name, counted)
     try:
         yield counts
@@ -139,98 +196,228 @@ def count_host_materialisation() -> Iterator[Counter[str]]:
 
 
 @contextlib.contextmanager
-def count_compiles() -> Iterator[Counter[str]]:
+def count_compiles() -> Iterator[dict[str, float | int]]:
     import jax._src.compiler as compiler
-    counts: Counter[str] = Counter()
+
+    stats: dict[str, float | int] = {"count": 0, "seconds": 0.0}
     original = compiler.backend_compile
+
     def wrapped(*args, **kwargs):
-        counts["backend_compile"] += 1
-        return original(*args, **kwargs)
+        start = time.perf_counter()
+        try:
+            return original(*args, **kwargs)
+        finally:
+            stats["count"] = int(stats["count"]) + 1
+            stats["seconds"] = float(stats["seconds"]) + (time.perf_counter() - start)
+
     compiler.backend_compile = wrapped
     try:
-        yield counts
+        yield stats
     finally:
         compiler.backend_compile = original
-
-
-def _run(path: str, fixture: tuple, settings: OptimiserSettings) -> Any:
-    simulation, models, data, indexes, losses = fixture
-    if path == "pure":
-        optimizer = optimiser_module.OptaxOptimizer(
-            learning_rate=settings.learning_rate, optimizer=settings.optimiser_type
-        )
-        state = optimizer.initialise(simulation, None)
-        return _optimise_pure(
-            simulation, data, settings.n_steps, settings.tolerance, settings.convergence,
-            indexes, losses, state, optimizer, ema_alpha=settings.ema_alpha,
-            min_steps_per_threshold=settings.min_steps_per_threshold,
-        )
-    return run_optimise(
-        simulation=simulation, data_to_fit=data, config=settings, forward_models=models,
-        indexes=indexes, loss_functions=losses, jit_update_step=path == "jit", silent=True,
-    )
 
 
 def _make_settings(args: argparse.Namespace) -> OptimiserSettings:
     early_stop = args.mode == "profile" and args.allow_early_stop
     return OptimiserSettings(
-        name="profile_hdx_cpu", n_steps=args.steps, tolerance=1e-12,
-        learning_rate=args.learning_rate, optimiser_type=args.optimizer,
+        name="profile_hdx_cpu",
+        n_steps=args.steps,
+        tolerance=1e-12 if early_stop else 0.0,
+        learning_rate=args.learning_rate,
+        optimiser_type=args.optimizer,
         convergence=200.0 if early_stop else 0.0,
         min_steps_per_threshold=2 if early_stop else args.steps + 1,
     )
 
 
-def _completed_steps(path: str, result: Any) -> int:
-    if path == "pure":
-        return int(result.opt_state.step)
-    return len(result[1].states)
+class PreparedPath:
+    """A reusable path executor whose compiled callables survive warm repetitions."""
+
+    def __init__(
+        self,
+        path: str,
+        fixture: Fixture,
+        settings: OptimiserSettings,
+    ) -> None:
+        self.path = path
+        self.fixture = fixture
+        self.settings = settings
+        self.optimizer = optimiser_module.OptaxOptimizer(
+            learning_rate=settings.learning_rate,
+            optimizer=settings.optimiser_type,
+        )
+        self.initial_state = self.optimizer.initialise(fixture.simulation, None)
+
+        if path == "jit":
+            self.optimizer.step = jax.jit(
+                optimiser_module.OptaxOptimizer._step,
+                static_argnames=("loss_functions", "indexes"),
+            )
+
+        self._pure_runner: Callable[[OptimizationState], Any] | None = None
+        if path == "pure":
+
+            def pure_runner(state: OptimizationState):
+                return _optimise_pure(
+                    fixture.simulation,
+                    fixture.data,
+                    settings.n_steps,
+                    settings.tolerance,
+                    settings.convergence,
+                    fixture.indexes,
+                    fixture.losses,
+                    state,
+                    self.optimizer,
+                    ema_alpha=settings.ema_alpha,
+                    min_steps_per_threshold=settings.min_steps_per_threshold,
+                )
+
+            self._pure_runner = jax.jit(pure_runner)
+
+    def reset(self) -> None:
+        self.optimizer.history = OptimizationHistory()
+        if self.optimizer.save_ema_history:
+            self.optimizer.ema_history = OptimizationHistory()
+        self.optimizer._current_lr = float(self.optimizer.initial_learning_rate)
+        self.optimizer._current_model_lr = float(
+            self.optimizer.initial_learning_rate
+            * self.optimizer.model_parameters_lr_scale
+        )
+        self.optimizer._current_gradient_mask_idx = 0
+
+    def run_once(self) -> OptimizationState:
+        if self.path == "pure":
+            if self._pure_runner is None:
+                raise RuntimeError("pure runner was not prepared")
+            carry = self._pure_runner(self.initial_state)
+            return carry.opt_state
+
+        terminal_states: list[OptimizationState] = []
+        _optimise(
+            self.fixture.simulation,
+            self.fixture.data,
+            self.settings.n_steps,
+            self.settings.tolerance,
+            self.settings.convergence,
+            self.fixture.indexes,
+            self.fixture.losses,
+            self.initial_state,
+            self.optimizer,
+            ema_alpha=self.settings.ema_alpha,
+            min_steps_per_threshold=self.settings.min_steps_per_threshold,
+            silent=True,
+            terminal_state_callback=terminal_states.append,
+        )
+        if len(terminal_states) != 1:
+            raise RuntimeError(
+                f"{self.path} captured {len(terminal_states)} terminal states; expected one"
+            )
+        return terminal_states[0]
 
 
-def _result_params(path: str, result: Any) -> Any:
-    if path == "pure":
-        return result.opt_state.params
-    history = result[1]
-    return history.states[-1].params if history.states else result[0].params
+def _completed_steps(state: OptimizationState) -> int:
+    return int(np.asarray(state.step))
 
 
-def _final_loss(path: str, result: Any) -> float:
-    losses = result.opt_state.losses if path == "pure" else result[1].states[-1].losses
-    return float(np.asarray(losses.total_train_loss))
+def _final_loss(state: OptimizationState) -> float:
+    if state.losses is None:
+        raise RuntimeError("terminal optimization state has no losses")
+    return float(np.asarray(state.losses.total_train_loss))
 
 
-def _parameter_digest(path: str, result: Any) -> float:
-    return float(sum(np.asarray(leaf, dtype=np.float64).sum() for leaf in jax.tree_util.tree_leaves(_result_params(path, result))))
+def _parameter_snapshot(state: OptimizationState) -> tuple[np.ndarray, ...]:
+    return tuple(
+        np.asarray(leaf).copy()
+        for leaf in jax.tree_util.tree_leaves(state.params)
+        if hasattr(leaf, "shape")
+    )
 
 
-def _validate_steps(path: str, result: Any, requested: int) -> int:
-    completed = _completed_steps(path, result)
-    if completed != requested:
-        raise RuntimeError(f"{path} completed {completed} steps; expected {requested}")
-    return completed
+def _parameter_fingerprint(snapshot: Sequence[np.ndarray]) -> str:
+    digest = hashlib.sha256()
+    for leaf in snapshot:
+        contiguous = np.ascontiguousarray(leaf)
+        digest.update(str(contiguous.dtype).encode())
+        digest.update(repr(contiguous.shape).encode())
+        digest.update(contiguous.tobytes())
+    return digest.hexdigest()
 
 
-def _counter_total(counter: Counter[str]) -> int:
-    return sum(counter.values())
+def _snapshots_close(
+    left: Sequence[np.ndarray],
+    right: Sequence[np.ndarray],
+) -> bool:
+    return len(left) == len(right) and all(
+        np.allclose(a, b, rtol=PARITY_RTOL, atol=PARITY_ATOL, equal_nan=False)
+        for a, b in zip(left, right)
+    )
+
+
+@dataclass
+class SampleReport:
+    elapsed_s: float
+    steps_completed: int
+    steps_per_s: float
+    compiles: int
+    compile_s: float
+    host_materialisations: int
+    host_materialisations_per_step: float
+    host_breakdown: dict[str, int]
+    final_loss: float
+    parameter_fingerprint: str
+
+
+def _measure_sample(
+    prepared: PreparedPath,
+    requested_steps: int,
+) -> tuple[SampleReport, tuple[np.ndarray, ...]]:
+    prepared.reset()
+    with count_compiles() as compile_stats, count_host_materialisation() as hosts:
+        start = time.perf_counter()
+        state = prepared.run_once()
+        _block_tree(state)
+        elapsed = time.perf_counter() - start
+
+    completed = _completed_steps(state)
+    if completed != requested_steps:
+        raise RuntimeError(
+            f"{prepared.path} completed {completed} steps; expected {requested_steps}"
+        )
+    final_loss = _final_loss(state)
+    if not np.isfinite(final_loss):
+        raise RuntimeError(f"{prepared.path} produced non-finite terminal loss {final_loss}")
+    snapshot = _parameter_snapshot(state)
+    host_total = sum(hosts.values())
+    sample = SampleReport(
+        elapsed_s=elapsed,
+        steps_completed=completed,
+        steps_per_s=requested_steps / elapsed,
+        compiles=int(compile_stats["count"]),
+        compile_s=float(compile_stats["seconds"]),
+        host_materialisations=host_total,
+        host_materialisations_per_step=host_total / requested_steps,
+        host_breakdown=dict(sorted(hosts.items())),
+        final_loss=final_loss,
+        parameter_fingerprint=_parameter_fingerprint(snapshot),
+    )
+    return sample, snapshot
 
 
 @dataclass
 class TimingReport:
     path: str
     steps_requested: int
-    steps_completed: int
-    setup_s: float
-    cold_s: float
-    warm_samples_s: list[float]
+    fixture_setup_s: float
+    path_setup_s: float
+    cold: SampleReport
+    warm: list[SampleReport]
     warm_median_s: float
     warm_mad_s: float
-    cold_compiles: int
+    warm_median_steps_per_s: float
     warm_compiles: int
-    host_transfers_total: int
-    host_transfers_per_step: float
-    host_breakdown: dict[str, int]
-    final_loss: float
-    parameter_digest: float
+    warm_cache_reused: bool
+    repetitions_deterministic: bool
+    validation_errors: list[str]
 
 
 @dataclass
@@ -238,78 +425,153 @@ class ProfileReport:
     path: str
     steps_requested: int
     steps_completed: int
+    fixture_setup_s: float
+    path_setup_s: float
     profile_execution_s: float
     compiles: int
-    host_transfers_total: int
+    compile_s: float
+    host_materialisations: int
     host_breakdown: dict[str, int]
+    final_loss: float
+    parameter_fingerprint: str
     profile_file: str
     trace_dir: str | None
     hotspots: list[dict[str, Any]]
 
 
-def _fixture(args: argparse.Namespace) -> tuple[Any, list, tuple, list[int], list[Callable]]:
-    return _make_fixture(args.frames, args.residues, args.seed, args.target_frame)
+def _prepare(
+    args: argparse.Namespace,
+    settings: OptimiserSettings,
+) -> tuple[Fixture, PreparedPath, float, float]:
+    fixture_start = time.perf_counter()
+    fixture = _make_fixture(
+        args.frames,
+        args.residues,
+        args.timepoints,
+        args.seed,
+        args.target_frame,
+    )
+    fixture_setup_s = time.perf_counter() - fixture_start
+
+    path_start = time.perf_counter()
+    prepared = PreparedPath(args.path, fixture, settings)
+    path_setup_s = time.perf_counter() - path_start
+    return fixture, prepared, fixture_setup_s, path_setup_s
 
 
-def _time_one(path: str, args: argparse.Namespace, settings: OptimiserSettings, out_dir: Path) -> TimingReport:
-    setup_start = time.perf_counter()
-    fixture = _fixture(args)
-    setup_s = time.perf_counter() - setup_start
-    with count_compiles() as cold_compiles, count_host_materialisation() as cold_hosts:
-        start = time.perf_counter()
-        result = _run(path, fixture, settings)
-        _block_tree(result)
-        cold_s = time.perf_counter() - start
-    completed = _validate_steps(path, result, args.steps)
-    warm_samples: list[float] = []
-    warm_compile_count: Counter[str] = Counter()
-    warm_host_count: Counter[str] = Counter()
+def _time_one(
+    args: argparse.Namespace,
+    settings: OptimiserSettings,
+) -> tuple[TimingReport, tuple[np.ndarray, ...]]:
+    _, prepared, fixture_setup_s, path_setup_s = _prepare(args, settings)
+    cold, cold_snapshot = _measure_sample(prepared, args.steps)
+
+    warm_reports: list[SampleReport] = []
+    warm_snapshots: list[tuple[np.ndarray, ...]] = []
     for _ in range(args.warm_repeats):
-        warm_fixture = _fixture(args)
-        with count_compiles() as compile_counts, count_host_materialisation() as host_counts:
-            start = time.perf_counter()
-            warm_result = _run(path, warm_fixture, settings)
-            _block_tree(warm_result)
-            warm_samples.append(time.perf_counter() - start)
-        _validate_steps(path, warm_result, args.steps)
-        warm_compile_count.update(compile_counts)
-        warm_host_count.update(host_counts)
-    median = float(np.median(warm_samples))
-    mad = float(np.median(np.abs(np.asarray(warm_samples) - median)))
-    all_hosts = cold_hosts + warm_host_count
-    return TimingReport(
-        path, args.steps, completed, setup_s, cold_s, warm_samples, median, mad,
-        _counter_total(cold_compiles), _counter_total(warm_compile_count),
-        _counter_total(all_hosts), _counter_total(all_hosts) / args.steps,
-        dict(sorted(all_hosts.items())), _final_loss(path, result), _parameter_digest(path, result),
+        report, snapshot = _measure_sample(prepared, args.steps)
+        warm_reports.append(report)
+        warm_snapshots.append(snapshot)
+
+    warm_times = np.asarray([sample.elapsed_s for sample in warm_reports])
+    median = float(np.median(warm_times))
+    mad = float(np.median(np.abs(warm_times - median)))
+    warm_compiles = sum(sample.compiles for sample in warm_reports)
+    deterministic = all(
+        _snapshots_close(cold_snapshot, snapshot)
+        and np.isclose(
+            cold.final_loss,
+            sample.final_loss,
+            rtol=PARITY_RTOL,
+            atol=PARITY_ATOL,
+        )
+        for sample, snapshot in zip(warm_reports, warm_snapshots)
+    )
+    validation_errors = []
+    if warm_compiles:
+        validation_errors.append(
+            f"warm repetitions performed {warm_compiles} backend compilations"
+        )
+    if not deterministic:
+        validation_errors.append("cold and warm terminal states are not deterministic")
+
+    return (
+        TimingReport(
+            path=args.path,
+            steps_requested=args.steps,
+            fixture_setup_s=fixture_setup_s,
+            path_setup_s=path_setup_s,
+            cold=cold,
+            warm=warm_reports,
+            warm_median_s=median,
+            warm_mad_s=mad,
+            warm_median_steps_per_s=args.steps / median,
+            warm_compiles=warm_compiles,
+            warm_cache_reused=warm_compiles == 0,
+            repetitions_deterministic=deterministic,
+            validation_errors=validation_errors,
+        ),
+        cold_snapshot,
     )
 
 
-def _profile_one(path: str, args: argparse.Namespace, settings: OptimiserSettings, out_dir: Path) -> ProfileReport:
-    fixture = _fixture(args)
-    profile_path = out_dir / f"{path}.prof"
-    trace_dir = args.trace_path or (out_dir / f"trace_{path}")
+def _profile_one(
+    args: argparse.Namespace,
+    settings: OptimiserSettings,
+) -> ProfileReport:
+    _, prepared, fixture_setup_s, path_setup_s = _prepare(args, settings)
+    prepared.reset()
+    profile_path = args.output_dir / f"{args.path}.prof"
+    trace_dir = args.trace_path or (args.output_dir / f"trace_{args.path}")
     if args.trace:
         trace_dir.mkdir(parents=True, exist_ok=True)
+
     profile = cProfile.Profile()
-    with count_host_materialisation() as host_counts, count_compiles() as compile_counts:
+    with count_host_materialisation() as hosts, count_compiles() as compile_stats:
         start = time.perf_counter()
-        with (jax.profiler.trace(str(trace_dir), create_perfetto_link=False) if args.trace else contextlib.nullcontext()):
-            result = profile.runcall(_run, path, fixture, settings)
-            _block_tree(result)
+        trace_context = (
+            jax.profiler.trace(str(trace_dir), create_perfetto_link=False)
+            if args.trace
+            else contextlib.nullcontext()
+        )
+        with trace_context:
+            state = profile.runcall(prepared.run_once)
+            _block_tree(state)
         execution_s = time.perf_counter() - start
-    completed = _completed_steps(path, result)
+
     profile.dump_stats(str(profile_path))
     stats = pstats.Stats(profile).sort_stats("cumtime")
-    hotspots = []
-    for key in (stats.fcn_list or [])[:args.profile_limit]:
+    hotspots: list[dict[str, Any]] = []
+    for key in (stats.fcn_list or [])[: args.profile_limit]:
         filename, lineno, function = key
         primitive_calls, calls, total_s, cumulative_s, _ = stats.stats[key]
-        hotspots.append({"function": f"{filename}:{lineno}({function})", "primitive_calls": primitive_calls,
-                         "calls": calls, "tottime_s": total_s, "cumtime_s": cumulative_s})
-    return ProfileReport(path, args.steps, completed, execution_s, _counter_total(compile_counts),
-                         _counter_total(host_counts), dict(sorted(host_counts.items())),
-                         str(profile_path), str(trace_dir) if args.trace else None, hotspots)
+        hotspots.append(
+            {
+                "function": f"{filename}:{lineno}({function})",
+                "primitive_calls": primitive_calls,
+                "calls": calls,
+                "tottime_s": total_s,
+                "cumtime_s": cumulative_s,
+            }
+        )
+    snapshot = _parameter_snapshot(state)
+    return ProfileReport(
+        path=args.path,
+        steps_requested=args.steps,
+        steps_completed=_completed_steps(state),
+        fixture_setup_s=fixture_setup_s,
+        path_setup_s=path_setup_s,
+        profile_execution_s=execution_s,
+        compiles=int(compile_stats["count"]),
+        compile_s=float(compile_stats["seconds"]),
+        host_materialisations=sum(hosts.values()),
+        host_breakdown=dict(sorted(hosts.items())),
+        final_loss=_final_loss(state),
+        parameter_fingerprint=_parameter_fingerprint(snapshot),
+        profile_file=str(profile_path),
+        trace_dir=str(trace_dir) if args.trace else None,
+        hotspots=hotspots,
+    )
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -320,17 +582,43 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
     if args.steps is None:
         args.steps = 1000 if args.mode == "timing" else 100
     if args.mode == "timing":
-        if args.paths is None:
-            parser.error("timing mode requires --paths")
-        if args.path is not None or args.trace or args.trace_path is not None:
-            parser.error("--path, --trace, and --trace-path are profile-mode options")
+        if args.trace or args.trace_path is not None:
+            parser.error("--trace and --trace-path are profile-mode options")
         if args.allow_early_stop:
-            parser.error("timing mode requires fixed-step execution; remove --allow-early-stop")
-    else:
-        if args.path is None:
-            parser.error("profile mode requires exactly one --path")
-        if args.paths is not None:
-            parser.error("profile mode accepts --path, not --paths")
+            parser.error("timing mode requires fixed-step execution")
+
+
+def _environment() -> dict[str, Any]:
+    return {
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "jax": jax.__version__,
+        "jaxlib": jax.lib.__version__,
+        "backend": jax.default_backend(),
+        "devices": [str(device) for device in jax.devices()],
+    }
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n")
+    temporary.replace(path)
+
+
+def _write_parameter_snapshot(
+    path: Path,
+    snapshot: Sequence[np.ndarray],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("wb") as handle:
+        np.savez_compressed(
+            handle,
+            **{f"leaf_{index:03d}": leaf for index, leaf in enumerate(snapshot)},
+        )
+    temporary.replace(path)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -339,29 +627,60 @@ def main(argv: list[str] | None = None) -> int:
     _validate_args(parser, args)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     settings = _make_settings(args)
+
     if args.mode == "timing":
-        reports = [_time_one(path, args, settings, args.output_dir) for path in args.paths]
-        timing = [asdict(report) for report in reports]
-        profile = []
+        timing_report, terminal_snapshot = _time_one(args, settings)
+        timing = [asdict(timing_report)]
+        profile_reports: list[dict[str, Any]] = []
+        validation_errors = timing_report.validation_errors
     else:
-        report = _profile_one(args.path, args, settings, args.output_dir)
+        profile_report = _profile_one(args, settings)
+        terminal_snapshot = ()
         timing = []
-        profile = [asdict(report)]
-    run_config = {"mode": args.mode, "steps": args.steps, "frames": args.frames, "residues": args.residues,
-                  "seed": args.seed, "target_frame": args.target_frame, "optimizer": args.optimizer,
-                  "learning_rate": args.learning_rate, "paths": args.paths, "path": args.path,
-                  "warm_repeats": args.warm_repeats, "trace": args.trace,
-                  "trace_path": str(args.trace_path) if args.trace_path else None,
-                  "profile_limit": args.profile_limit, "output_dir": str(args.output_dir),
-                  "allow_early_stop": args.allow_early_stop, "json": str(args.json) if args.json else None,
-                  "platform": jax.default_backend()}
-    report = {"run_config": run_config, "timing": timing, "profile": profile}
-    report_path = args.json or args.output_dir / ("timing_report.json" if args.mode == "timing" else "profile_report.json")
-    report_path.parent.mkdir(parents=True, exist_ok=True)
-    report_path.write_text(json.dumps(report, indent=2) + "\n")
+        profile_reports = [asdict(profile_report)]
+        validation_errors = []
+
+    run_config = {
+        "mode": args.mode,
+        "path": args.path,
+        "steps": args.steps,
+        "frames": args.frames,
+        "residues": args.residues,
+        "timepoints": args.timepoints,
+        "timepoint_values": [
+            float(value) for value in np.asarray(_timepoint_values(args.timepoints))
+        ],
+        "seed": args.seed,
+        "target_frame": args.target_frame,
+        "optimizer": args.optimizer,
+        "learning_rate": args.learning_rate,
+        "warm_repeats": args.warm_repeats,
+        "trace": args.trace,
+        "trace_path": str(args.trace_path) if args.trace_path else None,
+        "profile_limit": args.profile_limit,
+        "output_dir": str(args.output_dir),
+        "allow_early_stop": args.allow_early_stop,
+        "json": str(args.json) if args.json else None,
+        "terminal_npz": str(args.terminal_npz) if args.terminal_npz else None,
+    }
+    report = {
+        "schema_version": SCHEMA_VERSION,
+        "run_config": run_config,
+        "environment": _environment(),
+        "timing": timing,
+        "profile": profile_reports,
+        "valid": not validation_errors,
+        "validation_errors": validation_errors,
+    }
+    report_path = args.json or args.output_dir / (
+        "timing_report.json" if args.mode == "timing" else "profile_report.json"
+    )
+    if args.terminal_npz is not None and args.mode == "timing":
+        _write_parameter_snapshot(args.terminal_npz, terminal_snapshot)
+    _atomic_write_json(report_path, report)
     print(json.dumps(report, indent=2))
     print(f"wrote {report_path}")
-    return 0
+    return 0 if report["valid"] else 2
 
 
 if __name__ == "__main__":

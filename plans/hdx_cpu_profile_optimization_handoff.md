@@ -3,29 +3,85 @@
 ## Harness redesign completed (2026-07-26)
 
 `profiling/profile_hdx_cpu.py` now has explicit `timing` and `profile` modes.
-Timing runs are fixed-step, exclude fixture setup, synchronize inside the timed
-interval, and report independent cold/warm compilation and host-materialisation
-counts. Profile runs handle one path, keep cProfile/JAX trace artifacts out of
-benchmark metrics, and report diagnostic elapsed time separately. The harness
-also validates completed steps and records final loss/parameter digests.
+Timing runs are fixed-step, exclude fixture and optimizer setup, synchronize
+inside the timed interval, and report independent cold/warm compilation and
+host-materialisation counts. One prepared fixture and callable are reused for
+warm samples. Profile runs handle one path, keep cProfile/JAX trace artifacts
+out of benchmark metrics, and report diagnostic elapsed time separately. The
+harness validates the terminal optimizer step directly and records final loss
+and SHA-256 parameter fingerprints.
 
 Typical commands:
 
 ```text
 uv run python profiling/profile_hdx_cpu.py --mode timing \
-  --paths eager,jit,pure --steps 1000
+  --path pure --steps 1000 --timepoints 5
 uv run python profiling/profile_hdx_cpu.py --mode profile \
-  --path pure --steps 100 --trace
+  --path pure --steps 100 --timepoints 5 --trace
 ```
 
-No production optimizer or library files were changed. Targeted verification:
-the module compiles cleanly, parser validation enforces mode-specific options,
-the execution helpers keep synchronization at the caller boundary. End-to-end
-smoke runs passed for pure timing (2 steps, with JSON timing fields and no
-profile artifacts) and pure profiling (2 steps, with diagnostic elapsed time and
-a `.prof` artifact). A full 1,000-step benchmark was not rerun in this handoff
-because it is a long CPU workload; the timing command above is the authoritative
-clean benchmark.
+The harness uses a private, optional terminal-state callback in `_optimise`; the
+public optimizer return contract and optimizer math are unchanged. Focused tests
+cover uptake shape, exact terminal steps, warm cache reuse, deterministic
+repetitions, suite definitions, parity helpers, and non-negative scaling fits.
+
+## Clean Uptake Scaling Baseline Completed (2026-07-26)
+
+The complete clean baseline is stored at
+`profiling/_output/hdx_cpu_scaling/initial_baseline_20260726/`. The `_output`
+directory follows the repository ignore convention. The campaign contains the
+manifest, 39 per-cell JSON/NPZ artifacts, aggregate JSON/CSV, report, and
+annotated runtime and path-speedup heatmaps.
+
+Environment and protocol:
+
+- Apple M1 Max, 10 cores, 32 GB RAM.
+- Python 3.13.2, JAX 0.4.35, jaxlib 0.4.34, CPU backend.
+- 13 residue/frame/timepoint configurations and all three paths.
+- 1,000 fixed steps, one cold sample, and three warm samples per cell.
+- 39/39 cells valid, zero warm compilations, and zero cross-path parity failures.
+
+Representative warm medians:
+
+| Configuration `(residues, frames, timepoints)` | Eager | JIT step | Pure loop |
+|---|---:|---:|---:|
+| Low corner `(96, 173, 1)` | 11.34 s | 0.641 s | 0.139 s |
+| Anchor `(144, 500, 5)` | 11.47 s | 0.715 s | 0.433 s |
+| 600 residues `(600, 500, 5)` | 11.62 s | 0.885 s | 0.937 s |
+| 5,000 frames `(144, 5000, 5)` | 11.82 s | 1.646 s | 3.043 s |
+| High corner `(600, 5000, 10)` | 13.10 s | 4.149 s | 9.150 s |
+
+Key findings:
+
+- At the anchor, pure is 26.5x faster than eager and 1.65x faster than JIT step.
+- At the low corner, pure is 81.6x faster than eager and 4.61x faster than JIT.
+- The current pure path scales much more steeply with residues and frames. This
+  is consistent with its full `n_steps` history buffers remaining in the
+  compiled loop carry; the lean-history stage will test that explanation
+  directly. JIT step becomes slightly faster by 600 residues and substantially
+  faster at 5,000 frames and the high corner.
+- Increasing timepoints from 1 to 10 has little measurable effect at 144
+  residues and 500 frames. The residue-by-frame work dominates this
+  average-first uptake fixture.
+- Warm host materialisations are 7.001/step for eager, 4.001/step for JIT step,
+  and zero for pure.
+
+This baseline makes lean/final-only history a prerequisite for selecting the
+compiled loop as the production default at large frame counts. The compiled
+architecture remains the correct direction, but the existing full-history pure
+implementation is not uniformly the fastest path.
+
+Use the five-configuration sentinel suite after every optimization stage:
+
+```text
+uv run python profiling/run_hdx_cpu_scaling.py \
+  --suite stage --run-id <stage-id> --steps 1000 --warm-repeats 3 \
+  --baseline-dir profiling/_output/hdx_cpu_scaling/initial_baseline_20260726 \
+  --previous-dir profiling/_output/hdx_cpu_scaling/<previous-stage-id>
+```
+
+Run the full suite again after the final stage by replacing `--suite stage` with
+`--suite full`.
 
 ## Status
 
@@ -71,8 +127,9 @@ benchmark that has tracing disabled.
 
 ## Main Conclusion
 
-Make the pure compiled optimisation loop the normal production path. Do not spend
-significant effort micro-optimising the eager implementation.
+Make the pure compiled optimisation loop the normal production path after
+removing its full-history carry. Do not spend significant effort
+micro-optimising the eager implementation.
 
 The current JIT mode only compiles `optimizer.step`; the surrounding optimisation
 loop, convergence tracking, stopping decisions, history handling, and diagnostic

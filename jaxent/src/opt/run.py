@@ -248,6 +248,7 @@ def _optimise(
     min_steps_per_threshold: int = 2,  # Minimum steps before checking convergence
     logger: logging.Logger | None = None,
     silent: bool = False,
+    terminal_state_callback: Callable[[OptimizationState], None] | None = None,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     """Python-loop optimisation path."""
     _logger = logger if logger is not None else LOGGER
@@ -360,6 +361,8 @@ def _optimise(
         logger=_logger,
         silent=silent,
     )
+    if terminal_state_callback is not None:
+        terminal_state_callback(opt_state)
 
     if optimizer.history.states:
         best_state = optimizer.history.get_best_state()
