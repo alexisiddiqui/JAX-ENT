@@ -99,8 +99,6 @@ def run_optimization(
     name: str = "optimization_run",
     output_dir: str = "_optimise",
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     cov_matrix: Array | None = None,
@@ -121,8 +119,6 @@ def run_optimization(
     if opt_config is not None:
         n_steps = opt_config.n_steps
         learning_rate = opt_config.learning_rate
-        initial_learning_rate = opt_config.initial_learning_rate
-        initial_steps = opt_config.initial_steps
         ema_alpha = opt_config.ema_alpha
         forward_model_scaling = opt_config.forward_model_scaling
         model_parameters_lr_scale = opt_config.model_parameters_lr_scale
@@ -208,8 +204,6 @@ def run_optimization(
             parameter_partition_masks=partition_masks,
             clip_value=None,
             optimizer=optimizer_type,
-            initial_learning_rate=initial_learning_rate,
-            initial_steps=initial_steps,
         )
         opt_state = optimizer.initialise(
             model=sim,
@@ -257,8 +251,6 @@ def run_optimization(
         # 2. Save HDF5 Histories
         output_path = os.path.join(output_dir, f"{name}_results.hdf5")
         save_optimization_history_to_file(filename=output_path, history=optimizer.history)
-        output_path_ema = os.path.join(output_dir, f"{name}_results_EMA.hdf5")
-        save_optimization_history_to_file(filename=output_path_ema, history=optimizer.ema_history)
 
 
 # ---------------------------------------------------------------------------

@@ -91,7 +91,7 @@ def test_module_batch_optimise_padded_sweep_trims_results() -> None:
     hparam_batch = HParamBatch(
         forward_model_weights=jnp.ones((3, 1), dtype=jnp.float32),
         forward_model_scaling=jnp.asarray([[1.0], [0.8], [1.2]], dtype=jnp.float32),
-        learning_rate=jnp.asarray([0.1, 0.1, 0.1], dtype=jnp.float32),
+        learning_rate=jnp.asarray([0.1, 0.2, 0.3], dtype=jnp.float32),
     )
 
     result = batch_optimise(
@@ -166,7 +166,7 @@ def test_module_batch_optimise_matches_sequential_final_loss_and_weights() -> No
     hparam_batch = HParamBatch(
         forward_model_weights=jnp.ones((3, 1), dtype=jnp.float32),
         forward_model_scaling=jnp.asarray([[1.0], [0.8], [1.2]], dtype=jnp.float32),
-        learning_rate=jnp.asarray([0.1, 0.1, 0.1], dtype=jnp.float32),
+        learning_rate=jnp.asarray([0.1, 0.2, 0.3], dtype=jnp.float32),
     )
 
     batch_result = batch_optimise(

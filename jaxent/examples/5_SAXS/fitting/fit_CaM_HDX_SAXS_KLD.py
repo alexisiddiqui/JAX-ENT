@@ -237,8 +237,6 @@ def main():
     optimizer = OptaxOptimizer(
         learning_rate=args.learning_rate,
         parameter_partition_masks={Optimisable_Parameters.frame_weights},
-        initial_learning_rate=1.0,
-        initial_steps=2,
     )
     
     # --- Run Optimization ---
@@ -279,11 +277,6 @@ def main():
         str(output_path / f"{run_name}_results.hdf5"),
         history,
     )
-    if optimizer.ema_history is not None:
-        save_optimization_history_to_file(
-            str(output_path / f"{run_name}_results_EMA.hdf5"),
-            optimizer.ema_history,
-        )
 
     print(f"Saved results to {output_path}")
 

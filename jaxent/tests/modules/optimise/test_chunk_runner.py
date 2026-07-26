@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxent.src.custom_types.config import OptimiserSettings
+from jaxent.src.custom_types.config import Optimisable_Parameters
 from jaxent.src.opt.chunk import ChunkInputs, run_batch, run_sequential
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import _build_chunk_state, result_to_history, run_optimise
@@ -40,7 +41,6 @@ def _run_chunk(
         loss_functions,
         indexes,
         2,
-        optimizer.initial_steps,
     )
     return result, optimizer, initial_state
 
@@ -59,6 +59,46 @@ def test_tolerance_termination_stops_before_n_steps() -> None:
     assert not bool(result.carry.active)
 
 
+def test_convergence_carry_contains_only_scalar_leaves() -> None:
+    result, _, _ = _run_chunk(3, n_steps=1)
+    leaves = jax.tree_util.tree_leaves(result.carry.convergence)
+    assert leaves
+    assert all(jnp.ndim(leaf) == 0 for leaf in leaves)
+
+
+def test_static_gradient_mask_is_active_from_first_step() -> None:
+    def run_one_step(partitions):
+        simulation, _ = _create_synthetic_simulation()
+        optimizer = OptaxOptimizer(
+            learning_rate=0.1,
+            optimizer="sgd",
+            parameter_partition_masks=partitions,
+        )
+        initial_state = optimizer.initialise(simulation)
+        carry, inputs, loss_functions, indexes = _build_chunk_state(
+            simulation,
+            (jnp.asarray([10.0], dtype=jnp.float32),),
+            -jnp.inf,
+            [-jnp.inf],
+            [0],
+            [synthetic_output_l2_loss],
+            initial_state,
+            optimizer,
+        )
+        result = run_sequential(
+            carry, inputs, 1, 1, optimizer, loss_functions, indexes, 2
+        )
+        return initial_state.params.model_parameters[0].bias, result.carry.opt_state.params.model_parameters[0].bias
+
+    initial_bias, enabled_bias = run_one_step(
+        {Optimisable_Parameters.frame_weights, Optimisable_Parameters.model_parameters}
+    )
+    _, disabled_bias = run_one_step({Optimisable_Parameters.frame_weights})
+
+    assert not jnp.isclose(enabled_bias, initial_bias)
+    assert jnp.isclose(disabled_bias, initial_bias)
+
+
 def test_nonfinite_loss_freezes_last_finite_state() -> None:
     simulation, _ = _create_synthetic_simulation()
     optimizer = OptaxOptimizer(learning_rate=0.1)
@@ -73,7 +113,7 @@ def test_nonfinite_loss_freezes_last_finite_state() -> None:
         initial_state,
         optimizer,
     )
-    result = run_sequential(carry, inputs, 10, 3, optimizer, loss_functions, indexes, 2, 0)
+    result = run_sequential(carry, inputs, 10, 3, optimizer, loss_functions, indexes, 2)
     assert not bool(result.carry.active)
     assert jnp.array_equal(
         result.carry.opt_state.params.frame_weights,
@@ -172,7 +212,7 @@ def _non_monotonic_parameter_loss(model, _target, _index):
 
 def test_learning_rate_state_persists_across_chunks() -> None:
     rates = []
-    for chunk_size in (1, 3):
+    for chunk_size in (1, 4, 12):
         simulation, _ = _create_synthetic_simulation()
         optimizer = OptaxOptimizer(learning_rate=5.0, optimizer="sgd")
         initial_state = optimizer.initialise(simulation)
@@ -182,7 +222,7 @@ def test_learning_rate_state_persists_across_chunks() -> None:
             -jnp.inf,
             [-jnp.inf],
             [0],
-            [_oscillating_parameter_loss],
+            [_non_monotonic_parameter_loss],
             initial_state,
             optimizer,
         )
@@ -195,12 +235,19 @@ def test_learning_rate_state_persists_across_chunks() -> None:
             loss_functions,
             indexes,
             2,
-            optimizer.initial_steps,
         )
         rate = result.metrics.lr
         assert bool(jnp.all(rate[1:] <= rate[:-1]))
+        reductions = int(jnp.sum(rate[1:] < rate[:-1]))
+        assert reductions >= 2
+        assert jnp.isclose(
+            rate[-1],
+            5.0 / optimizer.plateau_denominator**reductions,
+            rtol=1e-5,
+        )
         rates.append(rate)
     assert jnp.allclose(rates[0], rates[1], atol=1e-6)
+    assert jnp.allclose(rates[0], rates[2], atol=1e-6)
 
 
 def test_running_best_is_not_replaced_by_final_state() -> None:
@@ -226,7 +273,6 @@ def test_running_best_is_not_replaced_by_final_state() -> None:
         loss_functions,
         indexes,
         2,
-        optimizer.initial_steps,
     )
     assert result.carry.best.step < result.carry.opt_state.step
     assert result.carry.best.losses.total_val_loss < result.carry.opt_state.losses.total_val_loss
@@ -261,8 +307,6 @@ def test_stopped_batch_lane_remains_frozen() -> None:
         convergence_thresholds=jnp.stack([item.convergence_thresholds for item in inputs]),
         tolerance=jnp.stack([item.tolerance for item in inputs]),
         ema_alpha=jnp.stack([item.ema_alpha for item in inputs]),
-        target_lr=jnp.stack([item.target_lr for item in inputs]),
-        target_model_lr=jnp.stack([item.target_model_lr for item in inputs]),
     )
     result = run_batch(
         batched_carries,
@@ -274,7 +318,6 @@ def test_stopped_batch_lane_remains_frozen() -> None:
         (synthetic_output_l2_loss,),
         (0,),
         2,
-        optimizer.initial_steps,
     )
     assert jnp.array_equal(
         result.carry.opt_state.params.frame_weights[0],

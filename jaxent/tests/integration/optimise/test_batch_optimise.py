@@ -105,13 +105,14 @@ def _clone_simulation_with_params(
 
 def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:
     simulation, models, dataset = _build_quick_hdx_fixture()
-    learning_rate = 0.3
+    learning_rates = jnp.asarray([0.2, 0.3, 0.4], dtype=jnp.float32)
+    learning_rate = float(learning_rates[0])
     config = _make_config("integration_batch", learning_rate=learning_rate)
 
     hparam_batch = HParamBatch(
         forward_model_weights=jnp.ones((3, 1), dtype=jnp.float32),
         forward_model_scaling=jnp.asarray([[1.0], [0.8], [1.2]], dtype=jnp.float32),
-        learning_rate=jnp.asarray([learning_rate, learning_rate, learning_rate], dtype=jnp.float32),
+        learning_rate=learning_rates,
     )
     batch_result = batch_optimise(
         simulation=simulation,
@@ -140,7 +141,9 @@ def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:
         _, history = run_optimise(
             run_simulation,
             data_to_fit=(dataset,),
-            config=_make_config(f"integration_seq_{run_idx}", learning_rate),
+            config=_make_config(
+                f"integration_seq_{run_idx}", float(learning_rates[run_idx])
+            ),
             forward_models=models,
             indexes=[0],
             loss_functions=[hdx_pf_l2_loss],

@@ -602,7 +602,7 @@ the shared pure-JAX chunk runner in `jaxent/src/opt/chunk.py`:
 - The eager diagnostic path delegates to the same step and convergence primitives;
   its former oscillation-triggered host-side threshold reset is intentionally removed.
   Note this is the convergence-counter reset only. Oscillation-triggered **learning-rate
-  decay** is retained and unchanged: `_step_with_rates` still computes
+  decay** now ratchets cumulatively from the carried rate: `_step_with_rates` computes
   `reduce_lr = (grad_dot_product < 0) & (step > 1)` and divides both rates by
   `plateau_denominator` (`jaxent/src/opt/optimiser.py:391-404`). It is now more correct
   than before — `grad_dot_product` is carried through `StepMetrics` rather than being
@@ -612,8 +612,9 @@ the shared pure-JAX chunk runner in `jaxent/src/opt/chunk.py`:
 
   Behavioural effect of the dropped counter reset: on an oscillating run, convergence
   thresholds can now be met sooner than the old eager path allowed, since
-  `steps_since_threshold_start` is no longer pushed back on oscillation. Step dynamics
-  and the learning-rate trajectory are unaffected.
+  `steps_since_threshold_start` is no longer pushed back on oscillation.
+  This supersedes the earlier Stage 1 note that the learning-rate trajectory was
+  unaffected; cumulative decay is an intentional Item 6 numerical change.
 - The profiler's `pure` and `jit` paths now exercise the shared compiled runner. The
   old step-only JIT loop is no longer a production execution path.
 
@@ -662,7 +663,9 @@ Functional:
 - History contains the best state and configured convergence snapshots without
   gradients or optimizer state by default.
 - History parameter snapshots contain only the configured parameter partitions.
-- Loss scaling behavior and numerical results remain unchanged.
+- Loss scaling behavior remains unchanged. The following numerical changes are
+  intentional and tested: two warm-up steps are removed, the full static gradient
+  mask is active from step 0, and learning-rate decay compounds from carried state.
 
 Performance:
 

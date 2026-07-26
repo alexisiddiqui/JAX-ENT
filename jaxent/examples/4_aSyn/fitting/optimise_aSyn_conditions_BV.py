@@ -115,8 +115,6 @@ def run_conditions_sweep(
     n_steps: int = 10000,
     num_splits: int = 3,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
@@ -276,8 +274,6 @@ def run_conditions_sweep(
                         opt_config = OptimizationConfig(
                             n_steps=n_steps,
                             learning_rate=learning_rate,
-                            initial_learning_rate=initial_learning_rate,
-                            initial_steps=initial_steps,
                             ema_alpha=ema_alpha,
                             forward_model_scaling=forward_model_scaling,
                             convergence_rates=convergence_rates,
@@ -363,8 +359,6 @@ def run_all_conditions(
     n_steps: int,
     num_splits: int,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
@@ -401,8 +395,6 @@ def run_all_conditions(
                 n_steps=n_steps,
                 num_splits=num_splits,
                 learning_rate=learning_rate,
-                initial_learning_rate=initial_learning_rate,
-                initial_steps=initial_steps,
                 ema_alpha=ema_alpha,
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,
@@ -572,8 +564,6 @@ def main():
     print(f"  Steps per run: {args.n_steps}")
     print(f"  Replicates per split: {args.n_replicates}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Initial learning rate: {args.initial_learning_rate}")
-    print(f"  Initial steps: {args.initial_steps}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
     print(f"  Model parameter LR scale: {args.model_parameters_lr_scale}")
@@ -594,8 +584,6 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
@@ -612,8 +600,6 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,

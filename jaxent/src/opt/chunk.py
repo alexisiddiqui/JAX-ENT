@@ -31,8 +31,6 @@ class ChunkInputs(NamedTuple):
     convergence_thresholds: Any
     tolerance: Any
     ema_alpha: Any
-    target_lr: Any
-    target_model_lr: Any
 
 
 class ChunkCarry(NamedTuple):
@@ -41,7 +39,6 @@ class ChunkCarry(NamedTuple):
     convergence: ConvergenceCarry
     lr: Any
     model_lr: Any
-    gradient_mask_idx: Any
     executed_steps: Any
     active: Any
     best: StateSnapshot
@@ -122,7 +119,6 @@ def optimisation_step(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> tuple[ChunkCarry, StepMetrics]:
     """Execute one side-effect-free optimisation step."""
 
@@ -134,7 +130,6 @@ def optimisation_step(
             _updated_sim,
             new_lr,
             new_model_lr,
-            new_mask_idx,
             grad_dot_product,
         ) = OptaxOptimizer._step_with_rates(
             optimizer=optimizer,
@@ -145,9 +140,6 @@ def optimisation_step(
             indexes=indexes,
             lr=active_carry.lr,
             model_lr=active_carry.model_lr,
-            target_lr=inputs.target_lr,
-            target_model_lr=inputs.target_model_lr,
-            gradient_mask_idx=active_carry.gradient_mask_idx,
         )
 
         losses = save_state.losses
@@ -163,7 +155,6 @@ def optimisation_step(
             carry=active_carry.convergence,
             previous_loss=previous_loss,
             current_loss=loss_value,
-            current_params=save_state.params,
             ema_alpha=inputs.ema_alpha,
         )
 
@@ -188,7 +179,6 @@ def optimisation_step(
             convergence=new_convergence,
             lr=new_lr,
             model_lr=new_model_lr,
-            gradient_mask_idx=new_mask_idx,
             executed_steps=active_carry.executed_steps + 1,
             active=next_active,
             best=next_best,
@@ -199,7 +189,6 @@ def optimisation_step(
             convergence=active_carry.convergence,
             lr=active_carry.lr,
             model_lr=active_carry.model_lr,
-            gradient_mask_idx=active_carry.gradient_mask_idx,
             executed_steps=active_carry.executed_steps + 1,
             active=jnp.asarray(False),
             best=active_carry.best,
@@ -224,17 +213,14 @@ def evaluate_convergence(
     carry: ChunkCarry,
     inputs: ChunkInputs,
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> tuple[ChunkCarry, Array]:
     old_convergence = carry.convergence
     current_loss = carry.opt_state.losses.total_train_loss
     new_convergence = check_and_advance_threshold(
         carry=old_convergence,
         current_loss=current_loss,
-        step=jnp.asarray(carry.opt_state.step, dtype=jnp.int32),
         thresholds=inputs.convergence_thresholds,
         min_steps=min_steps_per_threshold,
-        initial_steps=initial_steps,
     )
     threshold_event = (
         (new_convergence.current_threshold_idx != old_convergence.current_threshold_idx)
@@ -269,7 +255,6 @@ def _make_record(carry: ChunkCarry, threshold_event: Array, boundary_active: Arr
         "indexes",
         "chunk_size",
         "min_steps_per_threshold",
-        "initial_steps",
     ),
 )
 def run_step_chunk(
@@ -280,7 +265,6 @@ def run_step_chunk(
     indexes: tuple[int, ...],
     chunk_size: int,
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> tuple[ChunkCarry, StepMetrics, ChunkRecord]:
     def scan_step(current: ChunkCarry, _unused: None) -> tuple[ChunkCarry, StepMetrics]:
         return optimisation_step(
@@ -290,12 +274,11 @@ def run_step_chunk(
             loss_functions,
             indexes,
             min_steps_per_threshold,
-            initial_steps,
         )
 
     carry, metrics = jax.lax.scan(scan_step, carry, None, length=chunk_size)
     carry, threshold_event = evaluate_convergence(
-        carry, inputs, min_steps_per_threshold, initial_steps
+        carry, inputs, min_steps_per_threshold
     )
     boundary_active = jnp.any(metrics.executed)
     record = _make_record(carry, threshold_event, boundary_active)
@@ -319,7 +302,6 @@ def run_chunks(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> ChunkResult:
     records: list[ChunkRecord] = []
     metrics: list[StepMetrics] = []
@@ -334,7 +316,6 @@ def run_chunks(
             indexes,
             current_size,
             min_steps_per_threshold,
-            initial_steps,
         )
         records.append(record)
         metrics.append(chunk_metrics)
@@ -351,7 +332,6 @@ def run_sequential(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> ChunkResult:
     return run_chunks(
         carry,
@@ -362,7 +342,6 @@ def run_sequential(
         loss_functions,
         indexes,
         min_steps_per_threshold,
-        initial_steps,
     )
 
 
@@ -376,15 +355,12 @@ def run_batch(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
-    initial_steps: int,
 ) -> ChunkResult:
     input_axes = ChunkInputs(
         data_targets=None,
         convergence_thresholds=0,
         tolerance=0,
         ema_alpha=0,
-        target_lr=0,
-        target_model_lr=0,
     )
 
     def one(carry: ChunkCarry, lane_inputs: ChunkInputs) -> ChunkResult:
@@ -398,7 +374,6 @@ def run_batch(
             loss_functions,
             indexes,
             min_steps_per_threshold,
-            initial_steps,
         )
 
     return jax.vmap(one, in_axes=(0, input_axes))(carries, inputs)

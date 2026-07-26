@@ -158,13 +158,12 @@ def _build_chunk_state(
     init_carry = ChunkCarry(
         opt_state=dense_state,
         sim=_simulation,
-        convergence=initialise_convergence_carry(dense_state.params),
-        lr=jnp.asarray(optimizer.initial_learning_rate, dtype=jnp.float32),
+        convergence=initialise_convergence_carry(),
+        lr=base_learning_rate,
         model_lr=jnp.asarray(
-            optimizer.initial_learning_rate * optimizer.model_parameters_lr_scale,
+            base_learning_rate * optimizer.model_parameters_lr_scale,
             dtype=jnp.float32,
         ),
-        gradient_mask_idx=jnp.array(0, dtype=jnp.int32),
         executed_steps=jnp.array(0, dtype=jnp.int32),
         active=(
             jnp.isfinite(dense_state.losses.total_train_loss)
@@ -181,8 +180,6 @@ def _build_chunk_state(
         convergence_thresholds=create_convergence_thresholds(convergence, base_learning_rate),
         tolerance=jnp.asarray(tolerance, dtype=jnp.float32),
         ema_alpha=jnp.asarray(0.5, dtype=jnp.float32),
-        target_lr=base_learning_rate,
-        target_model_lr=base_learning_rate * optimizer.model_parameters_lr_scale,
     )
     return init_carry, inputs, tuple_loss_functions, tuple_indexes
 
@@ -226,7 +223,7 @@ def _optimise_pure(
         tuple_loss_functions,
         tuple_indexes,
         min_steps_per_threshold,
-        optimizer.initial_steps,
+
     )
     history = result_to_history(result, optimizer)
     _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
@@ -343,14 +340,12 @@ def _optimise(
                 tuple_loss_functions,
                 tuple_indexes,
                 min_steps_per_threshold,
-                optimizer.initial_steps,
             )
             boundary_metrics.append(step_metrics)
         carry, threshold_event = evaluate_convergence(
             carry,
             inputs,
             min_steps_per_threshold,
-            optimizer.initial_steps,
         )
         metrics.extend(boundary_metrics)
         records.append(_make_record(carry, threshold_event, old_active & jnp.any(boundary_metrics[0].executed)))

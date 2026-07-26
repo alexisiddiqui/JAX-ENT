@@ -273,7 +273,6 @@ class PreparedPath:
                     loss_functions,
                     indexes,
                     settings.min_steps_per_threshold,
-                    self.optimizer.initial_steps,
                 )
                 return result.carry.opt_state
 
@@ -281,14 +280,10 @@ class PreparedPath:
 
     def reset(self) -> None:
         self.optimizer.history = OptimizationHistory()
-        if self.optimizer.save_ema_history:
-            self.optimizer.ema_history = OptimizationHistory()
-        self.optimizer._current_lr = float(self.optimizer.initial_learning_rate)
+        self.optimizer._current_lr = float(self.optimizer.learning_rate)
         self.optimizer._current_model_lr = float(
-            self.optimizer.initial_learning_rate
-            * self.optimizer.model_parameters_lr_scale
+            self.optimizer.learning_rate * self.optimizer.model_parameters_lr_scale
         )
-        self.optimizer._current_gradient_mask_idx = 0
 
     def run_once(self) -> OptimizationState:
         if self.path in ("pure", "jit"):

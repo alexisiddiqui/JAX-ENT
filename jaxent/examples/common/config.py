@@ -29,8 +29,6 @@ class OptimizationConfig:
         default_factory=lambda: [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
     )
     learning_rate: float = 1e-3
-    initial_learning_rate: float = 1e0
-    initial_steps: int = 2
     optimizer: str = "adamw"
     ema_alpha: float = 0.5
     forward_model_scaling: float = 100.0
