@@ -1,5 +1,32 @@
 # HDX CPU Optimisation Profiling Handoff
 
+## Harness redesign completed (2026-07-26)
+
+`profiling/profile_hdx_cpu.py` now has explicit `timing` and `profile` modes.
+Timing runs are fixed-step, exclude fixture setup, synchronize inside the timed
+interval, and report independent cold/warm compilation and host-materialisation
+counts. Profile runs handle one path, keep cProfile/JAX trace artifacts out of
+benchmark metrics, and report diagnostic elapsed time separately. The harness
+also validates completed steps and records final loss/parameter digests.
+
+Typical commands:
+
+```text
+uv run python profiling/profile_hdx_cpu.py --mode timing \
+  --paths eager,jit,pure --steps 1000
+uv run python profiling/profile_hdx_cpu.py --mode profile \
+  --path pure --steps 100 --trace
+```
+
+No production optimizer or library files were changed. Targeted verification:
+the module compiles cleanly, parser validation enforces mode-specific options,
+the execution helpers keep synchronization at the caller boundary. End-to-end
+smoke runs passed for pure timing (2 steps, with JSON timing fields and no
+profile artifacts) and pure profiling (2 steps, with diagnostic elapsed time and
+a `.prof` artifact). A full 1,000-step benchmark was not rerun in this handoff
+because it is a long CPU workload; the timing command above is the authoritative
+clean benchmark.
+
 ## Status
 
 The corrected fixed-step profiling run completed all 1,000 requested optimisation
@@ -421,6 +448,44 @@ Low-risk cleanup:
 
 Some dead numerical operations may already be eliminated by XLA, but removing
 them still reduces eager work, tracing, and code complexity.
+
+### P2: Disambiguate Frame-Weight Logits vs. Normalized Weights
+
+`Simulation_Parameters.frame_weights` (and, less critically, `frame_mask`)
+represents two different quantities depending on where in the pipeline it is
+read, distinguished only by convention rather than by type:
+
+- Raw, unnormalized logits — the actual optimizer state that gradient descent
+  updates and that propagates step-to-step (`new_state.params` in
+  `_step_with_rates`, `jaxent/src/opt/optimiser.py`).
+- Softmax-normalized simplex weights — produced by
+  `Simulation_Parameters.normalize_weights` (`jaxent/src/interfaces/simulation.py`)
+  and used for the forward pass and for reported/history state
+  (`save_state.params`).
+
+`frame_mask` has the same raw-logit-versus-`sigmoid`-plus-`clip` duality
+inside `normalize_weights`, though it is currently inert in practice since
+`Optimisable_Parameters.frame_mask` optimization raises `NotImplementedError`
+in `create_gradient_masks`.
+
+This ambiguity is not hypothetical: confirming that the lean-history change
+(P1, above) does not alter reported numbers required explicitly tracing which
+of `new_state.params` (logits, feeds the next step) versus `save_state.params`
+(normalized, feeds history/reporting) held which representation, since
+nothing at the call site signals it.
+
+Recommended fix (deliberately the cheap version, not a full type split):
+rename the field so its logit-space nature is explicit at every call site
+(e.g. `frame_weights` -> `frame_weight_logits`), or introduce a lightweight
+`NewType`/alias distinguishing logits from normalized weights so static
+analysis can flag a value used in the wrong space. This does not require a
+new pytree-registered wrapper type and should not change runtime behavior.
+
+Explicitly out of scope here: a full separate wrapper type for
+logits-vs-weights. That would touch every consumer of `Simulation_Parameters`
+(optax's `multi_transform` param labels, gradient masking, the forward pass,
+HDF persistence) and would compete for scope with the refactors already
+queued above. Revisit only if the ambiguity keeps causing bugs.
 
 ## Benchmark Redesign
 
