@@ -102,9 +102,9 @@ Warm median results:
 
 | Path | Wall time | Compiles | Host materialisations |
 |---|---:|---:|---:|
-| Eager | 11.374 s | 0 | 7,001 |
-| JIT step | 0.706 s | 0 | 4,001 |
-| Pure compiled loop | 0.418 s | 0 | 0 |
+| Eager | 11.448 s | 0 | 7,001 |
+| JIT step | 0.744 s | 0 | 4,001 |
+| Pure compiled loop | 0.437 s | 0 | 0 |
 
 The clean pure path is 1.69x faster than the JIT-step path and has zero host
 materialisations; eager has 7.001 host materialisations per step and JIT has 4.001.
@@ -577,6 +577,73 @@ Suggested metrics:
 8. Cache PyTree schemas and reduce beartype involvement in PyTree internals.
 9. Remove redundant control flow and object construction.
 10. Benchmark each change independently against the clean baseline.
+
+## Stage 1 Completion (2026-07-26)
+
+Stage 1 items 2–5 are implemented on the current tree. The optimisation loop now uses
+the shared pure-JAX chunk runner in `jaxent/src/opt/chunk.py`:
+
+- `ChunkInputs`, `ChunkCarry`, `StepMetrics`, `ChunkRecord`, and `ChunkResult` define
+  the shared dynamic state and boundary interfaces.
+- `optimisation_step` is the common step transition, including EMA convergence state,
+  learning-rate state, finite-loss rollback, executed-step counting, and the running
+  best snapshot.
+- `run_step_chunk` compiles one scan plus boundary convergence evaluation. Sequential
+  execution runs fixed chunks with a remainder chunk; batch execution is a bounded
+  `vmap` of that same runner.
+- `run_optimise` defaults to `execution_mode="compiled"`; `"python"` remains available
+  for diagnostics. `jit_update_step` remains as a deprecated compatibility alias.
+- `batch_optimise` reconstructs public histories from stacked chunk results without
+  per-run write-index synchronisation.
+- `history.states` is boundary-granular and `history.convergence_states` is the active
+  threshold-event subset. Post-stop boundaries are dropped, and the running best is
+  selected over executed steps. Boundary history entries use the final carry's
+  optimizer state and gradients, as specified for this slice.
+- The eager diagnostic path delegates to the same step and convergence primitives;
+  its former oscillation-triggered host-side threshold reset is intentionally removed.
+  Note this is the convergence-counter reset only. Oscillation-triggered **learning-rate
+  decay** is retained and unchanged: `_step_with_rates` still computes
+  `reduce_lr = (grad_dot_product < 0) & (step > 1)` and divides both rates by
+  `plateau_denominator` (`jaxent/src/opt/optimiser.py:391-404`). It is now more correct
+  than before — `grad_dot_product` is carried through `StepMetrics` rather than being
+  dropped by `_step` and recomputed host-side, which was the P0 "LR reductions may fail
+  to persist across separately jitted step calls" defect. Covered by
+  `test_learning_rate_state_persists_across_chunks`.
+
+  Behavioural effect of the dropped counter reset: on an oscillating run, convergence
+  thresholds can now be met sooner than the old eager path allowed, since
+  `steps_since_threshold_start` is no longer pushed back on oscillation. Step dynamics
+  and the learning-rate trajectory are unaffected.
+- The profiler's `pure` and `jit` paths now exercise the shared compiled runner. The
+  old step-only JIT loop is no longer a production execution path.
+
+Correctness verification:
+
+```
+uv run pytest jaxent/tests/unit/opt/ jaxent/tests/modules/optimise/ -x
+# 100 passed
+uv run pytest jaxent/tests/integration/optimise/test_batch_optimise.py -x
+# 1 passed
+```
+
+The new chunk-runner tests cover chunk remainders, tolerance and non-finite stopping,
+terminal threshold events, non-monotonic best-state selection, fixed-step compiled/
+Python parity, sequential/batch frozen lanes, learning-rate persistence, history
+granularity, and host-materialisation instrumentation. The full optimisation suites
+pass with the existing beartype warnings and two intentional deprecation warnings.
+
+Clean 1,000-step shared-runner timing on the profiling fixture:
+
+| path | cold wall | warm median | completed | host materialisations/step |
+|---|---:|---:|---:|---:|
+| pure | 3.396 s | 0.213 s | 1000 | 0 |
+| jit | 3.377 s | 0.214 s | 1000 | 0 |
+
+The `pure` and `jit` runs produced identical final loss and parameter fingerprints.
+The earlier Stage 0 clean baseline remains recorded above for comparison; the new
+compiled path is below the clean pure-path baseline after warm-up. Items 6 and 8 were
+not changed. The item-7 history changes are limited to the explicit contract decisions
+listed in the design section.
 
 ## Acceptance Criteria
 

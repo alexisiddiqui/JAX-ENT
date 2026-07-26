@@ -161,7 +161,7 @@ class OptimizationState(NamedTuple):
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=["states", "best_state"],
+    data_fields=["states", "convergence_states", "best_state"],
     meta_fields=[],
 )
 @dataclass
@@ -169,6 +169,7 @@ class OptimizationHistory:
     """Tracks the history of optimization states and metrics"""
 
     states: list[OptimizationState] = field(default_factory=list)
+    convergence_states: list[OptimizationState] = field(default_factory=list)
     best_state: OptimizationState | None = None
 
     def add_state(self, state: OptimizationState):
@@ -190,24 +191,10 @@ class OptimizationHistory:
 
     def get_best_state(self) -> OptimizationState:
         """Get the best state based on unscaled validation loss"""
-
-        self.best_state = self._pick_best_state(self.states)
+        if self.best_state is None:
+            self.best_state = self._pick_best_state(self.states)
 
         return self.best_state
-
-
-class OptimisationCarry(NamedTuple):
-    """Per-step carry for pure optimisation loops."""
-
-    opt_state: OptimizationState
-    sim: InitialisedSimulation
-    convergence: ConvergenceCarry
-    lr: Any
-    model_lr: Any
-    gradient_mask_idx: Any
-    history_params: Simulation_Parameters
-    history_losses: LossComponents
-    write_idx: Any
 
 
 class HParamBatch(NamedTuple):

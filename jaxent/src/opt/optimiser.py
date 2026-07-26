@@ -18,12 +18,10 @@ from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import (
     JaxEnt_Loss,
     LossComponents,
-    OptimisationCarry,
     OptimizationHistory,
     OptimizationState,
 )
 from jaxent.src.opt.gradients import create_gradient_masks, mask_gradients
-from jaxent.src.opt.track import check_and_advance_threshold, update_convergence
 
 LOGGER = logging.getLogger("jaxent.opt")
 
@@ -36,11 +34,6 @@ def _clone_optimization_state(state: OptimizationState) -> OptimizationState:
         return x
 
     return jax.tree_util.tree_map(_clone_leaf, state)
-
-
-def _dynamic_write(buffer: Array, value: Array, write_idx: Array) -> Array:
-    start_indices = (write_idx,) + (0,) * value.ndim
-    return jax.lax.dynamic_update_slice(buffer, jnp.expand_dims(value, axis=0), start_indices)
 
 
 @register_pytree_node_class
@@ -490,93 +483,6 @@ class OptaxOptimizer:
         if not isinstance(new_mask_idx, jax.core.Tracer):
             optimizer._current_gradient_mask_idx = int(new_mask_idx)
         return new_state, loss_value, save_state, updated_sim
-
-    @staticmethod
-    def _pure_step(
-        optimizer: "OptaxOptimizer",
-        carry: OptimisationCarry,
-        data_targets: tuple[
-            ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters,
-            ...,
-        ],
-        loss_functions: tuple[JaxEnt_Loss, ...],
-        indexes: tuple[int, ...],
-        convergence_thresholds: Array,
-        ema_alpha: float,
-        min_steps_per_threshold: int,
-        target_lr: Array,
-        target_model_lr: Array,
-    ) -> OptimisationCarry:
-        """Side-effect-free step used by ``_optimise_pure``."""
-        (
-            new_state,
-            loss_value,
-            save_state,
-            updated_sim,
-            new_lr,
-            new_model_lr,
-            new_mask_idx,
-            _,
-        ) = OptaxOptimizer._step_with_rates(
-            optimizer=optimizer,
-            state=carry.opt_state,
-            simulation=carry.sim,
-            data_targets=data_targets,
-            loss_functions=loss_functions,
-            indexes=indexes,
-            lr=carry.lr,
-            model_lr=carry.model_lr,
-            target_lr=target_lr,
-            target_model_lr=target_model_lr,
-            gradient_mask_idx=carry.gradient_mask_idx,
-        )
-
-        previous_loss = (
-            carry.opt_state.losses.total_train_loss
-            if carry.opt_state.losses is not None
-            else loss_value
-        )
-        new_convergence, _ = update_convergence(
-            carry=carry.convergence,
-            previous_loss=previous_loss,
-            current_loss=loss_value,
-            current_params=save_state.params,
-            ema_alpha=ema_alpha,
-        )
-        new_convergence = check_and_advance_threshold(
-            carry=new_convergence,
-            current_loss=loss_value,
-            step=jnp.asarray(new_state.step, dtype=jnp.int32),
-            thresholds=convergence_thresholds,
-            min_steps=min_steps_per_threshold,
-            initial_steps=optimizer.initial_steps,
-        )
-
-        write_idx = jnp.asarray(carry.write_idx, dtype=jnp.int32)
-        new_history_params = jax.tree_util.tree_map(
-            lambda buf, val: _dynamic_write(buf, val, write_idx),
-            carry.history_params,
-            save_state.params,
-        )
-        if save_state.losses is None:
-            raise ValueError("save_state.losses cannot be None in pure optimisation path")
-        new_history_losses = jax.tree_util.tree_map(
-            lambda buf, val: _dynamic_write(buf, val, write_idx),
-            carry.history_losses,
-            save_state.losses,
-        )
-
-        return OptimisationCarry(
-            opt_state=new_state,
-            sim=carry.sim,
-            convergence=new_convergence,
-            lr=new_lr,
-            model_lr=new_model_lr,
-            gradient_mask_idx=new_mask_idx,
-            history_params=new_history_params,
-            history_losses=new_history_losses,
-            write_idx=write_idx + 1,
-        )
 
     @staticmethod
     def update_history_compute_ema_loss(

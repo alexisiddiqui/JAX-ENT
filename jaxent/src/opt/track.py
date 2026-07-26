@@ -42,7 +42,7 @@ def update_convergence(
     previous_loss: Array,
     current_loss: Array,
     current_params: Simulation_Parameters,
-    ema_alpha: float,
+    ema_alpha: Array | float,
 ) -> tuple[ConvergenceCarry, Array]:
     """Update convergence EMA state and return raw loss delta."""
     previous_loss = jnp.asarray(previous_loss, dtype=jnp.float32)

@@ -153,7 +153,6 @@ class Simulation:
 
         _, aux_data = sim.tree_flatten()
         new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
-        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
 
         if mutate:
             sim.params = new_sim.params

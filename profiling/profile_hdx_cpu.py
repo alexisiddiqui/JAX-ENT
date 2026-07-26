@@ -29,7 +29,8 @@ from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.opt import optimiser as optimiser_module
 from jaxent.src.opt.base import OptimizationHistory, OptimizationState
-from jaxent.src.opt.run import _optimise, _optimise_pure
+from jaxent.src.opt.chunk import run_sequential
+from jaxent.src.opt.run import _build_chunk_state, _optimise
 
 
 SCHEMA_VERSION = 2
@@ -248,29 +249,33 @@ class PreparedPath:
         )
         self.initial_state = self.optimizer.initialise(fixture.simulation, None)
 
-        if path == "jit":
-            self.optimizer.step = jax.jit(
-                optimiser_module.OptaxOptimizer._step,
-                static_argnames=("loss_functions", "indexes"),
-            )
-
         self._pure_runner: Callable[[OptimizationState], Any] | None = None
-        if path == "pure":
+        if path in ("pure", "jit"):
 
             def pure_runner(state: OptimizationState):
-                return _optimise_pure(
+                carry, inputs, loss_functions, indexes = _build_chunk_state(
                     fixture.simulation,
                     fixture.data,
-                    settings.n_steps,
                     settings.tolerance,
                     settings.convergence,
                     fixture.indexes,
                     fixture.losses,
                     state,
                     self.optimizer,
-                    ema_alpha=settings.ema_alpha,
-                    min_steps_per_threshold=settings.min_steps_per_threshold,
                 )
+                inputs = inputs._replace(ema_alpha=jnp.asarray(settings.ema_alpha))
+                result = run_sequential(
+                    carry,
+                    inputs,
+                    settings.n_steps,
+                    settings.step_chunk_size,
+                    self.optimizer,
+                    loss_functions,
+                    indexes,
+                    settings.min_steps_per_threshold,
+                    self.optimizer.initial_steps,
+                )
+                return result.carry.opt_state
 
             self._pure_runner = jax.jit(pure_runner)
 
@@ -286,11 +291,10 @@ class PreparedPath:
         self.optimizer._current_gradient_mask_idx = 0
 
     def run_once(self) -> OptimizationState:
-        if self.path == "pure":
+        if self.path in ("pure", "jit"):
             if self._pure_runner is None:
                 raise RuntimeError("pure runner was not prepared")
-            carry = self._pure_runner(self.initial_state)
-            return carry.opt_state
+            return self._pure_runner(self.initial_state)
 
         terminal_states: list[OptimizationState] = []
         _optimise(

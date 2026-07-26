@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from beartype.typing import NamedTuple, Protocol, runtime_checkable, TYPE_CHECKING
+from beartype.typing import NamedTuple, Protocol, runtime_checkable, TYPE_CHECKING, Literal
 from jaxent.src.custom_types.key import m_key
 
 if TYPE_CHECKING:
@@ -42,6 +42,14 @@ class OptimiserSettings:
     loss_constants: LossConstants = LossConstants(GAMMA=0.1, LAMBDA=0.1, PHI=0.1, PSI=0.1)
     ema_alpha: float = 0.5
     min_steps_per_threshold: int = 2
+    step_chunk_size: int = 100
+    execution_mode: Literal["compiled", "python"] = "compiled"
+
+    def __post_init__(self) -> None:
+        if self.step_chunk_size < 1:
+            raise ValueError("step_chunk_size must be >= 1")
+        if self.execution_mode not in ("compiled", "python"):
+            raise ValueError("execution_mode must be 'compiled' or 'python'")
 
 
 class Optimisable_Parameters(Enum):

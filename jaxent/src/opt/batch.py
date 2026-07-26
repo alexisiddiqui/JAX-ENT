@@ -15,11 +15,11 @@ from jaxent.src.opt.base import (
     BatchOptimisationResult,
     HParamBatch,
     JaxEnt_Loss,
-    OptimizationHistory,
     OptimizationState,
 )
+from jaxent.src.opt.chunk import ChunkInputs, ChunkResult, run_batch as run_chunk_batch
 from jaxent.src.opt.optimiser import OptaxOptimizer
-from jaxent.src.opt.run import _optimise_pure
+from jaxent.src.opt.run import _build_chunk_state, result_to_history
 
 
 def _pad_array(values: Array, n_pad: int) -> Array:
@@ -104,7 +104,7 @@ def batch_optimise(
     batched_scaling = _reshape_for_batches(padded_scaling, n_batches, batch_size)
     batched_lr = _reshape_for_batches(padded_lr, n_batches, batch_size)
 
-    def run_single(
+    def make_single(
         forward_model_weights: Array,
         forward_model_scaling: Array,
         learning_rate: Array,
@@ -119,64 +119,82 @@ def batch_optimise(
             params=run_params,
             opt_state=base_opt_state.opt_state,
             step=0,
-            losses=base_opt_state.losses,
+            losses=None,
             gradients=base_opt_state.gradients,
         )
-        return _optimise_pure(
-            _simulation=run_sim,
+        carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
+            run_sim,
             data_to_fit=data_to_fit,
-            n_steps=config.n_steps,
             tolerance=config.tolerance,
             convergence=config.convergence,
             indexes=indexes,
             loss_functions=loss_functions,
             opt_state=run_state,
             optimizer=optimizer,
-            ema_alpha=config.ema_alpha,
-            min_steps_per_threshold=config.min_steps_per_threshold,
             learning_rate=learning_rate,
         )
+        return (
+            carry,
+            inputs.convergence_thresholds,
+            inputs.tolerance,
+            jnp.asarray(config.ema_alpha, dtype=jnp.float32),
+            inputs.target_lr,
+            inputs.target_model_lr,
+        )
 
-    vmapped_single = jax.vmap(run_single, in_axes=(0, 0, 0))
-
-    def run_batch(batch_inputs):
+    def run_group(batch_inputs):
         batch_weights, batch_scaling, batch_lr = batch_inputs
-        return vmapped_single(batch_weights, batch_scaling, batch_lr)
+        (
+            carries,
+            thresholds,
+            tolerances,
+            ema_alphas,
+            target_lrs,
+            target_model_lrs,
+        ) = jax.vmap(make_single, in_axes=(0, 0, 0))(
+            batch_weights,
+            batch_scaling,
+            batch_lr,
+        )
+        inputs = ChunkInputs(
+            data_targets=(),
+            convergence_thresholds=thresholds,
+            tolerance=tolerances,
+            ema_alpha=ema_alphas,
+            target_lr=target_lrs,
+            target_model_lr=target_model_lrs,
+        )
+        return run_chunk_batch(
+            carries,
+            inputs,
+            tuple(data_to_fit),
+            config.n_steps,
+            config.step_chunk_size,
+            optimizer,
+            tuple(loss_functions),
+            tuple(indexes),
+            config.min_steps_per_threshold,
+            optimizer.initial_steps,
+        )
 
-    batched_carries = jax.lax.map(run_batch, (batched_weights, batched_scaling, batched_lr))
-    flat_carries = jax.tree_util.tree_map(
+    batched_results = jax.lax.map(run_group, (batched_weights, batched_scaling, batched_lr))
+    flat_results = jax.tree_util.tree_map(
         lambda x: x.reshape((n_total,) + x.shape[2:])[:n_hparams],
-        batched_carries,
+        batched_results,
     )
 
-    histories: list[OptimizationHistory] = []
+    histories = []
     best_states: list[OptimizationState] = []
-    convergence_steps: list[int] = []
+    convergence_steps = []
     for run_idx in range(n_hparams):
-        run_carry = jax.tree_util.tree_map(lambda x: x[run_idx], flat_carries)
-        write_idx = int(run_carry.write_idx)
-        convergence_steps.append(write_idx)
-
-        states: list[OptimizationState] = []
-        for step_idx in range(write_idx):
-            step_params = jax.tree_util.tree_map(lambda x: x[step_idx], run_carry.history_params)
-            step_losses = jax.tree_util.tree_map(lambda x: x[step_idx], run_carry.history_losses)
-            states.append(
-                OptimizationState(
-                    params=step_params,
-                    opt_state=run_carry.opt_state.opt_state,
-                    step=step_idx,
-                    losses=step_losses,
-                    gradients=run_carry.opt_state.gradients,
-                )
-            )
-
-        history = OptimizationHistory(states=states)
-        if states:
-            history.best_state = history.get_best_state()
-            best_states.append(history.best_state)
-        else:
-            best_states.append(run_carry.opt_state)
+        run_result = ChunkResult(
+            carry=jax.tree_util.tree_map(lambda x: x[run_idx], flat_results.carry),
+            records=jax.tree_util.tree_map(lambda x: x[run_idx], flat_results.records),
+            metrics=jax.tree_util.tree_map(lambda x: x[run_idx], flat_results.metrics),
+        )
+        history = result_to_history(run_result, optimizer)
+        convergence_steps.append(run_result.carry.executed_steps)
+        best_states.append(history.best_state)
         histories.append(history)
 
     result_hparam_batch = HParamBatch(
@@ -187,6 +205,6 @@ def batch_optimise(
     return BatchOptimisationResult(
         histories=tuple(histories),
         best_states=tuple(best_states),
-        convergence_steps=jnp.asarray(convergence_steps, dtype=jnp.int32),
+        convergence_steps=jnp.stack(convergence_steps).astype(jnp.int32),
         hparam_batch=result_hparam_batch,
     )

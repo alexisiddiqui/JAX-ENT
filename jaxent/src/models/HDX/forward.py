@@ -52,7 +52,7 @@ class BV_uptake_ForwardPass(
         heavy_contacts = jnp.asarray(input_features.heavy_contacts)
         acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
         kints = jnp.asarray(input_features.k_ints)  # (n_residues,)
-        time_points = parameters.timepoints.reshape(-1)  # (n_timepoints,)
+        time_points = jnp.asarray(parameters.timepoints).reshape(-1)  # (n_timepoints,)
 
         # Compute protection factors per frame: (n_residues, n_frames)
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
