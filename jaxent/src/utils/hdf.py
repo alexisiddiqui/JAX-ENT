@@ -22,6 +22,7 @@ import numpy as np
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import LossComponents, OptimizationHistory, OptimizationState
+from jaxent.src.custom_types.config import Optimisable_Parameters
 
 T_mp = TypeVar("T_mp", bound=Model_Parameters)
 
@@ -344,6 +345,17 @@ def save_optimization_history_to_hdf5(
     for i, state in enumerate(history.states):
         save_optimization_state_to_hdf5(states_group, f"{i}", state, **kwargs)
 
+    convergence_group = group.create_group("convergence_states")
+    for i, state in enumerate(history.convergence_states):
+        save_optimization_state_to_hdf5(convergence_group, f"{i}", state, **kwargs)
+
+    if history.state_parameter_partitions is None:
+        group.attrs["state_parameter_partitions"] = "all"
+    else:
+        group.attrs["state_parameter_partitions"] = ",".join(
+            sorted(partition.name for partition in history.state_parameter_partitions)
+        )
+
     # Save best_state if present
     if history.best_state is not None:
         save_optimization_state_to_hdf5(group, "best_state", history.best_state, **kwargs)
@@ -375,14 +387,40 @@ def load_optimization_history_from_hdf5(
         state = load_optimization_state_from_hdf5(states_group, f"{i}", default_model_params_cls)
         states.append(state)
 
-    # Load best_state if present
+    convergence_states = []
+    if "convergence_states" in group:
+        convergence_group = group["convergence_states"]
+        for i in range(len(convergence_group)):
+            state = load_optimization_state_from_hdf5(
+                convergence_group, f"{i}", default_model_params_cls
+            )
+            convergence_states.append(state)
+
+    partition_attr = group.attrs.get("state_parameter_partitions", "all")
+    if isinstance(partition_attr, bytes):
+        partition_attr = partition_attr.decode()
+    if partition_attr == "all":
+        state_parameter_partitions = None
+    elif partition_attr:
+        state_parameter_partitions = frozenset(
+            Optimisable_Parameters[name] for name in str(partition_attr).split(",")
+        )
+    else:
+        state_parameter_partitions = frozenset()
+
+    # Load best_state if present. HDF round-trips values, not Python object identity.
     best_state = None
     if group.attrs["has_best_state"]:
         best_state = load_optimization_state_from_hdf5(
             group, "best_state", default_model_params_cls
         )
 
-    return OptimizationHistory(states=states, best_state=best_state)
+    return OptimizationHistory(
+        states=states,
+        convergence_states=convergence_states,
+        best_state=best_state,
+        state_parameter_partitions=state_parameter_partitions,
+    )
 
 
 def save_optimization_history_to_file(

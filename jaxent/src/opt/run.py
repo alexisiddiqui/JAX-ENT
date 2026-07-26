@@ -1,5 +1,4 @@
 import logging
-import time
 from collections.abc import Sequence
 from typing import Optional, TypedDict, cast
 
@@ -20,7 +19,6 @@ from jaxent.src.models.core import Simulation
 from jaxent.src.opt.base import (
     InitialisedSimulation,
     JaxEnt_Loss,
-    LossComponents,
     OptimizationHistory,
     OptimizationState,
 )
@@ -200,6 +198,10 @@ def _optimise_pure(
     min_steps_per_threshold: int = 2,
     learning_rate: float | Array | None = None,
     chunk_size: int = 100,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
         _simulation,
@@ -223,23 +225,56 @@ def _optimise_pure(
         tuple_loss_functions,
         tuple_indexes,
         min_steps_per_threshold,
+        parameter_partitions=state_parameter_partitions,
+        retain_record_params=save_states or save_convergence,
 
     )
-    history = result_to_history(result, optimizer)
+    history = result_to_history(
+        result,
+        optimizer,
+        save_states=save_states,
+        save_convergence=save_convergence,
+        save_best=save_best,
+        state_parameter_partitions=state_parameter_partitions,
+    )
     _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
     _simulation.params = result.carry.best.params
     return _simulation, optimizer
 
 
-def result_to_history(result: ChunkResult, optimizer: OptaxOptimizer) -> OptimizationHistory:
+def _snapshot_to_state(snapshot: StateSnapshot, final_state: OptimizationState) -> OptimizationState:
+    return OptimizationState(
+        params=snapshot.params,
+        opt_state=final_state.opt_state,
+        step=snapshot.step,
+        losses=snapshot.losses,
+        gradients=final_state.gradients,
+    )
+
+
+def result_to_history(
+    result: ChunkResult,
+    optimizer: OptaxOptimizer,
+    *,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
+) -> OptimizationHistory:
     """Convert final chunk outputs into the public Python history contract."""
     records = result.records
-    active = np.asarray(jax.device_get(records.active))
-    threshold_event = np.asarray(jax.device_get(records.threshold_event))
-    active_indices = np.flatnonzero(active)
+    active = (
+        np.asarray(jax.device_get(records.active))
+        if (save_states or save_convergence)
+        else None
+    )
+    threshold_event = (
+        np.asarray(jax.device_get(records.threshold_event)) if save_convergence else None
+    )
+    active_indices = np.flatnonzero(active) if active is not None else []
 
     final_state = result.carry.opt_state
-    history = OptimizationHistory()
+    history = OptimizationHistory(state_parameter_partitions=state_parameter_partitions)
 
     def state_from_record(index: int) -> OptimizationState:
         params = jax.tree_util.tree_map(lambda value: value[index], records.params)
@@ -252,21 +287,22 @@ def result_to_history(result: ChunkResult, optimizer: OptaxOptimizer) -> Optimiz
             gradients=final_state.gradients,
         )
 
-    convergence_indices = {int(index) for index in np.flatnonzero(active & threshold_event)}
-    for index in active_indices:
-        state = state_from_record(int(index))
-        history.states.append(state)
-        if int(index) in convergence_indices:
-            history.convergence_states.append(state)
-
-    best = result.carry.best
-    history.best_state = OptimizationState(
-        params=best.params,
-        opt_state=final_state.opt_state,
-        step=best.step,
-        losses=best.losses,
-        gradients=final_state.gradients,
+    convergence_indices = (
+        {int(index) for index in np.flatnonzero(active & threshold_event)}
+        if save_convergence
+        else set()
     )
+    for index in active_indices:
+        state = state_from_record(int(index)) if save_states else None
+        if save_states:
+            history.states.append(state)
+        if int(index) in convergence_indices:
+            history.convergence_states.append(
+                state if state is not None else state_from_record(int(index))
+            )
+
+    if save_best:
+        history.best_state = _snapshot_to_state(result.carry.best, final_state)
     optimizer.history = history
     return history
 
@@ -310,6 +346,10 @@ def _optimise(
     logger: logging.Logger | None = None,
     silent: bool = False,
     terminal_state_callback: Callable[[OptimizationState], None] | None = None,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     """Python diagnostic orchestration over the shared step primitives."""
     carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
@@ -348,7 +388,15 @@ def _optimise(
             min_steps_per_threshold,
         )
         metrics.extend(boundary_metrics)
-        records.append(_make_record(carry, threshold_event, old_active & jnp.any(boundary_metrics[0].executed)))
+        records.append(
+            _make_record(
+                carry,
+                threshold_event,
+                old_active & jnp.any(boundary_metrics[0].executed),
+                state_parameter_partitions,
+                save_states or save_convergence,
+            )
+        )
         remaining -= current_size
 
     result = ChunkResult(
@@ -356,7 +404,14 @@ def _optimise(
         records=jax.tree_util.tree_map(lambda *values: jnp.stack(values), *records),
         metrics=jax.tree_util.tree_map(lambda *values: jnp.stack(values), *metrics),
     )
-    history = result_to_history(result, optimizer)
+    history = result_to_history(
+        result,
+        optimizer,
+        save_states=save_states,
+        save_convergence=save_convergence,
+        save_best=save_best,
+        state_parameter_partitions=state_parameter_partitions,
+    )
     _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
     _simulation.params = result.carry.best.params
     if terminal_state_callback is not None:
@@ -433,6 +488,10 @@ def run_optimise(
             ema_alpha=config.ema_alpha,
             min_steps_per_threshold=config.min_steps_per_threshold,
             chunk_size=config.step_chunk_size,
+            save_states=config.save_states,
+            save_convergence=config.save_convergence,
+            save_best=config.save_best,
+            state_parameter_partitions=config.parameter_partitions,
         )
     elif execution_mode == "python":
         _simulation, optimizer = _optimise(
@@ -450,6 +509,10 @@ def run_optimise(
             chunk_size=config.step_chunk_size,
             logger=_logger,
             silent=silent,
+            save_states=config.save_states,
+            save_convergence=config.save_convergence,
+            save_best=config.save_best,
+            state_parameter_partitions=config.parameter_partitions,
         )
     else:
         raise ValueError(f"Unsupported execution mode: {execution_mode}")

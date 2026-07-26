@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from beartype.typing import NamedTuple, Protocol, runtime_checkable, TYPE_CHECKING, Literal
+from beartype.typing import NamedTuple, Protocol, runtime_checkable, TYPE_CHECKING
+from typing import Literal
 from jaxent.src.custom_types.key import m_key
 
 if TYPE_CHECKING:
@@ -31,8 +32,21 @@ class LossConstants(NamedTuple):  # TODO we need to change these to have more me
     PSI: float
 
 
+class Optimisable_Parameters(Enum):
+    frame_weights = 0
+    model_parameters = 1
+    forward_model_weights = 2
+    frame_mask = 3
+
+
 @dataclass
 class OptimiserSettings:
+    """Configuration for optimisation and history retention.
+
+    ``parameter_partitions=None`` retains all selectable parameter partitions.
+    ``forward_model_scaling`` and ``normalise_loss_functions`` are always retained;
+    they are small scalar fields and have no ``Optimisable_Parameters`` enum member.
+    """
     name: str
     n_steps: int = 100
     tolerance: float = 1e-2
@@ -44,19 +58,28 @@ class OptimiserSettings:
     min_steps_per_threshold: int = 2
     step_chunk_size: int = 100
     execution_mode: Literal["compiled", "python"] = "compiled"
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None
+    save_states: bool = True
+    save_convergence: bool = True
+    save_best: bool = True
 
     def __post_init__(self) -> None:
         if self.step_chunk_size < 1:
             raise ValueError("step_chunk_size must be >= 1")
         if self.execution_mode not in ("compiled", "python"):
             raise ValueError("execution_mode must be 'compiled' or 'python'")
-
-
-class Optimisable_Parameters(Enum):
-    frame_weights = 0
-    model_parameters = 1
-    forward_model_weights = 2
-    frame_mask = 3
+        if not (self.save_states or self.save_convergence or self.save_best):
+            raise ValueError("At least one of save_states, save_convergence, or save_best must be true")
+        if self.parameter_partitions is not None:
+            try:
+                partitions = frozenset(self.parameter_partitions)
+            except TypeError as exc:
+                raise ValueError("parameter_partitions must be a collection of Optimisable_Parameters") from exc
+            object.__setattr__(self, "parameter_partitions", partitions)
+            if not partitions:
+                raise ValueError("parameter_partitions must not be empty")
+            if not all(isinstance(partition, Optimisable_Parameters) for partition in partitions):
+                raise ValueError("parameter_partitions must contain only Optimisable_Parameters members")
 
 
 @dataclass

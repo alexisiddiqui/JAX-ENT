@@ -161,15 +161,25 @@ class OptimizationState(NamedTuple):
 @partial(
     jax.tree_util.register_dataclass,
     data_fields=["states", "convergence_states", "best_state"],
-    meta_fields=[],
+    meta_fields=["state_parameter_partitions"],
 )
 @dataclass
 class OptimizationHistory:
-    """Tracks the history of optimization states and metrics"""
+    """Tracks optimization states and metrics.
+
+    ``state_parameter_partitions`` describes ``states`` and
+    ``convergence_states``: ``None`` means all selectable partitions, while a
+    frozenset records the configured selection. ``best_state`` is always
+    complete regardless of this value. The scalar
+    ``forward_model_scaling`` and ``normalise_loss_functions`` fields are
+    always retained because they have no enum partition. When both state lists
+    are empty, this field records policy rather than populated entries.
+    """
 
     states: list[OptimizationState] = field(default_factory=list)
     convergence_states: list[OptimizationState] = field(default_factory=list)
     best_state: OptimizationState | None = None
+    state_parameter_partitions: frozenset | None = field(default=None, repr=True)
 
     def add_state(self, state: OptimizationState):
         """Add a new state to history and update best state if needed"""
@@ -191,6 +201,11 @@ class OptimizationHistory:
     def get_best_state(self) -> OptimizationState:
         """Get the best state based on unscaled validation loss"""
         if self.best_state is None:
+            if not self.states:
+                raise ValueError(
+                    "No best state is available: save_best=False and save_states=False "
+                    "produced an empty optimization history."
+                )
             self.best_state = self._pick_best_state(self.states)
 
         return self.best_state

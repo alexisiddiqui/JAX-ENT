@@ -19,7 +19,7 @@ from jaxent.src.opt.base import (
 )
 from jaxent.src.opt.chunk import ChunkInputs, ChunkResult, run_batch as run_chunk_batch
 from jaxent.src.opt.optimiser import OptaxOptimizer
-from jaxent.src.opt.run import _build_chunk_state, result_to_history
+from jaxent.src.opt.run import _build_chunk_state, _snapshot_to_state, result_to_history
 
 
 def _pad_array(values: Array, n_pad: int) -> Array:
@@ -168,6 +168,8 @@ def batch_optimise(
             tuple(loss_functions),
             tuple(indexes),
             config.min_steps_per_threshold,
+            config.parameter_partitions,
+            config.save_states or config.save_convergence,
         )
 
     batched_results = jax.lax.map(run_group, (batched_weights, batched_scaling, batched_lr))
@@ -185,9 +187,16 @@ def batch_optimise(
             records=jax.tree_util.tree_map(lambda x: x[run_idx], flat_results.records),
             metrics=jax.tree_util.tree_map(lambda x: x[run_idx], flat_results.metrics),
         )
-        history = result_to_history(run_result, optimizer)
+        history = result_to_history(
+            run_result,
+            optimizer,
+            save_states=config.save_states,
+            save_convergence=config.save_convergence,
+            save_best=config.save_best,
+            state_parameter_partitions=config.parameter_partitions,
+        )
         convergence_steps.append(run_result.carry.executed_steps)
-        best_states.append(history.best_state)
+        best_states.append(_snapshot_to_state(run_result.carry.best, run_result.carry.opt_state))
         histories.append(history)
 
     result_hparam_batch = HParamBatch(

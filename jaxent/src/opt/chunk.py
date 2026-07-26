@@ -9,6 +9,7 @@ from jax import Array
 from beartype.typing import NamedTuple
 
 from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.custom_types.config import Optimisable_Parameters
 from jaxent.src.opt.base import (
     ConvergenceCarry,
     InitialisedSimulation,
@@ -66,6 +67,38 @@ class ChunkResult(NamedTuple):
     carry: ChunkCarry
     records: ChunkRecord
     metrics: StepMetrics
+
+
+_EMPTY = jnp.zeros((0,), dtype=jnp.float32)
+
+
+def _select_partitions(
+    params: Simulation_Parameters,
+    partitions: frozenset[Optimisable_Parameters] | None,
+) -> Simulation_Parameters:
+    """Replace unselected optimisable partitions with zero-size arrays before stacking."""
+    if partitions is None:
+        return params
+
+    def select(value, partition):
+        return value if partition in partitions else _EMPTY
+
+    model_parameters = (
+        params.model_parameters
+        if Optimisable_Parameters.model_parameters in partitions
+        else [jax.tree_util.tree_map(lambda _: _EMPTY, model) for model in params.model_parameters]
+    )
+    return Simulation_Parameters(
+        frame_weights=select(params.frame_weights, Optimisable_Parameters.frame_weights),
+        frame_mask=select(params.frame_mask, Optimisable_Parameters.frame_mask),
+        model_parameters=model_parameters,
+        forward_model_weights=select(
+            params.forward_model_weights, Optimisable_Parameters.forward_model_weights
+        ),
+        # These are not optimisation partitions and are always retained.
+        normalise_loss_functions=params.normalise_loss_functions,
+        forward_model_scaling=params.forward_model_scaling,
+    )
 
 
 def _select_snapshot(
@@ -232,13 +265,22 @@ def evaluate_convergence(
     ), threshold_event
 
 
-def _make_record(carry: ChunkCarry, threshold_event: Array, boundary_active: Array) -> ChunkRecord:
+def _make_record(
+    carry: ChunkCarry,
+    threshold_event: Array,
+    boundary_active: Array,
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
+    retain_record_params: bool = True,
+) -> ChunkRecord:
     losses = carry.opt_state.losses
     if losses is None:
         raise ValueError("Chunk carry must contain losses")
     return ChunkRecord(
         step=jnp.asarray(carry.opt_state.step, dtype=jnp.int32),
-        params=carry.opt_state.params,
+        params=_select_partitions(
+            carry.opt_state.params,
+            parameter_partitions if retain_record_params else frozenset(),
+        ),
         losses=losses,
         lr=carry.lr,
         threshold_idx=carry.convergence.current_threshold_idx,
@@ -255,6 +297,8 @@ def _make_record(carry: ChunkCarry, threshold_event: Array, boundary_active: Arr
         "indexes",
         "chunk_size",
         "min_steps_per_threshold",
+        "parameter_partitions",
+        "retain_record_params",
     ),
 )
 def run_step_chunk(
@@ -265,6 +309,8 @@ def run_step_chunk(
     indexes: tuple[int, ...],
     chunk_size: int,
     min_steps_per_threshold: int,
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
+    retain_record_params: bool = True,
 ) -> tuple[ChunkCarry, StepMetrics, ChunkRecord]:
     def scan_step(current: ChunkCarry, _unused: None) -> tuple[ChunkCarry, StepMetrics]:
         return optimisation_step(
@@ -281,7 +327,13 @@ def run_step_chunk(
         carry, inputs, min_steps_per_threshold
     )
     boundary_active = jnp.any(metrics.executed)
-    record = _make_record(carry, threshold_event, boundary_active)
+    record = _make_record(
+        carry,
+        threshold_event,
+        boundary_active,
+        parameter_partitions,
+        retain_record_params,
+    )
     return carry, metrics, record
 
 
@@ -302,6 +354,8 @@ def run_chunks(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
+    retain_record_params: bool = True,
 ) -> ChunkResult:
     records: list[ChunkRecord] = []
     metrics: list[StepMetrics] = []
@@ -316,6 +370,8 @@ def run_chunks(
             indexes,
             current_size,
             min_steps_per_threshold,
+            parameter_partitions,
+            retain_record_params,
         )
         records.append(record)
         metrics.append(chunk_metrics)
@@ -332,6 +388,8 @@ def run_sequential(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
+    retain_record_params: bool = True,
 ) -> ChunkResult:
     return run_chunks(
         carry,
@@ -342,6 +400,8 @@ def run_sequential(
         loss_functions,
         indexes,
         min_steps_per_threshold,
+        parameter_partitions,
+        retain_record_params,
     )
 
 
@@ -355,6 +415,8 @@ def run_batch(
     loss_functions: tuple[JaxEnt_Loss, ...],
     indexes: tuple[int, ...],
     min_steps_per_threshold: int,
+    parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
+    retain_record_params: bool = True,
 ) -> ChunkResult:
     input_axes = ChunkInputs(
         data_targets=None,
@@ -374,6 +436,8 @@ def run_batch(
             loss_functions,
             indexes,
             min_steps_per_threshold,
+            parameter_partitions,
+            retain_record_params,
         )
 
     return jax.vmap(one, in_axes=(0, input_axes))(carries, inputs)
