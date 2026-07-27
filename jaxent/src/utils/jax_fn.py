@@ -27,13 +27,11 @@ def frame_average_features(
     Returns:
         Frame-averaged features/outputs
     """
-    weights = frame_weights.reshape(1, -1)
-
     def average_feature(x):
         x = jnp.asarray(x)
         if x.ndim <= 1:
             return x
-        return jnp.sum(x * weights, axis=-1)
+        return jnp.tensordot(x, frame_weights, axes=((-1,), (0,)))
 
     return jax.tree_util.tree_map(average_feature, frame_wise_features)
 
