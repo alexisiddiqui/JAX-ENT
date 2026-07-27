@@ -263,6 +263,7 @@ class Simulation:
         instance.outputs = tuple(outputs)
         instance._input_features = _input_features
         instance._jit_forward_pure = _jit_forward_pure
+        instance.raise_jit_failure = raise_jit_failure
 
         return instance
 
