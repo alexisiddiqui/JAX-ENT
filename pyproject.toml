@@ -89,6 +89,9 @@ exclude = [
 ]
 
 [dependency-groups]
+cuda12 = [
+    "jax[cuda12]==0.4.35",
+]
 examples = [
     "mdakit-sasa",
     "py3dmol",
