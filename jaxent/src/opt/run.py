@@ -95,11 +95,10 @@ def _ensure_dense_state(
     ],
     indexes: tuple[int, ...],
     loss_functions: tuple[JaxEnt_Loss, ...],
-) -> tuple[OptimizationState, InitialisedSimulation]:
-    updated_sim = simulation
+) -> OptimizationState:
     losses = opt_state.losses
     if losses is None:
-        losses, updated_sim = compute_loss(
+        losses = compute_loss(
             simulation,
             opt_state.params,
             data_to_fit,
@@ -109,15 +108,12 @@ def _ensure_dense_state(
     gradients = opt_state.gradients
     if gradients is None:
         gradients = jax.tree_util.tree_map(jnp.zeros_like, opt_state.params)
-    return (
-        OptimizationState(
-            params=opt_state.params,
-            opt_state=opt_state.opt_state,
-            step=opt_state.step,
-            losses=losses,
-            gradients=gradients,
-        ),
-        updated_sim,
+    return OptimizationState(
+        params=opt_state.params,
+        opt_state=opt_state.opt_state,
+        step=opt_state.step,
+        losses=losses,
+        gradients=gradients,
     )
 
 
@@ -138,7 +134,7 @@ def _build_chunk_state(
     tuple_indexes = tuple(indexes)
     tuple_loss_functions = tuple(loss_functions)
 
-    dense_state, _simulation = _ensure_dense_state(
+    dense_state = _ensure_dense_state(
         simulation=_simulation,
         opt_state=opt_state,
         data_to_fit=tuple_data_to_fit,

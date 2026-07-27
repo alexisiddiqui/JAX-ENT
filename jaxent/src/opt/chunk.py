@@ -161,7 +161,6 @@ def optimisation_step(
             new_state,
             loss_value,
             save_state,
-            _updated_sim,
             new_lr,
             new_model_lr,
             grad_dot_product,

@@ -280,7 +280,6 @@ class OptaxOptimizer:
         OptimizationState,
         Array,
         OptimizationState,
-        InitialisedSimulation,
         Array,
         Array,
         Array,
@@ -292,18 +291,18 @@ class OptaxOptimizer:
         base_model_lr = model_lr
         gradient_mask = optimizer._gradient_mask
 
-        def loss_fn(params: Simulation_Parameters) -> tuple[Array, tuple[LossComponents, InitialisedSimulation]]:
-            losses, updated_sim = compute_loss(simulation, params, data_targets, indexes, loss_functions)
-            return losses.total_train_loss, (losses, updated_sim)
+        def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
+            losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
+            return losses.total_train_loss, losses
 
         def scalar_loss_fn(params: Simulation_Parameters) -> Array:
-            losses, _ = compute_loss(simulation, params, data_targets, indexes, loss_functions)
+            losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
             return losses.total_train_loss
 
         (loss_value, aux), grads = jax.value_and_grad(
             loss_fn, allow_int=True, has_aux=True
         )(state.params)
-        losses, updated_sim = aux
+        losses = aux
 
         masked_grads = mask_gradients(grads, gradient_mask)
         previous_grads = state.gradients if state.gradients is not None else masked_grads
@@ -347,7 +346,6 @@ class OptaxOptimizer:
             new_state,
             loss_value,
             save_state,
-            updated_sim,
             new_lr,
             new_model_lr,
             grad_dot_product,
@@ -364,13 +362,12 @@ class OptaxOptimizer:
         ],
         loss_functions: tuple[JaxEnt_Loss, ...],
         indexes: tuple[int, ...],
-    ) -> tuple[OptimizationState, Array, OptimizationState, InitialisedSimulation]:
+    ) -> tuple[OptimizationState, Array, OptimizationState]:
         """Python-loop step wrapper that stores dynamic LR state on optimizer."""
         (
             new_state,
             loss_value,
             save_state,
-            updated_sim,
             new_lr,
             new_model_lr,
             _,
@@ -389,7 +386,7 @@ class OptaxOptimizer:
             optimizer._current_lr = float(new_lr)
         if not isinstance(new_model_lr, jax.core.Tracer):
             optimizer._current_model_lr = float(new_model_lr)
-        return new_state, loss_value, save_state, updated_sim
+        return new_state, loss_value, save_state
 
 
 def compute_loss(
@@ -401,8 +398,8 @@ def compute_loss(
     ],
     indexes: tuple[int, ...],
     loss_functions: tuple[JaxEnt_Loss, ...],
-) -> tuple[LossComponents, InitialisedSimulation]:
-    """Compute losses and return the updated functional simulation."""
+) -> LossComponents:
+    """Compute and return loss components."""
     simulation, _ = simulation.forward(simulation, params, mutate=False)
 
     losses = [
@@ -428,4 +425,4 @@ def compute_loss(
         total_train_loss=total_train,
         total_val_loss=total_val,
     )
-    return loss_components, simulation
+    return loss_components
