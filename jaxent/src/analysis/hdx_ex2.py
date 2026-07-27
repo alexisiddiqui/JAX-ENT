@@ -23,9 +23,6 @@ import jax.numpy as jnp
 import numpy as np
 from scipy.optimize import minimize
 
-jax.config.update("jax_enable_x64", True)
-
-
 @dataclass(frozen=True)
 class HDXExperimentProtocol:
     """Conditions needed to interpret an HDX fractional-uptake curve."""

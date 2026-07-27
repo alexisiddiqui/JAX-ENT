@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from beartype.typing import ClassVar
 
@@ -17,7 +18,9 @@ class BV_Model_Parameters(Model_Parameters):
     bv_bh: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Sequence[float] | Float[Array, " n_timepoints"] | None = field(
+        default_factory=lambda: (0.167, 1.0, 10.0)
+    )
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
 
     def __post_init__(self):
@@ -88,7 +91,9 @@ class linear_BV_Model_Parameters(Model_Parameters):
     bv_bh: Float[Array, " n_timepoints"] | Float[Array, ""] = field(default_factory=lambda: jnp.array([2.0]))
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})
     temperature: float = 300.0
-    timepoints: Float[Array, " n_timepoints"] | None = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
+    timepoints: Sequence[float] | Float[Array, " n_timepoints"] | None = field(
+        default_factory=lambda: (0.167, 1.0, 10.0)
+    )
     static_params: ClassVar[set[str]] = {"temperature", "timepoints", "key"}
 
     def __post_init__(self):

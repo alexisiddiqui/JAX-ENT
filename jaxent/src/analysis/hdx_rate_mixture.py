@@ -16,9 +16,6 @@ import numpy as np
 from scipy.optimize import minimize
 from sklearn.covariance import LedoitWolf
 
-jax.config.update("jax_enable_x64", True)
-
-
 @dataclass(frozen=True)
 class RateMixtureFit:
     n_components: int

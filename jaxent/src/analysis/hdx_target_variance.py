@@ -31,9 +31,6 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.stats import spearmanr
 
-jax.config.update("jax_enable_x64", True)
-
-
 ARTIFACT_TYPE = "geometry_regularised_hdx_target_variance"
 ARTIFACT_VERSION = 1
 DEFAULT_DISTANCE_CUTOFF_ANGSTROM = 8.0
