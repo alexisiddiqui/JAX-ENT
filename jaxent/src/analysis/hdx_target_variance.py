@@ -302,11 +302,15 @@ def positive_two_moment_uptake(
         raise ValueError("mean_rates and variances must be aligned vectors")
     if np.any(mean_rates <= 0) or np.any(variances < 0) or np.any(timepoints < 0):
         raise ValueError("rates must be positive; variances and times must be non-negative")
-    return np.asarray(
-        _gamma_two_moment_uptake_jax(
-            jnp.asarray(mean_rates), jnp.asarray(variances), jnp.asarray(timepoints)
+    # Keep the precision requirement local to this analysis calculation.  The
+    # module must not enable x64 globally as an import side effect, but the
+    # deterministic limit is numerically specified in float64.
+    with jax.experimental.enable_x64():
+        return np.asarray(
+            _gamma_two_moment_uptake_jax(
+                jnp.asarray(mean_rates), jnp.asarray(variances), jnp.asarray(timepoints)
+            )
         )
-    )
 
 
 def predict_curve_moment_uptake(

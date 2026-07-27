@@ -55,7 +55,8 @@ def test_chunk_remainders_execute_exactly_requested_steps_and_match() -> None:
 
 def test_tolerance_termination_stops_before_n_steps() -> None:
     result, _, _ = _run_chunk(3, n_steps=100, tolerance=1e-2)
-    assert int(result.carry.executed_steps) < 100
+    assert int(result.carry.executed_steps) == 5
+    assert result.records.step.shape == (2,)
     assert not bool(result.carry.active)
 
 
@@ -326,10 +327,11 @@ def test_stopped_batch_lane_remains_frozen() -> None:
     assert int(result.carry.executed_steps[0]) == 0
 
 
-def test_chunk_runner_has_no_per_step_host_materialisations() -> None:
+def test_chunk_runner_has_at_most_one_boundary_sync_per_chunk() -> None:
     from profiling.profile_hdx_cpu import count_host_materialisation
 
     with count_host_materialisation() as counts:
         result, _, _ = _run_chunk(3, n_steps=10)
         result.carry.executed_steps.block_until_ready()
-    assert not counts
+    # Boundary convergence checks are allowed; there must be no per-step sync.
+    assert sum(counts.values()) <= 4

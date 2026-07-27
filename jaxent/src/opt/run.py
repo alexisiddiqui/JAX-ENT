@@ -398,6 +398,12 @@ def _optimise(
             )
         )
         remaining -= current_size
+        # The Python diagnostic path is intentionally allowed one convergence
+        # check per chunk.  With the unconditional optimisation step, skipping
+        # later chunks is important: inactive steps now evaluate and discard a
+        # full step body.
+        if not bool(jax.device_get(carry.active)):
+            break
 
     result = ChunkResult(
         carry=carry,

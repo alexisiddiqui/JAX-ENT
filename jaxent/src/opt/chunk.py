@@ -239,7 +239,23 @@ def optimisation_step(
             executed=jnp.asarray(True),
         )
 
-    return jax.lax.cond(carry.active, step, _no_op_step, carry)
+    # Keep both paths in the step jaxpr and select their results afterwards.
+    # A cond over the complete carry prevents XLA from optimising the expensive
+    # step body for large feature arrays.  The inner finite-state select above
+    # already establishes the freeze semantics needed when the step is invalid.
+    stepped_carry, stepped_metrics = step(carry)
+    frozen_carry, frozen_metrics = _no_op_step(carry)
+    next_carry = jax.tree_util.tree_map(
+        lambda stepped, frozen: jax.lax.select(carry.active, stepped, frozen),
+        stepped_carry,
+        frozen_carry,
+    )
+    next_metrics = jax.tree_util.tree_map(
+        lambda stepped, frozen: jax.lax.select(carry.active, stepped, frozen),
+        stepped_metrics,
+        frozen_metrics,
+    )
+    return next_carry, next_metrics
 
 
 def evaluate_convergence(
@@ -376,6 +392,15 @@ def run_chunks(
         records.append(record)
         metrics.append(chunk_metrics)
         remaining -= current_size
+        # The production compiled runner calls this function from Python, so a
+        # boundary sync can avoid launching further full-cost chunks after
+        # convergence.  When run_chunks is traced (the profiling wrapper and
+        # vmap path), the active value is a tracer and the fixed-shape loop is
+        # retained instead.
+        if not isinstance(carry.active, jax.core.Tracer) and not bool(
+            jax.device_get(carry.active)
+        ):
+            break
     return ChunkResult(carry, _stack_records(records), _concat_metrics(metrics))
 
 
