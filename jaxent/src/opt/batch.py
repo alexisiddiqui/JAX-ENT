@@ -39,8 +39,7 @@ def _replace_hparams(
     forward_model_scaling: Array,
 ) -> Simulation_Parameters:
     return Simulation_Parameters(
-        frame_weights=params.frame_weights,
-        frame_mask=params.frame_mask,
+        frame_weight_logits=params.frame_weight_logits,
         model_parameters=params.model_parameters,
         normalise_loss_functions=params.normalise_loss_functions,
         forward_model_weights=forward_model_weights,

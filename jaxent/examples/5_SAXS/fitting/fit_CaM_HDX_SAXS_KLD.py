@@ -193,18 +193,16 @@ def main():
     model_weights = jnp.array([args.saxs_weight, args.hdx_weight, args.maxent_strength])
     model_scaling = jnp.ones(3) 
     
-    init_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    init_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(), bv_model.params,),
         forward_model_weights=model_weights,
         normalise_loss_functions=jnp.ones(3),
         forward_model_scaling=model_scaling,
     )
     
-    prior_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    prior_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(), bv_model.params,),
         forward_model_weights=model_weights,
         normalise_loss_functions=jnp.ones(3),

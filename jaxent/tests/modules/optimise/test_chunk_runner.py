@@ -48,9 +48,9 @@ def _run_chunk(
 def test_chunk_remainders_execute_exactly_requested_steps_and_match() -> None:
     results = [_run_chunk(size)[0] for size in (1, 3, 5, 10, 16)]
     assert all(int(result.carry.executed_steps) == 10 for result in results)
-    reference = results[0].carry.opt_state.params.frame_weights
+    reference = results[0].carry.opt_state.params.frame_weight_simplex
     for result in results[1:]:
-        assert jnp.allclose(result.carry.opt_state.params.frame_weights, reference, atol=1e-6)
+        assert jnp.allclose(result.carry.opt_state.params.frame_weight_simplex, reference, atol=1e-6)
 
 
 def test_tolerance_termination_stops_before_n_steps() -> None:
@@ -117,8 +117,8 @@ def test_nonfinite_loss_freezes_last_finite_state() -> None:
     result = run_sequential(carry, inputs, 10, 3, optimizer, loss_functions, indexes, 2)
     assert not bool(result.carry.active)
     assert jnp.array_equal(
-        result.carry.opt_state.params.frame_weights,
-        initial_state.params.frame_weights,
+        result.carry.opt_state.params.frame_weight_simplex,
+        initial_state.params.frame_weight_simplex,
     )
 
 
@@ -173,8 +173,8 @@ def test_fixed_step_compiled_python_parity() -> None:
         rtol=1e-4,
     )
     assert jnp.allclose(
-        compiled_history.best_state.params.frame_weights,
-        python_history.best_state.params.frame_weights,
+        compiled_history.best_state.params.frame_weight_simplex,
+        python_history.best_state.params.frame_weight_simplex,
         atol=1e-4,
     )
 
@@ -202,12 +202,12 @@ def test_history_is_boundary_granular() -> None:
 
 
 def _oscillating_parameter_loss(model, _target, _index):
-    loss = jnp.square(model.params.frame_weights[0] - 0.8)
+    loss = jnp.square(model.params.frame_weight_simplex[0] - 0.8)
     return loss, loss
 
 
 def _non_monotonic_parameter_loss(model, _target, _index):
-    loss = jnp.sin(20.0 * model.params.frame_weights[0]) + 1.0
+    loss = jnp.sin(20.0 * model.params.frame_weight_simplex[0]) + 1.0
     return loss, loss
 
 
@@ -321,8 +321,8 @@ def test_stopped_batch_lane_remains_frozen() -> None:
         2,
     )
     assert jnp.array_equal(
-        result.carry.opt_state.params.frame_weights[0],
-        initial_params[0].frame_weights,
+        result.carry.opt_state.params.frame_weight_simplex[0],
+        initial_params[0].frame_weight_simplex,
     )
     assert int(result.carry.executed_steps[0]) == 0
 

@@ -199,9 +199,8 @@ def setup_features():
 
 def create_simulation_parameters(trajectory_length, bv_config):
     """Create simulation parameters for a given trajectory length and config"""
-    return Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),  # Set all to 1 (active)
+    return Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),

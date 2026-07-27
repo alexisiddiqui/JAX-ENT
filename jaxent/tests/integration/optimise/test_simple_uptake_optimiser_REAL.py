@@ -138,9 +138,8 @@ def test_uptake_optimiser():
     # features_length = BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(4),
         forward_model_scaling=jnp.array([1.0, 10.0, 10.0, 10]),

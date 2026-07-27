@@ -43,19 +43,13 @@ def forward_pure(
         List of output features
     """
     # Normalize weights using a pure function (ensure this doesn't modify inputs)
-    params = Simulation_Parameters.normalize_weights(params)
-
-    # Mask the frame weights using pure JAX operations
-    masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-    masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
     # Process features one by one instead of using tree_map
     average_features = []
     for feature in input_features:
         # Extract features and apply frame averaging
         # We need to access the .features attribute directly
         feature_data = feature.features
-        avg_feature = jnp.average(feature_data, weights=params.frame_weights, axis=0)
+        avg_feature = jnp.average(feature_data, weights=params.frame_weight_simplex, axis=0)
         average_features.append(DummyFeature(avg_feature))
 
     # Process each model explicitly rather than using tree_map
@@ -222,9 +216,8 @@ class DummyModel(ForwardModel):
 @pytest.fixture
 def simulation_params():
     """Fixture for creating dummy simulation parameters."""
-    return Simulation_Parameters(
-        frame_weights=jnp.ones(10) / 10,
-        frame_mask=jnp.ones(10),
+    return Simulation_Parameters.from_frame_weights(
+        jnp.ones(10) / 10,
         model_parameters=[MockModelParameters()],  # Proper object
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -298,9 +291,8 @@ def test_jitsimulation_forward_produces_output(simulation_params, test_data):
 def test_jitsimulation_handles_mismatched_models_and_params(test_data):
     """Test assertion error for mismatched forward models and model parameters."""
     input_features, forward_models, _ = test_data
-    mismatched_params = Simulation_Parameters(
-        frame_weights=jnp.ones(10) / 10,
-        frame_mask=jnp.ones(10),
+    mismatched_params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(10) / 10,
         model_parameters=[MockModelParameters(), MockModelParameters()],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -318,9 +310,8 @@ def test_jitsimulation_handles_mismatched_feature_shapes():
     mock_config = MagicMock()
     mock_config.forward_parameters = {}
     forward_models = [DummyModel(config=mock_config), DummyModel(config=mock_config)]
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(10) / 10,
-        frame_mask=jnp.ones(10),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(10) / 10,
         model_parameters=[MockModelParameters(), MockModelParameters()],
         forward_model_weights=jnp.ones(2),
         forward_model_scaling=jnp.ones(2),

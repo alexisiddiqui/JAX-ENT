@@ -36,7 +36,6 @@ class Optimisable_Parameters(Enum):
     frame_weights = 0
     model_parameters = 1
     forward_model_weights = 2
-    frame_mask = 3
 
 
 @dataclass

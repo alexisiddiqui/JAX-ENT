@@ -20,6 +20,7 @@ from typing import Dict
 import matplotlib.pyplot as plt
 import MDAnalysis as mda
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
 import seaborn as sns
 from MDAnalysis.analysis import rms
@@ -379,9 +380,9 @@ def compute_cv_weighted_distributions(
                             for step_idx, state in enumerate(history.states):
                                 if (
                                     hasattr(state.params, "frame_weights")
-                                    and state.params.frame_weights is not None
+                                    and state.params.frame_weight_simplex is not None
                                 ):
-                                    frame_weights = np.array(state.params.frame_weights)
+                                    frame_weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
 
                                     if len(frame_weights) == 0 or np.sum(frame_weights) == 0:
                                         continue
@@ -963,9 +964,9 @@ def analyze_conformational_recovery_with_maxent(clustering_results, results_dict
                                 for step_idx, state in enumerate(history.states):
                                     if (
                                         hasattr(state.params, "frame_weights")
-                                        and state.params.frame_weights is not None
+                                        and state.params.frame_weight_simplex is not None
                                     ):
-                                        frame_weights = np.array(state.params.frame_weights)
+                                        frame_weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
 
                                         # FIXED: frame_weights should match TOTAL frames, not just clustered frames
                                         if (

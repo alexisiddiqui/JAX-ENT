@@ -341,9 +341,8 @@ def main():
         # Create a dummy Simulation_Parameters for run_predict
         # The frame_weights are not used in predict method, but Simulation_Parameters requires it
         num_frames = features.features_shape[-1]
-        dummy_sim_params = Simulation_Parameters(
-            frame_weights=jnp.ones(num_frames) / num_frames,
-            frame_mask=jnp.ones(num_frames),
+        dummy_sim_params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(num_frames) / num_frames,
             model_parameters=(model_parameters,),
             forward_model_weights=jnp.array([1.0]),
             normalise_loss_functions=jnp.ones(1),

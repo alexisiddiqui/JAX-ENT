@@ -9,6 +9,7 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 from jaxent.examples.common import analysis
 from jaxent.examples.common.config import ExperimentConfig
@@ -160,10 +161,10 @@ def main() -> None:
             convergence_steps = []
 
             for state in history.states:
-                if state.params is None or state.params.frame_weights is None:
+                if state.params is None or state.params.frame_weight_simplex is None:
                     continue
 
-                frame_weights = np.asarray(state.params.frame_weights, dtype=float).reshape(-1)
+                frame_weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
                 if frame_weights.size == 0 or np.sum(frame_weights) <= 0:
                     continue
                 frame_weights = frame_weights / np.sum(frame_weights)

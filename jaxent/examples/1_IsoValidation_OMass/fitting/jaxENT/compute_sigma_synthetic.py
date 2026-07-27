@@ -294,9 +294,8 @@ def main():
     print("\n--- Predicting HDX Uptake for All Frames ---")
 
     # Create dummy Simulation_Parameters
-    dummy_sim_params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    dummy_sim_params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array([1.0]),
         normalise_loss_functions=jnp.ones(1),

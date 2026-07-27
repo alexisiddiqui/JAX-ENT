@@ -123,17 +123,15 @@ def main():
 
     # --- Parameters ---
     uniform_weights = jnp.ones(n_frames) / n_frames
-    init_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    init_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(),),
         forward_model_weights=jnp.array([1.0, args.maxent_strength]),
         normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2) * 1000.0,
     )
-    prior_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    prior_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(),),
         forward_model_weights=jnp.array([1.0, args.maxent_strength]),
         normalise_loss_functions=jnp.ones(2),

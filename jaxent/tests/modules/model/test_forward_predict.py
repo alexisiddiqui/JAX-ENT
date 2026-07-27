@@ -105,9 +105,8 @@ def create_test_simulation_fixed():
             k_ints=jnp.ones(n_features) * 0.1,
         )
     ]
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames, dtype=jnp.bool_),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -144,9 +143,8 @@ def create_test_simulation_real():
                     k_ints=jnp.ones(n_features) * 0.1,
                 )
             ]
-            params = Simulation_Parameters(
-                frame_weights=jnp.ones(n_frames) / n_frames,
-                frame_mask=jnp.ones(n_frames, dtype=jnp.bool_),
+            params = Simulation_Parameters.from_frame_weights(
+                jnp.ones(n_frames) / n_frames,
                 model_parameters=[bv_config.forward_parameters],
                 forward_model_weights=jnp.ones(1),
                 forward_model_scaling=jnp.ones(1),
@@ -203,7 +201,7 @@ class TestSimulationMethods:
         assert len(self.simulation.outputs) > 0
         # The simulation should have updated params (normalized)
         assert self.simulation.params is not None
-        assert hasattr(self.simulation.params, "frame_weights")
+        assert hasattr(self.simulation.params, "frame_weight_simplex")
         print("✓ Forward method test passed")
 
     def test_predict_method_with_simulation_parameters(self):
@@ -272,7 +270,7 @@ class TestSimulationMethods:
         """Test that parameters are properly updated between calls."""
         if not hasattr(self.simulation, "_input_features"):
             self.simulation.initialise()
-        n_frames = len(self.params.frame_weights)
+        n_frames = len(self.params.frame_weight_simplex)
 
         # FIX: Create non-uniform weights. The `forward` method normalizes
         # weights, so a simple scalar multiplication won't change the outcome.
@@ -281,7 +279,9 @@ class TestSimulationMethods:
         if n_frames > 1:
             modified_weights = modified_weights.at[0].set(5.0)  # Skew the weights
 
-        modified_params = self.params.__replace__(frame_weights=modified_weights)
+        modified_params = self.params.__replace__(
+            frame_weight_logits=modified_weights,
+        )
 
         # Run with original (uniform) params
         self.simulation.forward(self.simulation, self.params)
@@ -294,9 +294,8 @@ class TestSimulationMethods:
         # The internal state of simulation.params should be updated
         # Note: We compare against the normalized weights that the model actually uses.
         # The forward method uses softmax for normalization
-        normalized_modified_weights = jax.nn.softmax(modified_params.frame_weights)
-        # FIX: Compare to normalized weights, not raw weights
-        sim_normalized_weights = self.simulation.params.frame_weights
+        normalized_modified_weights = modified_params.frame_weight_simplex
+        sim_normalized_weights = self.simulation.params.frame_weight_simplex
         assert jnp.allclose(sim_normalized_weights, normalized_modified_weights)
 
         # Because the weight distribution changed, the outputs should be different.
@@ -307,14 +306,18 @@ class TestSimulationMethods:
         """Test that different frame weights produce different results."""
         if not hasattr(self.simulation, "_input_features"):
             self.simulation.initialise()
-        n_frames = len(self.params.frame_weights)
+        n_frames = len(self.params.frame_weight_simplex)
         uniform_weights = jnp.ones(n_frames) / n_frames
-        uniform_params = self.params.__replace__(frame_weights=uniform_weights)
+        uniform_params = self.params.__replace__(
+            frame_weight_logits=jnp.log(uniform_weights),
+        )
         self.simulation.forward(self.simulation, uniform_params)
         uniform_results = self.simulation.outputs[0].y_pred()
         if n_frames > 1:
             biased_weights = jnp.zeros(n_frames).at[0].set(1.0)
-            biased_params = self.params.__replace__(frame_weights=biased_weights)
+            biased_params = self.params.__replace__(
+                frame_weight_logits=jnp.log(biased_weights),
+            )
             self.simulation.forward(self.simulation, biased_params)
             biased_results = self.simulation.outputs[0].y_pred()
             assert not jnp.allclose(uniform_results, biased_results)

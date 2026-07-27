@@ -22,6 +22,7 @@ from jax import Array
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
@@ -470,10 +471,10 @@ def augment_best_models_with_metrics(
             continue
 
         state = history.states[conv_step - 1]
-        if not (hasattr(state, "params") and hasattr(state.params, "frame_weights") and state.params.frame_weights is not None):
+        if not (hasattr(state, "params") and hasattr(state.params, "frame_weight_simplex") and state.params.frame_weight_simplex is not None):
             continue
 
-        weights = np.array(state.params.frame_weights)
+        weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
         uniform_prior = np.ones(len(weights)) / len(weights)
         kl_div = kl_divergence(weights, uniform_prior)
 

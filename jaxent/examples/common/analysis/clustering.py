@@ -4,6 +4,7 @@ from typing import Dict
 
 import pandas as pd
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 
 def calculate_cluster_ratios(
@@ -158,10 +159,10 @@ def analyze_conformational_recovery(
         states_to_check = enumerate(history.states) if not best_step_only else [(len(history.states)-1, history.states[-1])]
 
         for step_idx, state in states_to_check:
-            if not hasattr(state, "params") or not hasattr(state.params, "frame_weights") or state.params.frame_weights is None:
+            if not hasattr(state, "params") or not hasattr(state.params, "frame_weight_simplex") or state.params.frame_weight_simplex is None:
                 continue
 
-            frame_weights = np.array(state.params.frame_weights)
+            frame_weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
             if len(frame_weights) != n_frames or np.sum(frame_weights) == 0:
                 continue
 

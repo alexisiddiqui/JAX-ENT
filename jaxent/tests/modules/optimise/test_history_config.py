@@ -143,7 +143,7 @@ def test_partition_selection_and_best_state() -> None:
     history = _run(
         _config(parameter_partitions={Optimisable_Parameters.frame_weights})
     )
-    assert history.states[-1].params.frame_weights.size > 0
+    assert history.states[-1].params.frame_weight_simplex.size > 0
     assert history.states[-1].params.model_parameters[0].bias.size == 0
     assert history.best_state is not None
     assert history.best_state.params.model_parameters[0].bias.size > 0
@@ -170,8 +170,7 @@ def test_retain_record_params_false_emits_empty_parameter_leaves() -> None:
         retain_record_params=False,
     )
     params = result.records.params
-    assert params.frame_weights.size == 0
-    assert params.frame_mask.size == 0
+    assert params.frame_weight_simplex.size == 0
     assert params.forward_model_weights.size == 0
     assert params.model_parameters[0].bias.size == 0
     assert params.forward_model_scaling.size > 0

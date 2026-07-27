@@ -183,8 +183,8 @@ def create_parameter_loss(
         dataset: Simulation_Parameters,
         prediction_index: None,
     ) -> tuple[Array, Array]:
-        model_weights = normalize_weights(model.params.frame_weights, normalise, eps, scale_eps)
-        prior_weights = normalize_weights(dataset.frame_weights, normalise, eps, scale_eps)
+        model_weights = normalize_weights(model.params.frame_weight_simplex, normalise, eps, scale_eps)
+        prior_weights = normalize_weights(dataset.frame_weight_simplex, normalise, eps, scale_eps)
 
         model_transformed = apply_transforms(model_weights, transform_chain)
         prior_transformed = apply_transforms(prior_weights, transform_chain)
@@ -214,7 +214,7 @@ def create_consistency_loss(
         dataset: Array,
         prediction_index: int,
     ) -> tuple[Array, Array]:
-        weights = model.params.frame_weights
+        weights = model.params.frame_weight_simplex
         weight_similarity = pairwise_cosine_similarity(weights)
 
         weight_upper = extract_upper_triangle(weight_similarity)

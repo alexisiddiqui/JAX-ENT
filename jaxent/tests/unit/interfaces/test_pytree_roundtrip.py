@@ -31,9 +31,8 @@ def test_simulation_roundtrip_preserves_all_fields_and_can_initialise():
             return self
 
     feature = Feature()
-    params = Simulation_Parameters(
-        frame_weights=jnp.array([1.0]),
-        frame_mask=jnp.array([1.0]),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.array([1.0]),
         model_parameters=[],
         forward_model_weights=jnp.array([]),
         normalise_loss_functions=jnp.array([]),

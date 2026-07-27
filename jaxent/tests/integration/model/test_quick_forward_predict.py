@@ -66,9 +66,8 @@ def create_test_simulation():
 
     trajectory_length = features[0].features_shape[1]
 
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -97,9 +96,8 @@ def create_minimal_test_simulation(bv_config):
     features = [MockInputFeatures()]
     models = [BV_model(bv_config)]
 
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -128,7 +126,7 @@ def test_forward_method():
 
     # Check that simulation state was updated
     # simulation.params is normalized inside forward(), so we expect it to match the normalized version of input params
-    expected_params = Simulation_Parameters.normalize_weights(params)
+    expected_params = params
     
     leaves_sim, _ = jax.tree_util.tree_flatten(simulation.params)
     leaves_exp, _ = jax.tree_util.tree_flatten(expected_params)
@@ -237,17 +235,21 @@ def test_frame_weights_impact():
     simulation.initialise()
 
     # Test with uniform weights
-    uniform_weights = jnp.ones_like(params.frame_weights) / len(params.frame_weights)
-    uniform_params = params.__replace__(frame_weights=uniform_weights)
+    uniform_weights = jnp.ones_like(params.frame_weight_simplex) / len(params.frame_weight_simplex)
+    uniform_params = params.__replace__(
+        frame_weight_logits=jnp.log(uniform_weights),
+    )
 
     simulation.forward(simulation,uniform_params)
 
     # Test with different weights (if we have enough frames)
-    if len(params.frame_weights) > 1:
+    if len(params.frame_weight_simplex) > 1:
         # Create biased weights
-        biased_weights = jnp.zeros_like(params.frame_weights)
+        biased_weights = jnp.zeros_like(params.frame_weight_simplex)
         biased_weights = biased_weights.at[0].set(1.0)  # All weight on first frame
-        biased_params = params.__replace__(frame_weights=biased_weights)
+        biased_params = params.__replace__(
+            frame_weight_logits=jnp.log(biased_weights),
+        )
 
         simulation.forward(simulation,biased_params)
 

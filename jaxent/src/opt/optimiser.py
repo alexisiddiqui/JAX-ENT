@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections.abc import Sequence
 from typing import Any, Callable, Optional
 
@@ -44,7 +45,6 @@ class OptaxOptimizer:
     clip_value: Optional[float]
     history: OptimizationHistory
     plateau_denominator: float
-    force_logit_simplex: bool
     step: Callable
     model_parameters_lr_scale: float
     update_all_models: bool = False
@@ -77,22 +77,16 @@ class OptaxOptimizer:
 
         if optimizer.lower() == "adam":
             base_optimizer_fn = optax.adam
-            _force_simplex = False
         elif optimizer.lower() == "sgd":
             base_optimizer_fn = optax.sgd
-            _force_simplex = True
         elif optimizer.lower() == "adagrad":
             base_optimizer_fn = optax.adagrad
-            _force_simplex = False
         elif optimizer.lower() == "adamw":
             base_optimizer_fn = optax.adamw
-            _force_simplex = False
         elif optimizer.lower() == "rmsprop":
             base_optimizer_fn = optax.rmsprop
-            _force_simplex = False
         elif optimizer.lower() == "lbfgs":
             base_optimizer_fn = optax.lbfgs
-            _force_simplex = False
         else:
             raise ValueError(f"Unsupported optimizer: {optimizer}")
 
@@ -122,10 +116,13 @@ class OptaxOptimizer:
             param_labels=Simulation_Parameters.param_labels,
         )
 
-        if force_simplex is None:
-            self.force_logit_simplex = _force_simplex
-        else:
-            self.force_logit_simplex = force_simplex
+        if force_simplex is not None:
+            warnings.warn(
+                "force_simplex is deprecated and ignored; frame-weight simplex values "
+                "are now always derived from logits.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         self._gradient_mask = None  # type: ignore[assignment]
         self.step = self._step
@@ -149,7 +146,6 @@ class OptaxOptimizer:
             "parameter_partition_masks": self.parameter_partition_masks,
             "clip_value": self.clip_value,
             "plateau_denominator": self.plateau_denominator,
-            "force_logit_simplex": self.force_logit_simplex,
             "step": self.step,
             "model_parameters_lr_scale": self.model_parameters_lr_scale,
             "update_all_models": self.update_all_models,
@@ -169,7 +165,6 @@ class OptaxOptimizer:
         self.parameter_partition_masks = aux_data["parameter_partition_masks"]
         self.clip_value = aux_data["clip_value"]
         self.plateau_denominator = aux_data["plateau_denominator"]
-        self.force_logit_simplex = aux_data["force_logit_simplex"]
         self.step = aux_data.get("step", self._step)
         self.model_parameters_lr_scale = aux_data.get("model_parameters_lr_scale", 1.0)
         self.update_all_models = aux_data.get("update_all_models", False)
@@ -200,14 +195,6 @@ class OptaxOptimizer:
     ) -> OptimizationState:
         """Initialize optimization state and pre-compute gradient masks."""
         params = model.params
-        params = Simulation_Parameters(
-            frame_mask=params.frame_mask,
-            frame_weights=params.frame_weights * len(params.frame_weights),
-            model_parameters=params.model_parameters,
-            normalise_loss_functions=params.normalise_loss_functions,
-            forward_model_weights=params.forward_model_weights,
-            forward_model_scaling=params.forward_model_scaling,
-        )
         if isinstance(optimisable_funcs, list):
             optimisable_funcs = jnp.array(optimisable_funcs, dtype=jnp.float32)
             optimisable_funcs = jnp.round(optimisable_funcs)
@@ -267,8 +254,9 @@ class OptaxOptimizer:
             for model_param in grads.model_parameters
         ]
         return Simulation_Parameters(
-            frame_weights=jax.tree_util.tree_map(lambda g: g * lr, grads.frame_weights),
-            frame_mask=jax.tree_util.tree_map(lambda g: g * lr, grads.frame_mask),
+            frame_weight_logits=jax.tree_util.tree_map(
+                lambda g: g * lr, grads.frame_weight_logits
+            ),
             model_parameters=scaled_model_parameters,
             normalise_loss_functions=grads.normalise_loss_functions * lr,
             forward_model_weights=grads.forward_model_weights * lr,
@@ -346,12 +334,10 @@ class OptaxOptimizer:
             value_fn=scalar_loss_fn,
         )
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore[arg-type]
-        if optimizer.force_logit_simplex:
-            updated_params = Simulation_Parameters.normalize_weights(updated_params)
 
         new_state = state.update(updated_params, new_opt_state, losses, masked_grads)
         save_state = new_state.update(
-            Simulation_Parameters.normalize_weights(new_state.params),
+            new_state.params,
             new_state.opt_state,
             losses,
             masked_grads,

@@ -111,9 +111,8 @@ class OptimizationTestEnvironment:
             )
         trajectory_length = bv_features.features_shape[-1]
 
-        self.base_params = Simulation_Parameters(
-            frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-            frame_mask=jnp.ones(trajectory_length),
+        self.base_params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(trajectory_length) / trajectory_length,
             model_parameters=[bv_config.forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -217,13 +216,12 @@ class OptimizationTestEnvironment:
             key, *subkeys = jax.random.split(key, 6)
 
             # Vary frame weights
-            frame_weights = jax.random.uniform(subkeys[0], self.base_params.frame_weights.shape)
+            frame_weights = jax.random.uniform(
+                subkeys[0], self.base_params.frame_weight_simplex.shape
+            )
             frame_weights = frame_weights / jnp.sum(frame_weights)
 
             # Vary frame mask
-            frame_mask = jax.random.choice(
-                subkeys[1], 2, self.base_params.frame_mask.shape, p=jnp.array([0.1, 0.9])
-            )
 
             # Scale model parameters
             scale_factor = 0.5 + jax.random.uniform(subkeys[2]) * 1.5
@@ -244,9 +242,8 @@ class OptimizationTestEnvironment:
                 + jax.random.uniform(subkeys[4], self.base_params.forward_model_scaling.shape) * 2.0
             )
 
-            variant = Simulation_Parameters(
-                frame_weights=frame_weights,
-                frame_mask=frame_mask,
+            variant = Simulation_Parameters.from_frame_weights(
+                frame_weights,
                 model_parameters=scaled_model_params,
                 forward_model_weights=fw_weights,
                 forward_model_scaling=fw_scaling,

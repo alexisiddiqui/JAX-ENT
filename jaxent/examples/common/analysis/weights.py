@@ -4,6 +4,7 @@ from typing import Dict
 
 import numpy as np
 import pandas as pd
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 from .stats import kl_divergence, effective_sample_size
 
@@ -42,10 +43,10 @@ def extract_frame_weights_kl(
                         for step_idx, state in enumerate(history.states):
                             if not (
                                 hasattr(state.params, "frame_weights")
-                                and state.params.frame_weights is not None
+                                and state.params.frame_weight_simplex is not None
                             ):
                                 continue
-                            w = np.array(state.params.frame_weights)
+                            w = validated_frame_weight_simplex(state.params.frame_weight_simplex)
                             if len(w) == 0 or np.sum(w) == 0:
                                 continue
                             if n_frames_by_ensemble is not None:
@@ -107,10 +108,10 @@ def extract_final_weights(results: Dict) -> pd.DataFrame:
                         if not (
                             hasattr(final_state, "params")
                             and hasattr(final_state.params, "frame_weights")
-                            and final_state.params.frame_weights is not None
+                            and final_state.params.frame_weight_simplex is not None
                         ):
                             continue
-                        w = np.array(final_state.params.frame_weights)
+                        w = validated_frame_weight_simplex(final_state.params.frame_weight_simplex)
                         w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
                         if np.sum(w) <= 0:
                             continue
@@ -168,10 +169,10 @@ def extract_final_weights_2d(results: Dict) -> pd.DataFrame:
                                 final_state = history.states[-1]
                                 if not (
                                     hasattr(final_state.params, "frame_weights")
-                                    and final_state.params.frame_weights is not None
+                                    and final_state.params.frame_weight_simplex is not None
                                 ):
                                     continue
-                                w = np.array(final_state.params.frame_weights)
+                                w = validated_frame_weight_simplex(final_state.params.frame_weight_simplex)
                                 w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
                                 if np.sum(w) <= 0:
                                     continue
@@ -241,10 +242,10 @@ def extract_weights_over_convergence_steps(results: Dict) -> pd.DataFrame:
                             if not (
                                 hasattr(state, "params")
                                 and hasattr(state.params, "frame_weights")
-                                and state.params.frame_weights is not None
+                                and state.params.frame_weight_simplex is not None
                             ):
                                 continue
-                            w = np.array(state.params.frame_weights)
+                            w = validated_frame_weight_simplex(state.params.frame_weight_simplex)
                             w = np.nan_to_num(w, nan=0.0, posinf=0.0, neginf=0.0)
                             if np.sum(w) <= 0:
                                 continue

@@ -27,8 +27,7 @@ def _with_hparams(
     forward_model_scaling,
 ) -> Simulation_Parameters:
     return Simulation_Parameters(
-        frame_weights=base_params.frame_weights,
-        frame_mask=base_params.frame_mask,
+        frame_weight_logits=base_params.frame_weight_logits,
         model_parameters=base_params.model_parameters,
         forward_model_weights=forward_model_weights,
         forward_model_scaling=forward_model_scaling,
@@ -78,7 +77,7 @@ def _run_sequential_reference(
         references.append(
             (
                 history.best_state.losses.total_train_loss,
-                history.best_state.params.frame_weights,
+                history.best_state.params.frame_weight_simplex,
             )
         )
 
@@ -154,8 +153,8 @@ def test_module_batch_optimise_uses_config_lr_when_hparam_lr_none() -> None:
             rtol=1e-4,
         )
         assert jnp.allclose(
-            best_none.params.frame_weights,
-            best_explicit.params.frame_weights,
+            best_none.params.frame_weight_simplex,
+            best_explicit.params.frame_weight_simplex,
             atol=1e-4,
         )
 
@@ -187,7 +186,7 @@ def test_module_batch_optimise_matches_sequential_final_loss_and_weights() -> No
             rtol=1e-4,
         )
         assert jnp.allclose(
-            batch_best.params.frame_weights,
+            batch_best.params.frame_weight_simplex,
             seq_weights,
             atol=1e-4,
         )
@@ -223,7 +222,7 @@ def test_module_jit_update_step_case_matches_eager_reference() -> None:
         rtol=1e-4,
     )
     assert jnp.allclose(
-        eager_history.best_state.params.frame_weights,
-        jit_history.best_state.params.frame_weights,
+        eager_history.best_state.params.frame_weight_simplex,
+        jit_history.best_state.params.frame_weight_simplex,
         atol=1e-4,
     )

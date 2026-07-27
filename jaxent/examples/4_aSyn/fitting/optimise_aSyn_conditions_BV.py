@@ -212,9 +212,8 @@ def run_conditions_sweep(
     print(f"Total runs: {results['total_runs']}")
 
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.ones(3),
         normalise_loss_functions=jnp.ones(3),

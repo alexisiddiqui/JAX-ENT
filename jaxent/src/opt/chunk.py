@@ -89,8 +89,9 @@ def _select_partitions(
         else [jax.tree_util.tree_map(lambda _: _EMPTY, model) for model in params.model_parameters]
     )
     return Simulation_Parameters(
-        frame_weights=select(params.frame_weights, Optimisable_Parameters.frame_weights),
-        frame_mask=select(params.frame_mask, Optimisable_Parameters.frame_mask),
+        frame_weight_logits=select(
+            params.frame_weight_logits, Optimisable_Parameters.frame_weights
+        ),
         model_parameters=model_parameters,
         forward_model_weights=select(
             params.forward_model_weights, Optimisable_Parameters.forward_model_weights

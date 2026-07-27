@@ -43,9 +43,8 @@ def real_inputs_random_data():
     frame_weights = jax.random.uniform(subkey, (num_frames,))
     frame_weights /= jnp.sum(frame_weights)  # Normalize
 
-    params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=jnp.ones(num_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[model.config.forward_parameters for model in forward_models],
         forward_model_weights=jnp.array([1.0]),
         forward_model_scaling=jnp.array([1.0]),
@@ -93,13 +92,10 @@ def create_parameter_variants(
         key, *subkeys = jax.random.split(key, 6)  # Split into 6 total: key + 5 subkeys
 
         # Vary frame weights
-        frame_weights = jax.random.uniform(subkeys[0], base_params.frame_weights.shape)
-        frame_weights = frame_weights / jnp.sum(frame_weights)
-
-        # Vary frame mask (some framesz on/off)
-        frame_mask = jax.random.choice(
-            subkeys[1], 2, base_params.frame_mask.shape, p=jnp.array([0.2, 0.8])
+        frame_weights = jax.random.uniform(
+            subkeys[0], base_params.frame_weight_simplex.shape
         )
+        frame_weights = frame_weights / jnp.sum(frame_weights)
 
         # Vary model parameters by scaling
         scale_factor = 0.5 + jax.random.uniform(subkeys[2]) * 1.5  # Scale between 0.5-2.0
@@ -119,9 +115,8 @@ def create_parameter_variants(
             0.1 + jax.random.uniform(subkeys[4], base_params.forward_model_scaling.shape) * 2.0
         )
 
-        variant = Simulation_Parameters(
-            frame_weights=frame_weights,
-            frame_mask=frame_mask,
+        variant = Simulation_Parameters.from_frame_weights(
+            frame_weights,
             model_parameters=scaled_model_params,
             forward_model_weights=fw_weights,
             forward_model_scaling=fw_scaling,
@@ -611,9 +606,8 @@ if __name__ == "__main__":
     frame_weights = jax.random.uniform(subkey, (num_frames,))
     frame_weights /= jnp.sum(frame_weights)  # Normalize
 
-    params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=jnp.ones(num_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[model.config.forward_parameters for model in forward_models],
         forward_model_weights=jnp.array([1.0]),
         forward_model_scaling=jnp.array([1.0]),

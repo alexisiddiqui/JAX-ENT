@@ -66,10 +66,13 @@ class Simulation:
             raise ValueError("No simulation parameters were provided. Exiting.")
         
         # Validate parameter ranks
-        chex.assert_rank(self.params.frame_weights, 1)
-        chex.assert_equal_shape([self.params.frame_weights, self.params.frame_mask])
+        chex.assert_rank(self.params.frame_weight_logits, 1)
+        chex.assert_equal(
+            self.params.frame_weight_logits.shape[0],
+            self.length,
+            custom_message="Frame-weight count must match the input-feature frame count",
+        )
         
-        self.params = Simulation_Parameters.normalize_weights(self.params)
         self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
         
         # Assert that the number of forward models matches model parameters
@@ -142,7 +145,6 @@ class Simulation:
             params: Simulation parameters
             mutate: Backward-compatible behavior. When True, update ``sim`` in place.
         """
-        params = Simulation_Parameters.normalize_weights(params)
         outputs = tuple(
             sim._jit_forward_pure(
                 params,
@@ -286,12 +288,7 @@ class Simulation:
         Returns:
             Output features from each forward model
         """
-        # Validate frame_weights rank
-        chex.assert_rank(params.frame_weights, 1)
-
-        # Mask the frame weights
-        # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-        # masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
+        chex.assert_rank(params.frame_weight_simplex, 1)
 
         # Branch per forward pass: linear models average features first (average_first=True),
         # non-linear models run on frame-wise features and average outputs (average_first=False).
@@ -299,11 +296,11 @@ class Simulation:
         output_features = []
         for fp, feat, param in zip(forwardpass, input_features, params.model_parameters):
             if getattr(fp, "average_first", True):
-                avg_feat = frame_average_features(feat, params.frame_weights)
+                avg_feat = frame_average_features(feat, params.frame_weight_simplex)
                 output = single_pass(fp, avg_feat, param)
             else:
                 output = single_pass(fp, feat, param)
-                output = frame_average_features(output, params.frame_weights)
+                output = frame_average_features(output, params.frame_weight_simplex)
             output_features.append(output)
 
         return output_features

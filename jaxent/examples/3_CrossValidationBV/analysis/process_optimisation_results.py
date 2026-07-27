@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
 import jax
 import jax.numpy as jnp
@@ -285,7 +286,7 @@ def main():
             valid_run_infos = [
                 info for info in run_infos
                 if (info["params"] is not None and
-                    info["params"].frame_weights is not None and
+                    info["params"].frame_weight_simplex is not None and
                     info["params"].model_parameters is not None)
             ]
 
@@ -319,7 +320,7 @@ def main():
                     losses = info["losses"]
                     convergence = info["convergence"]
 
-                    frame_weights = jnp.array(params.frame_weights)
+                    frame_weights = jvalidated_frame_weight_simplex(params.frame_weight_simplex)
 
                     # Average features using frame_weights
                     averaged_features = frame_average_features(features, frame_weights)

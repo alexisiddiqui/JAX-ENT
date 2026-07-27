@@ -7,7 +7,6 @@ import jax.numpy as jnp
 from jax import Array
 from jaxtyping import Float, Int, Array, Bool
 from jax.tree_util import register_pytree_node
-import optax    
 from jaxent.src.interfaces.model import Model_Parameters
 
 ########################################################################
@@ -16,12 +15,29 @@ from jaxent.src.interfaces.model import Model_Parameters
 
 @dataclass(frozen=True, slots=True)
 class Simulation_Parameters:
-    frame_weights: Float[Array, " n_frames"]
-    frame_mask: Float[Array, " n_frames"] | Int[Array, " n_models"] | Bool[Array, " n_models"] # array of type int
+    frame_weight_logits: Float[Array, " n_frames"]
     model_parameters: Sequence[Model_Parameters]
     forward_model_weights: Float[Array, " n_models"]
     normalise_loss_functions: Float[Array, " n_models"] | Int[Array, " n_models"] | Bool[Array, " n_models"]  # array of type int
     forward_model_scaling: Float[Array, " n_models"]
+
+    @property
+    def frame_weight_simplex(self) -> Float[Array, " n_frames"]:
+        return jax.nn.softmax(self.frame_weight_logits)
+
+    @classmethod
+    def from_frame_weights(
+        cls,
+        frame_weights,
+        **kwargs,
+    ) -> "Simulation_Parameters":
+        """Construct parameters from externally-facing normalized frame weights."""
+        weights = jnp.asarray(frame_weights)
+        chex.assert_rank(weights, 1)
+        return cls(
+            frame_weight_logits=jnp.log(jnp.clip(weights, 1e-30, None)),
+            **kwargs,
+        )
 
     ########################################################################
     # TODO I think this is maybe kinda silly - but
@@ -34,8 +50,7 @@ class Simulation_Parameters:
         new_model_params = [model_param for _ in params.model_parameters]
 
         return Simulation_Parameters(
-            frame_weights=params.frame_weights,
-            frame_mask=params.frame_mask,
+            frame_weight_logits=params.frame_weight_logits,
             model_parameters=new_model_params,
             normalise_loss_functions=params.normalise_loss_functions,
             forward_model_weights=params.forward_model_weights,
@@ -67,8 +82,7 @@ class Simulation_Parameters:
         result = weights * (1.0 - float_mask) + normalized * float_mask
 
         return Simulation_Parameters(
-            frame_weights=params.frame_weights,
-            frame_mask=params.frame_mask,
+            frame_weight_logits=params.frame_weight_logits,
             model_parameters=params.model_parameters,
             normalise_loss_functions=params.normalise_loss_functions,
             forward_model_weights=result,
@@ -92,54 +106,12 @@ class Simulation_Parameters:
         # Use object.__new__ to create instance without calling __init__ (bypasses beartype)
         instance = object.__new__(Simulation_Parameters)
         # Use object.__setattr__ to bypass frozen dataclass and beartype validation
-        object.__setattr__(instance, "frame_weights", "frame")
-        object.__setattr__(instance, "frame_mask", "frame")
+        object.__setattr__(instance, "frame_weight_logits", "frame")
         object.__setattr__(instance, "model_parameters", ["model"] * len(params.model_parameters))
         object.__setattr__(instance, "forward_model_weights", "other")
         object.__setattr__(instance, "forward_model_scaling", "other")
         object.__setattr__(instance, "normalise_loss_functions", "other")
         return instance
-
-    @staticmethod
-    def normalize_weights(params: "Simulation_Parameters") -> "Simulation_Parameters":
-        """Create a new instance with normalized frame weights using JAX-compatible operations"""
-        # Use projection_simplex for frame weights normalization
-        # frame_weights = optax.projections.projection_simplex(jnp.asarray(params.frame_weights))
-
-        chex.assert_rank(params.frame_weights, 1)
-        chex.assert_equal_shape([params.frame_weights, params.frame_mask])
-
-        frame_weights = jax.nn.softmax(params.frame_weights)
-
-        # Clip the frame mask to be between 0 and 1
-        # Apply smooth binary approximation
-        # def smooth_binary_poly(x):
-        #     """Polynomial S-curve that transitions smoothly from 0 to 1."""
-        #     return 3 * x**2 - 2 * x**3
-
-        def sigmoid(x):
-            """Sigmoid function for smooth transition."""
-            return jax.nn.sigmoid(10 * (x - 0.5))
-
-        frame_mask = sigmoid(params.frame_mask)
-
-        frame_mask = jnp.clip(frame_mask, 0, 1)
-
-        # Modified normalize_masked_weights function to avoid boolean context issues
-
-        # project model parameters to be non-negative
-        model_parameters = [jax.tree_util.tree_map(lambda x: jnp.maximum(x, 0.0), p) for p in params.model_parameters]
-
-
-
-        return Simulation_Parameters(
-            frame_weights=frame_weights,
-            frame_mask=frame_mask,
-            model_parameters=params.model_parameters,
-            normalise_loss_functions=params.normalise_loss_functions,
-            forward_model_weights=params.forward_model_weights,
-            forward_model_scaling=params.forward_model_scaling,
-        )
 
     @staticmethod
     def _apply_op(current, op, other: "Simulation_Parameters|float") -> "Simulation_Parameters":
@@ -181,8 +153,7 @@ class Simulation_Parameters:
     def tree_flatten(self):
         # Flatten into (arrays to differentiate, static metadata)
         arrays = (
-            self.frame_weights,
-            self.frame_mask,
+            self.frame_weight_logits,
             [m for m in self.model_parameters],
             self.forward_model_weights,
             self.forward_model_scaling,
@@ -201,8 +172,7 @@ class Simulation_Parameters:
         structures with booleans or other non-Array types.
         """
         (
-            frame_weights,
-            frame_mask,
+            frame_weight_logits,
             model_params,
             forward_weights,
             forward_model_scaling,
@@ -211,8 +181,7 @@ class Simulation_Parameters:
         _ = static
         # Use object.__new__ to bypass beartype validation
         instance = object.__new__(cls)
-        object.__setattr__(instance, "frame_weights", frame_weights)
-        object.__setattr__(instance, "frame_mask", frame_mask)
+        object.__setattr__(instance, "frame_weight_logits", frame_weight_logits)
         object.__setattr__(instance, "model_parameters", model_params)
         object.__setattr__(instance, "normalise_loss_functions", normalise_loss_functions)
         object.__setattr__(instance, "forward_model_weights", forward_weights)

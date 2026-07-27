@@ -44,9 +44,8 @@ def real_inputs_random_data():
     frame_weights = jax.random.uniform(subkey, (num_frames,))
     frame_weights /= jnp.sum(frame_weights)  # Normalize
 
-    params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=jnp.ones(num_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[model.config.forward_parameters for model in forward_models],
         forward_model_weights=jnp.array([1.0]),
         forward_model_scaling=jnp.array([1.0]),
@@ -152,9 +151,8 @@ def test_simulation_multiple_models_real_inputs(real_inputs_random_data, raise_j
     ]
 
     new_model_parameters = [model.config.forward_parameters for model in forward_models]
-    params = Simulation_Parameters(
-        frame_weights=params.frame_weights,
-        frame_mask=params.frame_mask,
+    params = Simulation_Parameters.from_frame_weights(
+        params.frame_weight_simplex,
         model_parameters=new_model_parameters,
         forward_model_weights=jnp.array([1.0, 1.0]),
         forward_model_scaling=jnp.array([1.0, 1.0]),

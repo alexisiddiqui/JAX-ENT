@@ -141,14 +141,7 @@ def main():
             type=float,
             nargs="+",
             default=None,  # Will be set based on input features if None
-            help="List of frame weights for Simulation_Parameters.",
-        )
-        sub_parser.add_argument(
-            "--frame_mask",
-            type=int,
-            nargs="+",
-            default=None,  # Will be set based on input features if None
-            help="List of frame mask (0 or 1) for Simulation_Parameters.",
+            help="Normalised frame weights for Simulation_Parameters.",
         )
         sub_parser.add_argument(
             "--forward_model_weights",
@@ -245,18 +238,12 @@ def main():
         if args.frame_weights is not None
         else jnp.ones(n_frames) / n_frames
     )
-    frame_mask = (
-        jnp.asarray(args.frame_mask, dtype=jnp.bool_)
-        if args.frame_mask is not None
-        else jnp.ones(n_frames, dtype=jnp.bool_)
-    )
     forward_model_weights = jnp.asarray(args.forward_model_weights)
     normalise_loss_functions = jnp.asarray(args.normalise_loss_functions, dtype=jnp.int32)
     forward_model_scaling = jnp.asarray(args.forward_model_scaling)
 
-    simulation_parameters = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=frame_mask,
+    simulation_parameters = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[
             model_parameters
         ],  # Wrap in list as Simulation_Parameters expects Sequence

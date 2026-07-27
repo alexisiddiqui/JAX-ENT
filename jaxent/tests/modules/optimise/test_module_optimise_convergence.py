@@ -137,9 +137,8 @@ class SyntheticForwardModel(
 
 def _create_synthetic_simulation() -> tuple[Simulation, list[SyntheticForwardModel]]:
     models = [SyntheticForwardModel(SyntheticForwardModelConfig())]
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(5, dtype=jnp.float32),
-        frame_mask=jnp.ones(5, dtype=jnp.float32),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(5, dtype=jnp.float32),
         model_parameters=[SyntheticModelParameters()],
         forward_model_weights=jnp.ones(1, dtype=jnp.float32),
         forward_model_scaling=jnp.ones(1, dtype=jnp.float32),

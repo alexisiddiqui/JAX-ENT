@@ -107,9 +107,8 @@ def test_quick_optimiser():
     # features_length = BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length) / 2,
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -224,9 +223,8 @@ def test_underscore_optimiser():
     trajectory_length = BV_features.features_shape[1]
 
     # Create simulation parameters
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),  # All active
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -370,9 +368,8 @@ def test_uptake_optimiser():
     # features_length = BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length) / 2,
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.array([10.0, 10.0]),
         forward_model_scaling=jnp.ones(2),

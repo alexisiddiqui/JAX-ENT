@@ -347,7 +347,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     #     average_features = map(
     #         frame_average_features,
     #         self.input_features,
-    #         [self.params.frame_weights] * len(self.input_features),
+    #         [self.params.frame_weight_simplex] * len(self.input_features),
     #     )
     #     # map the single_pass function
     #     output_features = map(

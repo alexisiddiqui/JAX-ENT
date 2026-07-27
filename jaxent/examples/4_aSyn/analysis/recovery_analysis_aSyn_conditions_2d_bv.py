@@ -9,6 +9,7 @@ from pathlib import Path
 
 import jax.numpy as jnp
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
 
 from jaxent.examples.common import analysis, loading, plotting
@@ -158,10 +159,10 @@ def main() -> None:
 
                                 val_idx, val_pf = val_cache[cache_key]
                                 final_state = history.states[-1]
-                                if final_state.params is None or final_state.params.frame_weights is None:
+                                if final_state.params is None or final_state.params.frame_weight_simplex is None:
                                     continue
 
-                                frame_weights = np.asarray(final_state.params.frame_weights, dtype=float).reshape(-1)
+                                frame_weights = validated_frame_weight_simplex(final_state.params.frame_weight_simplex)
                                 if frame_weights.size == 0 or np.sum(frame_weights) <= 0:
                                     continue
                                 frame_weights = frame_weights / np.sum(frame_weights)

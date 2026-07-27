@@ -104,8 +104,8 @@ class Experiment_Builder:
         forward_model_weights = jnp.array([1 / len(self.forward_models)] * len(self.forward_models))
         model_parameters = [model.params for model in self.forward_models]
 
-        return Simulation_Parameters(
-            frame_weights=frame_weights,
+        return Simulation_Parameters.from_frame_weights(
+            frame_weights,
             forward_model_weights=forward_model_weights,
             model_parameters=model_parameters,
         )

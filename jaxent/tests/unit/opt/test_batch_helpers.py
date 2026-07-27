@@ -58,8 +58,7 @@ def test_replace_hparams_only_changes_target_fields() -> None:
 
     assert jnp.array_equal(updated.forward_model_weights, new_weights)
     assert jnp.array_equal(updated.forward_model_scaling, new_scaling)
-    assert jnp.array_equal(updated.frame_weights, original.frame_weights)
-    assert jnp.array_equal(updated.frame_mask, original.frame_mask)
+    assert jnp.array_equal(updated.frame_weight_simplex, original.frame_weight_simplex)
     assert updated.model_parameters == original.model_parameters
     assert jnp.array_equal(
         updated.normalise_loss_functions,

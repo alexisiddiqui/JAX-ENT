@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 from .stats import kl_divergence
 
@@ -177,9 +178,9 @@ def compute_pairwise_kld_between_splits_2d(results: dict) -> pd.DataFrame:
                                 if (
                                     hasattr(final_state, "params")
                                     and hasattr(final_state.params, "frame_weights")
-                                    and final_state.params.frame_weights is not None
+                                    and final_state.params.frame_weight_simplex is not None
                                 ):
-                                    w = np.asarray(final_state.params.frame_weights)
+                                    w = validated_frame_weight_simplex(final_state.params.frame_weight_simplex)
                                     if len(w) == 0 or np.sum(w) <= 0:
                                         continue
 

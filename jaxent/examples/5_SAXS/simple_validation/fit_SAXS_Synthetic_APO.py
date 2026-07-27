@@ -165,9 +165,8 @@ def main():
     maxent_loss = LossRegistry.get("maxent_convex_kl")
 
     # Initialize simulation parameters
-    init_params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    init_params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(SAXS_direct_Model_Parameters(),),
         forward_model_weights=jnp.array([1.0, args.maxent_strength]),
         normalise_loss_functions=jnp.ones(2),
@@ -175,9 +174,8 @@ def main():
     )
 
     # Prior params for MaxEnt (same as init but with uniform weights)
-    prior_params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    prior_params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(SAXS_direct_Model_Parameters(),),
         forward_model_weights=jnp.array([1.0, args.maxent_strength]),
         normalise_loss_functions=jnp.ones(2),

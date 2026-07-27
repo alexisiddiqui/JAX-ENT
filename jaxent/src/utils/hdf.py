@@ -23,6 +23,7 @@ from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.opt.base import LossComponents, OptimizationHistory, OptimizationState
 from jaxent.src.custom_types.config import Optimisable_Parameters
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 T_mp = TypeVar("T_mp", bound=Model_Parameters)
 
@@ -148,8 +149,12 @@ def save_simulation_parameters_to_hdf5(
     group = h5file.create_group(path)
 
     # Save arrays
-    save_array_to_hdf5(group, "frame_weights", sim_params.frame_weights, **kwargs)
-    save_array_to_hdf5(group, "frame_mask", sim_params.frame_mask, **kwargs)
+    save_array_to_hdf5(
+        group, "frame_weight_logits", sim_params.frame_weight_logits, **kwargs
+    )
+    save_array_to_hdf5(
+        group, "frame_weight_simplex", sim_params.frame_weight_simplex, **kwargs
+    )
     save_array_to_hdf5(group, "forward_model_weights", sim_params.forward_model_weights, **kwargs)
     save_array_to_hdf5(
         group, "normalise_loss_functions", sim_params.normalise_loss_functions, **kwargs
@@ -163,7 +168,11 @@ def save_simulation_parameters_to_hdf5(
 
 
 def load_simulation_parameters_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_role: str | None = None,
 ) -> Simulation_Parameters:
     """
     Load Simulation_Parameters from HDF5.
@@ -179,8 +188,35 @@ def load_simulation_parameters_from_hdf5(
     group = h5file[path]
 
     # Load arrays
-    frame_weights = load_array_from_hdf5(group, "frame_weights")
-    frame_mask = load_array_from_hdf5(group, "frame_mask")
+    if "frame_weight_simplex" in group:
+        weights = validated_frame_weight_simplex(
+            load_array_from_hdf5(group, "frame_weight_simplex"),
+            context=path,
+        )
+        frame_weight_logits = jnp.log(jnp.clip(jnp.asarray(weights), 1e-30, None))
+    elif "frame_weight_logits" in group:
+        frame_weight_logits = load_array_from_hdf5(group, "frame_weight_logits")
+    elif "frame_weights" in group:
+        legacy_values = load_array_from_hdf5(group, "frame_weights")
+        looks_like_simplex = bool(
+            np.all(np.isfinite(np.asarray(legacy_values)))
+            and np.all(np.asarray(legacy_values) >= -1e-5)
+            and np.isclose(np.asarray(legacy_values).sum(), 1.0, atol=1e-5)
+        )
+        # Versionless simplex-looking logits are irreducibly ambiguous. The role
+        # hint wins when available; otherwise this is a best-effort heuristic.
+        is_simplex = legacy_role == "simplex" or (
+            legacy_role is None and looks_like_simplex
+        )
+        if is_simplex:
+            weights = validated_frame_weight_simplex(legacy_values, context=path)
+            frame_weight_logits = jnp.log(
+                jnp.clip(jnp.asarray(weights), 1e-30, None)
+            )
+        else:
+            frame_weight_logits = legacy_values
+    else:
+        raise KeyError(f"{path!r} contains no frame-weight datasets")
     forward_model_weights = load_array_from_hdf5(group, "forward_model_weights")
     normalise_loss_functions = load_array_from_hdf5(group, "normalise_loss_functions")
     forward_model_scaling = load_array_from_hdf5(group, "forward_model_scaling")
@@ -195,8 +231,7 @@ def load_simulation_parameters_from_hdf5(
         model_params.append(model_param)
 
     return Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=frame_mask,
+        frame_weight_logits=frame_weight_logits,
         model_parameters=model_params,
         forward_model_weights=forward_model_weights,
         normalise_loss_functions=normalise_loss_functions,
@@ -292,7 +327,11 @@ def save_optimization_state_to_hdf5(h5file, path: str, state: OptimizationState,
 
 
 def load_optimization_state_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_role: str | None = None,
 ) -> OptimizationState:
     """
     Load OptimizationState from HDF5.
@@ -308,7 +347,9 @@ def load_optimization_state_from_hdf5(
     group = h5file[path]
 
     # Load params
-    params = load_simulation_parameters_from_hdf5(group, "params", default_model_params_cls)
+    params = load_simulation_parameters_from_hdf5(
+        group, "params", default_model_params_cls, legacy_role=legacy_role
+    )
 
     # Load step
     step = int(group.attrs["step"])
@@ -384,7 +425,9 @@ def load_optimization_history_from_hdf5(
     states_group = group["states"]
     states = []
     for i in range(len(states_group)):
-        state = load_optimization_state_from_hdf5(states_group, f"{i}", default_model_params_cls)
+        state = load_optimization_state_from_hdf5(
+            states_group, f"{i}", default_model_params_cls
+        )
         states.append(state)
 
     convergence_states = []
@@ -403,7 +446,9 @@ def load_optimization_history_from_hdf5(
         state_parameter_partitions = None
     elif partition_attr:
         state_parameter_partitions = frozenset(
-            Optimisable_Parameters[name] for name in str(partition_attr).split(",")
+            Optimisable_Parameters[name]
+            for name in str(partition_attr).split(",")
+            if name != "frame_mask"
         )
     else:
         state_parameter_partitions = frozenset()

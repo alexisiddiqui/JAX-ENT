@@ -288,11 +288,11 @@ def max_entropy_loss(
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -304,13 +304,13 @@ def max_entropy_loss(
 def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
-    num_frames = dataset.frame_weights.shape[0]
+    num_frames = dataset.frame_weight_simplex.shape[0]
     epsilon = 1e-10 / num_frames
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -325,14 +325,14 @@ def maxent_convexKL_loss(
 def maxent_JSD_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
-    num_frames = dataset.frame_weights.shape[0]
+    num_frames = dataset.frame_weight_simplex.shape[0]
     epsilon = 1e-3 / num_frames
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -359,11 +359,11 @@ def maxent_W1_loss(
 ) -> tuple[Array, Array]:
     epsilon = 1e-10
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    # prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -378,11 +378,11 @@ def maxent_ESS_loss(
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    # prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -405,11 +405,11 @@ def minent_ESS_loss(
 ) -> tuple[Array, Array]:
     epsilon = 1e-8
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    # prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    # prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     # prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -435,11 +435,11 @@ def maxent_L2_loss(
     """
     epsilon = 1e-10
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -458,11 +458,11 @@ def maxent_L1_loss(
     """
     epsilon = 1e-10
 
-    simulation_weights = jnp.abs(model.params.frame_weights) + epsilon
+    simulation_weights = jnp.abs(model.params.frame_weight_simplex) + epsilon
 
     simulation_weights = simulation_weights / jnp.sum(simulation_weights)
 
-    prior_frame_weights = jnp.abs(dataset.frame_weights) + epsilon
+    prior_frame_weights = jnp.abs(dataset.frame_weight_simplex) + epsilon
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
@@ -511,30 +511,6 @@ def model_params_L1_loss(
     total_loss = jnp.sum(jnp.array(losses))
 
     return total_loss, total_loss
-
-
-def sparse_max_entropy_loss(
-    model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
-) -> tuple[Array, Array]:
-    active_mask = model.params.frame_mask > 0.5
-    simulation_weights = jnp.abs(model.params.frame_weights) * active_mask
-    simulation_weights = simulation_weights / jnp.sum(simulation_weights)
-    prior_frame_weights = jnp.abs(dataset.frame_weights) * active_mask
-    prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
-
-    loss = jnp.asarray(safe_softmax_cross_entropy(jnp.log(simulation_weights), prior_frame_weights))
-    # print(loss)
-    return loss, loss
-
-
-def mask_L0_loss(
-    model: InitialisedSimulation, dataset: Any, prediction_index: int | str | None
-) -> tuple[Array, Array]:
-    frame_masks = model.params.frame_mask
-
-    loss = jnp.sum(frame_masks)
-
-    return loss, loss
 
 
 def hdx_uptake_l1_loss(
@@ -835,7 +811,7 @@ def frame_weight_consistency_loss(
     The loss is the L1 distance/Cosine between the two graphs.
     """
 
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
 
     # Calculate the pairwise cosine similarity between the weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
@@ -856,7 +832,7 @@ def exp_frame_weight_consistency_loss(
     The loss is the L1 distance/Cosine between the two graphs.
     """
 
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
 
     # Calculate the pairwise cosine similarity between the weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
@@ -878,7 +854,7 @@ def L1_frame_weight_consistency_loss(
     The loss is the L1 distance/Cosine between the two graphs.
     """
 
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
 
     # Calculate the pairwise cosine similarity between the weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
@@ -900,7 +876,7 @@ def normalised_frame_weight_consistency_loss(
     The loss is the L1 distance/Cosine between the two graphs.
     """
 
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
 
     # Calculate the pairwise cosine similarity between the weights
     weight_similarity = jax_pairwise_cosine_similarity(weights)
@@ -927,7 +903,7 @@ def convex_KL_frame_weight_consistency_loss(
     TODO how are weights compared between each other?
     The loss is the L1 distance/Cosine between the two graphs.
     """
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
 
     weight_similarity = jax_pairwise_cosine_similarity(weights)
 
@@ -974,7 +950,7 @@ def cosine_frame_weight_consistency_loss(
     Computes the cosine similarity between the pairwise weight similarity matrix
     and the input dataset matrix by considering only the upper triangular elements.
     """
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
     weight_similarity = jax_pairwise_cosine_similarity(weights)
 
     # Get shape
@@ -1025,7 +1001,7 @@ def cosine_frame_weight_consistency_loss(
 def corr_frame_weight_consistency_loss(
     model: SimulationLike, dataset: Array, prediction_index: int
 ) -> tuple[Array, Array]:
-    weights = model.params.frame_weights
+    weights = model.params.frame_weight_simplex
     weight_similarity = jax_pairwise_cosine_similarity(weights)
 
     # Get shape

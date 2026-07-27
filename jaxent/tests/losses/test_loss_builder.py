@@ -68,7 +68,6 @@ from jaxent.src.opt.loss.functional import (
     hdxer_mse_builder,
 )
 from jaxent.src.opt.loss.weights import (
-    create_mask_l0_loss_factory,
     max_entropy_builder,
     maxent_convex_kl_builder,
     maxent_ess_builder,
@@ -77,7 +76,6 @@ from jaxent.src.opt.loss.weights import (
     maxent_l2_builder,
     maxent_w1_builder,
     minent_ess_builder,
-    sparse_max_entropy_builder,
 )
 
 # jax.config.update("jax_compilation_cache_dir", "")
@@ -162,12 +160,10 @@ def create_dummy_data_with_size(config_name, config):
     # Frame weights/mask for simulation
     frame_weights = jax.random.uniform(key, (num_frames,))
     frame_weights = frame_weights / jnp.sum(frame_weights)
-    frame_mask = jnp.array([1.0 if i % 2 == 0 else 0.0 for i in range(num_frames)])
 
     # Real Simulation_Parameters
-    sim_params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=frame_mask,
+    sim_params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[BV_Model_Parameters()],
         forward_model_weights=jnp.ones((1,)),
         normalise_loss_functions=jnp.ones((1,)),
@@ -309,8 +305,6 @@ ALL_LOSS_BUILDERS = {
     # "minent_ess": minent_ess_builder,
     # "maxent_l2": maxent_l2_builder,
     # "maxent_l1": maxent_l1_builder,
-    # "sparse_max_entropy": sparse_max_entropy_builder,
-    # "mask_l0": create_mask_l0_loss_factory,
     # "hdx_uptake_l1": hdx_uptake_l1_builder,
     # "hdx_uptake_abs": hdx_uptake_abs_builder,
     # "hdx_uptake_mean_centred_l1": hdx_uptake_mean_centred_l1_builder,
@@ -415,8 +409,6 @@ def get_jit_static_args(loss_name):
         "minent_ess",
         "maxent_l2",
         "maxent_l1",
-        "sparse_max_entropy",
-        "mask_l0",
     ]:
         return [0, 2]
 
@@ -477,8 +469,6 @@ def prepare_loss_function_args(loss_name, dummy_data):
         "minent_ess",
         "maxent_l2",
         "maxent_l1",
-        "sparse_max_entropy",
-        "mask_l0",
     ]:
         return (initialised_model, sim_params_dataset, None)
     elif loss_name in [

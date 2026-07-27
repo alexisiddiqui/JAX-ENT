@@ -127,8 +127,7 @@ def _make_fixture(
     model = BV_model(model_config)
     model_parameters = model_config.forward_parameters
     params = Simulation_Parameters(
-        frame_weights=jnp.ones(frames, dtype=jnp.float32) / frames,
-        frame_mask=jnp.ones(frames, dtype=jnp.float32),
+        frame_weight_logits=jnp.zeros(frames, dtype=jnp.float32),
         model_parameters=[model_parameters],
         forward_model_weights=jnp.ones(1, dtype=jnp.float32),
         forward_model_scaling=jnp.ones(1, dtype=jnp.float32),

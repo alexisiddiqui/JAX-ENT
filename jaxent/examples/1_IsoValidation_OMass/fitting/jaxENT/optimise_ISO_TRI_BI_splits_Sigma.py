@@ -194,9 +194,8 @@ def run_maxent_sweep(
     print(f"Total runs: {results['total_runs']}")
     n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.ones(2),
         normalise_loss_functions=jnp.ones(2),

@@ -166,14 +166,7 @@ def main():
             type=float,
             nargs="+",
             default=None,  # Will be set based on input features if None
-            help="List of frame weights for Simulation_Parameters. Length must match number of frames. If not provided, uniform weights are assumed.",
-        )
-        sub_parser.add_argument(
-            "--frame_mask",
-            type=int,
-            nargs="+",
-            default=None,  # Will be set based on input features if None
-            help="List of frame mask (0 or 1) for Simulation_Parameters. Length must match number of frames. If not provided, all frames are used.",
+            help="Normalised frame weights. Length must match the number of frames.",
         )
         sub_parser.add_argument(
             "--forward_model_weights",
@@ -235,7 +228,6 @@ def main():
     # Get number of frames
     n_frames = input_features.features_shape[-1]
 
-    # Process frame_weights
     if args.frame_weights is None:
         frame_weights = jnp.ones(n_frames) / n_frames
     else:
@@ -244,16 +236,6 @@ def main():
                 f"Length of --frame_weights ({len(args.frame_weights)}) must match number of frames ({n_frames})."
             )
         frame_weights = jnp.asarray(args.frame_weights)
-
-    # Process frame_mask
-    if args.frame_mask is None:
-        frame_mask = jnp.ones(n_frames, dtype=jnp.bool_)
-    else:
-        if len(args.frame_mask) != n_frames:
-            raise ValueError(
-                f"Length of --frame_mask ({len(args.frame_mask)}) must match number of frames ({n_frames})."
-            )
-        frame_mask = jnp.asarray(args.frame_mask, dtype=jnp.bool_)
 
     # Load Partial_Topology (not directly used by run_forward, but good practice to load if featurised data is provided)
     print(f"Loading topology from {args.topology_path}")
@@ -351,9 +333,8 @@ def main():
         )
 
         simulation_parameters_list.append(
-            Simulation_Parameters(
-                frame_weights=frame_weights,
-                frame_mask=frame_mask,
+            Simulation_Parameters.from_frame_weights(
+                frame_weights,
                 model_parameters=[
                     current_model_parameters
                 ],  # Wrap in list as Simulation_Parameters expects Sequence

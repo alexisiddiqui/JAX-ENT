@@ -138,9 +138,8 @@ def pf_loss_data():
     output = BV_output_features(log_Pf=log_pf_pred)
 
     # Create simulation with outputs
-    params = Simulation_Parameters(
-        frame_weights=jnp.array([1.0]),
-        frame_mask=jnp.array([1.0]),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.array([1.0]),
         model_parameters=[BV_Model_Parameters()],
         forward_model_weights=jnp.ones(1),
         normalise_loss_functions=jnp.ones(1),
@@ -178,9 +177,8 @@ def uptake_loss_data():
     output = uptake_BV_output_features(uptake=uptake_pred)
 
     # Create simulation
-    params = Simulation_Parameters(
-        frame_weights=jnp.array([1.0]),
-        frame_mask=jnp.array([1.0]),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.array([1.0]),
         model_parameters=[BV_Model_Parameters(
             timepoints=jnp.array([0.1, 1.0])
         )],

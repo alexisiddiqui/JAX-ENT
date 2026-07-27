@@ -160,10 +160,7 @@ class MockForwardModel(
 # Helper function to create a default Simulation_Parameters instance
 def create_default_simulation_params(num_models: int = 1) -> Simulation_Parameters:
     return Simulation_Parameters(
-        frame_weights=jnp.ones(
-            5
-        ),  
-        frame_mask=jnp.ones(5, dtype=jnp.int32),
+        frame_weight_logits=jnp.zeros(5),
         model_parameters=[MockModelParameters() for _ in range(num_models)],
         forward_model_weights=jnp.ones(num_models),
         normalise_loss_functions=jnp.ones(num_models, dtype=jnp.int32),
@@ -186,9 +183,8 @@ def create_bv_simulation(
     ]
     models = [BV_model(config)]
     n_frames = heavy_contacts.shape[-1]
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames, dtype=jnp.float32) / n_frames,
-        frame_mask=jnp.ones(n_frames, dtype=jnp.float32),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames, dtype=jnp.float32) / n_frames,
         model_parameters=[config.forward_parameters],
         forward_model_weights=jnp.ones(1, dtype=jnp.float32),
         forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
@@ -257,7 +253,7 @@ class TestSimulation:
     def test_simulation_forward_pure(self, raise_jit_failure):
         params = create_default_simulation_params(num_models=1)
         # Normalize weights before calling forward_pure
-        params = Simulation_Parameters.normalize_weights(params)
+        params = params
         input_features = [MockInputFeatures(data=jnp.ones((10, 5)))]
         forwardpass = (MockForwardPass(),)
 

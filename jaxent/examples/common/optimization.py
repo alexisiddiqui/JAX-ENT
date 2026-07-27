@@ -174,9 +174,8 @@ def run_optimization(
     if not loss_config.normalize_bv_reg and n_reg > 0:
         _norm_fns = _norm_fns.at[-1].set(0.0)
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array(_fwd_weights),
         normalise_loss_functions=_norm_fns,
