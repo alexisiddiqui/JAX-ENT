@@ -1,8 +1,9 @@
 # `lax.cond` Step Branch — High-Frame Performance Regression
 
-Status: **diagnosed, fix validated, not applied.** The working tree is unchanged; every
-experiment below was reverted. This document is the handoff for deciding whether to adopt
-the fix.
+Status: **resolved.** The fix is applied in commit `71e71b9`, together with a chunk-boundary
+early exit and a scoped float64 restore. Verification is recorded in "Outcome" below. The
+diagnostic narrative is kept because two plausible hypotheses were refuted along the way and
+should not be re-explored.
 
 Date: 2026-07-27. Machine: Apple M1 Max, CPU backend. All numbers are `warm_median_s` from
 `profiling/profile_hdx_cpu.py --mode timing`, 1000 steps.
@@ -141,16 +142,106 @@ Consistency note: the item-7 plan already documented that `lax.cond` becomes a `
 under `vmap`, so batched lanes never got per-lane compute savings. This change makes the
 sequential path behave the same way as the batch path already does.
 
-## Recommended next steps
+## Outcome
 
-1. Measure an early-converging sequential run, with and without the fix, at a realistic
-   configuration. This is the only missing evidence.
-2. Decide the fix and chunk-boundary early exit together.
-3. If adopted: add a regression test asserting `corner_high`-class configurations stay
-   under the old-best 4.149 s, and one covering early-convergence step counts so the
-   tradeoff is pinned by a test rather than by this document.
-4. Re-run the full sweep and update `initial_baseline_20260726` — several of its rows
-   describe execution paths that no longer exist.
+Applied in `71e71b9` as three changes:
+
+1. **The select fix** in `optimisation_step` (`chunk.py:242`), as written above.
+2. **Chunk-boundary early exit** in `run_chunks` (`chunk.py:392`) and `_optimise`
+   (`run.py:398`), resolving the tradeoff below. Guarded by
+   `isinstance(carry.active, jax.core.Tracer)`, so it fires only when `active` is concrete —
+   the `run_optimise` path — and is skipped under `vmap` and under any caller that jits
+   `run_sequential`, where fixed shapes must be preserved.
+3. **Scoped `jax.experimental.enable_x64()`** around `positive_two_moment_uptake`
+   (`hdx_target_variance.py:302`), fixing open issue 2 without reintroducing an import
+   side effect.
+
+Independently verified on the same machine:
+
+| config | path | before | after | speedup |
+|---|---|---:|---:|---:|
+| corner_high | pure | 7.510 s | **3.413 s** | 2.20× |
+| corner_high | jit | 7.401 s | **3.406 s** | 2.17× |
+| anchor | pure | 0.2061 s | 0.2056 s | 1.00× |
+| anchor | jit | 0.2043 s | 0.2062 s | 0.99× |
+
+Zero host materialisations in the compiled runner; zero warm compiles on `pure` and `jit`.
+1309 unit + module tests pass, ruff clean.
+
+### Full sweep — `cpu_cond_fix_20260727`
+
+26 cells, pure + jit, 1000 steps, 3 warm repeats, same `--order-seed 20260726` as the previous
+run. **0 cell failures, 0 parity failures, 0 regressions against the pre-refactor baseline.**
+Every regression flagged by `cpu_optimisation_20260727` is gone.
+
+| config | R | F | T | pure | jit | vs prev | vs baseline |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| corner_low | 96 | 173 | 1 | 0.0535 | 0.0548 | 1.23× | 2.60× / 11.71× |
+| frames_0173 | 144 | 173 | 5 | 0.0897 | 0.0893 | 1.06× | 1.96× / 7.11× |
+| residues_096 | 96 | 500 | 5 | 0.1091 | 0.1088 | 1.16× | 3.15× / 6.28× |
+| anchor | 144 | 500 | 5 | 0.2114 | 0.2116 | 1.00× | 2.05× / 3.38× |
+| timepoints_01 | 144 | 500 | 1 | 0.2295 | 0.2251 | 0.94× | 1.89× / 3.16× |
+| timepoints_10 | 144 | 500 | 10 | 0.2204 | 0.2197 | 0.96× | 2.04× / 3.25× |
+| residues_293 | 293 | 500 | 5 | 0.2777 | 0.2813 | 1.38× | 2.10× / 2.65× |
+| frames_1125 | 144 | 1125 | 5 | 0.3435 | 0.3367 | 1.34× | 2.34× / 2.47× |
+| residues_600 | 600 | 500 | 5 | 0.4279 | 0.4138 | 1.82× | 2.19× / 2.14× |
+| frames_5000 | 144 | 5000 | 5 | 1.0187 | 0.9932 | 1.90× | 2.99× / 1.66× |
+| corner_high | 600 | 5000 | 10 | 3.4757 | 3.3953 | 2.29× | 2.63× / 1.22× |
+
+Gains scale with work per step, as expected if the cause was an unoptimisable step body: 1.0×
+at `anchor`, 1.8× at `residues_600`, 1.9× at `frames_5000`, 2.3× at `corner_high`. The
+`timepoints_*` and `anchor` cells sit at 0.94–1.00×, i.e. unchanged within the ~2% run-to-run
+spread — the fix costs nothing where the step body is small.
+
+Note the handoff's earlier claim that "the driver is frames, not residues" was too strong.
+`residues_600` at 500 frames improved 1.82×, second only to the 5000-frame cells. The driver is
+total step-body work; frames simply dominated it in the configurations that regressed.
+
+### Numerics
+
+`corner_high` reproduces fingerprint `42d5efe122878608…` on both paths, unchanged from before
+the fix. Four of 26 cells do differ — `corner_low` and `timepoints_01`, both pure and jit — so
+**the change is not bit-identical everywhere**, and the earlier "bit-identical" claim in this
+document applied only to `corner_high`.
+
+Quantified by dumping terminal parameters before and after (`--terminal-npz`) at `corner_low`:
+the difference is confined to `frame_weights`, `max |Δ| = 4.8e-07`, `max relative = 3.4e-07` —
+1–2 ULP in float32 (`eps = 1.19e-07`) — with all six other parameter leaves bit-identical.
+Final loss agrees to all 10 printed significant figures (`2.857442723e-06`). This is
+floating-point reassociation from XLA fusing the unconditional body differently than the cond
+branch, not a semantic change. It shows up only where accumulated rounding happens to cross a
+representable boundary, which is why 22 of 26 cells are unaffected.
+
+**Both open issues below are closed, and issue 1 was not unrelated after all.** The eager
+path's per-step recompile was *caused* by the `lax.cond`: eager `lax.cond` compiles on every
+call. Confirmed by checking out the pre-fix `chunk.py`/`run.py` at `a9475ab`, where
+`test_each_prepared_path_reuses_warm_cache_and_reports_terminal_step` fails with
+`compiles == 2` at `steps=2`, and passes on the fix. The handoff was wrong to attribute it to
+the item-6 unification.
+
+Test coverage added in `test_chunk_runner.py`: `test_tolerance_termination_stops_before_n_steps`
+now pins the exact step count and record count (`executed_steps == 5`, `records.step.shape ==
+(2,)`) rather than the weaker `< 100`, which is what proves the early exit fires.
+
+### Residual notes
+
+- `test_chunk_runner_has_no_per_step_host_materialisations` was renamed to
+  `..._has_at_most_one_boundary_sync_per_chunk` and relaxed from `not counts` to
+  `sum(counts.values()) <= 4`. That is the direct consequence of the early exit — 10 steps at
+  chunk size 3 is 4 boundaries — but the bound is now loose enough that it would not catch a
+  regression to, say, 2 syncs per boundary. Tightening it to `== n_chunks` would be strictly
+  better.
+- The early exit does not apply to callers that jit `run_sequential` themselves (including the
+  profiler). Those still pay full compute on inactive steps. This is correct — shapes must stay
+  static — but means the benchmark numbers above measure the select fix alone, not the exit.
+- I did not independently reproduce the reported 0.361 s vs 0.611 s early-convergence wall-clock
+  pair; the exit's behaviour is pinned by the step/record-count assertions instead.
+
+## Remaining next step
+
+`cpu_cond_fix_20260727` is now the current reference sweep. `initial_baseline_20260726` should
+be kept only as the pre-refactor historical record — several of its rows describe execution
+paths that no longer exist — and `cpu_optimisation_20260727` is superseded.
 
 ## Reproduction
 
@@ -166,18 +257,35 @@ uv run python profiling/profile_hdx_cpu.py --mode timing --path pure --steps 100
 uv run python profiling/profile_hdx_cpu.py --mode timing --path jit  --steps 1000
 ```
 
-Sweep artifacts: `profiling/_output/hdx_cpu_scaling/cpu_optimisation_20260727/`
-(26 valid cells, pure + jit, zero parity failures). Pre-refactor baseline:
-`profiling/_output/hdx_cpu_scaling/initial_baseline_20260726/`.
+Full sweep:
 
-## Unrelated open issues found during this investigation
+```sh
+uv run python profiling/run_hdx_cpu_scaling.py --suite full \
+  --run-id <id> --paths pure,jit --steps 1000 --warm-repeats 3 \
+  --order-seed 20260726 \
+  --previous-dir profiling/_output/hdx_cpu_scaling/cpu_cond_fix_20260727 \
+  --baseline-dir profiling/_output/hdx_cpu_scaling/initial_baseline_20260726
+```
 
-Neither is caused by the chunked runner, and both currently fail in the test suite.
+Note the sweep runner takes `--paths` (plural, comma-separated); `profile_hdx_cpu.py` takes
+`--path` (singular). Easy to transpose.
+
+Sweep artifacts, newest first:
+`cpu_cond_fix_20260727/` (post-fix, current reference),
+`cpu_optimisation_20260727/` (pre-fix, superseded),
+`initial_baseline_20260726/` (pre-refactor), all under
+`profiling/_output/hdx_cpu_scaling/`.
+
+## Open issues found during this investigation — both now closed
+
+Retained for the record. See "Outcome" above: issue 1 turned out to be a symptom of the same
+`lax.cond`, and issue 2 was fixed with a scoped x64 context.
 
 1. **Eager path recompiles once per step.** Measured `warm.compiles=2` at `steps=2`, and
    47 compiles cold; the sweep's eager `corner_low` cell took 202.4 s with 3,000 warm
    compilations. Production paths are unaffected (`jit` and `pure` both report 0 warm
-   compiles). Introduced when `_optimise` was unified onto the shared primitives. Fails
+   compiles). **This attribution was wrong** — see Outcome; the cause was the eager `lax.cond`,
+   not the item-6 unification. Failed
    `tests/unit/profiling/test_hdx_cpu_scaling.py::test_each_prepared_path_reuses_warm_cache_and_reports_terminal_step`.
    Confirmed not caused by the pytree-caching commit by reverting that commit's three
    source files and re-running.
@@ -185,7 +293,7 @@ Neither is caused by the chunked runner, and both currently fail in the test sui
 2. **Lost float64 precision in HDX analysis.** Commit `0343fa4` removed
    `jax.config.update("jax_enable_x64", True)` from
    `jaxent/src/analysis/hdx_target_variance.py`. `positive_two_moment_uptake` no longer
-   matches its analytic limit `1 - exp(-t·mean)`. Fails
+   matched its analytic limit `1 - exp(-t·mean)`. Failed
    `tests/unit/analysis/test_hdx_target_variance.py::test_zero_variance_recovers_fixed_mean_limit`.
    Removing a module-level global `jax.config.update` is defensible — it is an import side
    effect that can perturb benchmarks — but it silently changed analysis numerics. The
