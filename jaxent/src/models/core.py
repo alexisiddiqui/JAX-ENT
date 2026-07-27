@@ -253,11 +253,13 @@ class Simulation:
         ) = aux_data
 
         # Unpack dynamic values
-        (params, outputs, _input_features) = dynamic_values
-        (params, outputs, _input_features) = dynamic_values
+        params, outputs, _input_features = dynamic_values
 
-        # Create a new instance
-        instance = cls(_input_features, forward_models, params)
+        # Bypass the constructor: all constructor-derived fields are present in the schema.
+        instance = object.__new__(cls)
+        instance.input_features = _input_features
+        instance.forward_models = forward_models
+        instance.params = params
         instance.forwardpass = forwardpass
         instance.length = length
         instance.outputs = tuple(outputs)

@@ -455,22 +455,38 @@ introduced later if a concrete use case justifies it.
 
 Profile evidence:
 
-- JIT: 31,456 `_get_grouped_slots` calls, approximately 0.50 s cumulative.
-- Eager: 62,028 calls, approximately 1.12 s cumulative.
-- JIT `tree_flatten` and `tree_unflatten` each cost roughly 0.4 s cumulative.
+- The old 31,456-call / 0.50 s evidence came from the per-step Python loop removed by
+  Items 2–5 and is no longer representative.
+- Current shared-runner profiling shows the following call counts and cumulative times:
+
+  | measurement | 100 steps | 1,000 steps |
+  |---|---:|---:|
+  | `_get_grouped_slots` calls | 510 | 1,086 |
+  | `_get_grouped_slots` time | 0.70 ms | 1.30 ms |
+  | `tree_flatten` (all implementations) | 1.77 ms | 2.46 ms |
+  | `tree_unflatten` (all implementations) | 1.54 ms | 2.68 ms |
+  | beartype (all frames) | 5.64 ms (0.91%) | 9.85 ms |
+
+  A tenfold step increase only doubles these counts, showing that this is trace-time cost
+  paid once per process rather than per-step cost. PyTree and beartype work totals about
+  18 ms of a 2.88 s cold profile (0.6%); warm execution touches none of it. The loop
+  refactor already delivered the material optimisation.
 
 `jaxent/src/interfaces/model.py:22-49` repeatedly scans class MROs and partitions
 slots.
 
 Actions:
 
-- Cache `_get_ordered_slots` and `_get_grouped_slots` with `functools.cache`, or
-  calculate the tuples once in `__init_subclass__`.
-- Make flatten/unflatten consume precomputed tuples.
-- Consider specialized flatten/unflatten implementations for common HDX/BV
-  parameter classes.
-- Preserve runtime type validation at public boundaries, but exclude internal
-  PyTree protocol methods from package-wide beartype checking where practical.
+- Cache `_get_ordered_slots` and `_get_grouped_slots` with `functools.cache`; the tuples are
+  immutable and current production code does not mutate slot or feature declarations after
+  class definition.
+- Use `object.__new__` for `AbstractFeatures.tree_unflatten`, matching the existing parameter
+  unflatten paths and allowing valid JAX intermediate values without constructor validation.
+- Restore `Simulation.raise_jit_failure` during unflatten; this was a live round-trip bug
+  exposed by Item 6's constructor-default change.
+- The beartype-exclusion action is dropped: measured upside is only 0.91% of cold time and
+  zero warm-path time, while the package-wide claw setup has no exclusion mechanism and
+  weakening checks in this code is not justified.
 
 ### P2: Remove Redundant Staged Work
 
@@ -574,7 +590,7 @@ Suggested metrics:
    state.
 7. Add configurable convergence/best-only history with parameter partition
    selection.
-8. Cache PyTree schemas and reduce beartype involvement in PyTree internals.
+8. Cache PyTree schemas; the beartype exclusion was dropped after measurement.
 9. Remove redundant control flow and object construction.
 10. Benchmark each change independently against the clean baseline.
 
@@ -674,7 +690,8 @@ Performance:
 - The public compiled path remains within a small tolerance of the internal pure
   path.
 - Final-only history is measurably faster and uses less memory than full history.
-- PyTree schema caching materially reduces flatten/unflatten CPU time.
+- PyTree slot-scanner call counts are reduced to roughly the number of distinct parameter
+  and feature classes (single digits), from 1,086 in the current un-cached profile.
 
 ## Recommended First Patch
 

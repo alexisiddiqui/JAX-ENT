@@ -1,6 +1,7 @@
 ########################################################################
 # TODO need to simplify code using _create_modified_instance and lambda functions - using this we can then use lax to speed up the optimisation
 from collections.abc import Callable, Sequence
+from functools import cache
 from typing import Any, ClassVar, TypeVar, cast
 
 import jax.numpy as jnp
@@ -20,8 +21,10 @@ class Model_Parameters:
     # dynamic_params: ClassVar[set[str]] | None
 
     @classmethod
+    @cache
     def _get_ordered_slots(cls: type[T_mp]) -> tuple[str, ...]:
         """Get slots in a deterministic order, including child classes"""
+        # Safe while class slot declarations remain immutable after definition.
         all_slots = []
         for c in cls.__mro__:
             if hasattr(c, "__slots__"):
@@ -29,6 +32,7 @@ class Model_Parameters:
         return tuple(dict.fromkeys(all_slots))
 
     @classmethod
+    @cache
     def _get_grouped_slots(cls: type[T_mp]) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Get dynamic and static slots.
@@ -39,6 +43,7 @@ class Model_Parameters:
         Returns:
             tuple: (dynamic_slots, static_slots)
         """
+        # Safe while class slot/static_params declarations remain immutable after definition.
         dynamic_slots = []
         static_slots = []
         for slot in cls._get_ordered_slots():
