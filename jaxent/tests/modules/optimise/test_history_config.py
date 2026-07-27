@@ -1,10 +1,14 @@
+import numpy as np
+import jax
 import jax.numpy as jnp
 import pytest
 
 from jaxent.src.custom_types.config import Optimisable_Parameters, OptimiserSettings
-from jaxent.src.opt.base import HParamBatch
+from jaxent.src.opt.base import HParamBatch, OptimizationHistory, OptimizationState
 from jaxent.src.opt.batch import batch_optimise
-from jaxent.src.opt.run import run_optimise
+from jaxent.src.opt.chunk import ChunkResult, run_sequential
+from jaxent.src.opt.optimiser import OptaxOptimizer
+from jaxent.src.opt.run import _build_chunk_state, result_to_history, run_optimise
 from jaxent.src.utils.hdf import load_optimization_history_from_file, save_optimization_history_to_file
 from jaxent.tests.modules.optimise.test_module_optimise_convergence import (
     _create_synthetic_simulation,
@@ -24,6 +28,86 @@ def _run(config: OptimiserSettings):
     )[1]
 
 
+def _run_result(
+    config: OptimiserSettings,
+    *,
+    retain_record_params: bool = True,
+    parameter_partitions=None,
+) -> tuple[ChunkResult, OptaxOptimizer]:
+    simulation, _ = _create_synthetic_simulation()
+    optimizer = OptaxOptimizer(learning_rate=config.learning_rate)
+    opt_state = optimizer.initialise(simulation)
+    carry, inputs, loss_functions, indexes = _build_chunk_state(
+        simulation,
+        (jnp.asarray([10.0], dtype=jnp.float32),),
+        config.tolerance,
+        config.convergence,
+        [0],
+        [synthetic_output_l2_loss],
+        opt_state,
+        optimizer,
+    )
+    inputs = inputs._replace(ema_alpha=jnp.asarray(config.ema_alpha, dtype=jnp.float32))
+    result = run_sequential(
+        carry,
+        inputs,
+        config.n_steps,
+        config.step_chunk_size,
+        optimizer,
+        loss_functions,
+        indexes,
+        config.min_steps_per_threshold,
+        parameter_partitions=parameter_partitions,
+        retain_record_params=retain_record_params,
+    )
+    return result, optimizer
+
+
+def _legacy_result_to_history(result: ChunkResult) -> OptimizationHistory:
+    """Reference conversion matching the pre-item-7 result-to-history behavior."""
+    records = result.records
+    active = np.asarray(jax.device_get(records.active))
+    threshold_event = np.asarray(jax.device_get(records.threshold_event))
+    final_state = result.carry.opt_state
+    history = OptimizationHistory()
+
+    def state_from_record(index: int) -> OptimizationState:
+        return OptimizationState(
+            params=jax.tree_util.tree_map(lambda value: value[index], records.params),
+            opt_state=final_state.opt_state,
+            step=records.step[index],
+            losses=jax.tree_util.tree_map(lambda value: value[index], records.losses),
+            gradients=final_state.gradients,
+        )
+
+    convergence_indices = {
+        int(index) for index in np.flatnonzero(active & threshold_event)
+    }
+    for index in np.flatnonzero(active):
+        state = state_from_record(int(index))
+        history.states.append(state)
+        if int(index) in convergence_indices:
+            history.convergence_states.append(state)
+
+    best = result.carry.best
+    history.best_state = OptimizationState(
+        params=best.params,
+        opt_state=final_state.opt_state,
+        step=best.step,
+        losses=best.losses,
+        gradients=final_state.gradients,
+    )
+    return history
+
+
+def _assert_state_equal(actual: OptimizationState, expected: OptimizationState) -> None:
+    actual_leaves = jax.tree_util.tree_leaves(actual)
+    expected_leaves = jax.tree_util.tree_leaves(expected)
+    assert len(actual_leaves) == len(expected_leaves)
+    for actual_leaf, expected_leaf in zip(actual_leaves, expected_leaves):
+        assert jnp.array_equal(actual_leaf, expected_leaf)
+
+
 def _config(**kwargs) -> OptimiserSettings:
     values = dict(
         name="history_config",
@@ -37,17 +121,22 @@ def _config(**kwargs) -> OptimiserSettings:
     return OptimiserSettings(**values)
 
 
-def test_default_and_explicit_all_partitions_match() -> None:
-    default = _run(_config())
-    explicit = _run(
-        _config(
-            parameter_partitions=frozenset(Optimisable_Parameters),
-        )
+def test_default_matches_legacy_conversion_on_same_chunk_result() -> None:
+    result, optimizer = _run_result(_config())
+    actual = result_to_history(result, optimizer)
+    expected = _legacy_result_to_history(result)
+    assert len(actual.states) == len(expected.states)
+    assert len(actual.convergence_states) == len(expected.convergence_states)
+    assert [int(state.step) for state in actual.states] == [int(state.step) for state in expected.states]
+    for actual_state, expected_state in zip(actual.states, expected.states):
+        _assert_state_equal(actual_state, expected_state)
+    for actual_state, expected_state in zip(actual.convergence_states, expected.convergence_states):
+        _assert_state_equal(actual_state, expected_state)
+    _assert_state_equal(actual.best_state, expected.best_state)
+    assert all(
+        any(actual_state is state for state in actual.states)
+        for actual_state in actual.convergence_states
     )
-    assert [int(state.step) for state in default.states] == [int(state.step) for state in explicit.states]
-    assert jnp.array_equal(default.states[-1].params.frame_weights, explicit.states[-1].params.frame_weights)
-    assert len(default.convergence_states) == len(explicit.convergence_states)
-    assert default.convergence_states[0] is default.states[0]
 
 
 def test_partition_selection_and_best_state() -> None:
@@ -66,9 +155,27 @@ def test_retention_toggles_and_clear_best_state_error() -> None:
     assert no_states.convergence_states
     no_best = _run(_config(save_best=False))
     assert no_best.best_state is None
+    no_convergence = _run(_config(save_convergence=False))
+    assert no_convergence.states
+    assert no_convergence.convergence_states == []
     empty = _run(_config(save_states=False, save_convergence=True, save_best=False))
     with pytest.raises(ValueError, match="save_best=False and save_states=False"):
         empty.get_best_state()
+
+
+def test_retain_record_params_false_emits_empty_parameter_leaves() -> None:
+    result, _ = _run_result(
+        _config(save_states=False, save_convergence=False),
+        parameter_partitions=frozenset(),
+        retain_record_params=False,
+    )
+    params = result.records.params
+    assert params.frame_weights.size == 0
+    assert params.frame_mask.size == 0
+    assert params.forward_model_weights.size == 0
+    assert params.model_parameters[0].bias.size == 0
+    assert params.forward_model_scaling.size > 0
+    assert params.normalise_loss_functions.size > 0
 
 
 def test_config_normalises_and_validates_partition_policy() -> None:
