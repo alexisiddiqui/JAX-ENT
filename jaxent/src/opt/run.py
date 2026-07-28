@@ -377,6 +377,11 @@ def _optimise(
                 tuple_indexes,
                 min_steps_per_threshold,
             )
+            # The eager path dispatches many individual JAX operations.  Bound
+            # outstanding work and its temporary buffers before the next step.
+            # The updated logits depend on the complete gradient/Optax update;
+            # the loss scalar can become ready before that work has finished.
+            jax.block_until_ready(carry.opt_state.params.frame_weight_logits)
             boundary_metrics.append(step_metrics)
         carry, threshold_event = evaluate_convergence(
             carry,

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Sequence, Tuple, cast
+from typing import List, Literal, Sequence, Tuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -28,7 +28,7 @@ from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_outpu
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_Model_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
-from jaxent.src.opt.run import _optimise
+from jaxent.src.opt.run import _optimise, _optimise_pure
 from jaxent.src.utils.hdf import save_optimization_history_to_file
 from jaxent.src.utils.jit_fn import jit_Guard
 
@@ -103,6 +103,7 @@ def run_optimization(
     forward_model_scaling: float = 100.0,
     cov_matrix: Array | None = None,
     model_parameters_lr_scale: float = 1.0,
+    execution_mode: Literal["compiled", "python"] = "python",
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -204,17 +205,11 @@ def run_optimization(
             clip_value=None,
             optimizer=optimizer_type,
         )
-        opt_state = optimizer.initialise(
-            model=sim,
-            _jit_test_args=(
-                tuple(data_targets_list),
-                tuple(loss_fn_list),
-                tuple(indexes_list),
-            ),
-        )
+        opt_state = optimizer.initialise(model=sim)
 
         # Run optimisation sweep
-        sim, optimizer = _optimise(
+        optimise_fn = _optimise_pure if execution_mode == "compiled" else _optimise
+        sim, optimizer = optimise_fn(
             _simulation=sim,
             data_to_fit=tuple(data_targets_list),
             n_steps=n_steps,

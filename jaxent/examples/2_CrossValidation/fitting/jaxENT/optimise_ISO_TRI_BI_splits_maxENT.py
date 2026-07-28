@@ -31,7 +31,7 @@ import argparse
 import os
 import time
 from datetime import datetime  # NEW: used to append timestamp when no output dir provided
-from typing import List
+from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
@@ -106,6 +106,7 @@ def run_maxent_sweep(
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: allow caller to select output dir
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -281,6 +282,7 @@ def run_maxent_sweep(
                         name=run_name,
                         output_dir=output_dir,
                         cov_matrix=cov_matrix_data,
+                        execution_mode=execution_mode,
                     )
 
                     run_elapsed = time.time() - run_start_time
@@ -353,6 +355,7 @@ def run_all_combinations(
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: propagate chosen output dir
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
@@ -387,6 +390,7 @@ def run_all_combinations(
                 ema_alpha=ema_alpha,
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,  # pass through
+                execution_mode=execution_mode,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -498,6 +502,12 @@ def main():
         default=100.0,
         help="Forward model scaling factor (default: 100.0).",
     )
+    parser.add_argument(
+        "--execution-mode",
+        choices=["compiled", "python"],
+        default="compiled",
+        help="Optimizer execution mode (default: compiled).",
+    )
 
     # NEW: add output directory option (default None -> will trigger timestamping)
     parser.add_argument(
@@ -523,6 +533,7 @@ def main():
     print(f"  Learning rate: {args.learning_rate}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
+    print(f"  Execution mode: {args.execution_mode}")
     # Check if specific combination is requested
     if args.ensemble is not None and args.loss_function is not None:
         # Single combination mode
@@ -544,6 +555,7 @@ def main():
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through (None -> run_maxent_sweep will timestamp)
+            execution_mode=args.execution_mode,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -557,6 +569,7 @@ def main():
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through
+            execution_mode=args.execution_mode,
         )
 
     # Report where results were written

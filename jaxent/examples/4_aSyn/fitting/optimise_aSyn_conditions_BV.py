@@ -39,7 +39,7 @@ import argparse
 import os
 import time
 from datetime import datetime
-from typing import List
+from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
@@ -120,6 +120,7 @@ def run_conditions_sweep(
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> dict:
     """
     Run optimization sweep across maxent and BV regularization values for one condition.
@@ -294,6 +295,7 @@ def run_conditions_sweep(
                             name=run_name,
                             output_dir=output_dir,
                             cov_matrix=None,
+                            execution_mode=execution_mode,
                         )
 
                         run_elapsed = time.time() - run_start_time
@@ -363,6 +365,7 @@ def run_all_conditions(
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> List[dict]:
     """Run sweep for all conditions with MSE loss."""
     loss_names = ["MSE"]
@@ -399,6 +402,7 @@ def run_all_conditions(
                 output_base_dir=output_base_dir,
                 model_parameters_lr_scale=model_parameters_lr_scale,
                 features_dir=features_dir,
+                execution_mode=execution_mode,
             )
             all_results.append(result)
             print(f"Completed: {condition}-{loss_name}")
@@ -524,6 +528,12 @@ def main():
         help="Forward model scaling factor (default: 100.0).",
     )
     parser.add_argument(
+        "--execution-mode",
+        choices=["compiled", "python"],
+        default="compiled",
+        help="Optimizer execution mode (default: compiled).",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
@@ -566,6 +576,7 @@ def main():
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
     print(f"  Model parameter LR scale: {args.model_parameters_lr_scale}")
+    print(f"  Execution mode: {args.execution_mode}")
 
     if args.condition is not None:
         print(f"Running sweep for condition: {args.condition}")
@@ -588,6 +599,7 @@ def main():
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
+            execution_mode=args.execution_mode,
         )
 
     else:
@@ -604,6 +616,7 @@ def main():
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
+            execution_mode=args.execution_mode,
         )
 
     if args.output_dir:
