@@ -122,6 +122,33 @@ def _select_snapshot(
     )
 
 
+def _select_carry(predicate: Array, stepped: ChunkCarry, frozen: ChunkCarry) -> ChunkCarry:
+    """Select dynamic carry fields; pass the immutable simulation through by reference.
+
+    ``sim`` holds the input feature arrays and never changes during a step. Including
+    it in the tree-map would allocate a full copy of those arrays on every step,
+    which is the dominant source of eager-loop memory growth.
+    """
+
+    def sel(a, b):
+        return jax.tree_util.tree_map(
+            lambda x, y: jax.lax.select(predicate, x, y), a, b
+        )
+
+    return ChunkCarry(
+        opt_state=sel(stepped.opt_state, frozen.opt_state),
+        sim=stepped.sim,
+        convergence=sel(stepped.convergence, frozen.convergence),
+        lr=jax.lax.select(predicate, stepped.lr, frozen.lr),
+        model_lr=jax.lax.select(predicate, stepped.model_lr, frozen.model_lr),
+        executed_steps=jax.lax.select(
+            predicate, stepped.executed_steps, frozen.executed_steps
+        ),
+        active=jax.lax.select(predicate, stepped.active, frozen.active),
+        best=sel(stepped.best, frozen.best),
+    )
+
+
 def _losses_or_default(state: OptimizationState, fallback: Array) -> LossComponents:
     if state.losses is not None:
         return state.losses
@@ -226,11 +253,7 @@ def optimisation_step(
             active=jnp.asarray(False),
             best=active_carry.best,
         )
-        next_carry = jax.tree_util.tree_map(
-            lambda good, frozen: jax.lax.select(finite, good, frozen),
-            finite_carry,
-            frozen_carry,
-        )
+        next_carry = _select_carry(finite, finite_carry, frozen_carry)
         return next_carry, StepMetrics(
             total_train_loss=jnp.asarray(losses.total_train_loss),
             total_val_loss=jnp.asarray(losses.total_val_loss),
@@ -245,11 +268,7 @@ def optimisation_step(
     # already establishes the freeze semantics needed when the step is invalid.
     stepped_carry, stepped_metrics = step(carry)
     frozen_carry, frozen_metrics = _no_op_step(carry)
-    next_carry = jax.tree_util.tree_map(
-        lambda stepped, frozen: jax.lax.select(carry.active, stepped, frozen),
-        stepped_carry,
-        frozen_carry,
-    )
+    next_carry = _select_carry(carry.active, stepped_carry, frozen_carry)
     next_metrics = jax.tree_util.tree_map(
         lambda stepped, frozen: jax.lax.select(carry.active, stepped, frozen),
         stepped_metrics,

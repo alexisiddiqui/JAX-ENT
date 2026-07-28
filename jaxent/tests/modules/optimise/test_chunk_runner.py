@@ -1,13 +1,28 @@
+import gc
+
 import jax
 import jax.numpy as jnp
 
 from jaxent.src.custom_types.config import OptimiserSettings
 from jaxent.src.custom_types.config import Optimisable_Parameters
-from jaxent.src.opt.chunk import ChunkInputs, run_batch, run_sequential
+from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.core import Simulation
+from jaxent.src.opt import chunk as chunk_module
+from jaxent.src.opt.chunk import (
+    ChunkInputs,
+    optimisation_step,
+    run_batch,
+    run_sequential,
+    run_step_chunk,
+)
 from jaxent.src.opt.optimiser import OptaxOptimizer
 from jaxent.src.opt.run import _build_chunk_state, result_to_history, run_optimise
 from jaxent.tests.modules.optimise.test_module_optimise_convergence import (
     _create_synthetic_simulation,
+    SyntheticForwardModel,
+    SyntheticForwardModelConfig,
+    SyntheticInputFeatures,
+    SyntheticModelParameters,
     synthetic_output_l2_loss,
 )
 
@@ -65,6 +80,195 @@ def test_convergence_carry_contains_only_scalar_leaves() -> None:
     leaves = jax.tree_util.tree_leaves(result.carry.convergence)
     assert leaves
     assert all(jnp.ndim(leaf) == 0 for leaf in leaves)
+
+
+def test_optimisation_step_preserves_sim_identity_for_all_eager_selections() -> None:
+    def make_step(target):
+        simulation, _ = _create_synthetic_simulation()
+        optimizer = OptaxOptimizer(learning_rate=0.1)
+        initial_state = optimizer.initialise(simulation)
+        carry, inputs, losses, indexes = _build_chunk_state(
+            simulation,
+            (jnp.asarray([target], dtype=jnp.float32),),
+            -jnp.inf,
+            [-jnp.inf],
+            [0],
+            [synthetic_output_l2_loss],
+            initial_state,
+            optimizer,
+        )
+        return carry, inputs, optimizer, losses, indexes
+
+    active = make_step(10.0)
+    active_carry, active_inputs, active_optimizer, active_losses, active_indexes = active
+    active_result, _ = optimisation_step(
+        active_carry,
+        active_inputs,
+        active_optimizer,
+        active_losses,
+        active_indexes,
+        2,
+    )
+
+    frozen_carry = active_carry._replace(active=jnp.asarray(False))
+    frozen_result, _ = optimisation_step(
+        frozen_carry,
+        active_inputs,
+        active_optimizer,
+        active_losses,
+        active_indexes,
+        2,
+    )
+
+    invalid = make_step(jnp.nan)
+    invalid_result, _ = optimisation_step(
+        invalid[0], invalid[1], invalid[2], invalid[3], invalid[4], 2
+    )
+
+    assert active_result.sim is active_carry.sim
+    assert frozen_result.sim is frozen_carry.sim
+    assert invalid_result.sim is invalid[0].sim
+
+
+def test_jit_scan_matches_pure_scan_for_full_step_state(monkeypatch) -> None:
+    simulation, _ = _create_synthetic_simulation()
+    optimizer = OptaxOptimizer(learning_rate=0.1)
+    initial_state = optimizer.initialise(simulation)
+    carry, inputs, losses, indexes = _build_chunk_state(
+        simulation,
+        (jnp.asarray([10.0], dtype=jnp.float32),),
+        -jnp.inf,
+        [-jnp.inf],
+        [0],
+        [synthetic_output_l2_loss],
+        initial_state,
+        optimizer,
+    )
+
+    def run_scan():
+        def scan_step(current, _):
+            return optimisation_step(current, inputs, optimizer, losses, indexes, 2)
+
+        return jax.lax.scan(scan_step, carry, None, length=10)
+
+    def _reference_select_carry(predicate, stepped, frozen):
+        """Pre-fix whole-carry select, kept as a parity reference only."""
+        return jax.tree_util.tree_map(
+            lambda a, b: jax.lax.select(predicate, a, b), stepped, frozen
+        )
+
+    production_select_carry = chunk_module._select_carry
+    monkeypatch.setattr(chunk_module, "_select_carry", _reference_select_carry)
+    reference_carry, reference_metrics = run_scan()
+    monkeypatch.setattr(chunk_module, "_select_carry", production_select_carry)
+    scan_carry, scan_metrics = run_scan()
+
+    assert jnp.allclose(
+        reference_metrics.total_train_loss, scan_metrics.total_train_loss
+    )
+    assert jnp.allclose(
+        reference_carry.opt_state.losses.total_train_loss,
+        scan_carry.opt_state.losses.total_train_loss,
+    )
+    assert jnp.allclose(
+        reference_carry.opt_state.losses.total_train_loss,
+        scan_carry.opt_state.losses.total_train_loss,
+    )
+    for reference_leaf, scan_leaf in zip(
+        jax.tree_util.tree_leaves(reference_carry.opt_state.params),
+        jax.tree_util.tree_leaves(scan_carry.opt_state.params),
+        strict=True,
+    ):
+        assert jnp.allclose(reference_leaf, scan_leaf)
+    assert jnp.array_equal(reference_carry.executed_steps, scan_carry.executed_steps)
+    assert jnp.array_equal(reference_carry.active, scan_carry.active)
+    assert jnp.allclose(reference_carry.lr, scan_carry.lr)
+    assert jnp.allclose(reference_carry.model_lr, scan_carry.model_lr)
+    for reference_leaf, scan_leaf in zip(
+        jax.tree_util.tree_leaves(reference_carry.convergence),
+        jax.tree_util.tree_leaves(scan_carry.convergence),
+        strict=True,
+    ):
+        assert jnp.allclose(reference_leaf, scan_leaf)
+    for reference_leaf, scan_leaf in zip(
+        jax.tree_util.tree_leaves(reference_carry._replace(sim=None)),
+        jax.tree_util.tree_leaves(scan_carry._replace(sim=None)),
+        strict=True,
+    ):
+        if reference_leaf is None:
+            assert scan_leaf is None
+        else:
+            assert jnp.allclose(reference_leaf, scan_leaf)
+
+    compiled_carry, compiled_metrics, _ = run_step_chunk(
+        carry, inputs, optimizer, losses, indexes, 10, 2
+    )
+    assert jnp.allclose(compiled_metrics.total_train_loss, scan_metrics.total_train_loss)
+    assert jnp.allclose(
+        compiled_carry.opt_state.losses.total_train_loss,
+        scan_carry.opt_state.losses.total_train_loss,
+    )
+    for compiled_leaf, scan_leaf in zip(
+        jax.tree_util.tree_leaves(compiled_carry.opt_state.params),
+        jax.tree_util.tree_leaves(scan_carry.opt_state.params),
+        strict=True,
+    ):
+        assert jnp.allclose(compiled_leaf, scan_leaf)
+    assert jnp.array_equal(compiled_carry.executed_steps, scan_carry.executed_steps)
+    assert jnp.array_equal(compiled_carry.active, scan_carry.active)
+
+
+def test_eager_step_live_array_growth_stays_below_feature_tree_size() -> None:
+    threshold_bytes = 100_000
+    models = [SyntheticForwardModel(SyntheticForwardModelConfig())]
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(5, dtype=jnp.float32),
+        model_parameters=[SyntheticModelParameters()],
+        forward_model_weights=jnp.ones(1, dtype=jnp.float32),
+        forward_model_scaling=jnp.ones(1, dtype=jnp.float32),
+        normalise_loss_functions=jnp.ones(1, dtype=jnp.float32),
+    )
+    simulation = Simulation(
+        input_features=[
+            SyntheticInputFeatures(jnp.ones((20_000, 5), dtype=jnp.float32))
+        ],
+        forward_models=models,
+        params=parameters,
+    )
+    simulation.initialise()
+    optimizer = OptaxOptimizer(learning_rate=0.1)
+    initial_state = optimizer.initialise(simulation)
+    carry, inputs, losses, indexes = _build_chunk_state(
+        simulation,
+        (jnp.ones(20_000, dtype=jnp.float32),),
+        -jnp.inf,
+        [-jnp.inf],
+        [0],
+        [synthetic_output_l2_loss],
+        initial_state,
+        optimizer,
+    )
+
+    sim_bytes = sum(
+        int(leaf.nbytes) for leaf in jax.tree_util.tree_leaves(carry.sim)
+    )
+    assert sim_bytes >= 4 * threshold_bytes
+
+    samples = []
+    for _ in range(12):
+        carry, metrics = optimisation_step(
+            carry, inputs, optimizer, losses, indexes, 2
+        )
+        jax.tree_util.tree_map(
+            lambda leaf: leaf.block_until_ready() if hasattr(leaf, "block_until_ready") else leaf,
+            (carry, metrics),
+        )
+        gc.collect()
+        samples.append(sum(int(array.nbytes) for array in jax.live_arrays()))
+
+    samples = samples[2:]
+    slope = (samples[-1] - samples[0]) / (len(samples) - 1)
+    assert slope <= threshold_bytes
 
 
 def test_static_gradient_mask_is_active_from_first_step() -> None:
