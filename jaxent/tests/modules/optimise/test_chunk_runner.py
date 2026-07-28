@@ -9,7 +9,9 @@ from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.core import Simulation
 from jaxent.src.opt import chunk as chunk_module
 from jaxent.src.opt.chunk import (
+    ChunkCarry,
     ChunkInputs,
+    _select_carry,
     optimisation_step,
     run_batch,
     run_sequential,
@@ -130,6 +132,8 @@ def test_optimisation_step_preserves_sim_identity_for_all_eager_selections() -> 
     assert invalid_result.sim is invalid[0].sim
 
 
+# This is an end-to-end numerical and compiled-vs-traced consistency check, not
+# the direct guard for accidentally dropping a dynamic carry field.
 def test_jit_scan_matches_pure_scan_for_full_step_state(monkeypatch) -> None:
     simulation, _ = _create_synthetic_simulation()
     optimizer = OptaxOptimizer(learning_rate=0.1)
@@ -216,6 +220,72 @@ def test_jit_scan_matches_pure_scan_for_full_step_state(monkeypatch) -> None:
         assert jnp.allclose(compiled_leaf, scan_leaf)
     assert jnp.array_equal(compiled_carry.executed_steps, scan_carry.executed_steps)
     assert jnp.array_equal(compiled_carry.active, scan_carry.active)
+
+
+def test_select_carry_takes_frozen_values_for_every_dynamic_field() -> None:
+    simulation, _ = _create_synthetic_simulation()
+    optimizer = OptaxOptimizer(learning_rate=0.1)
+    initial_state = optimizer.initialise(simulation)
+    carry, inputs, losses, indexes = _build_chunk_state(
+        simulation,
+        (jnp.asarray([10.0], dtype=jnp.float32),),
+        -jnp.inf,
+        [-jnp.inf],
+        [0],
+        [synthetic_output_l2_loss],
+        initial_state,
+        optimizer,
+    )
+    stepped, _ = optimisation_step(carry, inputs, optimizer, losses, indexes, 2)
+    stepped = stepped._replace(
+        lr=jnp.asarray(9.0),
+        model_lr=jnp.asarray(8.0),
+        executed_steps=stepped.executed_steps + 7,
+        active=jnp.asarray(True),
+    )
+    frozen = carry._replace(
+        lr=jnp.asarray(1.0),
+        model_lr=jnp.asarray(2.0),
+        active=jnp.asarray(False),
+    )
+
+    chosen_frozen = _select_carry(jnp.asarray(False), stepped, frozen)
+    chosen_stepped = _select_carry(jnp.asarray(True), stepped, frozen)
+
+    expected_fields = {
+        "opt_state",
+        "sim",
+        "convergence",
+        "lr",
+        "model_lr",
+        "executed_steps",
+        "active",
+        "best",
+    }
+    assert set(ChunkCarry._fields) == expected_fields
+
+    for field in ChunkCarry._fields:
+        if field == "sim":
+            assert chosen_frozen.sim is stepped.sim
+            assert chosen_stepped.sim is stepped.sim
+        elif field in {"opt_state", "convergence", "best"}:
+            for chosen, expected in (
+                (getattr(chosen_frozen, field), getattr(frozen, field)),
+                (getattr(chosen_stepped, field), getattr(stepped, field)),
+            ):
+                for chosen_leaf, expected_leaf in zip(
+                    jax.tree_util.tree_leaves(chosen),
+                    jax.tree_util.tree_leaves(expected),
+                    strict=True,
+                ):
+                    assert jnp.allclose(chosen_leaf, expected_leaf)
+        else:
+            assert jnp.allclose(
+                getattr(chosen_frozen, field), getattr(frozen, field)
+            )
+            assert jnp.allclose(
+                getattr(chosen_stepped, field), getattr(stepped, field)
+            )
 
 
 def test_eager_step_live_array_growth_stays_below_feature_tree_size() -> None:
