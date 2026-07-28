@@ -296,7 +296,7 @@ def main():
                     losses = info["losses"]
                     convergence = info["convergence"]
 
-                    frame_weights = jvalidated_frame_weight_simplex(params.frame_weight_simplex)
+                    frame_weights = validated_frame_weight_simplex(params.frame_weight_simplex)
 
                     pred_lnpf_output = frame_average_features(framewise_output_lnpf, frame_weights)
                     pred_uptake_output = frame_average_features(framewise_output_uptake, frame_weights)

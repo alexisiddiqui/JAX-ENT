@@ -320,7 +320,7 @@ def main():
                     losses = info["losses"]
                     convergence = info["convergence"]
 
-                    frame_weights = jvalidated_frame_weight_simplex(params.frame_weight_simplex)
+                    frame_weights = validated_frame_weight_simplex(params.frame_weight_simplex)
 
                     # Average features using frame_weights
                     averaged_features = frame_average_features(features, frame_weights)

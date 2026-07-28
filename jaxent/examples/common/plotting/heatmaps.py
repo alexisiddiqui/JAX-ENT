@@ -210,13 +210,15 @@ def plot_metric_heatmap(
                             vmin=_vmin,
                             vmax=_vmax,
                             cbar_kws={"label": metric},
+                            xticklabels=col_labels,
                             ax=ax,
                         )
                         label_parts = [p for p in [ensemble, loss_func] if p]
                         ax.set_title(" — ".join(label_parts), fontweight="bold")
                         ax.set_xlabel(columns_col.replace("_", " ").title(), fontweight="bold")
                         ax.set_ylabel(index_col.replace("_", " ").title(), fontweight="bold")
-                        ax.set_xticklabels(col_labels, rotation=45, ha="right")
+                        ax.tick_params(axis="x", labelrotation=45)
+                        plt.setp(ax.get_xticklabels(), ha="right")
                         sns.despine(ax=ax)
                     else:
                         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)
