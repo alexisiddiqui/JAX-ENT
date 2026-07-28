@@ -140,6 +140,96 @@ different strengths purely from normalization. **Fix required before any cross-c
 comparison:** use summed NLL, or rescale the KL/MaxEnt term by the observation count. This is a
 prerequisite, not an optimization.
 
+### 3.3 Bounded centroid likelihoods
+
+The available observable is centroid fractional uptake `y_pt ∈ [0,1]`; no raw isotope envelopes or
+ion-count data are available. Count-level and envelope-level likelihoods are therefore **out of
+scope**. In particular, multiplying `dfrac` by the number of active amides does not create observed
+binomial counts: the centroid is a continuous ensemble summary, and residue exchange probabilities
+are heterogeneous.
+
+Two bounded-geometry alternatives belong in Block 1:
+
+1. **Mean-precision beta likelihood (`bounded_beta`)**
+   ```
+   y_pt ~ Beta(μ_pt φ, (1−μ_pt) φ)       μ_pt = [M u_t(w)]_p
+   ```
+   This preserves the existing forward-model mean and imposes the bounded variance geometry
+   `Var(y_pt | μ_pt) = μ_pt(1−μ_pt)/(φ+1)`. Use a global precision `φ` estimated from training data
+   only; replace it with replicate-calibrated `φ_pt` if suitable uncertainties later become
+   available. Include the beta normalizing terms: this is a likelihood, not a weighted squared
+   error.
+2. **Complementary-log-log normal likelihood (`cloglog_normal`)**
+   ```
+   g(y_pt) ~ Normal(g(μ_pt), σ²)         g(x) = log(−log(1−x))
+   ```
+   This is a link-geometry sensitivity analysis. It is mechanistically aligned with EX2 at residue
+   level because `g(u_i(t)) = log k_i + log t`, but after peptide averaging `g(Mu) ≠ M g(u)`;
+   consequently it is not promoted over the beta mean model. Include the transformation Jacobian
+   when reporting predictive density or comparing held-out NLL across likelihood families.
+
+Neither continuous likelihood has finite density at exact reported `0` or `1`. Treat endpoints as
+censored observations using acquisition/reporting limits fixed before fitting; do not silently clip
+or add pseudocounts. Record the limits and number of censored observations in every cell. Both
+likelihoods remain independent-peptide observation models: they test bounded support and
+mean-dependent variance/link geometry, **not** shared discrepancy or redundancy.
+
+### 3.4 Inverse-variance (`1/SE²`) weighting — scope, correctness, and what it cannot reach
+
+Raised in PI review: *"typically you would just weight the MSE loss by `1/SE_j²`."* The general form
+is right and is exactly §3.1's Gaussian NLL with per-observation `σ_pt` restored:
+
+```
+L = Σ_j (y_j − ŷ_j)² / SE_j²
+```
+
+i.e. diagonal GLS. Three findings on whether it applies under this synthetic setup.
+
+**(a) It is exactly correct when — and only when — the noise is injected.** If the generator draws
+`y = M u_t(w*) + ε`, `ε ~ N(0, σ_j²)`, then `1/σ_j²` is the *true* weight rather than an estimate.
+Synthetic data is the one regime where the correct weighting is available for free, and this is the
+strongest form of the argument for adopting it. Two riders:
+
+- If the injected noise is **homoscedastic**, `1/σ²` factors out and the loss reduces to plain MSE up
+  to a constant — no behavioural change, only a rescaling against the KL/MaxEnt term. This is §3.1
+  restated: absent per-point uncertainties, MSE *is* the inverse-variance loss. The weighting only
+  does work if `σ` is deliberately made to vary across peptides and/or timepoints.
+- The rescaling interacts with the §3.2 normalization defect. Adopting summed `Σ_j r_j²/σ_j²` while
+  the existing losses average by `(T·n_fragments)` changes the data/regularizer balance, so C0's
+  summed-likelihood fix is a **prerequisite** for comparing weighted against unweighted runs.
+
+**(b) Two tempting sources of `SE_j` are not error.** Under synthetic data the injected `σ` may not
+be the most *available* quantity, and substituting an available one silently changes the object:
+
+1. **Spread of predicted peptide values across frames.** This is conformational variance — the
+   signal being fitted. Down-weighting high-spread peptides down-weights exactly the observations
+   that discriminate Open from Closed. It is the `Sigma_unweighted` object (§9.2), a model-geometry
+   prior; using it as `1/SE²` mislabels it as an observation likelihood.
+2. **Timepoint sensitivity `s_t`.** Ruled out in §5: OLS already yields the Fisher information, and
+   re-weighting by `s_t²` asserts an unsupported `Var(y_t) ∝ 1/s_t²`. It is the S1 heuristic, not an
+   SE, and must not be used as a surrogate for a noise model.
+
+**(c) The diagonal cannot reach the primary question.** `1/SE_j²` is the `τ_m²·I` term of §3 done
+properly. The shared residue-level discrepancy `τ_r²·M D Mᵀ` is **off-diagonal by construction** —
+overlapping peptides average the same `δ_i`. No per-observation SE, however well calibrated,
+captures it. The PI's correction and the redundancy question are therefore orthogonal, not competing.
+
+**Consequence for the generator (load-bearing).** If the generator injects only independent
+peptide-level `ε`, then `τ_r = 0` *by construction*, and §3's consequence #2 applies: MSE (or
+SE-weighted MSE) is the correct loss, peptide overlap is pure information, and every Σ⁻¹ arm should
+show **no** benefit. That makes such a run a genuine **negative control** for Block 2 rather than a
+competitor to it — but it also means Block 2 is unanswerable unless a second generator variant
+injects a residue-level `δ_i` as well. Both variants are therefore required:
+
+| Generator variant | Injects | Expected result |
+|---|---|---|
+| `noise_indep` | peptide-level `ε` only (`τ_r = 0`) | diagonal weighting optimal; all Σ arms collapse to the diagonal result |
+| `noise_shared` | residue-level `δ_i` **and** peptide `ε` (`τ_r > 0`) | the only condition in which §9.1's `M Mᵀ` arm can win |
+| `noise_hetero` | `ε` with `σ` varying across peptides/timepoints | diagonal weighting must beat unweighted MSE, or something upstream is broken |
+
+`σ` and `τ_r` specs are generator-side knowledge and are recorded in the run manifest; they are **not**
+fitted, and they are not population labels, so this does not breach Guardrail 1.
+
 ---
 
 ## 4. `Sigma_MSE` as implemented
@@ -153,6 +243,29 @@ L = (1/(T·P)) · Σ_t  ½ · r_tᵀ W r_t
 `W` is loaded from the **`"Sigma_inv"`** key, Frobenius-normalized, then trace-normalized per split
 (`jaxent/src/data/loader.py:215-217`). It is **frozen** — never recomputed during fitting, so it
 carries no ESS/diversity confound. `W = I` recovers plain MSE (`hdx_uptake_eye_MSE_loss`).
+
+### 4.1 The loss is a generic quadratic form — arms differ only in `W`
+
+Verified by inspection: `hdx_uptake_sigma_MSE_loss` and `hdx_uptake_eye_MSE_loss` have **identical
+bodies**; the latter merely passes `jnp.eye(...)`. So every Σ arm in §9, including the diagonal
+inverse-variance arm of §3.4, is a *construction* feeding the `"Sigma_inv"` key — **no new loss
+function is required**, only new Σ builders. Implementation risk for the diagonal arm is therefore
+near zero.
+
+Two structural limits of that shared body constrain what any arm can express:
+
+1. **One `W` per split, reused across all timepoints.** The compute loop iterates timepoints but
+   holds `cov_matrix` fixed (`losses.py:1547`). Per-timepoint SE (`σ_pt`) — which is what real HDX
+   replicate spread actually gives, since early and late timepoints differ substantially — **cannot
+   be represented**. Supporting it requires threading a `(P,T)` weight array through `Dataset`, or
+   accepting peptide-only SE and stating that restriction. This is the same gap §8.2's deferred
+   rung 7 will hit; see Open Question 6.
+2. **Trace normalization erases absolute scale.** `_trace_normalise` forces `trace(W) = n`
+   (`loader.py:215-217`), so relative heteroscedasticity across peptides survives but the overall
+   precision level `1/σ²` does not. A trace-normalized diagonal arm is thus *not* the PI's likelihood
+   — it is that likelihood with its scale absorbed into the effective regularization strength. Given
+   §3.2 this is the safer default for cross-cell comparability; either document it or exempt the
+   diagonal arm from normalization deliberately, but do not leave it implicit.
 
 ---
 
@@ -341,27 +454,44 @@ where matching is impossible, say so rather than attributing the difference.
 
 Primary and secondary are now clearly separated by justification:
 
-1. **`mse` — primary.** Equal-variance Gaussian likelihood (§3.1). This is the physically defensible
-   baseline, not merely a control.
-2. **`student_t` — robustness sensitivity.** Common-scale Student-*t* centroid NLL, guarding against
+1. **`mse` — equal-variance reference.** Gaussian centroid likelihood (§3.1). This remains the
+   reference rather than merely an engineering control.
+2. **`sigma_diag_noise` — inverse-variance reference (§3.4).** `W = diag(1/σ_j²)` with `σ_j` taken
+   from the injected-noise spec recorded in the manifest. Under `noise_hetero` it **must** beat
+   unweighted `mse`; under `noise_indep` with homoscedastic `σ` it must equal it to numerical
+   tolerance. Listed here rather than only in Block 2 because it is a diagonal observation-error
+   weight, not a redundancy geometry — but it is built and consumed through the Block 2 Σ pathway
+   (§4.1, §9.6).
+3. **`bounded_beta` — primary bounded-support alternative.** Mean-precision beta centroid NLL
+   (§3.3), with the existing prediction `μ=M u`, training-only precision estimation, and censored
+   handling of exact endpoints. This is the primary test of whether respecting fractional support
+   and its mean-dependent variance improves inference.
+4. **`cloglog_normal` — link-geometry sensitivity.** Proper transformed-normal centroid NLL (§3.3),
+   including its Jacobian for held-out scoring and the same endpoint-censoring policy. It tests the
+   EX2-aligned complementary-log-log geometry without asserting that peptide averages are residue
+   log-rates.
+5. **`student_t` — robustness sensitivity.** Common-scale Student-*t* centroid NLL, guarding against
    integration failures/outliers. Gaussian remains primary.
-3. **`mcMSE` — shape arm, tested early (not deferred).** Already registered
+6. **`mcMSE` — shape arm, tested early (not deferred).** Already registered
    (`losses.py:1918`, `hdx_uptake_mean_centred_eye_MSE_loss`). Rationale for promoting it: BV
    mean-model error is the established dominant confound elsewhere, and a loss insensitive to
    overall offset/amplitude miscalibration is a direct hedge against exactly that failure mode.
    *Test it, don't assume it.*
-4. **`sensitivity_mse` — labelled heuristic ablation.** Retained for S1 only, with §5's caveats
+7. **`sensitivity_mse` — labelled heuristic ablation.** Retained for S1 only, with §5's caveats
    attached and **no** construction-independence prediction.
-5. **Replicate-calibrated `σ_pt`** — deferred, data-gated (requires replicate uncertainties).
-6. **Envelope-level likelihood** — deferred; requires raw spectra, and the envelope track is
-   separately retired (see `[[moprp-ex2-envelope-track-exists]]`).
+8. **Replicate-calibrated pointwise dispersion** — deferred, data-gated (requires replicate
+   uncertainties); this may supply Gaussian `σ_pt` or beta `φ_pt`.
 
-Excluded from Block 1: target residue/peptide variance, and all Σ⁻¹ (that is Block 2).
+Excluded from Block 1: count/envelope likelihoods (no raw isotope data), target residue/peptide
+variance, and all Σ⁻¹ (that is Block 2).
 
 ### 8.3 Evaluation
 - **Primary — as a training loss:** fit per (ensemble × construction × seed × loss × split), select
   on **held-out predictive log-likelihood and calibration**, with regularization chosen **without
   population labels** (match at equal ESS or use validation-selected endpoints).
+- For `bounded_beta` and `cloglog_normal`, report censoring-aware NLL, calibration, fitted
+  training-only dispersion, and endpoint counts. Retain all normalization and Jacobian terms needed
+  for proper density comparison.
 - **Secondary — as a held-out score:** reuse fits to measure score↔recovery discrimination,
   mirroring study (B).
 - **Recovery (40:60) is revealed only as a synthetic oracle diagnostic**, never as a selection input.
@@ -416,6 +546,31 @@ already-inverted matrix. Never build Σ from observations that include the valid
 
 ---
 
+### 9.6 `sigma_diag_noise` — the only arm that is an actual error precision
+`W = diag(1/σ_j²)`, `σ_j` from the injected-noise spec (§3.4). Every other arm in §9 is a covariance
+of a deterministic kinetic or conformational signal; this is the one construction that is a genuine
+observation-error precision, which is precisely why it belongs alongside them rather than instead of
+them. It appears in the Block 1 ladder (§8.2 rung 2) and is reused unchanged as a Block 2 arm.
+
+**Predictions, by generator variant (§3.4):**
+- `noise_hetero`: beats `mse`. Failure here invalidates every downstream arm.
+- `noise_indep`, homoscedastic: equals `mse` to numerical tolerance.
+- `noise_shared` (`τ_r > 0`): beaten by `Sigma_structural`, since the diagonal cannot represent
+  `τ_r²·M D Mᵀ`. This is the sharpest available discriminator for the primary question — it isolates
+  off-diagonal shared discrepancy against a *correctly specified* diagonal, not against an
+  unweighted straw man.
+
+**Two properties that make it structurally useful beyond its own result:**
+
+1. **Immune to the §6.6 subsetting defect.** For diagonal `W`, `(Σ⁻¹)_SS = (Σ_SS)⁻¹` exactly —
+   subsetting and inversion commute. So this arm must give bit-identical results before and after
+   the C0 fix, while every non-diagonal arm must change. That is a strictly stronger regression test
+   than §11's `Σ = I` check, which is invariant for trivial reasons.
+2. **Distinct from §9.1's diagonal control.** That control is `diag(M Mᵀ)` (coverage-derived); this
+   is noise-derived. Keep both: comparing them separates "any sensible diagonal reweighting helps"
+   from "the *correct* diagonal helps", which the three-way `I` / diagonal / full decomposition in
+   §9.1 cannot do on its own.
+
 ## 10. Guardrails
 
 1. **No ground-truth leakage** into any loss, weighting matrix, or selection step. 40:60 populations
@@ -445,6 +600,15 @@ already-inverted matrix. Never build Σ from observations that include the valid
   `(Σ⁻¹)_SS` on a non-diagonal example.
 - **Every Σ:** symmetric, PSD after ridge, reported eigenvalue spectrum, condition number, effective
   rank; `Σ = I` recovers `mse` exactly.
+- **Diagonal arm as regression anchor (§9.6):** `sigma_diag_noise` results are bit-identical before
+  and after the C0 subsetting fix (diagonal `W` commutes with subsetting), while at least one
+  non-diagonal arm changes. Stronger than the `Σ = I` check, which is trivially invariant.
+- **Inverse-variance sanity:** under homoscedastic injected `σ`, `sigma_diag_noise` equals `mse` to
+  numerical tolerance; under `noise_hetero` it beats `mse`. Failure of the latter is stop-the-line.
+- **Generator manifest:** every run records the injected `σ` spec and `τ_r`, and which of
+  `noise_indep` / `noise_hetero` / `noise_shared` produced the data.
+- **Trace-normalization decision (§4.1) recorded per arm** — normalized or exempt — since it
+  determines whether the diagonal arm is the likelihood or the likelihood-up-to-scale.
 - **Preflight:** each loss's population-path profile persisted with its argmin.
 - `pytest jaxent/tests/unit/` green; ruff clean.
 
@@ -464,7 +628,12 @@ already-inverted matrix. Never build Σ from observations that include the valid
 4. **`P ≫ T` regime.** The observed-covariance construction is rank-deficient for most real HDX
    datasets. If Block 2 shows Σ matters, this is the practical blocker for generalizing it — and the
    reason `Sigma_structural` is the arm that scales.
-5. **Ultimate observable.** The centroid is a summary of the isotope envelope; equal centroids can
+5. **Per-timepoint SE is not representable (§4.1).** The loss body holds one `W` per split across all
+   timepoints, so `σ_pt` cannot be expressed — only peptide-level `σ_p`. Real replicate spread varies
+   substantially between early and late timepoints, so this restriction will bind as soon as
+   replicate data arrive (§8.2 rung 8). Resolving it means threading a `(P,T)` weight array through
+   `Dataset`. Out of scope here; must be stated as a limitation on any inverse-variance result.
+6. **Ultimate observable.** The centroid is a summary of the isotope envelope; equal centroids can
    correspond to distinguishable envelope shapes (Kan et al. 2013). Envelope-level likelihood is the
    principled endpoint but is data-gated and that track is separately retired.
 
@@ -479,12 +648,12 @@ with explicit dependencies, exit gates, and a compute budget. **Do not start a s
 
 | # | Chunk | Depends on | Exit gate |
 |---|---|---|---|
-| **C0** | **Prerequisite code fixes** (all four, one chunk) | — | regression tests green; `Σ=I` reproduces `mse` exactly |
-| **C1** | **Peptide generator + `M` diagnostics** (§7.3) | C0 (boundary policy) | `res1` reproduces shipped dfrac on retained rows ≤1e-10; all §7.3 variables persisted per layout |
+| **C0** | **Prerequisite code fixes** (all four, one chunk) | — | regression tests green; `Σ=I` reproduces `mse` exactly; diagonal arm invariant across the subsetting fix (§11) |
+| **C1** | **Peptide generator + `M` diagnostics** (§7.3) + **noise generator variants** (§3.4) | C0 (boundary policy) | `res1` reproduces shipped dfrac on retained rows ≤1e-10; all §7.3 variables persisted per layout |
 | **C2** | **Population-path preflight** (§7.2) | C1 | per-loss argmin recorded against α=0.4 |
 | **C3** | **Sizing decision** — fix split/seed/reg axes against a measured per-fit cost | C1 | written budget; timing probe on one real fit |
 | **C4** | **Block 1 ladder** (§8.2) | C0–C3 | held-out predictive LL + calibration per cell |
-| **C5** | **Block 2 Σ arms** (§9), incl. coverage-variance correlation | C4 | per-arm predictions from §9.1–9.3 evaluated separately |
+| **C5** | **Block 2 Σ arms** (§9), incl. coverage-variance correlation | C4 | per-arm predictions from §9.1–9.3 and §9.6 evaluated separately; `noise_shared` vs `noise_indep` contrast reported |
 | **C6** | **Leakage quantification** (`Sigma_weighted`, §9.4) | C5 | leak margin = control margin − leak-free margins |
 
 C0 and C1 are pure engineering and can start immediately. C2 and C3 both depend only on C1 and can
@@ -515,9 +684,9 @@ The grid as specified in §§8–9 is not affordable. Naive full factorial:
 
 | | layouts | ens | arms | splits | reg | fits |
 |---|---|---|---|---|---|---|
-| Block 1 | 24 | 2 | 4 | 15 | 6 | 17,280 |
+| Block 1 | 24 | 2 | 6 | 15 | 6 | 25,920 |
 | Block 2 | 24 | 2 | 7 | 15 | 6 | 30,240 |
-| | | | | | **total** | **47,520** |
+| | | | | | **total** | **56,160** |
 
 **Two cuts, both justified rather than arbitrary:**
 
@@ -533,18 +702,18 @@ The grid as specified in §§8–9 is not affordable. Naive full factorial:
 
 | Stage | layouts | ens | arms | splits | reg | fits |
 |---|---|---|---|---|---|---|
-| C4 Block-1 ladder | 7 | 2 | 4 | 3 | 6 | 1,008 |
-| C5a Block-2 arms | 7 | 2 | 7 | 3 | 6 | 1,764 |
+| C4 Block-1 ladder | 7 | 2 | 7 | 3 | 6 | 1,764 |
+| C5a Block-2 arms | 7 | 2 | 8 | 3 | 6 | 2,016 |
 | C5b coverage-variance correlation | 20 | 2 | 3 | 3 | 6 | 2,160 |
 | C6 leakage control | 7 | 2 | 1 | 3 | 6 | 252 |
-| C7 split-strategy contrast (`sequence_cluster`) | 4 | 2 | 4 | 3 | 6 | 576 |
-| | | | | | **total** | **5,760** |
+| C7 split-strategy contrast (`sequence_cluster`) | 4 | 2 | 7 | 3 | 6 | 1,008 |
+| | | | | | **total** | **7,200** |
 
-**≈8.2× reduction (47,520 → 5,760)**, with the ~20-seed requirement preserved exactly where it is
+**≈7.8× reduction (56,160 → 7,200)**, with the ~20-seed requirement preserved exactly where it is
 load-bearing (C5b) and dropped where it is not.
 
 **Still unmeasured:** per-fit wall-clock. C3 does not exit until a timing probe on one real fit is
-run and the budget is written down — 5,760 fits is only affordable if a fit is seconds, not minutes.
+run and the budget is written down — 7,200 fits is only affordable if a fit is seconds, not minutes.
 If the probe says otherwise, cut C5b's arm count before cutting seeds, since the seed count is what
 makes that correlation meaningful at all.
 
