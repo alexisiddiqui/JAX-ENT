@@ -1,5 +1,6 @@
 #!/bin/bash
 # Comprehensive Analysis Pipeline for 1_IsoValidation_OMass
+set -euo pipefail
 
 cd "$(dirname "$0")" || exit
 
@@ -169,4 +170,3 @@ python "${ANA_DIR}/extract_selected_models.py" \
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"
 echo "Script finished."
-

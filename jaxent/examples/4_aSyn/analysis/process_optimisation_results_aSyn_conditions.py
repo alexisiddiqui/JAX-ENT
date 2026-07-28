@@ -12,6 +12,11 @@ import numpy as np
 from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 from jaxent.examples.common import analysis
+from jaxent.examples.common.analysis.convergence_labels import (
+    convergence_rows_from_history,
+    write_convergence_thresholds_sidecar,
+)
+from jaxent.examples.common.manifest import write_processing_manifest
 from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.paths import derive_processed_output_dir, find_most_recent_dir
 from jaxent.src.custom_types.key import m_key
@@ -130,6 +135,7 @@ def main() -> None:
     suffix = "_results_EMA.hdf5" if args.ema else "_results.hdf5"
 
     processed_runs = 0
+    run_entries = []
 
     split_type_dirs = sorted([p for p in results_dir.iterdir() if p.is_dir()])
     for split_type_dir in split_type_dirs:
@@ -145,7 +151,7 @@ def main() -> None:
                 continue
 
             history = load_optimization_history_from_file(str(history_file))
-            if history is None or not history.states:
+            if history is None or not history.convergence_states:
                 continue
 
             run_id = _run_id_from_filename(history_file.name)
@@ -158,9 +164,10 @@ def main() -> None:
             val_loss_stack = []
             bv_bc_stack = []
             bv_bh_stack = []
-            convergence_steps = []
+            convergence_rows = convergence_rows_from_history(history, {"run_id": run_id})
 
-            for state in history.states:
+            for row in convergence_rows:
+                state = history.convergence_states[row["convergence_rank"]]
                 if state.params is None or state.params.frame_weight_simplex is None:
                     continue
 
@@ -186,7 +193,6 @@ def main() -> None:
 
                 bv_bc_stack.append(float(np.asarray(model_params.bv_bc).reshape(-1)[0]))
                 bv_bh_stack.append(float(np.asarray(model_params.bv_bh).reshape(-1)[0]))
-                convergence_steps.append(float(state.step))
 
             if not pred_ln_pf_stack:
                 continue
@@ -200,14 +206,14 @@ def main() -> None:
             np.save(run_dir / "prior_ln_pf.npy", np.asarray(prior_ln_pf))
             np.save(run_dir / "residue_ids.npy", residue_ids)
 
-            with open(run_dir / "convergence_thresholds.txt", "w", encoding="utf-8") as f:
-                for value in convergence_steps:
-                    f.write(f"{value}\n")
+            write_convergence_thresholds_sidecar(run_dir, history)
 
             processed_runs += 1
+            run_entries.append({"run_id": run_id, "n_convergence_states": len(history.convergence_states), "n_ladder_thresholds": len(history.convergence_thresholds)})
             print(f"Processed: {run_id}")
 
     print(f"\nProcessed runs: {processed_runs}")
+    write_processing_manifest(output_dir, source_results_dir=str(results_dir), run_entries=run_entries)
     print(f"Outputs saved to: {output_dir}")
 
 

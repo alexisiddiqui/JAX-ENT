@@ -56,19 +56,15 @@ def plot_model_score_heatmaps(
                     (split_df["ensemble"] == ensemble) & (split_df["loss_function"] == loss_func)
                 ]
                 if len(combo_df) > 0:
+                    convergence_col = "convergence_threshold" if "convergence_threshold" in combo_df else "convergence_rank"
                     pivot_data = combo_df.pivot_table(
                         values="model_score", index="maxent_value",
-                        columns="convergence_step", aggfunc="mean",
+                        columns=convergence_col, aggfunc="mean",
                     )
-                    valid_steps = [s for s in pivot_data.columns if s <= len(convergence_rates)]
-                    pivot_data = pivot_data[valid_steps]
 
                     if not pivot_data.empty:
                         pivot_data = pivot_data.sort_index(ascending=False)
-                        col_labels = [
-                            f"{convergence_rates[int(s) - 1]:.0e}" if s - 1 < len(convergence_rates) else f"Step {s}"
-                            for s in pivot_data.columns
-                        ]
+                        col_labels = [f"{s:.0e}" if convergence_col == "convergence_threshold" else str(s) for s in pivot_data.columns]
                         sns.heatmap(pivot_data, annot=False, cmap="RdYlGn", cbar_kws={"label": "-log10(Val Error)"}, ax=ax)
                         ax.set_title(f"{ensemble} - {loss_func}", fontweight="bold")
                         ax.set_xlabel("Convergence Threshold", fontweight="bold")

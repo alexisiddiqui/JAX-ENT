@@ -21,6 +21,7 @@ from jaxent.src.opt.base import (
     JaxEnt_Loss,
     OptimizationHistory,
     OptimizationState,
+    validate_convergence_labels,
 )
 from jaxent.src.opt.chunk import (
     ChunkCarry,
@@ -267,6 +268,9 @@ def result_to_history(
     threshold_event = (
         np.asarray(jax.device_get(records.threshold_event)) if save_convergence else None
     )
+    crossed_threshold = (
+        np.asarray(jax.device_get(records.crossed_threshold)) if save_convergence else None
+    )
     active_indices = np.flatnonzero(active) if active is not None else []
 
     final_state = result.carry.opt_state
@@ -288,6 +292,7 @@ def result_to_history(
         if save_convergence
         else set()
     )
+    threshold_labels: list[float] = []
     for index in active_indices:
         state = state_from_record(int(index)) if save_states else None
         if save_states:
@@ -296,9 +301,13 @@ def result_to_history(
             history.convergence_states.append(
                 state if state is not None else state_from_record(int(index))
             )
+            threshold_labels.append(float(crossed_threshold[int(index)]))
+
+    history.convergence_thresholds = tuple(threshold_labels)
 
     if save_best:
         history.best_state = _snapshot_to_state(result.carry.best, final_state)
+    validate_convergence_labels(history)
     optimizer.history = history
     return history
 
@@ -377,7 +386,7 @@ def _optimise(
                 min_steps_per_threshold,
             )
             boundary_metrics.append(step_metrics)
-        carry, threshold_event = evaluate_convergence(
+        carry, threshold_event, crossed_threshold = evaluate_convergence(
             carry,
             inputs,
             min_steps_per_threshold,
@@ -387,6 +396,7 @@ def _optimise(
             _make_record(
                 carry,
                 threshold_event,
+                crossed_threshold,
                 old_active & jnp.any(boundary_metrics[0].executed),
                 state_parameter_partitions,
                 save_states or save_convergence,

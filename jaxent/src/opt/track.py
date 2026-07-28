@@ -66,8 +66,8 @@ def check_and_advance_threshold(
     current_loss: Array,
     thresholds: Array,
     min_steps: int,
-) -> ConvergenceCarry:
-    """Advance convergence thresholds with JAX control flow only."""
+) -> tuple[ConvergenceCarry, Array]:
+    """Advance thresholds and return the pre-advance threshold value."""
     threshold_idx = jnp.minimum(
         carry.current_threshold_idx,
         jnp.array(thresholds.shape[0] - 1, dtype=jnp.int32),
@@ -97,9 +97,10 @@ def check_and_advance_threshold(
         carry.steps_since_threshold_start,
     )
 
-    return ConvergenceCarry(
+    new_carry = ConvergenceCarry(
         ema_loss_delta=carry.ema_loss_delta,
         steps_since_threshold_start=updated_steps,
         current_threshold_idx=updated_threshold_idx,
         converged=converged,
     )
+    return new_carry, current_threshold

@@ -7,6 +7,7 @@ import pandas as pd
 from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 from .stats import kl_divergence, effective_sample_size
+from .convergence_labels import convergence_rows_from_history, find_state_nearest_threshold
 
 
 def extract_frame_weights_kl(
@@ -37,10 +38,15 @@ def extract_frame_weights_kl(
                     for split_idx, history in results[split_type][ensemble][loss_name][
                         maxent_val
                     ].items():
-                        if history is None or not getattr(history, "states", None):
+                        if history is None or not getattr(history, "convergence_states", None):
                             continue
-                        n_states = len(history.states)
-                        for step_idx, state in enumerate(history.states):
+                        base = {
+                            "split_type": split_type, "ensemble": ensemble,
+                            "loss_function": loss_name, "maxent_value": maxent_val,
+                            "split": split_idx,
+                        }
+                        for row in convergence_rows_from_history(history, base):
+                            state = history.convergence_states[row["convergence_rank"]]
                             if not (
                                 hasattr(state.params, "frame_weights")
                                 and state.params.frame_weight_simplex is not None
@@ -63,18 +69,15 @@ def extract_frame_weights_kl(
                                     f"maxent={maxent_val} split={split_idx} step={step_idx}: {e}"
                                 )
                                 continue
-                            convergence_fraction = (
-                                step_idx / (n_states - 1) if n_states > 1 else 1.0
-                            )
                             data_rows.append(
                                 {
-                                    "split_type": split_type,
-                                    "ensemble": ensemble,
-                                    "loss_function": loss_name,
-                                    "maxent_value": maxent_val,
-                                    "split": split_idx,
-                                    "step": step_idx,
-                                    "convergence_fraction": convergence_fraction,
+                                    **row,
+                                    "step": row["convergence_rank"],
+                                    "convergence_fraction": (
+                                        row["convergence_rank"]
+                                        / (len(history.convergence_states) - 1)
+                                        if len(history.convergence_states) > 1 else 1.0
+                                    ),
                                     "kl_divergence": float(kl_div),
                                     "effective_sample_size": float(ess),
                                     "num_frames": len(w),
@@ -219,8 +222,26 @@ def extract_weights_over_convergence_steps(results: Dict) -> pd.DataFrame:
         convergence_step, convergence_fraction, kl_divergence,
         effective_sample_size, num_frames, weights.
     """
-    STEP_FRACTIONS = [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
     data_rows: list[dict] = []
+
+    observed_thresholds = [
+        threshold
+        for split_data in results.values()
+        for ensemble_data in split_data.values()
+        if isinstance(ensemble_data, dict)
+        for loss_data in ensemble_data.values()
+        if isinstance(loss_data, dict)
+        for maxent_data in loss_data.values()
+        if isinstance(maxent_data, dict)
+        for history in maxent_data.values()
+        if hasattr(history, "convergence_thresholds")
+        for threshold in history.convergence_thresholds
+    ]
+    if not observed_thresholds:
+        return pd.DataFrame(data_rows)
+    target_thresholds = np.geomspace(
+        min(observed_thresholds), max(observed_thresholds), num=min(6, len(set(observed_thresholds)))
+    )
 
     for split_type in results:
         for ensemble in results[split_type]:
@@ -229,16 +250,12 @@ def extract_weights_over_convergence_steps(results: Dict) -> pd.DataFrame:
                     for split_idx, history in results[split_type][ensemble][loss_name][
                         maxent_val
                     ].items():
-                        if history is None or not getattr(history, "states", None):
+                        if history is None or not getattr(history, "convergence_states", None):
                             continue
-                        n_states = len(history.states)
-                        step_indices = (
-                            [int(f * (n_states - 1)) for f in STEP_FRACTIONS]
-                            if n_states >= 10
-                            else list(range(n_states))
-                        )
-                        for step_idx in step_indices:
-                            state = history.states[step_idx]
+                        for target_threshold in target_thresholds:
+                            threshold, state = find_state_nearest_threshold(history, target_threshold)
+                            if state is None:
+                                continue
                             if not (
                                 hasattr(state, "params")
                                 and hasattr(state.params, "frame_weights")
@@ -250,9 +267,6 @@ def extract_weights_over_convergence_steps(results: Dict) -> pd.DataFrame:
                             if np.sum(w) <= 0:
                                 continue
                             w = w / np.sum(w)
-                            convergence_fraction = (
-                                step_idx / (n_states - 1) if n_states > 1 else 1.0
-                            )
                             uniform = np.ones(len(w)) / len(w)
                             try:
                                 kl_div = kl_divergence(w, uniform)
@@ -266,8 +280,10 @@ def extract_weights_over_convergence_steps(results: Dict) -> pd.DataFrame:
                                     "loss_function": loss_name,
                                     "maxent_value": maxent_val,
                                     "split": split_idx,
-                                    "convergence_step": step_idx,
-                                    "convergence_fraction": convergence_fraction,
+                                    "convergence_rank": int(
+                                        history.convergence_thresholds.index(threshold)
+                                    ),
+                                    "convergence_threshold": threshold,
                                     "kl_divergence": float(kl_div),
                                     "effective_sample_size": float(ess),
                                     "num_frames": len(w),

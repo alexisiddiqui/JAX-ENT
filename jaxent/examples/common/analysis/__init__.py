@@ -22,6 +22,14 @@ from .validation import (
     calculate_mse,
 )
 from .convergence import find_best_convergence_threshold
+from .convergence_labels import (
+    LabeledConvergenceState,
+    iter_labeled_convergence_states,
+    convergence_rows_from_history,
+    write_convergence_thresholds_sidecar,
+    find_best_labeled_state,
+    find_state_nearest_threshold,
+)
 from .weights import (
     extract_frame_weights_kl,
     extract_final_weights,
@@ -80,6 +88,12 @@ __all__ = [
     "get_experimental_uptake",
     "calculate_mse",
     "find_best_convergence_threshold",
+    "LabeledConvergenceState",
+    "iter_labeled_convergence_states",
+    "convergence_rows_from_history",
+    "write_convergence_thresholds_sidecar",
+    "find_best_labeled_state",
+    "find_state_nearest_threshold",
     "extract_frame_weights_kl",
     "extract_final_weights",
     "extract_final_weights_2d",

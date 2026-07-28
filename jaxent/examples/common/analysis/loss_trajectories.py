@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict
 
 import pandas as pd
+from .convergence_labels import convergence_rows_from_history
 
 def extract_loss_trajectories(
     results: Dict,
@@ -41,42 +42,40 @@ def extract_loss_trajectories(
 
                 if isinstance(split_results, dict):
                     for maxent_val, history in split_results.items():
-                        if history is None or not history.states:
+                        if history is None or not history.convergence_states:
                             continue
-                        for step_idx, state in enumerate(history.states):
+                        base = {
+                            "ensemble": ensemble, "loss_function": loss_name,
+                            "split": split_idx, "split_type": split_type,
+                            "maxent_value": maxent_val,
+                        }
+                        for row in convergence_rows_from_history(history, base):
+                            state = history.convergence_states[row["convergence_rank"]]
                             if state.losses is not None:
-                                data_rows.append(
-                                    {
-                                        "ensemble": ensemble,
-                                        "loss_function": loss_name,
-                                        "split": split_idx,
-                                        "split_type": split_type,
-                                        "maxent_value": maxent_val,
-                                        "convergence_step": step_idx + 1,
-                                        "train_loss": float(state.losses.train_losses[0]),
-                                        "val_loss": float(state.losses.val_losses[0]),
-                                        "step_number": state.step,
-                                    }
-                                )
-                else:
-                    history = split_results
-                    if history is None or not history.states:
-                        continue
-                    for step_idx, state in enumerate(history.states):
-                        if state.losses is not None:
-                            data_rows.append(
-                                {
-                                    "ensemble": ensemble,
-                                    "loss_function": loss_name,
-                                    "split": split_idx,
-                                    "split_type": split_type,
-                                    "maxent_value": 0.0,
-                                    "convergence_step": step_idx + 1,
+                                data_rows.append({
+                                    **row,
                                     "train_loss": float(state.losses.train_losses[0]),
                                     "val_loss": float(state.losses.val_losses[0]),
                                     "step_number": state.step,
-                                }
-                            )
+                                })
+                else:
+                    history = split_results
+                    if history is None or not history.convergence_states:
+                        continue
+                    base = {
+                        "ensemble": ensemble, "loss_function": loss_name,
+                        "split": split_idx, "split_type": split_type,
+                        "maxent_value": 0.0,
+                    }
+                    for row in convergence_rows_from_history(history, base):
+                        state = history.convergence_states[row["convergence_rank"]]
+                        if state.losses is not None:
+                            data_rows.append({
+                                **row,
+                                "train_loss": float(state.losses.train_losses[0]),
+                                "val_loss": float(state.losses.val_losses[0]),
+                                "step_number": state.step,
+                            })
 
     return pd.DataFrame(data_rows)
 
@@ -106,24 +105,22 @@ def extract_loss_trajectories_2d(
                             if not isinstance(splits_data, dict):
                                 continue
                             for split_idx, history in splits_data.items():
-                                if history is None or not hasattr(history, 'states') or not history.states:
+                                if history is None or not getattr(history, "convergence_states", None):
                                     continue
-                                for step_idx, state in enumerate(history.states):
+                                base = {
+                                    "ensemble": ensemble, "loss_function": loss_name,
+                                    "bv_reg_function": bv_reg_fn, "split": split_idx,
+                                    "split_type": split_type, "maxent_value": maxent_val,
+                                    "bv_reg_value": bv_reg_val,
+                                }
+                                for row in convergence_rows_from_history(history, base):
+                                    state = history.convergence_states[row["convergence_rank"]]
                                     if state.losses is not None:
-                                        data_rows.append(
-                                            {
-                                                "ensemble": ensemble,
-                                                "loss_function": loss_name,
-                                                "bv_reg_function": bv_reg_fn,
-                                                "split": split_idx,
-                                                "split_type": split_type,
-                                                "maxent_value": maxent_val,
-                                                "bv_reg_value": bv_reg_val,
-                                                "convergence_step": step_idx + 1,
-                                                "train_loss": float(state.losses.train_losses[0]),
-                                                "val_loss": float(state.losses.val_losses[0]),
-                                                "step_number": state.step,
-                                            }
-                                        )
+                                        data_rows.append({
+                                            **row,
+                                            "train_loss": float(state.losses.train_losses[0]),
+                                            "val_loss": float(state.losses.val_losses[0]),
+                                            "step_number": state.step,
+                                        })
 
     return pd.DataFrame(data_rows)

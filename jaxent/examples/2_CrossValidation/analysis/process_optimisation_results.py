@@ -59,6 +59,11 @@ from jaxent.src.utils.jax_fn import frame_average_features
 from jaxent.examples.common import analysis, loading, paths
 from jaxent.examples.common.paths import derive_processed_output_dir, resolve_script_paths
 from jaxent.examples.common.optimization import BV_uptake_ForwardPass_frames
+from jaxent.examples.common.analysis.convergence_labels import (
+    convergence_rows_from_history,
+    write_convergence_thresholds_sidecar,
+)
+from jaxent.examples.common.manifest import write_processing_manifest
 
 
 def main():
@@ -110,7 +115,6 @@ def main():
     ensemble_clustering_map = {"AF2_MSAss": "AF2_MSAss", "AF2_filtered": "AF2_Filtered"}
     loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     num_splits = 3
-    convergence_rates = [1.0, 0.1, 0.01, 0.001, 1e-04, 1e-05, 1e-06, 1e-07, 1e-08]
 
     # Resolve paths
     resolved = resolve_script_paths(args, Path(__file__).parent)
@@ -120,6 +124,7 @@ def main():
     datasplit_dir  = resolved["datasplit_dir"]
     output_base_dir = resolved.get("output_dir") or str(derive_processed_output_dir(results_dir))
     os.makedirs(output_base_dir, exist_ok=True)
+    run_entries = []
 
     print(f"Resolved results_dir: {results_dir}")
     print(f"Resolved clustering_dir: {clustering_dir}")
@@ -236,29 +241,18 @@ def main():
                     for split_idx, history in splits_data.items():
                         run_id = f"{ensemble}_{loss_name}_{split_type if split_type != '_flat' else 'flat'}_split{split_idx:03d}_maxent{maxent_val:.1f}"
 
-                        if history is None or not history.states:
-                            print(f"    Skipping {run_id}: No history found.")
+                        if history is None or not history.convergence_states:
+                            print(f"    Skipping {run_id}: No convergence states found.")
                             continue
 
-                        valid_states = history.states[1:] if len(history.states) > 1 else history.states
-
-                        met_convergence_rates = []
-                        for i in range(len(valid_states)):
-                            if i < len(convergence_rates):
-                                met_convergence_rates.append(convergence_rates[i])
-
                         run_output_dir_for_run = os.path.join(current_output_dir, run_id)
-                        os.makedirs(run_output_dir_for_run, exist_ok=True)
-                        with open(os.path.join(run_output_dir_for_run, "convergence_thresholds.txt"), "w") as f:
-                            for rate in met_convergence_rates:
-                                f.write(f"{rate}\n")
+                        write_convergence_thresholds_sidecar(run_output_dir_for_run, history)
 
-                        for i, state in enumerate(valid_states):
-                            if i < len(convergence_rates):
-                                convergence_val = convergence_rates[i]
-                            else:
-                                print(f"    Warning: More states in history than convergence rates defined for {run_id}. Using state index.")
-                                convergence_val = f"state_{i}"
+                        for row in convergence_rows_from_history(
+                            history, {"run_id": run_id, "split_idx": split_idx}
+                        ):
+                            state = history.convergence_states[row["convergence_rank"]]
+                            convergence_val = row["convergence_threshold"]
 
                             if not hasattr(state, "params") or state.params is None:
                                 print(f"    Skipping {run_id} for convergence {convergence_val}: No parameters in state.")
@@ -374,8 +368,10 @@ def main():
                     cols = ['convergence'] + [col for col in cluster_df.columns if col != 'convergence']
                     cluster_df = cluster_df[cols]
                     cluster_df.to_csv(os.path.join(run_output_dir, "cluster_ratios.csv"), index=False)
+                run_entries.append({"run_id": run_id, "n_convergence_states": len(history.convergence_states), "n_ladder_thresholds": len(history.convergence_thresholds)})
 
 
+    write_processing_manifest(output_base_dir, source_results_dir=results_dir, run_entries=run_entries)
     print("\nAll optimization results processed successfully!")
     print(f"Outputs saved to: {output_base_dir}")
 

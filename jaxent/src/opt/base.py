@@ -5,7 +5,7 @@
 from beartype.typing import NamedTuple, Protocol, TypeVar, runtime_checkable, Any, Union
 from dataclasses import dataclass, field
 from functools import partial
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 import chex
 import jax
@@ -161,7 +161,7 @@ class OptimizationState(NamedTuple):
 @partial(
     jax.tree_util.register_dataclass,
     data_fields=["states", "convergence_states", "best_state"],
-    meta_fields=["state_parameter_partitions"],
+    meta_fields=["state_parameter_partitions", "convergence_thresholds"],
 )
 @dataclass
 class OptimizationHistory:
@@ -180,6 +180,11 @@ class OptimizationHistory:
     convergence_states: list[OptimizationState] = field(default_factory=list)
     best_state: OptimizationState | None = None
     state_parameter_partitions: frozenset | None = field(default=None, repr=True)
+    convergence_thresholds: tuple[float, ...] = field(default_factory=tuple)
+
+    def iter_labeled_convergence_states(self) -> Iterator[tuple[float, OptimizationState]]:
+        validate_convergence_labels(self)
+        return zip(self.convergence_thresholds, self.convergence_states)
 
     def add_state(self, state: OptimizationState):
         """Add a new state to history and update best state if needed"""
@@ -209,6 +214,25 @@ class OptimizationHistory:
             self.best_state = self._pick_best_state(self.states)
 
         return self.best_state
+
+
+def validate_convergence_labels(history: OptimizationHistory) -> None:
+    """Validate the one-to-one, descending convergence label contract."""
+    n_labels = len(history.convergence_thresholds)
+    n_states = len(history.convergence_states)
+    if n_labels != n_states:
+        raise ValueError(
+            f"convergence_thresholds length ({n_labels}) must equal "
+            f"convergence_states length ({n_states})"
+        )
+    for previous, current in zip(
+        history.convergence_thresholds, history.convergence_thresholds[1:]
+    ):
+        if current > previous:
+            raise ValueError(
+                "convergence_thresholds must be non-increasing in append order: "
+                f"got {previous} followed by {current}"
+            )
 
 
 class HParamBatch(NamedTuple):

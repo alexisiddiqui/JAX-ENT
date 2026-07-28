@@ -60,6 +60,7 @@ class ChunkRecord(NamedTuple):
     lr: Any
     threshold_idx: Any
     threshold_event: Any
+    crossed_threshold: Any
     active: Any
 
 
@@ -281,10 +282,10 @@ def evaluate_convergence(
     carry: ChunkCarry,
     inputs: ChunkInputs,
     min_steps_per_threshold: int,
-) -> tuple[ChunkCarry, Array]:
+) -> tuple[ChunkCarry, Array, Array]:
     old_convergence = carry.convergence
     current_loss = carry.opt_state.losses.total_train_loss
-    new_convergence = check_and_advance_threshold(
+    new_convergence, crossed_threshold = check_and_advance_threshold(
         carry=old_convergence,
         current_loss=current_loss,
         thresholds=inputs.convergence_thresholds,
@@ -297,12 +298,13 @@ def evaluate_convergence(
     return carry._replace(
         convergence=new_convergence,
         active=carry.active & ~new_convergence.converged,
-    ), threshold_event
+    ), threshold_event, crossed_threshold
 
 
 def _make_record(
     carry: ChunkCarry,
     threshold_event: Array,
+    crossed_threshold: Array,
     boundary_active: Array,
     parameter_partitions: frozenset[Optimisable_Parameters] | None = None,
     retain_record_params: bool = True,
@@ -320,6 +322,7 @@ def _make_record(
         lr=carry.lr,
         threshold_idx=carry.convergence.current_threshold_idx,
         threshold_event=threshold_event,
+        crossed_threshold=crossed_threshold,
         active=boundary_active,
     )
 
@@ -358,13 +361,14 @@ def run_step_chunk(
         )
 
     carry, metrics = jax.lax.scan(scan_step, carry, None, length=chunk_size)
-    carry, threshold_event = evaluate_convergence(
+    carry, threshold_event, crossed_threshold = evaluate_convergence(
         carry, inputs, min_steps_per_threshold
     )
     boundary_active = jnp.any(metrics.executed)
     record = _make_record(
         carry,
         threshold_event,
+        crossed_threshold,
         boundary_active,
         parameter_partitions,
         retain_record_params,

@@ -37,6 +37,9 @@ from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 
 from jaxent.examples.common import analysis, loading, plotting
 from jaxent.examples.common.config import ExperimentConfig
+from jaxent.examples.common.manifest import (
+    load_processing_manifest, atomic_to_csv, ConvergenceLabelMismatchError,
+)
 
 ENSEMBLE_PATTERN = (
     r"(AF2_MSAss|AF2_filtered)_(mcMSE|MSE|Sigma_MSE)_(.+?)_split(\d+)_maxent([\d.]+)"
@@ -153,6 +156,7 @@ def main():
         basename = os.path.basename(processed_data_dir.rstrip("/"))
         output_scores_dir = os.path.join(processed_data_dir, f"_scores_{basename}")
     os.makedirs(output_scores_dir, exist_ok=True)
+    load_processing_manifest(processed_data_dir)
 
     print(f"processed_data_dir:  {processed_data_dir}")
     print(f"datasplit_dir:       {datasplit_dir}")
@@ -253,6 +257,8 @@ def main():
                 "mapped_prior_val": mapped_prior_val,
                 "mapped_prior_test": mapped_prior_test,
             }
+        except ConvergenceLabelMismatchError:
+            raise
         except Exception as e:
             import traceback
             print(f"  ERROR caching {cache_key}: {e}")
@@ -305,8 +311,9 @@ def main():
                 cluster_ratios_df = pd.read_csv(cluster_ratios_path)
 
             if len(pred_ln_pf_stack) != len(convergence_thresholds):
-                print(f"  Warning: inconsistent stack lengths for {run_id}. Skipping.")
-                continue
+                raise ConvergenceLabelMismatchError(
+                    f"inconsistent stack lengths for {run_id}"
+                )
 
             train_map = loader.train.residue_feature_ouput_mapping
             val_map = loader.val.residue_feature_ouput_mapping
@@ -374,6 +381,8 @@ def main():
                 scores_entry.update(cluster_ratios)
                 all_scores.append(scores_entry)
 
+        except ConvergenceLabelMismatchError:
+            raise
         except Exception as e:
             import traceback
             print(f"  ERROR processing {run_id}: {e}")
@@ -382,7 +391,7 @@ def main():
     if all_scores:
         scores_df = pd.DataFrame(all_scores)
         output_csv = os.path.join(output_scores_dir, "model_scores.csv")
-        scores_df.to_csv(output_csv, index=False)
+        atomic_to_csv(scores_df, output_csv)
         print(f"\nSaved {len(scores_df)} rows to: {output_csv}")
         print("\n--- Generating violin plots ---")
         plotting.create_violin_plots(scores_df, output_scores_dir)

@@ -40,7 +40,7 @@ def compute_model_scores(
     # Variance bonus (coefficient of variation)
     grouping_cols = [
         c
-        for c in ["split_type", "ensemble", "loss_function", "maxent_value", "convergence_step"]
+        for c in ["split_type", "ensemble", "loss_function", "maxent_value", "convergence_threshold"]
         if c in df.columns
     ]
     if grouping_cols:

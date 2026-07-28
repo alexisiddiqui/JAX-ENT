@@ -1,5 +1,6 @@
 #!/bin/bash
 # Comprehensive Analysis Pipeline for 3_CrossValidationBV
+set -euo pipefail
 
 cd "$(dirname "$0")" || exit
 

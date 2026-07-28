@@ -5,6 +5,7 @@ from typing import Dict
 import pandas as pd
 import numpy as np
 from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
+from .convergence_labels import convergence_rows_from_history
 
 
 def calculate_cluster_ratios(
@@ -133,7 +134,7 @@ def analyze_conformational_recovery(
     flattened = walk_dict(results_dict, [])
 
     for context_keys, history in flattened:
-        if history is None or not hasattr(history, "states") or not history.states:
+        if history is None or not getattr(history, "convergence_states", None):
             continue
 
         if len(context_keys) == 5:
@@ -156,9 +157,17 @@ def analyze_conformational_recovery(
             continue
 
         n_frames = len(cluster_assignments)
-        states_to_check = enumerate(history.states) if not best_step_only else [(len(history.states)-1, history.states[-1])]
+        base = {
+            "ensemble": ensemble, "split_type": split_type,
+            "loss_function": loss_name, "split": split_idx,
+            "maxent_value": maxent_val,
+        }
+        labeled_rows = convergence_rows_from_history(history, base)
+        if best_step_only:
+            labeled_rows = labeled_rows[-1:]
 
-        for step_idx, state in states_to_check:
+        for row in labeled_rows:
+            state = history.convergence_states[row["convergence_rank"]]
             if not hasattr(state, "params") or not hasattr(state.params, "frame_weight_simplex") or state.params.frame_weight_simplex is None:
                 continue
 
@@ -175,12 +184,7 @@ def analyze_conformational_recovery(
             recovery_pct = (1.0 - np.sqrt(js_div)) * 100.0 if not np.isnan(js_div) else np.nan
 
             entry = {
-                "ensemble": ensemble,
-                "split_type": split_type,
-                "loss_function": loss_name,
-                "split": split_idx,
-                "maxent_value": maxent_val,
-                "convergence_step": step_idx + 1 if not best_step_only else len(history.states),
+                **row,
                 "js_divergence": js_div if not np.isnan(js_div) else 0.0,
                 "js_distance": np.sqrt(js_div) if not np.isnan(js_div) else 0.0,
                 "recovery_percent": recovery_pct if not np.isnan(recovery_pct) else 0.0,

@@ -9,6 +9,7 @@ helpers scattered across example scripts.
 from __future__ import annotations
 
 import glob
+import functools
 import os
 import re
 from typing import Any, Dict, List, Tuple
@@ -29,6 +30,7 @@ from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.hdf import load_optimization_history_from_file
+from jaxent.examples.common.legacy_thresholds import recover_convergence_thresholds_from_sidecar
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +99,12 @@ def load_all_optimization_results(
                         maxent_val = extract_maxent_value_from_filename(filename)
                         if maxent_val is not None:
                             try:
-                                history = load_optimization_history_from_file(filepath)
+                                history = load_optimization_history_from_file(
+                                    filepath,
+                                    legacy_convergence_recovery=functools.partial(
+                                        recover_convergence_thresholds_from_sidecar, filepath
+                                    ),
+                                )
                                 results[ensemble][loss_name][split_idx][maxent_val] = history
                                 print(f"Loaded: {filename}")
                             except Exception as e:
@@ -167,7 +174,12 @@ def load_all_optimization_results_with_maxent(
 
                     filepath = os.path.join(split_type_dir, filename)
                     try:
-                        history = load_optimization_history_from_file(filepath)
+                        history = load_optimization_history_from_file(
+                            filepath,
+                            legacy_convergence_recovery=functools.partial(
+                                recover_convergence_thresholds_from_sidecar, filepath
+                            ),
+                        )
                         results[split_type][ensemble][loss_name][maxent_val][split_idx] = history
                         print(f"Loaded: {filepath}")
                     except Exception as e:
@@ -241,7 +253,12 @@ def load_all_optimization_results_2d(
 
                             filepath = os.path.join(split_type_dir, filename)
                             try:
-                                history = load_optimization_history_from_file(filepath)
+                                history = load_optimization_history_from_file(
+                                    filepath,
+                                    legacy_convergence_recovery=functools.partial(
+                                        recover_convergence_thresholds_from_sidecar, filepath
+                                    ),
+                                )
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][bvreg_val][split_idx] = history
                             except Exception as e:
                                 print(f"Failed to load {filename}: {e}")
@@ -454,7 +471,7 @@ def augment_best_models_with_metrics(
         loss_func = row["loss_function"]
         split_idx = int(row["split"])
         maxent_val = row["maxent_value"]
-        conv_step = int(row["convergence_step"])
+        conv_threshold = float(row["convergence_threshold"])
         # Navigate nested dict
         history = None
         entry = results.get(ensemble, {}).get(loss_func, {}).get(split_idx, None)
@@ -465,12 +482,12 @@ def augment_best_models_with_metrics(
         else:
             history = entry
 
-        if history is None or not hasattr(history, "states") or not history.states:
+        if history is None or not getattr(history, "convergence_states", None):
             continue
-        if conv_step <= 0 or conv_step > len(history.states):
+        from .analysis.convergence_labels import find_state_nearest_threshold
+        _, state = find_state_nearest_threshold(history, conv_threshold)
+        if state is None:
             continue
-
-        state = history.states[conv_step - 1]
         if not (hasattr(state, "params") and hasattr(state.params, "frame_weight_simplex") and state.params.frame_weight_simplex is not None):
             continue
 

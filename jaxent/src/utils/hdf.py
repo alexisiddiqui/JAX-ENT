@@ -21,7 +21,12 @@ import numpy as np
 
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.opt.base import LossComponents, OptimizationHistory, OptimizationState
+from jaxent.src.opt.base import (
+    LossComponents,
+    OptimizationHistory,
+    OptimizationState,
+    validate_convergence_labels,
+)
 from jaxent.src.custom_types.config import Optimisable_Parameters
 from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
@@ -390,6 +395,14 @@ def save_optimization_history_to_hdf5(
     for i, state in enumerate(history.convergence_states):
         save_optimization_state_to_hdf5(convergence_group, f"{i}", state, **kwargs)
 
+    save_array_to_hdf5(
+        group,
+        "convergence_thresholds",
+        np.asarray(history.convergence_thresholds, dtype=np.float64),
+        **kwargs,
+    )
+    group.attrs["history_format_version"] = 2
+
     if history.state_parameter_partitions is None:
         group.attrs["state_parameter_partitions"] = "all"
     else:
@@ -406,7 +419,11 @@ def save_optimization_history_to_hdf5(
 
 
 def load_optimization_history_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_convergence_recovery=None,
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from HDF5.
@@ -455,17 +472,42 @@ def load_optimization_history_from_hdf5(
 
     # Load best_state if present. HDF round-trips values, not Python object identity.
     best_state = None
-    if group.attrs["has_best_state"]:
+    if group.attrs.get("has_best_state", False):
         best_state = load_optimization_state_from_hdf5(
             group, "best_state", default_model_params_cls
         )
 
-    return OptimizationHistory(
+    format_version = int(group.attrs.get("history_format_version", 1))
+    if format_version >= 2 and "convergence_thresholds" in group:
+        convergence_thresholds = tuple(
+            float(value) for value in load_array_from_hdf5(group, "convergence_thresholds")
+        )
+    elif convergence_states:
+        history_stub = OptimizationHistory(
+            states=states,
+            convergence_states=convergence_states,
+            best_state=best_state,
+            state_parameter_partitions=state_parameter_partitions,
+        )
+        if legacy_convergence_recovery is None:
+            raise ValueError(
+                f"{path!r} is a legacy history (format_version={format_version}) with "
+                f"{len(convergence_states)} convergence_states but no persisted "
+                "convergence_thresholds. Pass legacy_convergence_recovery=... to recover labels."
+            )
+        convergence_thresholds = tuple(legacy_convergence_recovery(history_stub))
+    else:
+        convergence_thresholds = ()
+
+    history = OptimizationHistory(
         states=states,
         convergence_states=convergence_states,
         best_state=best_state,
         state_parameter_partitions=state_parameter_partitions,
+        convergence_thresholds=convergence_thresholds,
     )
+    validate_convergence_labels(history)
+    return history
 
 
 def save_optimization_history_to_file(
@@ -492,7 +534,10 @@ def save_optimization_history_to_file(
 
 
 def load_optimization_history_from_file(
-    filename: str, default_model_params_cls: Optional[type[T_mp]] = None
+    filename: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_convergence_recovery=None,
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from an HDF5 file.
@@ -506,5 +551,8 @@ def load_optimization_history_from_file(
     """
     with h5py.File(filename, "r") as f:
         return load_optimization_history_from_hdf5(
-            f, "optimization_history", default_model_params_cls
+            f,
+            "optimization_history",
+            default_model_params_cls,
+            legacy_convergence_recovery=legacy_convergence_recovery,
         )
