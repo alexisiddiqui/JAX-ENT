@@ -93,6 +93,11 @@ def main():
         default=False,
         help="Interpret provided directories as absolute paths.",
     )
+    parser.add_argument(
+        "--allow-legacy-without-manifest",
+        action="store_true",
+        help="Allow known legacy processed artifacts that predate manifest files.",
+    )
     args = parser.parse_args()
 
     script_dir = os.path.dirname(__file__)
@@ -119,7 +124,10 @@ def main():
         basename = os.path.basename(processed_data_dir.rstrip("/"))
         output_scores_dir = os.path.join(processed_data_dir, f"_scores_{basename}")
     os.makedirs(output_scores_dir, exist_ok=True)
-    load_processing_manifest(processed_data_dir)
+    load_processing_manifest(
+        processed_data_dir,
+        allow_legacy_missing=args.allow_legacy_without_manifest,
+    )
 
     print(f"processed_data_dir: {processed_data_dir}")
     print(f"datasplit_dir:      {datasplit_dir}")

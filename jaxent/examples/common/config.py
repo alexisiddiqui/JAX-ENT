@@ -31,6 +31,8 @@ class OptimizationConfig:
     learning_rate: float = 1e-3
     optimizer: str = "adamw"
     ema_alpha: float = 0.5
+    step_chunk_size: int = 100
+    reset_threshold_cooldown_on_oscillation: bool = True
     forward_model_scaling: float = 100.0
     clip_value: float | None = None
     covariance_matrix_path: str | None = None

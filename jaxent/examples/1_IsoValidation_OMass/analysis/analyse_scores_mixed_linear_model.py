@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from jaxent.examples.common.analysis import run_analysis_on_subset
+from jaxent.examples.common.analysis import (
+    filter_best_convergence_by_validation_mse,
+    run_analysis_on_subset,
+)
 from jaxent.examples.common.config import ExperimentConfig
 from jaxent.examples.common.plotting import setup_publication_style
 
@@ -36,21 +39,7 @@ def _resolve_base_output_dir(
 
 
 def _filter_best_convergence(df: pd.DataFrame) -> pd.DataFrame:
-    group_cols = ["ensemble", "split_type", "split_idx", "maxent_value"]
-    for col in ("loss_function", "bv_reg_value", "bv_reg_function"):
-        if col in df.columns:
-            group_cols.append(col)
-
-    missing_cols = [c for c in group_cols + ["val_loss"] if c not in df.columns]
-    if missing_cols:
-        print(f"WARNING: Cannot filter. Missing columns: {missing_cols}")
-        return df
-
-    out = df.copy()
-    out["val_loss"] = pd.to_numeric(out["val_loss"], errors="coerce")
-    out = out.sort_values("val_loss", ascending=True, na_position="last")
-    out = out.drop_duplicates(subset=group_cols, keep="first")
-    return out.sort_index()
+    return filter_best_convergence_by_validation_mse(df)
 
 
 def _build_subset_map(df: pd.DataFrame, analyze_subsets: bool) -> dict[str, pd.DataFrame]:

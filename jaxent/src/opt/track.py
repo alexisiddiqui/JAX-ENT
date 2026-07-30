@@ -22,6 +22,7 @@ def initialise_convergence_carry() -> ConvergenceCarry:
     """Initialise pure convergence carry."""
     return ConvergenceCarry(
         ema_loss_delta=jnp.array(0.0, dtype=jnp.float32),
+        ema_initialized=jnp.array(False),
         steps_since_threshold_start=jnp.array(0, dtype=jnp.int32),
         current_threshold_idx=jnp.array(0, dtype=jnp.int32),
         converged=jnp.array(False),
@@ -38,27 +39,56 @@ def update_convergence(
     previous_loss: Array,
     current_loss: Array,
     ema_alpha: Array | float,
+    update_ema: Array | bool = True,
 ) -> tuple[ConvergenceCarry, Array]:
-    """Update convergence EMA state and return raw loss delta."""
+    """Update convergence EMA state and return raw loss delta.
+
+    ``update_ema=False`` reproduces the legacy first optimizer step, where no
+    previous loop loss existed but the per-threshold cooldown still advanced.
+    """
     previous_loss = jnp.asarray(previous_loss, dtype=jnp.float32)
     current_loss = jnp.asarray(current_loss, dtype=jnp.float32)
     raw_loss_delta = jnp.abs(previous_loss - current_loss)
 
-    first_update = carry.steps_since_threshold_start == 0
+    # Threshold advances and gradient oscillations reset only the cooldown.
+    # The legacy tracker kept its EMA across both events, so initialization
+    # must not be inferred from the cooldown counter.
+    update_ema = jnp.asarray(update_ema)
+    first_update = ~carry.ema_initialized & update_ema
     ema_alpha = jnp.asarray(ema_alpha, dtype=jnp.float32)
 
-    new_ema_loss_delta = jax.lax.select(
+    candidate_ema = jax.lax.select(
         first_update,
         raw_loss_delta,
         ema_alpha * raw_loss_delta + (1.0 - ema_alpha) * carry.ema_loss_delta,
     )
+    new_ema_loss_delta = jax.lax.select(
+        update_ema,
+        candidate_ema,
+        carry.ema_loss_delta,
+    )
     new_carry = ConvergenceCarry(
         ema_loss_delta=new_ema_loss_delta,
+        ema_initialized=carry.ema_initialized | update_ema,
         steps_since_threshold_start=carry.steps_since_threshold_start + 1,
         current_threshold_idx=carry.current_threshold_idx,
         converged=carry.converged,
     )
     return new_carry, raw_loss_delta
+
+
+def reset_threshold_cooldown(
+    carry: ConvergenceCarry,
+    reset: Array | bool,
+) -> ConvergenceCarry:
+    """Reset only the threshold cooldown, preserving the convergence EMA."""
+    return carry._replace(
+        steps_since_threshold_start=jax.lax.select(
+            jnp.asarray(reset),
+            jnp.asarray(0, dtype=jnp.int32),
+            carry.steps_since_threshold_start,
+        )
+    )
 
 
 def check_and_advance_threshold(
@@ -99,6 +129,7 @@ def check_and_advance_threshold(
 
     new_carry = ConvergenceCarry(
         ema_loss_delta=carry.ema_loss_delta,
+        ema_initialized=carry.ema_initialized,
         steps_since_threshold_start=updated_steps,
         current_threshold_idx=updated_threshold_idx,
         converged=converged,

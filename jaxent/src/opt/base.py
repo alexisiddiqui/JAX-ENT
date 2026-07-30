@@ -73,6 +73,7 @@ class ConvergenceCarry(NamedTuple):
     """Pure JAX carry for convergence tracking."""
 
     ema_loss_delta: Any
+    ema_initialized: Any
     steps_since_threshold_start: Any
     current_threshold_idx: Any
     converged: Any

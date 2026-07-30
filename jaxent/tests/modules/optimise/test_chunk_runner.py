@@ -202,7 +202,7 @@ def test_jit_scan_matches_pure_scan_for_full_step_state(monkeypatch) -> None:
         if reference_leaf is None:
             assert scan_leaf is None
         else:
-            assert jnp.allclose(reference_leaf, scan_leaf)
+            assert jnp.allclose(reference_leaf, scan_leaf, equal_nan=True)
 
     compiled_carry, compiled_metrics, _ = run_step_chunk(
         carry, inputs, optimizer, losses, indexes, 10, 2
@@ -261,6 +261,7 @@ def test_select_carry_takes_frozen_values_for_every_dynamic_field() -> None:
         "executed_steps",
         "active",
         "best",
+        "convergence_snapshots",
     }
     assert set(ChunkCarry._fields) == expected_fields
 
@@ -268,7 +269,12 @@ def test_select_carry_takes_frozen_values_for_every_dynamic_field() -> None:
         if field == "sim":
             assert chosen_frozen.sim is stepped.sim
             assert chosen_stepped.sim is stepped.sim
-        elif field in {"opt_state", "convergence", "best"}:
+        elif field in {
+            "opt_state",
+            "convergence",
+            "best",
+            "convergence_snapshots",
+        }:
             for chosen, expected in (
                 (getattr(chosen_frozen, field), getattr(frozen, field)),
                 (getattr(chosen_stepped, field), getattr(stepped, field)),
@@ -403,6 +409,42 @@ def test_single_terminal_threshold_is_recorded_as_convergence_event() -> None:
     assert history.convergence_states
 
 
+def test_multiple_thresholds_are_captured_at_distinct_steps_within_one_chunk() -> None:
+    thresholds = [1e6, 1e5, 1e4]
+    chunked, optimizer, _ = _run_chunk(
+        40,
+        n_steps=40,
+        convergence=thresholds,
+    )
+    per_step, _, _ = _run_chunk(
+        1,
+        n_steps=40,
+        convergence=thresholds,
+    )
+
+    chunked_history = result_to_history(chunked, optimizer)
+    chunked_steps = [int(state.step) for state in chunked_history.convergence_states]
+    per_step_steps = [
+        int(state.step)
+        for state in result_to_history(per_step, optimizer).convergence_states
+    ]
+
+    assert len(chunked_steps) == len(thresholds)
+    assert chunked_steps == sorted(set(chunked_steps))
+    assert chunked_steps == per_step_steps
+    assert len(chunked.records.step) == 1
+    for chunked_state, per_step_state in zip(
+        chunked_history.convergence_states,
+        result_to_history(per_step, optimizer).convergence_states,
+        strict=True,
+    ):
+        assert jnp.allclose(
+            chunked_state.params.frame_weight_simplex,
+            per_step_state.params.frame_weight_simplex,
+            atol=1e-7,
+        )
+
+
 def test_fixed_step_compiled_python_parity() -> None:
     simulation_compiled, models_compiled = _create_synthetic_simulation()
     compiled_config = OptimiserSettings(
@@ -453,7 +495,7 @@ def test_fixed_step_compiled_python_parity() -> None:
     )
 
 
-def test_history_is_boundary_granular() -> None:
+def test_history_is_boundary_granular_and_convergence_states_are_independent() -> None:
     simulation, models = _create_synthetic_simulation()
     config = OptimiserSettings(
         name="history_granularity",
@@ -472,7 +514,10 @@ def test_history_is_boundary_granular() -> None:
         [synthetic_output_l2_loss],
     )
     assert len(history.states) <= 10
-    assert all(state in history.states for state in history.convergence_states)
+    assert all(
+        all(convergence_state is not state for state in history.states)
+        for convergence_state in history.convergence_states
+    )
 
 
 def _oscillating_parameter_loss(model, _target, _index):

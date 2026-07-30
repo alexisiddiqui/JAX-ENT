@@ -131,6 +131,8 @@ def batch_optimise(
             opt_state=run_state,
             optimizer=optimizer,
             learning_rate=learning_rate,
+            convergence_parameter_partitions=config.parameter_partitions,
+            retain_convergence_params=config.save_convergence,
         )
         return (
             carry,
@@ -168,7 +170,8 @@ def batch_optimise(
             tuple(indexes),
             config.min_steps_per_threshold,
             config.parameter_partitions,
-            config.save_states or config.save_convergence,
+            config.save_states,
+            config.reset_threshold_cooldown_on_oscillation,
         )
 
     batched_results = jax.lax.map(run_group, (batched_weights, batched_scaling, batched_lr))

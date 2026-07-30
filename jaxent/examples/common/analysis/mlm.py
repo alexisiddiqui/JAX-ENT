@@ -407,7 +407,9 @@ def compute_model_selection_performance(
     else:
         df_plot["method_variant"] = "All"
 
-    df_clean = df_plot.dropna(subset=[target_metric]).copy()
+    target_values = pd.to_numeric(df_plot[target_metric], errors="coerce")
+    df_clean = df_plot[np.isfinite(target_values)].copy()
+    df_clean[target_metric] = target_values[np.isfinite(target_values)]
 
     selection_stats_list: list[pd.DataFrame] = []
     detailed_rows: list[pd.DataFrame] = []
@@ -418,17 +420,22 @@ def compute_model_selection_performance(
 
         is_loss = any(x in metric.lower() for x in ["loss", "mse", "mae", "error", "scale"])
         direction = "min" if is_loss else "max"
+        metric_values = pd.to_numeric(df_clean[metric], errors="coerce")
+        metric_df = df_clean[np.isfinite(metric_values)].copy()
+        metric_df[metric] = metric_values[np.isfinite(metric_values)]
+        if metric_df.empty:
+            continue
 
         try:
             if direction == "min":
-                idx = df_clean.groupby(group_cols)[metric].idxmin()
+                idx = metric_df.groupby(group_cols)[metric].idxmin()
             else:
-                idx = df_clean.groupby(group_cols)[metric].idxmax()
+                idx = metric_df.groupby(group_cols)[metric].idxmax()
             idx = idx.dropna()
         except Exception:
             continue
 
-        selected_models = df_clean.loc[idx].copy()
+        selected_models = metric_df.loc[idx].copy()
         if selected_models.empty:
             continue
 
@@ -461,6 +468,17 @@ def compute_model_selection_performance(
         selected_models["score_metric"] = metric
         selected_models["direction"] = direction
         keep_cols = group_cols + ["method_variant", target_metric, "score_metric", "direction"]
+        keep_cols.extend(
+            [
+                column
+                for column in (
+                    "maxent_value",
+                    "bv_reg_value",
+                    "convergence_value",
+                )
+                if column in selected_models.columns
+            ]
+        )
         for pred in metric_cols:
             keep_cols.append(pred)
             for suffix in ("_transformed", "_rank", "_percentile"):

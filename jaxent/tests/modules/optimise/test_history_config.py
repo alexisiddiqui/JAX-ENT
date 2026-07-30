@@ -134,7 +134,7 @@ def test_default_matches_legacy_conversion_on_same_chunk_result() -> None:
         _assert_state_equal(actual_state, expected_state)
     _assert_state_equal(actual.best_state, expected.best_state)
     assert all(
-        any(actual_state is state for state in actual.states)
+        all(actual_state is not state for state in actual.states)
         for actual_state in actual.convergence_states
     )
 

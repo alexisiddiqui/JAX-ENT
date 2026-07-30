@@ -104,6 +104,8 @@ def run_optimization(
     cov_matrix: Array | None = None,
     model_parameters_lr_scale: float = 1.0,
     execution_mode: Literal["compiled", "python"] = "python",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -121,6 +123,10 @@ def run_optimization(
         n_steps = opt_config.n_steps
         learning_rate = opt_config.learning_rate
         ema_alpha = opt_config.ema_alpha
+        step_chunk_size = opt_config.step_chunk_size
+        reset_threshold_cooldown_on_oscillation = (
+            opt_config.reset_threshold_cooldown_on_oscillation
+        )
         forward_model_scaling = opt_config.forward_model_scaling
         model_parameters_lr_scale = opt_config.model_parameters_lr_scale
         if opt_config.convergence_rates is not None:
@@ -220,6 +226,10 @@ def run_optimization(
             opt_state=opt_state,
             optimizer=optimizer,
             ema_alpha=ema_alpha,
+            chunk_size=step_chunk_size,
+            reset_threshold_cooldown_on_oscillation=(
+                reset_threshold_cooldown_on_oscillation
+            ),
         )
 
         # Save results

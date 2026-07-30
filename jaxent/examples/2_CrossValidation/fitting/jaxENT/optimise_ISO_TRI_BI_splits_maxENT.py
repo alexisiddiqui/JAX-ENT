@@ -107,6 +107,8 @@ def run_maxent_sweep(
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: allow caller to select output dir
     execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -266,6 +268,10 @@ def run_maxent_sweep(
                         forward_model_scaling=forward_model_scaling,
                         convergence_rates=convergence_rates,
                         optimizer="adam",
+                        step_chunk_size=step_chunk_size,
+                        reset_threshold_cooldown_on_oscillation=(
+                            reset_threshold_cooldown_on_oscillation
+                        ),
                     )
 
                     run_optimization(

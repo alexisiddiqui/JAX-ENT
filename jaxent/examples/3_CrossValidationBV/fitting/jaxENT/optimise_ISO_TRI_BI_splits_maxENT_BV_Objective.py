@@ -115,7 +115,10 @@ def run_maxent_sweep(
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None, model_parameters_lr_scale: float = 1.0,
-    execution_mode: Literal["compiled", "python"] = "compiled") -> dict:
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
+) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
 
@@ -272,6 +275,10 @@ def run_maxent_sweep(
                             convergence_rates=convergence_rates,
                             model_parameters_lr_scale=model_parameters_lr_scale,
                             optimizer="adam",
+                            step_chunk_size=step_chunk_size,
+                            reset_threshold_cooldown_on_oscillation=(
+                                reset_threshold_cooldown_on_oscillation
+                            ),
                         )
                         
                         run_optimization(

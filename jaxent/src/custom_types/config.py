@@ -56,6 +56,7 @@ class OptimiserSettings:
     ema_alpha: float = 0.5
     min_steps_per_threshold: int = 2
     step_chunk_size: int = 100
+    reset_threshold_cooldown_on_oscillation: bool = True
     execution_mode: Literal["compiled", "python"] = "compiled"
     parameter_partitions: frozenset[Optimisable_Parameters] | None = None
     save_states: bool = True

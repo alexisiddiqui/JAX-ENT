@@ -40,9 +40,22 @@ def write_processing_manifest(
     atomic_write_text(Path(output_dir) / "manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
 
 
-def load_processing_manifest(output_dir: str | Path) -> dict:
+def load_processing_manifest(
+    output_dir: str | Path,
+    *,
+    allow_legacy_missing: bool = False,
+) -> dict:
     path = Path(output_dir) / "manifest.json"
     if not path.exists():
+        if allow_legacy_missing:
+            return {
+                "artifact_version": 0,
+                "source_results_dir": None,
+                "generated_at": None,
+                "n_runs_processed": None,
+                "runs": [],
+                "legacy_missing_manifest": True,
+            }
         raise ValueError(f"No processing manifest at {path} — upstream processing did not complete")
     manifest = json.loads(path.read_text())
     if manifest.get("artifact_version") != ARTIFACT_VERSION:

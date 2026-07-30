@@ -29,7 +29,7 @@ from jaxent.src.opt.chunk import (
     ChunkResult,
     StateSnapshot,
     _make_record,
-    evaluate_convergence,
+    initialise_convergence_snapshots,
     optimisation_step,
     run_sequential,
 )
@@ -130,6 +130,8 @@ def _build_chunk_state(
     opt_state: OptimizationState,
     optimizer: OptaxOptimizer,
     learning_rate: float | Array | None = None,
+    convergence_parameter_partitions=None,
+    retain_convergence_params: bool = True,
 ) -> tuple[ChunkCarry, ChunkInputs, tuple[JaxEnt_Loss, ...], tuple[int, ...]]:
     tuple_data_to_fit = tuple(data_to_fit)
     tuple_indexes = tuple(indexes)
@@ -150,6 +152,9 @@ def _build_chunk_state(
         if learning_rate is None
         else jnp.asarray(learning_rate, dtype=jnp.float32)
     )
+    convergence_thresholds = create_convergence_thresholds(
+        convergence, base_learning_rate
+    )
     init_carry = ChunkCarry(
         opt_state=dense_state,
         sim=_simulation,
@@ -169,10 +174,17 @@ def _build_chunk_state(
             losses=dense_state.losses,
             step=jnp.asarray(dense_state.step, dtype=jnp.int32),
         ),
+        convergence_snapshots=initialise_convergence_snapshots(
+            dense_state.params,
+            dense_state.losses,
+            convergence_thresholds.shape[0],
+            parameter_partitions=convergence_parameter_partitions,
+            retain_params=retain_convergence_params,
+        ),
     )
     inputs = ChunkInputs(
         data_targets=tuple_data_to_fit,
-        convergence_thresholds=create_convergence_thresholds(convergence, base_learning_rate),
+        convergence_thresholds=convergence_thresholds,
         tolerance=jnp.asarray(tolerance, dtype=jnp.float32),
         ema_alpha=jnp.asarray(0.5, dtype=jnp.float32),
     )
@@ -199,6 +211,7 @@ def _optimise_pure(
     save_convergence: bool = True,
     save_best: bool = True,
     state_parameter_partitions=None,
+    reset_threshold_cooldown_on_oscillation: bool = True,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
         _simulation,
@@ -210,6 +223,8 @@ def _optimise_pure(
         opt_state,
         optimizer,
         learning_rate,
+        state_parameter_partitions,
+        save_convergence,
     )
     inputs = inputs._replace(ema_alpha=jnp.asarray(ema_alpha, dtype=jnp.float32))
     initial_state = carry.opt_state
@@ -223,7 +238,8 @@ def _optimise_pure(
         tuple_indexes,
         min_steps_per_threshold,
         parameter_partitions=state_parameter_partitions,
-        retain_record_params=save_states or save_convergence,
+        retain_record_params=save_states,
+        reset_threshold_cooldown_on_oscillation=reset_threshold_cooldown_on_oscillation,
 
     )
     history = result_to_history(
@@ -265,12 +281,6 @@ def result_to_history(
         if (save_states or save_convergence)
         else None
     )
-    threshold_event = (
-        np.asarray(jax.device_get(records.threshold_event)) if save_convergence else None
-    )
-    crossed_threshold = (
-        np.asarray(jax.device_get(records.crossed_threshold)) if save_convergence else None
-    )
     active_indices = np.flatnonzero(active) if active is not None else []
 
     final_state = result.carry.opt_state
@@ -287,21 +297,37 @@ def result_to_history(
             gradients=final_state.gradients,
         )
 
-    convergence_indices = (
-        {int(index) for index in np.flatnonzero(active & threshold_event)}
-        if save_convergence
-        else set()
-    )
     threshold_labels: list[float] = []
     for index in active_indices:
         state = state_from_record(int(index)) if save_states else None
         if save_states:
             history.states.append(state)
-        if int(index) in convergence_indices:
-            history.convergence_states.append(
-                state if state is not None else state_from_record(int(index))
+
+    if save_convergence:
+        snapshots = result.carry.convergence_snapshots
+        valid = np.asarray(jax.device_get(snapshots.valid))
+        thresholds = np.asarray(jax.device_get(snapshots.thresholds))
+
+        def state_from_snapshot(index: int) -> OptimizationState:
+            params = jax.tree_util.tree_map(
+                lambda value: value[index], snapshots.params
             )
-            threshold_labels.append(float(crossed_threshold[int(index)]))
+            losses = jax.tree_util.tree_map(
+                lambda value: value[index], snapshots.losses
+            )
+            return OptimizationState(
+                params=params,
+                opt_state=final_state.opt_state,
+                step=snapshots.steps[index],
+                losses=losses,
+                gradients=final_state.gradients,
+            )
+
+        for index in np.flatnonzero(valid):
+            history.convergence_states.append(
+                state_from_snapshot(int(index))
+            )
+            threshold_labels.append(float(thresholds[int(index)]))
 
     history.convergence_thresholds = tuple(threshold_labels)
 
@@ -355,6 +381,7 @@ def _optimise(
     save_convergence: bool = True,
     save_best: bool = True,
     state_parameter_partitions=None,
+    reset_threshold_cooldown_on_oscillation: bool = True,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
     """Python diagnostic orchestration over the shared step primitives."""
     carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
@@ -366,6 +393,8 @@ def _optimise(
         loss_functions,
         opt_state,
         optimizer,
+        convergence_parameter_partitions=state_parameter_partitions,
+        retain_convergence_params=save_convergence,
     )
     inputs = inputs._replace(ema_alpha=jnp.asarray(ema_alpha, dtype=jnp.float32))
     initial_state = carry.opt_state
@@ -384,12 +413,23 @@ def _optimise(
                 tuple_loss_functions,
                 tuple_indexes,
                 min_steps_per_threshold,
+                reset_threshold_cooldown_on_oscillation,
             )
             boundary_metrics.append(step_metrics)
-        carry, threshold_event, crossed_threshold = evaluate_convergence(
-            carry,
-            inputs,
-            min_steps_per_threshold,
+        stacked_boundary_metrics = jax.tree_util.tree_map(
+            lambda *values: jnp.stack(values), *boundary_metrics
+        )
+        threshold_event = jnp.any(stacked_boundary_metrics.threshold_event)
+        event_indices = jnp.where(
+            stacked_boundary_metrics.threshold_event,
+            jnp.arange(current_size, dtype=jnp.int32),
+            jnp.asarray(-1, dtype=jnp.int32),
+        )
+        last_event_index = jnp.maximum(jnp.max(event_indices), 0)
+        crossed_threshold = jax.lax.select(
+            threshold_event,
+            stacked_boundary_metrics.crossed_threshold[last_event_index],
+            jnp.asarray(jnp.nan, dtype=jnp.float32),
         )
         metrics.extend(boundary_metrics)
         records.append(
@@ -399,14 +439,12 @@ def _optimise(
                 crossed_threshold,
                 old_active & jnp.any(boundary_metrics[0].executed),
                 state_parameter_partitions,
-                save_states or save_convergence,
+                save_states,
             )
         )
         remaining -= current_size
-        # The Python diagnostic path is intentionally allowed one convergence
-        # check per chunk.  With the unconditional optimisation step, skipping
-        # later chunks is important: inactive steps now evaluate and discard a
-        # full step body.
+        # Avoid launching later chunks once the per-step convergence checks have
+        # completed the threshold ladder.
         if not bool(jax.device_get(carry.active)):
             break
 
@@ -503,6 +541,9 @@ def run_optimise(
             save_convergence=config.save_convergence,
             save_best=config.save_best,
             state_parameter_partitions=config.parameter_partitions,
+            reset_threshold_cooldown_on_oscillation=(
+                config.reset_threshold_cooldown_on_oscillation
+            ),
         )
     elif execution_mode == "python":
         _simulation, optimizer = _optimise(
@@ -524,6 +565,9 @@ def run_optimise(
             save_convergence=config.save_convergence,
             save_best=config.save_best,
             state_parameter_partitions=config.parameter_partitions,
+            reset_threshold_cooldown_on_oscillation=(
+                config.reset_threshold_cooldown_on_oscillation
+            ),
         )
     else:
         raise ValueError(f"Unsupported execution mode: {execution_mode}")
