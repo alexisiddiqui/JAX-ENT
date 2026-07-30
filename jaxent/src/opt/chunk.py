@@ -44,6 +44,8 @@ class ChunkInputs(NamedTuple):
     convergence_thresholds: Any
     tolerance: Any
     ema_alpha: Any
+    base_lr: Any
+    base_model_lr: Any
 
 
 class ChunkCarry(NamedTuple):
@@ -287,6 +289,8 @@ def optimisation_step(
             indexes=indexes,
             lr=active_carry.lr,
             model_lr=active_carry.model_lr,
+            base_lr=inputs.base_lr,
+            base_model_lr=inputs.base_model_lr,
         )
 
         losses = save_state.losses
@@ -628,6 +632,8 @@ def run_batch(
         convergence_thresholds=0,
         tolerance=0,
         ema_alpha=0,
+        base_lr=0,
+        base_model_lr=0,
     )
 
     def one(carry: ChunkCarry, lane_inputs: ChunkInputs) -> ChunkResult:

@@ -187,6 +187,11 @@ def _build_chunk_state(
         convergence_thresholds=convergence_thresholds,
         tolerance=jnp.asarray(tolerance, dtype=jnp.float32),
         ema_alpha=jnp.asarray(0.5, dtype=jnp.float32),
+        base_lr=base_learning_rate,
+        base_model_lr=jnp.asarray(
+            base_learning_rate * optimizer.model_parameters_lr_scale,
+            dtype=jnp.float32,
+        ),
     )
     return init_carry, inputs, tuple_loss_functions, tuple_indexes
 

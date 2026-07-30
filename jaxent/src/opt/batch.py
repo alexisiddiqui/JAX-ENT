@@ -139,6 +139,8 @@ def batch_optimise(
             inputs.convergence_thresholds,
             inputs.tolerance,
             jnp.asarray(config.ema_alpha, dtype=jnp.float32),
+            inputs.base_lr,
+            inputs.base_model_lr,
         )
 
     def run_group(batch_inputs):
@@ -148,6 +150,8 @@ def batch_optimise(
             thresholds,
             tolerances,
             ema_alphas,
+            base_lrs,
+            base_model_lrs,
         ) = jax.vmap(make_single, in_axes=(0, 0, 0))(
             batch_weights,
             batch_scaling,
@@ -158,6 +162,8 @@ def batch_optimise(
             convergence_thresholds=thresholds,
             tolerance=tolerances,
             ema_alpha=ema_alphas,
+            base_lr=base_lrs,
+            base_model_lr=base_model_lrs,
         )
         return run_chunk_batch(
             carries,

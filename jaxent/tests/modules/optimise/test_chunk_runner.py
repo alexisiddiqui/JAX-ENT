@@ -530,7 +530,7 @@ def _non_monotonic_parameter_loss(model, _target, _index):
     return loss, loss
 
 
-def test_learning_rate_state_persists_across_chunks() -> None:
+def test_oscillation_damping_is_non_compounding_across_chunks() -> None:
     rates = []
     for chunk_size in (1, 4, 12):
         simulation, _ = _create_synthetic_simulation()
@@ -557,14 +557,15 @@ def test_learning_rate_state_persists_across_chunks() -> None:
             2,
         )
         rate = result.metrics.lr
-        assert bool(jnp.all(rate[1:] <= rate[:-1]))
-        reductions = int(jnp.sum(rate[1:] < rate[:-1]))
-        assert reductions >= 2
-        assert jnp.isclose(
-            rate[-1],
-            5.0 / optimizer.plateau_denominator**reductions,
-            rtol=1e-5,
+        base_rate = jnp.asarray(5.0)
+        damped_rate = base_rate / optimizer.plateau_denominator
+        assert bool(
+            jnp.all(
+                jnp.isclose(rate, base_rate, rtol=1e-5)
+                | jnp.isclose(rate, damped_rate, rtol=1e-5)
+            )
         )
+        assert int(jnp.sum(jnp.isclose(rate, damped_rate, rtol=1e-5))) >= 2
         rates.append(rate)
     assert jnp.allclose(rates[0], rates[1], atol=1e-6)
     assert jnp.allclose(rates[0], rates[2], atol=1e-6)
@@ -627,6 +628,8 @@ def test_stopped_batch_lane_remains_frozen() -> None:
         convergence_thresholds=jnp.stack([item.convergence_thresholds for item in inputs]),
         tolerance=jnp.stack([item.tolerance for item in inputs]),
         ema_alpha=jnp.stack([item.ema_alpha for item in inputs]),
+        base_lr=jnp.stack([item.base_lr for item in inputs]),
+        base_model_lr=jnp.stack([item.base_model_lr for item in inputs]),
     )
     result = run_batch(
         batched_carries,

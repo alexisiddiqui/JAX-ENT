@@ -478,6 +478,19 @@ def load_optimization_history_from_hdf5(
         )
 
     format_version = int(group.attrs.get("history_format_version", 1))
+    if (
+        format_version < 2
+        and not convergence_states
+        and legacy_convergence_recovery is not None
+        and len(states) > 1
+        and int(states[0].step) == 1
+    ):
+        # The original Python-loop format stored an unconditional step-one
+        # diagnostic followed by threshold checkpoints in ``states``. Migrate
+        # only when the caller explicitly supplies legacy label recovery;
+        # format-v1 histories can otherwise contain arbitrary state records.
+        convergence_states = states[1:]
+
     if format_version >= 2 and "convergence_thresholds" in group:
         convergence_thresholds = tuple(
             float(value) for value in load_array_from_hdf5(group, "convergence_thresholds")

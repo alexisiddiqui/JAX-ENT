@@ -1,4 +1,5 @@
 import numpy as np
+import h5py
 import jax
 import jax.numpy as jnp
 import pytest
@@ -195,6 +196,38 @@ def test_hdf_round_trip_preserves_convergence_and_metadata(tmp_path) -> None:
     assert loaded.state_parameter_partitions == history.state_parameter_partitions
     if loaded.convergence_states:
         assert loaded.convergence_states[0] is not loaded.states[0]
+
+
+def test_legacy_python_history_migrates_states_after_initial_diagnostic(tmp_path) -> None:
+    current = _run(_config())
+    threshold_states = current.convergence_states
+    assert threshold_states
+    initial_diagnostic = current.states[0]._replace(step=jnp.asarray(1))
+    legacy = OptimizationHistory(
+        states=[initial_diagnostic, *threshold_states],
+        best_state=current.best_state,
+    )
+    path = tmp_path / "legacy_history.h5"
+    save_optimization_history_to_file(str(path), legacy)
+    with h5py.File(path, "r+") as h5file:
+        group = h5file["optimization_history"]
+        group.attrs["history_format_version"] = 1
+        del group["convergence_thresholds"]
+
+    loaded = load_optimization_history_from_file(
+        str(path),
+        legacy_convergence_recovery=lambda history: tuple(
+            10.0 ** -(index + 1)
+            for index in range(len(history.convergence_states))
+        ),
+    )
+
+    assert [int(state.step) for state in loaded.convergence_states] == [
+        int(state.step) for state in threshold_states
+    ]
+    assert loaded.convergence_thresholds == tuple(
+        10.0 ** -(index + 1) for index in range(len(threshold_states))
+    )
 
 
 def test_batch_best_states_remain_complete_when_history_best_is_disabled() -> None:

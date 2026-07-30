@@ -276,6 +276,8 @@ class OptaxOptimizer:
         indexes: tuple[int, ...],
         lr: Array,
         model_lr: Array,
+        base_lr: Array,
+        base_model_lr: Array,
     ) -> tuple[
         OptimizationState,
         Array,
@@ -284,11 +286,16 @@ class OptaxOptimizer:
         Array,
         Array,
     ]:
-        """Pure step implementation with explicit carried learning-rate state."""
+        """Pure step implementation preserving the legacy per-step LR damping."""
 
         step = jnp.asarray(state.step, dtype=jnp.int32)
-        base_lr = lr
-        base_model_lr = model_lr
+        # Before bf528da, production runs used ``initial_steps=0``.  The base
+        # rates were therefore restored to their configured targets on every
+        # step, with oscillation damping applied only to that step.  Carrying a
+        # damped rate into the next step compounds reductions and changes the
+        # optimisation trajectory.
+        base_lr = jnp.asarray(base_lr, dtype=jnp.float32)
+        base_model_lr = jnp.asarray(base_model_lr, dtype=jnp.float32)
         gradient_mask = optimizer._gradient_mask
 
         def loss_fn(params: Simulation_Parameters) -> tuple[Array, LossComponents]:
@@ -380,6 +387,11 @@ class OptaxOptimizer:
             indexes=indexes,
             lr=jnp.asarray(optimizer._current_lr, dtype=jnp.float32),
             model_lr=jnp.asarray(optimizer._current_model_lr, dtype=jnp.float32),
+            base_lr=jnp.asarray(optimizer.learning_rate, dtype=jnp.float32),
+            base_model_lr=jnp.asarray(
+                optimizer.learning_rate * optimizer.model_parameters_lr_scale,
+                dtype=jnp.float32,
+            ),
         )
 
         if not isinstance(new_lr, jax.core.Tracer):
