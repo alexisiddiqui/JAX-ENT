@@ -12,6 +12,7 @@ import dataclasses
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 
@@ -32,12 +33,24 @@ class OptimizationConfig:
     optimizer: str = "adamw"
     ema_alpha: float = 0.5
     step_chunk_size: int = 100
+    lr_adjustment: bool = True
+    frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot"
     reset_threshold_cooldown_on_oscillation: bool = True
     forward_model_scaling: float = 100.0
     clip_value: float | None = None
     covariance_matrix_path: str | None = None
     # Exp 3 adds this; Exp 1/2 leave at default 1.0 (backward compatible)
     model_parameters_lr_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.lr_adjustment, bool):
+            raise ValueError("lr_adjustment must be a boolean")
+        if self.frame_average_impl not in ("tensordot", "legacy_sum"):
+            raise ValueError(
+                "frame_average_impl must be 'tensordot' or 'legacy_sum'"
+            )
+        if self.step_chunk_size < 1:
+            raise ValueError("step_chunk_size must be >= 1")
 
 
 @dataclass

@@ -256,7 +256,9 @@ def _optimise_pure(
         state_parameter_partitions=state_parameter_partitions,
     )
     _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
-    _simulation.params = result.carry.best.params
+    # Convergence snapshots and the running-best diagnostic are observational;
+    # the returned simulation remains at the terminal optimizer trajectory.
+    _simulation.params = result.carry.opt_state.params
     return _simulation, optimizer
 
 
@@ -467,7 +469,8 @@ def _optimise(
         state_parameter_partitions=state_parameter_partitions,
     )
     _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
-    _simulation.params = result.carry.best.params
+    # Do not replace the optimizer trajectory with a checkpoint candidate.
+    _simulation.params = result.carry.opt_state.params
     if terminal_state_callback is not None:
         terminal_state_callback(result.carry.opt_state)
     if logger is not None and not silent:

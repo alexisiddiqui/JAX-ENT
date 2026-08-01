@@ -109,6 +109,8 @@ def run_maxent_sweep(
     execution_mode: Literal["compiled", "python"] = "compiled",
     step_chunk_size: int = 100,
     reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -269,6 +271,8 @@ def run_maxent_sweep(
                         convergence_rates=convergence_rates,
                         optimizer="adam",
                         step_chunk_size=step_chunk_size,
+                        lr_adjustment=lr_adjustment,
+                        frame_average_impl=frame_average_impl,
                         reset_threshold_cooldown_on_oscillation=(
                             reset_threshold_cooldown_on_oscillation
                         ),
@@ -362,11 +366,14 @@ def run_all_combinations(
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: propagate chosen output dir
     execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
 
-    loss_names = ["mcMSE", "MSE"]
+    loss_names = ["MSE", "Sigma_MSE"]
 
     combinations = [(ensemble, loss_name) for ensemble in ensembles for loss_name in loss_names]
 
@@ -397,6 +404,9 @@ def run_all_combinations(
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,  # pass through
                 execution_mode=execution_mode,
+                step_chunk_size=step_chunk_size,
+                lr_adjustment=lr_adjustment,
+                frame_average_impl=frame_average_impl,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -481,19 +491,13 @@ def main():
         help="Learning rate for optimizer (default: 1e-1).",
     )
 
+    parser.add_argument("--lr-adjustment", choices=["on", "off"], default="on")
     parser.add_argument(
-        "--initial-learning-rate",
-        type=float,
-        default=1e0,
-        help="Initial learning rate for optimizer (default: 1e0).",
+        "--frame-average-impl",
+        choices=["tensordot", "legacy_sum"],
+        default="tensordot",
     )
-
-    parser.add_argument(
-        "--initial-steps",
-        type=int,
-        default=2,
-        help="Number of initial steps with higher learning rate (default: 2).",
-    )
+    parser.add_argument("--step-chunk-size", type=int, default=100)
     # ema_alpha=ema_alpha,
     parser.add_argument(
         "--ema-alpha",
@@ -524,6 +528,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.step_chunk_size < 1:
+        parser.error("--step-chunk-size must be >= 1")
 
     # Parse maxent range
     try:
@@ -562,6 +568,9 @@ def main():
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through (None -> run_maxent_sweep will timestamp)
             execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -576,6 +585,9 @@ def main():
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through
             execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
         )
 
     # Report where results were written

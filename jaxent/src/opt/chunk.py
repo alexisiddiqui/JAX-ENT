@@ -342,7 +342,6 @@ def optimisation_step(
         next_active = (
             active_carry.active
             & eligible
-            & ~new_convergence.converged
         )
         candidate = StateSnapshot(
             params=save_state.params,
@@ -441,7 +440,7 @@ def evaluate_convergence(
     )
     return carry._replace(
         convergence=new_convergence,
-        active=carry.active & ~new_convergence.converged,
+        active=carry.active,
     ), threshold_event, crossed_threshold
 
 

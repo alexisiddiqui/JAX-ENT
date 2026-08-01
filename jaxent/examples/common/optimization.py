@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import subprocess
+import time
 from typing import List, Literal, Sequence, Tuple, cast
 
 import jax
@@ -106,6 +109,8 @@ def run_optimization(
     execution_mode: Literal["compiled", "python"] = "python",
     step_chunk_size: int = 100,
     reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -118,6 +123,7 @@ def run_optimization(
     When ``opt_config`` is provided, its fields override the corresponding
     keyword arguments.
     """
+    run_start = time.time()
     # Apply OptimizationConfig overrides
     if opt_config is not None:
         n_steps = opt_config.n_steps
@@ -127,6 +133,8 @@ def run_optimization(
         reset_threshold_cooldown_on_oscillation = (
             opt_config.reset_threshold_cooldown_on_oscillation
         )
+        lr_adjustment = opt_config.lr_adjustment
+        frame_average_impl = opt_config.frame_average_impl
         forward_model_scaling = opt_config.forward_model_scaling
         model_parameters_lr_scale = opt_config.model_parameters_lr_scale
         if opt_config.convergence_rates is not None:
@@ -195,7 +203,12 @@ def run_optimization(
         data_targets_list.append(parameters)
 
     # Create simulation
-    sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
+    sim = Simulation(
+        input_features=(features,),
+        forward_models=(forward_model,),
+        params=parameters,
+        frame_average_impl=frame_average_impl,
+    )
     with jit_Guard(sim, cleanup_on_exit=True) as sim:
         sim.initialise()
 
@@ -210,6 +223,7 @@ def run_optimization(
             parameter_partition_masks=partition_masks,
             clip_value=None,
             optimizer=optimizer_type,
+            lr_adjustment=lr_adjustment,
         )
         opt_state = optimizer.initialise(model=sim)
 
@@ -234,13 +248,51 @@ def run_optimization(
 
         # Save results
         os.makedirs(output_dir, exist_ok=True)
-        
-        # 1. Save config as JSON
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            commit = "unknown"
+        lockfile = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../../uv.lock")
+        )
+        try:
+            with open(lockfile, "rb") as lockfile_handle:
+                lockfile_hash = hashlib.sha256(lockfile_handle.read()).hexdigest()
+        except OSError:
+            lockfile_hash = "unknown"
+
+        # Save the effective configuration, including provenance, alongside
+        # every history.  This is deliberately resolved after the run so wall
+        # time and backend/device information describe the actual execution.
         config_dict = {
             "loss_config": loss_config.__dict__,
+            "opt_config": opt_config.__dict__ if opt_config is not None else {},
+            "effective_settings": {
+                "execution_mode": execution_mode,
+                "frame_average_impl": frame_average_impl,
+                "lr_adjustment": lr_adjustment,
+                "step_chunk_size": step_chunk_size,
+                "reset_threshold_cooldown_on_oscillation": (
+                    reset_threshold_cooldown_on_oscillation
+                ),
+                "learning_rate": learning_rate,
+                "optimizer": optimizer_type,
+            },
+            "runtime": {
+                "commit": commit,
+                "lockfile_sha256": lockfile_hash,
+                "jax_version": jax.__version__,
+                "jaxlib_version": getattr(jax.lib, "__version__", "unknown"),
+                "backend": jax.default_backend(),
+                "device_count": jax.device_count(),
+                "devices": [str(device) for device in jax.devices()],
+                "wall_time_seconds": time.time() - run_start,
+            },
         }
-        if opt_config is not None:
-            config_dict["opt_config"] = opt_config.__dict__
         
         config_path = os.path.join(output_dir, f"{name}_config.json")
         with open(config_path, "w") as f:

@@ -15,6 +15,7 @@ T_Features = TypeVar("T_Features", bound=AbstractFeatures)
 def frame_average_features(
     frame_wise_features: T_Features,  # each feature: Float[Array, "... n_frames"]
     frame_weights: Float[Array, " n_frames"],
+    implementation: str = "tensordot",
 ) -> T_Features:  # each feature: Float[Array, "..."] (frame dim removed)
     """
     Average features or outputs across frames using provided weights by mapping over slots.
@@ -27,10 +28,19 @@ def frame_average_features(
     Returns:
         Frame-averaged features/outputs
     """
+    if implementation not in {"tensordot", "legacy_sum"}:
+        raise ValueError(
+            "implementation must be 'tensordot' or 'legacy_sum', "
+            f"got {implementation!r}"
+        )
+
     def average_feature(x):
         x = jnp.asarray(x)
         if x.ndim <= 1:
             return x
+        if implementation == "legacy_sum":
+            weights = frame_weights.reshape(1, -1)
+            return jnp.sum(x * weights, axis=-1)
         return jnp.tensordot(x, frame_weights, axes=((-1,), (0,)))
 
     return jax.tree_util.tree_map(average_feature, frame_wise_features)

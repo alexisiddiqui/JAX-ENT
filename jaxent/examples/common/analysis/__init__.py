@@ -23,6 +23,7 @@ from .validation import (
 )
 from .convergence import find_best_convergence_threshold
 from .selection import filter_best_convergence_by_validation_mse
+from .ablation_summary import select_by_validation_mse, summarize_ablation
 from .convergence_labels import (
     LabeledConvergenceState,
     iter_labeled_convergence_states,
@@ -90,6 +91,8 @@ __all__ = [
     "calculate_mse",
     "find_best_convergence_threshold",
     "filter_best_convergence_by_validation_mse",
+    "select_by_validation_mse",
+    "summarize_ablation",
     "LabeledConvergenceState",
     "iter_labeled_convergence_states",
     "convergence_rows_from_history",

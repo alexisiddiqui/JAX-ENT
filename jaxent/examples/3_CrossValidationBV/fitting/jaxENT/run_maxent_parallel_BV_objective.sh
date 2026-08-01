@@ -24,16 +24,17 @@ BV_REG_VALUES_STR="0.0,0.25,0.5,0.75,1.0"
 
 DIR_NAME="_optimise_quick_FIGURE_SIGMA_5000_lr1.0_BV_objectve_scale1.0"
 N_STEPS=5000
-INITIAL_STEPS=0
-INITIAL_LR=1.0
 LEARNING_RATE=1.0
+LR_ADJUSTMENT=on
+FRAME_AVERAGE_IMPL=tensordot
+STEP_CHUNK_SIZE=100
 EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
 MODEL_PARAMETERS_LR_SCALE=1.0
 # --- Added defaults for ensembles, losses and split types ---
 DEFAULT_ENSEMBLES_STR="AF2_filtered,AF2_MSAss"
 ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
-DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
+DEFAULT_LOSSES_STR="MSE,Sigma_MSE"
 # DEFAULT_LOSSES_STR="Sigma_MSE,mcMSE"
 
 BV_REG_LOSSES_STR="L1"
@@ -75,18 +76,22 @@ while [[ $# -gt 0 ]]; do
       N_STEPS="$2"; shift 2;;
     --n-steps=*)
       N_STEPS="${1#*=}"; shift;;
-    --initial-steps)
-      INITIAL_STEPS="$2"; shift 2;;
-    --initial-steps=*)
-      INITIAL_STEPS="${1#*=}"; shift;;
-    --initial-learning-rate)
-      INITIAL_LR="$2"; shift 2;;
-    --initial-learning-rate=*)
-      INITIAL_LR="${1#*=}"; shift;;
     --learning-rate)
       LEARNING_RATE="$2"; shift 2;;
     --learning-rate=*)
       LEARNING_RATE="${1#*=}"; shift;;
+    --lr-adjustment)
+      LR_ADJUSTMENT="$2"; shift 2;;
+    --lr-adjustment=*)
+      LR_ADJUSTMENT="${1#*=}"; shift;;
+    --frame-average-impl)
+      FRAME_AVERAGE_IMPL="$2"; shift 2;;
+    --frame-average-impl=*)
+      FRAME_AVERAGE_IMPL="${1#*=}"; shift;;
+    --step-chunk-size)
+      STEP_CHUNK_SIZE="$2"; shift 2;;
+    --step-chunk-size=*)
+      STEP_CHUNK_SIZE="${1#*=}"; shift;;
     --ema-alpha)
       EMA_ALPHA="$2"; shift 2;;
     --ema-alpha=*)
@@ -112,7 +117,7 @@ while [[ $# -gt 0 ]]; do
     --split-types=*)
       SPLIT_TYPES_STR="${1#*=}"; shift;;
     -h|--help)
-      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--split-types s,t] [--maxent-values a,b,c] [--bvreg-values a,b] [--bv-reg-losses L1,L2] [--dir-name name] [--n-steps N] [--initial-steps M] [--initial-learning-rate X] [--learning-rate Y] [--ema-alpha Z] [--forward-model-scaling S] [-j|--jobs N]"
+      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--split-types s,t] [--maxent-values a,b,c] [--bvreg-values a,b] [--bv-reg-losses L1,L2] [--dir-name name] [--n-steps N] [--learning-rate Y] [--lr-adjustment on|off] [--frame-average-impl tensordot|legacy_sum] [--step-chunk-size N] [-j|--jobs N]"
       exit 0;;
     *)
       break;;
@@ -124,7 +129,7 @@ echo "Maxent values (raw): $MAXENT_VALUES_STR"
 echo "BV reg values (raw): $BV_REG_VALUES_STR"
 echo "BV reg losses (raw): $BV_REG_LOSSES_STR"
 echo "DIR_NAME: $DIR_NAME"
-echo "n-steps: $N_STEPS, initial-steps: $INITIAL_STEPS, initial-learning-rate: $INITIAL_LR, learning-rate: $LEARNING_RATE, ema-alpha: $EMA_ALPHA, forward-model-scaling: $FORWARD_MODEL_SCALING"
+echo "n-steps: $N_STEPS, learning-rate: $LEARNING_RATE, lr-adjustment: $LR_ADJUSTMENT, frame-average-impl: $FRAME_AVERAGE_IMPL, step-chunk-size: $STEP_CHUNK_SIZE, ema-alpha: $EMA_ALPHA, forward-model-scaling: $FORWARD_MODEL_SCALING"
 echo "Model params LR scale: $MODEL_PARAMETERS_LR_SCALE"
 echo "Ensembles (raw): $ENSEMBLES_STR"
 echo "Losses (raw): $LOSSES_STR"
@@ -158,12 +163,15 @@ cleanup() {
 trap cleanup EXIT
 # --- end added block ---
 
-rm -rf logs
 mkdir -p logs
 
-time_data="_$(date +'%Y%m%d_%H%M%S')"
-OUTPUT_DIR="${DIR_NAME}_${time_data}"
+if [[ "$LR_ADJUSTMENT" != "on" && "$LR_ADJUSTMENT" != "off" ]]; then echo "Invalid --lr-adjustment" >&2; exit 2; fi
+if [[ "$FRAME_AVERAGE_IMPL" != "tensordot" && "$FRAME_AVERAGE_IMPL" != "legacy_sum" ]]; then echo "Invalid --frame-average-impl" >&2; exit 2; fi
+if ! [[ "$STEP_CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then echo "--step-chunk-size must be >= 1" >&2; exit 2; fi
+OUTPUT_DIR="$DIR_NAME"
 OPT_OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
+if [[ -e "$OPT_OUTPUT_DIR" ]]; then echo "Refusing to reuse existing output directory: $OPT_OUTPUT_DIR" >&2; exit 2; fi
+python -m jaxent.examples.common.manifest --output-dir "$OPT_OUTPUT_DIR" --example 3 --ensembles "$ENSEMBLES_STR" --losses "$LOSSES_STR" --split-types "$SPLIT_TYPES_STR" --maxent-values "$MAXENT_VALUES_STR" --bv-values "$BV_REG_VALUES_STR" --bv-reg-functions "$BV_REG_LOSSES_STR" --learning-rate "$LEARNING_RATE" --lr-adjustment "$LR_ADJUSTMENT" --frame-average-impl "$FRAME_AVERAGE_IMPL" --step-chunk-size "$STEP_CHUNK_SIZE" --n-steps "$N_STEPS" --jobs "$PARALLEL_JOBS"
 # --- Fixed: remove stray brace in ANA_OUTPUT_DIR ---
 ANA_OUTPUT_DIR="${ANA_DIR}/${OUTPUT_DIR}"
 # --- end fix ---
@@ -188,9 +196,10 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
               --bv-reg-function "$BV_REG_LOSS" \
               --split-types "$SPLIT" \
               --n-steps "$N_STEPS" \
-              --initial-steps "$INITIAL_STEPS" \
-              --initial-learning-rate "$INITIAL_LR" \
               --learning-rate "$LEARNING_RATE" \
+              --lr-adjustment "$LR_ADJUSTMENT" \
+              --frame-average-impl "$FRAME_AVERAGE_IMPL" \
+              --step-chunk-size "$STEP_CHUNK_SIZE" \
               --ema-alpha "$EMA_ALPHA" \
               --forward-model-scaling "$FORWARD_MODEL_SCALING" \
               --model-parameters-lr-scale "$MODEL_PARAMETERS_LR_SCALE" \

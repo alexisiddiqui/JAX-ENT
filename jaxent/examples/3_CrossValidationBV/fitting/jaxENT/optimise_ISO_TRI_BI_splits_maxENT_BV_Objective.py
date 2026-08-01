@@ -118,6 +118,9 @@ def run_maxent_sweep(
     execution_mode: Literal["compiled", "python"] = "compiled",
     step_chunk_size: int = 100,
     reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    convergence_values: List[float] | None = None,
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -139,7 +142,11 @@ def run_maxent_sweep(
     print(f"BV reg values: {bv_reg_values}")
 
     # Define convergence criteria
-    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    convergence_rates = (
+        convergence_values
+        if convergence_values is not None
+        else [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    )
 
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
@@ -276,6 +283,8 @@ def run_maxent_sweep(
                             model_parameters_lr_scale=model_parameters_lr_scale,
                             optimizer="adam",
                             step_chunk_size=step_chunk_size,
+                            lr_adjustment=lr_adjustment,
+                            frame_average_impl=frame_average_impl,
                             reset_threshold_cooldown_on_oscillation=(
                                 reset_threshold_cooldown_on_oscillation
                             ),
@@ -384,11 +393,15 @@ def run_all_combinations(
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None, model_parameters_lr_scale: float = 1.0,
-    execution_mode: Literal["compiled", "python"] = "compiled") -> List[dict]:  # now returns list of result dicts
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    convergence_values: List[float] | None = None) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
 
-    loss_names = ["mcMSE", "MSE"]
+    loss_names = ["MSE", "Sigma_MSE"]
 
     combinations = [(ensemble, loss_name) for ensemble in ensembles for loss_name in loss_names]
 
@@ -423,6 +436,10 @@ def run_all_combinations(
                 output_base_dir=output_base_dir,
                 model_parameters_lr_scale=model_parameters_lr_scale,
                 execution_mode=execution_mode,
+                step_chunk_size=step_chunk_size,
+                lr_adjustment=lr_adjustment,
+                frame_average_impl=frame_average_impl,
+                convergence_values=convergence_values,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -520,18 +537,17 @@ def main():
         help="Learning rate for optimizer (default: 1e-1).",
     )
 
+    parser.add_argument("--lr-adjustment", choices=["on", "off"], default="on")
     parser.add_argument(
-        "--initial-learning-rate",
-        type=float,
-        default=1e0,
-        help="Initial learning rate for optimizer (default: 1e0).",
+        "--frame-average-impl",
+        choices=["tensordot", "legacy_sum"],
+        default="tensordot",
     )
-
+    parser.add_argument("--step-chunk-size", type=int, default=100)
     parser.add_argument(
-        "--initial-steps",
-        type=int,
-        default=2,
-        help="Number of initial steps with higher learning rate (default: 2).",
+        "--convergence-values",
+        default=None,
+        help="Comma-separated convergence ladder override for diagnostics.",
     )
     # ema_alpha=ema_alpha,
     parser.add_argument(
@@ -569,6 +585,15 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.step_chunk_size < 1:
+        parser.error("--step-chunk-size must be >= 1")
+    convergence_values = (
+        None
+        if args.convergence_values is None
+        else [float(value) for value in args.convergence_values.split(",") if value]
+    )
+    if convergence_values is not None and not convergence_values:
+        parser.error("--convergence-values must contain at least one value")
 
     # Parse maxent range
     try:
@@ -591,6 +616,9 @@ def main():
     print(f"  Steps per run: {args.n_steps}")
     print(f"  Replicates per split: {args.n_replicates}")
     print(f"  Learning rate: {args.learning_rate}")
+    print(f"  LR adjustment: {args.lr_adjustment}")
+    print(f"  Frame averaging: {args.frame_average_impl}")
+    print(f"  Step chunk size: {args.step_chunk_size}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
     print(f"  Model parameter LR scale: {args.model_parameters_lr_scale}")
@@ -621,6 +649,10 @@ def main():
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            convergence_values=convergence_values,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -638,6 +670,10 @@ def main():
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            convergence_values=convergence_values,
         )
 
     # Report where results were written

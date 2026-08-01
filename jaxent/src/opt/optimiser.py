@@ -47,6 +47,7 @@ class OptaxOptimizer:
     plateau_denominator: float
     step: Callable
     model_parameters_lr_scale: float
+    lr_adjustment: bool
     update_all_models: bool = False
     _gradient_mask: Simulation_Parameters
     _current_lr: float
@@ -63,11 +64,15 @@ class OptaxOptimizer:
         force_simplex: Optional[bool] = None,
         plateau_denominator: float = 1.005,
         model_parameters_lr_scale: float = 1.0,
+        lr_adjustment: bool = True,
     ):
         self.parameter_partition_masks = parameter_partition_masks
         self.clip_value = clip_value
         self.history = OptimizationHistory()
         self.model_parameters_lr_scale = model_parameters_lr_scale
+        if not isinstance(lr_adjustment, bool):
+            raise ValueError("lr_adjustment must be a boolean")
+        self.lr_adjustment = lr_adjustment
         self.plateau_denominator = plateau_denominator
         self.learning_rate = learning_rate
         self.update_all_models = False
@@ -148,6 +153,7 @@ class OptaxOptimizer:
             "plateau_denominator": self.plateau_denominator,
             "step": self.step,
             "model_parameters_lr_scale": self.model_parameters_lr_scale,
+            "lr_adjustment": self.lr_adjustment,
             "update_all_models": self.update_all_models,
             "_current_lr": self._current_lr,
             "_current_model_lr": self._current_model_lr,
@@ -167,6 +173,7 @@ class OptaxOptimizer:
         self.plateau_denominator = aux_data["plateau_denominator"]
         self.step = aux_data.get("step", self._step)
         self.model_parameters_lr_scale = aux_data.get("model_parameters_lr_scale", 1.0)
+        self.lr_adjustment = aux_data.get("lr_adjustment", True)
         self.update_all_models = aux_data.get("update_all_models", False)
         self._current_lr = aux_data.get("_current_lr", self.learning_rate)
         self._current_model_lr = aux_data.get(
@@ -318,7 +325,7 @@ class OptaxOptimizer:
             jax.tree_util.tree_map(lambda a, b: jnp.vdot(a, b), previous_grads, masked_grads),
         )
 
-        reduce_lr = (grad_dot_product < 0) & (step > 1)
+        reduce_lr = optimizer.lr_adjustment & (grad_dot_product < 0) & (step > 1)
         new_lr = jax.lax.select(
             reduce_lr,
             base_lr / optimizer.plateau_denominator,

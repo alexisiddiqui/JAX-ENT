@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import logging
-from typing import Any, Optional, Union, cast
+from typing import Any, Literal, Optional, Union, cast
 
 import chex
 from jax import jit
@@ -32,6 +32,7 @@ class Simulation:
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
         raise_jit_failure: bool = True,
+        frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot",
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
         self.input_features: Sequence[Input_Features[Any]] = input_features
@@ -47,6 +48,12 @@ class Simulation:
         self.outputs = tuple()
         self._jit_forward_pure: Callable | None = None
         self.raise_jit_failure: bool = raise_jit_failure
+        if frame_average_impl not in ("tensordot", "legacy_sum"):
+            raise ValueError(
+                "frame_average_impl must be 'tensordot' or 'legacy_sum', "
+                f"got {frame_average_impl!r}"
+            )
+        self.frame_average_impl = frame_average_impl
 
     def __repr__(self) -> str:
         return f"Simulation(raise_jit_failure={self.raise_jit_failure})"
@@ -108,7 +115,7 @@ class Simulation:
             Callable,
             jit(
                 self.forward_pure,
-                static_argnames=("forwardpass"),  # "input_features",
+                static_argnames=("forwardpass", "frame_average_impl"),
                 # donate_argnames=("params", "input_features"),
             ),
         )
@@ -117,6 +124,7 @@ class Simulation:
                 self.params,
                 self._input_features,
                 self.forwardpass,
+                self.frame_average_impl,
             )
             LOGGER.info("Simulation forward JIT compilation successful.")
 
@@ -150,6 +158,7 @@ class Simulation:
                 params,
                 sim._input_features,
                 sim.forwardpass,
+                sim.frame_average_impl,
             )
         )
 
@@ -229,6 +238,7 @@ class Simulation:
             self.length,
             self._jit_forward_pure,
             self.raise_jit_failure,
+            self.frame_average_impl,
         )
 
         return dynamic_values, aux_data
@@ -252,6 +262,7 @@ class Simulation:
             length,
             _jit_forward_pure,
             raise_jit_failure,
+            frame_average_impl,
         ) = aux_data
 
         # Unpack dynamic values
@@ -268,6 +279,7 @@ class Simulation:
         instance._input_features = _input_features
         instance._jit_forward_pure = _jit_forward_pure
         instance.raise_jit_failure = raise_jit_failure
+        instance.frame_average_impl = frame_average_impl
 
         return instance
 
@@ -276,6 +288,7 @@ class Simulation:
         params: Simulation_Parameters,
         input_features: Sequence[Input_Features],
         forwardpass: Sequence[ForwardPass],
+        frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot",
     ) -> Sequence[Output_Features]:
         """
         Pure function for forward computation that is jittable.
@@ -296,11 +309,15 @@ class Simulation:
         output_features = []
         for fp, feat, param in zip(forwardpass, input_features, params.model_parameters):
             if getattr(fp, "average_first", True):
-                avg_feat = frame_average_features(feat, params.frame_weight_simplex)
+                avg_feat = frame_average_features(
+                    feat, params.frame_weight_simplex, frame_average_impl
+                )
                 output = single_pass(fp, avg_feat, param)
             else:
                 output = single_pass(fp, feat, param)
-                output = frame_average_features(output, params.frame_weight_simplex)
+                output = frame_average_features(
+                    output, params.frame_weight_simplex, frame_average_impl
+                )
             output_features.append(output)
 
         return output_features
