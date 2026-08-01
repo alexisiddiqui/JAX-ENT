@@ -140,12 +140,15 @@ def _summary(values: pd.Series) -> dict:
 
 
 def _family_key(row: pd.Series) -> tuple:
+    reg = row.get("bv_reg_function")
+    if pd.isna(reg):
+        reg = None
     return (
         row.get("ensemble"), row.get("loss_function"), row.get("split_type"),
         int(row.get("split_idx")) if pd.notna(row.get("split_idx")) else None,
         float(row.get("maxent_value")) if pd.notna(row.get("maxent_value")) else None,
         float(row.get("bv_reg_value")) if pd.notna(row.get("bv_reg_value")) else None,
-        row.get("bv_reg_function"),
+        reg,
     )
 
 
@@ -159,6 +162,23 @@ def _parse_run_name(path: Path) -> tuple | None:
         float(values["maxent"]), float(values["bv"]) if values["bv"] is not None else None,
         values["reg"],
     )
+
+
+def _configured_run_key(path: Path) -> tuple | None:
+    """Parse a run name, replacing one-decimal BV labels with config values."""
+    key = _parse_run_name(path)
+    if key is None:
+        return None
+    config_path = path if path.name.endswith("_config.json") else path.with_name(path.name.replace("_results.hdf5", "_config.json"))
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            value = config.get("loss_config", {}).get("bv_reg_scaling")
+            if value is not None and key[5] is not None:
+                key = (*key[:5], float(value), key[6])
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+    return key
 
 
 def _grid_diagnostics(manifest: dict, scores: pd.DataFrame) -> dict:
@@ -177,8 +197,8 @@ def _grid_diagnostics(manifest: dict, scores: pd.DataFrame) -> dict:
         for bv in bv_values
         for reg in regs
     }
-    hdf_keys = {_parse_run_name(path) for path in root.rglob("*_results.hdf5")}
-    cfg_keys = {_parse_run_name(path) for path in root.rglob("*_config.json")}
+    hdf_keys = {_configured_run_key(path) for path in root.rglob("*_results.hdf5")}
+    cfg_keys = {_configured_run_key(path) for path in root.rglob("*_config.json")}
     hdf_keys.discard(None)
     cfg_keys.discard(None)
 
@@ -195,7 +215,7 @@ def _grid_diagnostics(manifest: dict, scores: pd.DataFrame) -> dict:
     missing_hdf = sorted(expected - hdf_keys, key=str)
     missing_cfg = sorted(expected - cfg_keys, key=str)
     missing_score = sorted(expected_family - score_keys, key=str)
-    nonfinite = sorted(score_keys - finite_family, key=str)
+    nonfinite = sorted((expected_family & hdf_keys & cfg_keys) - score_keys, key=str)
     return {
         "manifest": manifest["_manifest_path"],
         "expected_fit_count": int(manifest.get("expected_fit_count", len(expected))),
@@ -223,8 +243,8 @@ def _paired_rows(selected: pd.DataFrame) -> pd.DataFrame:
         2: [("loss", "Sigma_MSE", "MSE", True), ("ensemble", "AF2_filtered", "AF2_MSAss", True)],
         3: [("loss", "MSE", "Sigma_MSE", True), ("ensemble", "AF2_filtered", "AF2_MSAss", False)],
     }
-    for cell, cell_rows in selected.groupby("cell", dropna=False):
-        example = int(cell_rows["example"].iloc[0])
+    for (cell, example), cell_rows in selected.groupby(["cell", "example"], dropna=False):
+        example = int(example)
         for gate_type, left, right, hard_gate in specs.get(example, []):
             if gate_type == "loss":
                 group_cols = ["cell", "ensemble", "split_type", "split_idx"]
@@ -276,6 +296,56 @@ def _gate_statistics(pairs: pd.DataFrame) -> pd.DataFrame:
             **{f"{key}_mean": value for key, value in split_means.items()}, **loo,
         })
     return pd.DataFrame(rows)
+
+
+def _cell_code(name: str) -> str | None:
+    match = re.search(r"(?:^|_)([AB]\d+)(?:_|$)", name)
+    return match.group(1) if match else None
+
+
+def _matched_pair_lines(gate_statistics: pd.DataFrame) -> list[str]:
+    """Render the requested matched-cell gate comparisons for the audit report."""
+    lines: list[str] = []
+    pair_specs = (("A0", "A1"), ("B1", "A2"), ("B2", "A3"), ("B3", "A4"))
+    if gate_statistics.empty:
+        return ["- No matched-cell gate statistics were available."]
+    stats = gate_statistics.copy()
+    stats["cell_code"] = stats["cell"].map(_cell_code)
+    for left, right in pair_specs:
+        left_rows = stats[stats["cell_code"] == left]
+        right_rows = stats[stats["cell_code"] == right]
+        if left_rows.empty or right_rows.empty:
+            lines.append(f"- {left}/{right}: unavailable (one or both cells were not supplied).")
+            continue
+        joined = left_rows.merge(
+            right_rows,
+            on=["example", "gate_type", "gate"],
+            suffixes=("_left", "_right"),
+        )
+        if joined.empty:
+            lines.append(f"- {left}/{right}: no common gates were available.")
+            continue
+        comparisons = "; ".join(
+            f"Ex{int(row.example)} {row.gate}: {row.status_left} ({row.pooled_mean_left:.6g}) vs {row.status_right} ({row.pooled_mean_right:.6g})"
+            for row in joined.itertuples()
+        )
+        lines.append(f"- {left}/{right}: {comparisons}.")
+    return lines
+
+
+def _wall_time_summary(manifest: dict) -> str:
+    values: list[float] = []
+    root = Path(manifest["_manifest_path"]).parent
+    for path in root.rglob("*_config.json"):
+        try:
+            value = json.loads(path.read_text()).get("runtime", {}).get("wall_time_seconds")
+            if value is not None and np.isfinite(float(value)):
+                values.append(float(value))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+    if not values:
+        return "wall time unavailable"
+    return f"wall time mean/max {np.mean(values):.3f}/{np.max(values):.3f}s"
 
 
 def summarize_ablation(
@@ -331,13 +401,15 @@ def summarize_ablation(
     for manifest in manifests:
         runtime = manifest.get("runtime", {})
         factors = manifest.get("factors", {})
-        report.append(f"- {Path(manifest['_manifest_path']).parent.name}: example {manifest.get('example')}, commit {runtime.get('commit')}, backend {runtime.get('backend')}, jobs {factors.get('parallel_jobs')}; expected fits {manifest.get('expected_fit_count')}; wall time is recorded per fit in configs.")
+        report.append(f"- {Path(manifest['_manifest_path']).parent.name}: example {manifest.get('example')}, commit {runtime.get('commit')}, backend {runtime.get('backend')}, jobs {factors.get('parallel_jobs')}; expected fits {manifest.get('expected_fit_count')}; {_wall_time_summary(manifest)}.")
     report += ["", "## Gate results", ""]
     if gate_statistics.empty:
         report.append("- No complete gate pairs were available.")
     else:
         for _, row in gate_statistics.sort_values(["cell", "gate"]).iterrows():
             report.append(f"- {row['cell']} {row['gate']}: {row['status']}; pooled mean {row['pooled_mean']:.6g}; leave-one-block dependence={bool(row['depends_on_one_split'])}.")
+    report += ["", "## Matched cell pairs", ""]
+    report.extend(_matched_pair_lines(gate_statistics))
     report += ["", "## Selected distributions", ""]
     for column in ("convergence_value", "maxent_value", "bv_reg_value"):
         if column in selected_models:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import glob
 import functools
+import json
 import os
 import re
 from typing import Any, Dict, List, Tuple
@@ -245,13 +246,21 @@ def load_all_optimization_results_2d(
                             maxent_val = float(match.group(2))
                             bvreg_val = float(match.group(3))
                             
+                            filepath = os.path.join(split_type_dir, filename)
+                            config_path = filepath.replace("_results.hdf5", "_config.json")
+                            if os.path.exists(config_path):
+                                try:
+                                    with open(config_path) as config_file:
+                                        config_data = json.load(config_file)
+                                    configured_bv = config_data.get("loss_config", {}).get("bv_reg_scaling")
+                                    if configured_bv is not None:
+                                        bvreg_val = float(configured_bv)
+                                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                                    pass
                             if maxent_val not in results[split_type][ensemble][loss_name][bv_reg_fn]:
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val] = {}
-
                             if bvreg_val not in results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val]:
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][bvreg_val] = {}
-
-                            filepath = os.path.join(split_type_dir, filename)
                             try:
                                 history = load_optimization_history_from_file(
                                     filepath,
