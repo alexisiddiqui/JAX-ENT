@@ -201,10 +201,13 @@ def main():
             print(f"  No run data found for ensemble {ensemble}. Skipping.")
             continue
 
-        exp_split_type = first_split_type if first_split_type != '_flat' else "random"
-        _, _, _, timepoints_from_data = loading.load_experimental_data(results_dir, datasplit_dir, exp_split_type, first_split_idx)
+        timepoints_path = (
+            Path(__file__).parents[2]
+            / "2_CrossValidation/data/_MoPrP/moprp.times"
+        )
+        timepoints_from_data = loading.load_hdx_timepoints_minutes(timepoints_path)
         num_timepoints = len(timepoints_from_data)
-        print(f"  Inferred {num_timepoints} timepoints from data file: {timepoints_from_data}")
+        print(f"  Loaded {num_timepoints} protocol timepoints from {timepoints_path}: {timepoints_from_data}")
 
         # Setup BV model for ln_pf prediction (HDX_resPF)
         bv_config_lnpf = BV_model_Config(num_timepoints=0)

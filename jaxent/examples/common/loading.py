@@ -13,6 +13,7 @@ import functools
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -37,6 +38,55 @@ from jaxent.examples.common.legacy_thresholds import recover_convergence_thresho
 # ---------------------------------------------------------------------------
 # Filename parsing helpers
 # ---------------------------------------------------------------------------
+
+
+def load_hdx_timepoints_minutes(
+    path: str | Path,
+    *,
+    drop_initial_zero: bool = True,
+) -> np.ndarray:
+    """Load an HDX protocol time file expressed in hours and return minutes.
+
+    The MoPrP ``moprp.times`` source includes an initial zero-time reference
+    that has no corresponding uptake column.  Production fitting therefore
+    drops that value and uses the remaining exact protocol times.
+    """
+    source = Path(path)
+    timepoints_hours = np.asarray(np.loadtxt(source, dtype=float), dtype=float).reshape(-1)
+    if drop_initial_zero:
+        if timepoints_hours.size == 0 or not np.isclose(timepoints_hours[0], 0.0):
+            raise ValueError(f"Expected an initial zero timepoint in {source}")
+        timepoints_hours = timepoints_hours[1:]
+    timepoints_minutes = timepoints_hours * 60.0
+    if (
+        timepoints_minutes.size == 0
+        or not np.isfinite(timepoints_minutes).all()
+        or np.any(timepoints_minutes <= 0)
+        or np.any(np.diff(timepoints_minutes) <= 0)
+    ):
+        raise ValueError(f"Invalid HDX timepoint grid in {source}")
+    return timepoints_minutes
+
+
+def validate_hdx_timepoint_count(
+    datapoints: list,
+    timepoints: np.ndarray,
+    *,
+    label: str,
+) -> None:
+    """Require every HDX uptake vector to match the protocol time grid."""
+    expected = int(np.asarray(timepoints).size)
+    mismatches = [
+        (index, int(np.asarray(datapoint.extract_features()).size))
+        for index, datapoint in enumerate(datapoints)
+        if int(np.asarray(datapoint.extract_features()).size) != expected
+    ]
+    if mismatches:
+        preview = ", ".join(f"{index}:{size}" for index, size in mismatches[:5])
+        raise ValueError(
+            f"{label} HDX vectors do not match the {expected}-point protocol "
+            f"(index:length {preview})"
+        )
 
 
 def extract_maxent_value_from_filename(filename: str) -> float | None:

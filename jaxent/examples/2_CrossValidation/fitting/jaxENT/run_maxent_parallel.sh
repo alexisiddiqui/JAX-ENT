@@ -145,7 +145,7 @@ if ! [[ "$STEP_CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then echo "--step-chunk-size mus
 OUTPUT_DIR="$DIR_NAME"
 OPT_OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
 if [[ -e "$OPT_OUTPUT_DIR" ]]; then echo "Refusing to reuse existing output directory: $OPT_OUTPUT_DIR" >&2; exit 2; fi
-python -m jaxent.examples.common.manifest --output-dir "$OPT_OUTPUT_DIR" --example 2 --ensembles "$ENSEMBLES_STR" --losses "$LOSSES_STR" --split-types "$SPLIT_TYPES_STR" --maxent-values "$MAXENT_VALUES_STR" --learning-rate "$LEARNING_RATE" --lr-adjustment "$LR_ADJUSTMENT" --frame-average-impl "$FRAME_AVERAGE_IMPL" --step-chunk-size "$STEP_CHUNK_SIZE" --n-steps "$N_STEPS" --jobs "$PARALLEL_JOBS"
+python -m jaxent.examples.common.manifest --output-dir "$OPT_OUTPUT_DIR" --example 2 --ensembles "$ENSEMBLES_STR" --losses "$LOSSES_STR" --split-types "$SPLIT_TYPES_STR" --maxent-values "$MAXENT_VALUES_STR" --learning-rate "$LEARNING_RATE" --lr-adjustment "$LR_ADJUSTMENT" --frame-average-impl "$FRAME_AVERAGE_IMPL" --step-chunk-size "$STEP_CHUNK_SIZE" --n-steps "$N_STEPS" --jobs "$PARALLEL_JOBS" --timepoints-file "${DIR_WD}/../../data/_MoPrP/moprp.times"
 # --- Fixed: remove stray brace in ANA_OUTPUT_DIR ---
 ANA_OUTPUT_DIR="${ANA_DIR}/${OUTPUT_DIR}"
 # --- end fix ---

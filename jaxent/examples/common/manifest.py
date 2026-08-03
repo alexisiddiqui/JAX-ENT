@@ -146,6 +146,7 @@ def write_prelaunch_manifest(
     n_steps: int,
     jobs: int,
     num_splits: int = 3,
+    timepoints_file: str | Path | None = None,
 ) -> Path:
     output_path = Path(output_dir).resolve()
     if output_path.exists():
@@ -171,6 +172,16 @@ def write_prelaunch_manifest(
     )
 
     repo_root = Path(__file__).resolve().parents[3]
+    timepoint_provenance = None
+    if timepoints_file is not None:
+        source = Path(timepoints_file).resolve()
+        from jaxent.examples.common.loading import load_hdx_timepoints_minutes
+
+        timepoint_provenance = {
+            "source": str(source),
+            "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "values_minutes": load_hdx_timepoints_minutes(source).tolist(),
+        }
     manifest = {
         "manifest_version": 1,
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -200,6 +211,7 @@ def write_prelaunch_manifest(
             "features": str((Path.cwd() / "_featurise").resolve()),
             "datasplits": str((Path.cwd() / "_datasplits").resolve()),
             "output": str(output_path),
+            "timepoints": timepoint_provenance,
         },
         "runtime": runtime_provenance(repo_root),
         "output_paths": {
@@ -229,6 +241,7 @@ def main() -> None:
     parser.add_argument("--step-chunk-size", type=int, required=True)
     parser.add_argument("--n-steps", type=int, required=True)
     parser.add_argument("--jobs", type=int, required=True)
+    parser.add_argument("--timepoints-file", default=None)
     args = parser.parse_args()
     write_prelaunch_manifest(
         args.output_dir,
@@ -247,6 +260,7 @@ def main() -> None:
         step_chunk_size=args.step_chunk_size,
         n_steps=args.n_steps,
         jobs=args.jobs,
+        timepoints_file=args.timepoints_file,
     )
 
 

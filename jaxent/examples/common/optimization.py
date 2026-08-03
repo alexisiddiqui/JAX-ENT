@@ -281,6 +281,11 @@ def run_optimization(
                 ),
                 "learning_rate": learning_rate,
                 "optimizer": optimizer_type,
+                "timepoints": (
+                    jnp.asarray(model_parameters.timepoints).reshape(-1).tolist()
+                    if hasattr(model_parameters, "timepoints")
+                    else None
+                ),
             },
             "runtime": {
                 "commit": commit,

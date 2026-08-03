@@ -57,6 +57,10 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.loading import (
+    load_hdx_timepoints_minutes,
+    validate_hdx_timepoint_count,
+)
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
 
 
@@ -173,8 +177,13 @@ def run_maxent_sweep(
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
 
     # Setup BV model
-    bv_config = BV_model_Config(num_timepoints=5)
-    bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
+    timepoints_path = os.path.join(
+        os.path.dirname(__file__), "../../../2_CrossValidation/data/_MoPrP/moprp.times"
+    )
+    timepoints = load_hdx_timepoints_minutes(timepoints_path)
+    bv_config = BV_model_Config(
+        num_timepoints=len(timepoints), timepoints=jnp.asarray(timepoints)
+    )
     bv_model = BV_model(config=bv_config)
     model_parameters = bv_model.params
 
@@ -255,6 +264,12 @@ def run_maxent_sweep(
         os.makedirs(output_dir, exist_ok=True)
 
         for split_idx, (train_data, val_data) in enumerate(splits):
+            validate_hdx_timepoint_count(
+                train_data, timepoints, label=f"{split_type} split {split_idx} train"
+            )
+            validate_hdx_timepoint_count(
+                val_data, timepoints, label=f"{split_type} split {split_idx} validation"
+            )
             print(f"  Processing split {split_idx:03d}")
             print(f"    Train samples: {len(train_data)}, Val samples: {len(val_data)}")
 
