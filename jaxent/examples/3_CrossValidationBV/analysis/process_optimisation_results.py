@@ -202,7 +202,7 @@ def main():
             continue
 
         timepoints_path = (
-            Path(__file__).parents[2]
+            Path(__file__).resolve().parents[2]
             / "2_CrossValidation/data/_MoPrP/moprp.times"
         )
         timepoints_from_data = loading.load_hdx_timepoints_minutes(timepoints_path)
