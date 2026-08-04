@@ -39,6 +39,13 @@ from .config import ExperimentConfig, LossConfig, OptimizationConfig
 from .losses import get_loss_function_by_name, maxent_convexKL_loss
 
 
+def _build_loss_slot_weights(
+    maxent_scaling: float, n_regularization_losses: int, bv_reg_scaling: float
+) -> list[float]:
+    """Return weights in loss-list order: data, MaxEnt, then BV regularizers."""
+    return [1.0, maxent_scaling] + [bv_reg_scaling] * n_regularization_losses
+
+
 # ---------------------------------------------------------------------------
 # Data loader creation
 # ---------------------------------------------------------------------------
@@ -111,6 +118,7 @@ def run_optimization(
     reset_threshold_cooldown_on_oscillation: bool = True,
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
+    initial_frame_weights: Array | None = None,
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -176,21 +184,28 @@ def run_optimization(
 
     # Build Simulation_Parameters
     n_reg = len(loss_config.regularization_losses)
-    if n_reg > 0:
-        _fwd_weights = (
-            [maxent_scaling]
-            + [1.0] * (n_loss_slots - 1 - n_reg)
-            + [loss_config.bv_reg_scaling] * n_reg
-        )
-    else:
-        _fwd_weights = [maxent_scaling] + [1.0] * (n_loss_slots - 1)
+    _fwd_weights = _build_loss_slot_weights(
+        maxent_scaling, n_reg, loss_config.bv_reg_scaling
+    )
 
     _norm_fns = jnp.ones(n_loss_slots)
     if not loss_config.normalize_bv_reg and n_reg > 0:
         _norm_fns = _norm_fns.at[-1].set(0.0)
 
+    if initial_frame_weights is None:
+        initial_weights = jnp.ones(n_frames) / n_frames
+    else:
+        initial_weights = jnp.asarray(initial_frame_weights)
+        if initial_weights.shape != (n_frames,):
+            raise ValueError(
+                f"initial_frame_weights has shape {initial_weights.shape}; expected {(n_frames,)}"
+            )
+        if bool(jnp.any(initial_weights < 0)) or not bool(
+            jnp.isclose(initial_weights.sum(), 1.0)
+        ):
+            raise ValueError("initial_frame_weights must be non-negative and sum to one")
     parameters = Simulation_Parameters.from_frame_weights(
-        jnp.ones(n_frames) / n_frames,
+        initial_weights,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array(_fwd_weights),
         normalise_loss_functions=_norm_fns,
@@ -281,6 +296,9 @@ def run_optimization(
                 ),
                 "learning_rate": learning_rate,
                 "optimizer": optimizer_type,
+                "initial_frame_weights": (
+                    "uniform" if initial_frame_weights is None else "user_supplied"
+                ),
                 "timepoints": (
                     jnp.asarray(model_parameters.timepoints).reshape(-1).tolist()
                     if hasattr(model_parameters, "timepoints")

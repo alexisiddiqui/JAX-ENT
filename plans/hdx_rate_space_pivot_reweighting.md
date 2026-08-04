@@ -118,8 +118,8 @@ Three target semantics, identical 60:40 populations:
 timescale `τ`, per frame:
 
 ```
-k_op = 1/(τ(1+P_f)),   k_cl = P_f/(τ(1+P_f))
-k_obs,f = k_op·k_int/(k_op + k_cl + k_int)        [full Linderstrøm-Lang]
+P_f = exp(log_Pf) = 1/f_open
+k_obs,f = k_int/(P_f·(1 + τ·k_int))               [full Linderstrøm-Lang]
 ```
 
 `τ→0` recovers EX2 exactly (`k_obs → k_int/P`); large `τ` drives EX1. Build `τ` in as a parameter

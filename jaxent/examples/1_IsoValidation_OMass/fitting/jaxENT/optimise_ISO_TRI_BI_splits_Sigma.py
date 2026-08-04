@@ -32,6 +32,7 @@ from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
@@ -107,6 +108,8 @@ def run_maxent_sweep(
     reset_threshold_cooldown_on_oscillation: bool = True,
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
+    datasplit_dir: str = None,
+    initial_frame_weights=None,
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -130,7 +133,8 @@ def run_maxent_sweep(
     convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
 
     # Setup directories
-    datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
+    if datasplit_dir is None:
+        datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
     features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
 
     # Use provided output directory or default to previous behavior (now with timestamp)
@@ -247,7 +251,8 @@ def run_maxent_sweep(
             print(f"    Train samples: {len(train_data)}, Val samples: {len(val_data)}")
 
             for maxent_value in maxent_values:
-                run_name = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent{maxent_value:.1f}"
+                maxent_token = f"{maxent_value:g}".replace(".", "p")
+                run_name = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent{maxent_token}"
 
                 print(f"    Running maxent={maxent_value:.1f}: {run_name}")
                 run_start_time = time.time()
@@ -289,6 +294,7 @@ def run_maxent_sweep(
                         output_dir=output_dir,
                         cov_matrix=cov_matrix_data,
                         execution_mode=execution_mode,
+                        initial_frame_weights=initial_frame_weights,
                     )
 
                     run_elapsed = time.time() - run_start_time
@@ -365,6 +371,7 @@ def run_all_combinations(
     step_chunk_size: int = 100,
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
+    datasplit_dir: str = None,
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["ISO_TRI", "ISO_BI"]
@@ -403,6 +410,7 @@ def run_all_combinations(
                 step_chunk_size=step_chunk_size,
                 lr_adjustment=lr_adjustment,
                 frame_average_impl=frame_average_impl,
+                datasplit_dir=datasplit_dir,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -468,6 +476,10 @@ def main():
         help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
     )
     parser.add_argument(
+        "--maxent-values",
+        help="Comma-separated floating-point MaxEnt strengths; overrides --maxent-range.",
+    )
+    parser.add_argument(
         "--n-steps",
         type=int,
         default=500,
@@ -517,22 +529,44 @@ def main():
         help="Base output directory for runs (default: <script>/_optimise_quick_test_<timestamp> when not provided).",
     )
     parser.add_argument(
+        "--datasplit-dir",
+        default=os.path.join(os.path.dirname(__file__), "_datasplits"),
+        help="Directory containing split data (default: script-local _datasplits).",
+    )
+    parser.add_argument(
         "--execution-mode",
         choices=["compiled", "python"],
         default="compiled",
         help="Optimizer execution mode (default: compiled).",
     )
+    parser.add_argument(
+        "--initial-frame-weights",
+        help="Optional .npy vector used instead of uniform initial frame weights.",
+    )
 
     args = parser.parse_args()
     if args.step_chunk_size < 1:
         parser.error("--step-chunk-size must be >= 1")
+    initial_frame_weights = (
+        np.load(args.initial_frame_weights) if args.initial_frame_weights else None
+    )
 
     # Parse maxent range
-    try:
-        start_val, end_val = map(int, args.maxent_range.split(","))
-        maxent_values = list(range(start_val, end_val + 1))
-    except ValueError:
-        raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if args.maxent_values:
+        try:
+            maxent_values = [float(value) for value in args.maxent_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("maxent-values must be comma-separated numbers") from exc
+        if not maxent_values or any(value < 0 for value in maxent_values):
+            parser.error("--maxent-values must contain non-negative strengths")
+    else:
+        try:
+            start_val, end_val = map(int, args.maxent_range.split(","))
+            maxent_values = list(range(start_val, end_val + 1))
+        except ValueError as exc:
+            raise ValueError(
+                "maxent-range must be in format 'start,end' (e.g., '1,10')"
+            ) from exc
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
@@ -567,6 +601,8 @@ def main():
             step_chunk_size=args.step_chunk_size,
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
+            datasplit_dir=args.datasplit_dir,
+            initial_frame_weights=initial_frame_weights,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -584,6 +620,7 @@ def main():
             step_chunk_size=args.step_chunk_size,
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
+            datasplit_dir=args.datasplit_dir,
         )
 
     # Report where results were written

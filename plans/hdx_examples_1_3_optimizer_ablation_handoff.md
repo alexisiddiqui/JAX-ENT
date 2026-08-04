@@ -28,6 +28,29 @@ difference defines the directional gate. Also show the direction separately
 for `sequence_cluster` and `spatial`; a pooled pass with a split-type reversal
 must be marked **fragile**, not a clean pass.
 
+> **MaxEnt scaling defect (discovered in ISO Stage 0):** before Phase 1c,
+> `examples/common/optimization.py` applied `maxent_scaling` to loss slot 0
+> (the primary data loss), while the MaxEnt loss in slot 1 remained fixed at
+> one. Historical nominal MaxEnt sweeps through `run_optimization` therefore
+> swept data-vs-MaxEnt strength in the inverse direction. Do not interpret or
+> combine those sweep labels without accounting for this defect; Phase 1c
+> aligns weights to `[data=1, MaxEnt=maxent_scaling, ...]`.
+
+> **Stage 0 convergence/alignment finding (Phase 1d):** the ISO target
+> generator originally prepended its synthetic 294th terminal column even
+> though feature-topology residues match `segments[:-1]`; split materialization
+> then selected target rows by `fragment_index`, shifting every live fitting
+> target by one residue. A standalone `[1:]` comparison hid this mismatch.
+> Corrected targets append the unmatched terminal column. On the corrected BI
+> open=0.90 cell, true-weight initialization gives production train MSE
+> `3.45e-12`, and a uniform-start MaxEnt=0.001 fit reaches full-layout MSE
+> `1.39e-4` in its best retained state. Separately, `best_state` currently
+> stores pre-update losses beside post-update parameters, and the last
+> convergence state was worse than `best_state` in 405/480 Phase 1c histories
+> under external forward evaluation. Treat historical convergence-selected
+> results as unscored until their target alignment and state selection are
+> audited; do not revisit the earlier ablation verdicts yet.
+
 ## Current numerical verdict
 
 The earlier “new logits geometry” hypothesis was wrong. The April code already

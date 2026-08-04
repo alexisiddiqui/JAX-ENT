@@ -16,6 +16,7 @@ Output:
     - Split data directories in fitting/jaxENT/_datasplits/ (e.g., fit_ISO_BI_split_random_0)
 """
 
+import argparse
 import os
 
 import MDAnalysis as mda
@@ -29,21 +30,39 @@ from jaxent.examples.common.loading import run_data_splits
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    default_hdx_dir = os.path.join(os.path.dirname(__file__), "../../data/_output")
+    parser.add_argument(
+        "--dfrac-file",
+        default=os.path.join(default_hdx_dir, "mixed_60-40_artificial_expt_resfracs_TeaA_dfrac.dat"),
+    )
+    parser.add_argument(
+        "--segs-file",
+        default=os.path.join(default_hdx_dir, "mixed_60-40_artificial_expt_resfracs_TeaA_segs.txt"),
+    )
+    parser.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "_datasplits"))
+    parser.add_argument("--ensemble", choices=["iso_tri", "iso_bi"], default="iso_bi")
+    parser.add_argument("--split-types", default="random,sequence,sequence_cluster,stratified,spatial")
+    parser.add_argument("--num-splits", type=int, default=3)
+    args = parser.parse_args()
+    if args.num_splits < 1:
+        parser.error("--num-splits must be >= 1")
+
     HDX_dir: str = "../../data/_output"
     HDX_dir = os.path.join(os.path.dirname(__file__), HDX_dir)
     if not os.path.exists(HDX_dir):
         raise FileNotFoundError(f"HDX directory does not exist: {HDX_dir}")
 
-    dfrac_file: str = "mixed_60-40_artificial_expt_resfracs_TeaA_dfrac.dat"
-    segs_file: str = "mixed_60-40_artificial_expt_resfracs_TeaA_segs.txt"
-    output_dir: str = os.path.join(os.path.dirname(__file__), "_datasplits")
-    feature_topology_file: str = "topology_iso_bi.json"
+    dfrac_file: str = args.dfrac_file
+    segs_file: str = args.segs_file
+    output_dir: str = args.output_dir
+    feature_topology_file: str = f"topology_{args.ensemble}.json"
     features_dir: str = os.path.join(os.path.dirname(__file__), "_featurise")
 
     if not os.path.exists(features_dir):
         raise FileNotFoundError(f"Features directory does not exist: {features_dir}")
 
-    num_splits: int = 3
+    num_splits: int = args.num_splits
     chain: str = "A"
 
     # Load feature topology
@@ -54,14 +73,14 @@ def main() -> None:
 
     # Load dfrac and segments data
     dfrac: np.ndarray = pd.read_csv(
-        os.path.join(HDX_dir, dfrac_file),
+        dfrac_file,
         sep=r"\s+",
         comment="#",
         header=None,
     ).to_numpy()
 
     segs: np.ndarray = pd.read_csv(
-        os.path.join(HDX_dir, segs_file),
+        segs_file,
         sep=r"\s+",
         comment="#",
         header=None,
@@ -98,7 +117,7 @@ def main() -> None:
     )
 
     # Run multiple data splits for each split type
-    split_types = ["random", "sequence", "sequence_cluster", "stratified", "spatial"]
+    split_types = [item.strip() for item in args.split_types.split(",") if item.strip()]
     remove_overlap = True  # Or configure as needed
 
     # Define the path to the closed state topology and a representative trajectory
