@@ -87,7 +87,7 @@ def _read_scores(manifests: list[dict]) -> tuple[pd.DataFrame, list[dict]]:
 
 
 def _selection_key_columns(df: pd.DataFrame) -> list[str]:
-    columns = ["cell", "ensemble", "split_type", "split_idx", "loss_function", "maxent_value"]
+    columns = ["cell", "example", "ensemble", "split_type", "split_idx", "loss_function", "maxent_value"]
     for column in ("bv_reg_value", "bv_reg_function", "bv_value"):
         if column in df.columns:
             columns.append(column)
@@ -361,7 +361,7 @@ def summarize_ablation(
 
     # First select the convergence checkpoint for each fitted hyperparameter
     # model, then select MaxEnt/BV strictly by finite validation MSE per cell.
-    across = [c for c in ["cell", "ensemble", "split_type", "split_idx", "loss_function"] if c in selected_convergence]
+    across = [c for c in ["cell", "example", "ensemble", "split_type", "split_idx", "loss_function"] if c in selected_convergence]
     work = selected_convergence.copy()
     work = work.sort_values(across + ["val_mse"], kind="stable")
     selected_models = work.drop_duplicates(across, keep="first").reset_index(drop=True)

@@ -1,4 +1,4 @@
-# Investigation: known-population MoPrP covariance recovery and the population-free covariance-shape prior
+ w# Investigation: known-population MoPrP covariance recovery and the population-free covariance-shape prior
 
 Status: **Stages A–I complete; former Stage J failed its ISO gate and is closed; replacement
 HDX target-variance inference is implemented and awaits full TeaA/ISO qualification**
