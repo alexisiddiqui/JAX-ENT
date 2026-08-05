@@ -3,7 +3,7 @@ import pytest
 
 from jaxent.examples.common.config import OptimizationConfig
 from jaxent.src.opt.chunk import run_sequential
-from jaxent.src.opt.optimiser import OptaxOptimizer
+from jaxent.src.opt.optimiser import OptaxOptimizer, compute_loss
 from jaxent.src.opt.run import _build_chunk_state, result_to_history
 from jaxent.src.utils.jax_fn import frame_average_features
 from jaxent.tests.modules.optimise.test_module_optimise_convergence import (
@@ -99,6 +99,38 @@ def test_convergence_ladder_is_observational_and_chunk_equivalent():
     assert [float(x.losses.total_train_loss) for x in one.convergence_states] == pytest.approx(
         [float(x.losses.total_train_loss) for x in hundred.convergence_states], rel=1e-6, abs=1e-6
     )
+
+
+def test_retained_losses_are_evaluated_at_retained_parameters():
+    simulation, _ = _create_synthetic_simulation()
+    optimizer = OptaxOptimizer(learning_rate=0.1)
+    initial = optimizer.initialise(simulation)
+    target = (jnp.asarray([10.0], dtype=jnp.float32),)
+    carry, inputs, losses, indexes = _build_chunk_state(
+        simulation,
+        target,
+        -jnp.inf,
+        [1e6, 1e5, 1e4],
+        [0],
+        [synthetic_output_l2_loss],
+        initial,
+        optimizer,
+    )
+    history = result_to_history(
+        run_sequential(carry, inputs, 12, 4, optimizer, losses, indexes, 2),
+        optimizer,
+    )
+
+    retained = [*history.states, *history.convergence_states, history.best_state]
+    for state in retained:
+        assert state is not None
+        evaluated = compute_loss(simulation, state.params, target, indexes, losses)
+        assert float(state.losses.total_train_loss) == pytest.approx(
+            float(evaluated.total_train_loss), rel=1e-6, abs=1e-6
+        )
+        assert float(state.losses.total_val_loss) == pytest.approx(
+            float(evaluated.total_val_loss), rel=1e-6, abs=1e-6
+        )
 
 
 def test_ablation_config_rejects_invalid_values():

@@ -1,11 +1,13 @@
 import numpy as np
 
-from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.base import FrameAveragingMode, ForwardPass
 from jaxent.src.models.config import NetHDXConfig
 from jaxent.src.models.HDX.netHDX.features import NetHDX_input_features, NetHDX_output_features
 
 
 class NetHDX_ForwardPass(ForwardPass):
+    frame_averaging_mode: FrameAveragingMode = "log_pf"
+
     def __call__(
         self, features: NetHDX_input_features, parameters: NetHDXConfig
     ) -> NetHDX_output_features:

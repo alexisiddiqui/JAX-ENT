@@ -313,10 +313,9 @@ class OptaxOptimizer:
             losses = compute_loss(simulation, params, data_targets, indexes, loss_functions)
             return losses.total_train_loss
 
-        (loss_value, aux), grads = jax.value_and_grad(
+        (loss_value, _), grads = jax.value_and_grad(
             loss_fn, allow_int=True, has_aux=True
         )(state.params)
-        losses = aux
 
         masked_grads = mask_gradients(grads, gradient_mask)
         previous_grads = state.gradients if state.gradients is not None else masked_grads
@@ -348,17 +347,30 @@ class OptaxOptimizer:
         )
         updated_params = optax.apply_updates(state.params, updates)  # type: ignore[arg-type]
 
-        new_state = state.update(updated_params, new_opt_state, losses, masked_grads)
+        # The gradient is evaluated at ``state.params``, but snapshots retain
+        # ``updated_params``.  Re-evaluate after applying the update so every
+        # recorded loss describes the parameters stored beside it.
+        updated_losses = compute_loss(
+            simulation,
+            updated_params,
+            data_targets,
+            indexes,
+            loss_functions,
+        )
+        updated_loss_value = updated_losses.total_train_loss
+        new_state = state.update(
+            updated_params, new_opt_state, updated_losses, masked_grads
+        )
         save_state = new_state.update(
             new_state.params,
             new_state.opt_state,
-            losses,
+            updated_losses,
             masked_grads,
             step=new_state.step,
         )
         return (
             new_state,
-            loss_value,
+            updated_loss_value,
             save_state,
             new_lr,
             new_model_lr,

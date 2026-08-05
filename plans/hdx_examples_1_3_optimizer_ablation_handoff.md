@@ -51,6 +51,13 @@ must be marked **fragile**, not a clean pass.
 > results as unscored until their target alignment and state selection are
 > audited; do not revisit the earlier ablation verdicts yet.
 
+> **Checkpoint correction (Phase 2):** the optimizer now evaluates loss again
+> after applying an update, so every retained state, convergence snapshot, and
+> `best_state` pairs post-update parameters with their own post-update loss.
+> This has repo-wide blast radius. It is verified independently before the
+> frame-averaging change; prior ablation results remain intentionally
+> unrevisited.
+
 ## Current numerical verdict
 
 The earlier “new logits geometry” hypothesis was wrong. The April code already

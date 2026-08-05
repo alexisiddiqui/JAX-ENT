@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from beartype.typing import Generic, Protocol
+from beartype.typing import Generic, Literal, Protocol
 from beartype.typing import runtime_checkable   
 
 import MDAnalysis as mda
@@ -10,12 +10,15 @@ from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.topology import Partial_Topology
 
+FrameAveragingMode = Literal["log_pf", "rate", "uptake"]
+
+
 @runtime_checkable
 class ForwardPass(Protocol[T_In, T_Out, T_Params]):
     """
     The forward pass of a model maps input features to output features using the model's parameters.
     """
-    
+    frame_averaging_mode: FrameAveragingMode
 
     def __call__(self, input_features: T_In, parameters: T_Params) -> T_Out: ...
 

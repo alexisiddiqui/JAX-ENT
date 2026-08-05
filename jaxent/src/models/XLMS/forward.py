@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.base import FrameAveragingMode, ForwardPass
 from jaxent.src.models.XLMS.features import XLMS_input_features, XLMS_output_features
 from jaxent.src.models.XLMS.parameters import XLMS_Model_Parameters
 
@@ -12,7 +12,7 @@ class XLMS_distance_ForwardPass(
     The PairIndexMapping applied by create_functional_loss extracts
     the specific cross-linked residue pairs from the full matrix.
     """
-    average_first: bool = True  # operate per-frame then average outputs
+    frame_averaging_mode: FrameAveragingMode = "log_pf"
 
     def __call__(
         self,

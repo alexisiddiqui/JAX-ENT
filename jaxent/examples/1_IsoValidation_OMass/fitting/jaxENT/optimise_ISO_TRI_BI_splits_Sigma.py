@@ -45,6 +45,7 @@ from jaxent.examples.common.optimization import run_optimization
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
 from jaxent.src.models.config import BV_model_Config
@@ -110,6 +111,7 @@ def run_maxent_sweep(
     frame_average_impl: str = "tensordot",
     datasplit_dir: str = None,
     initial_frame_weights=None,
+    frame_averaging_mode: Literal["log_pf", "rate", "uptake"] = "log_pf",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -169,6 +171,19 @@ def run_maxent_sweep(
     bv_config = BV_model_Config(num_timepoints=5)
     bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
     bv_model = BV_model(config=bv_config)
+    uptake_forward = bv_model.forward[m_key("HDX_peptide")]
+    uptake_forward.frame_averaging_mode = frame_averaging_mode
+    if frame_averaging_mode == "uptake":
+        clustering_dir = os.path.join(
+            os.path.dirname(__file__), "../../data/_clustering_results"
+        )
+        assignment_path = os.path.join(
+            clustering_dir, f"cluster_assignments_{ensemble.upper()}.csv"
+        )
+        assignments = np.genfromtxt(
+            assignment_path, delimiter=",", names=True, dtype=None, encoding="utf-8"
+        )["cluster_assignment"]
+        uptake_forward.set_frame_groups(assignments)
     model_parameters = bv_model.params
 
     # Discover split types
@@ -543,6 +558,12 @@ def main():
         "--initial-frame-weights",
         help="Optional .npy vector used instead of uniform initial frame weights.",
     )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=("log_pf", "rate", "uptake"),
+        default="log_pf",
+        help="Where frame averaging occurs in the HDX forward calculation.",
+    )
 
     args = parser.parse_args()
     if args.step_chunk_size < 1:
@@ -603,6 +624,7 @@ def main():
             frame_average_impl=args.frame_average_impl,
             datasplit_dir=args.datasplit_dir,
             initial_frame_weights=initial_frame_weights,
+            frame_averaging_mode=args.frame_averaging_mode,
         )
 
     elif args.ensemble is None and args.loss_function is None:

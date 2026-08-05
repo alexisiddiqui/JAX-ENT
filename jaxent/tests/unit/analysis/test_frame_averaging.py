@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import jax.numpy as jnp
 
 from jaxent.examples.common.analysis.frame_averaging import (
     effective_rates,
@@ -13,6 +14,11 @@ from jaxent.examples.common.analysis.frame_averaging import (
     residue_uptake_slow2,
     weights_from_cluster_populations,
 )
+from jaxent.src.interfaces.simulation import Simulation_Parameters
+from jaxent.src.models.core import Simulation
+from jaxent.src.models.HDX.BV.features import BV_input_features
+from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.forward import BV_uptake_ForwardPass
 
 
 def inputs():
@@ -125,3 +131,67 @@ def test_residue_alignment_preserves_feature_order_and_appends_terminal(tmp_path
     aligned, _ = module.align_residue_layout(uptake, topology, segments)
     np.testing.assert_array_equal(aligned[:, :2], uptake)
     np.testing.assert_array_equal(aligned[:, -1], np.ones(2))
+
+
+def test_typed_forward_modes_match_target_oracles():
+    log_pf, k_ints, weights, assignments = inputs()
+    heavy = log_pf / 0.35
+    features = BV_input_features(
+        heavy_contacts=jnp.asarray(heavy),
+        acceptor_contacts=jnp.zeros_like(jnp.asarray(heavy)),
+        k_ints=jnp.asarray(k_ints),
+    )
+    timepoints = np.asarray([0.01, 0.2, 1.0, 10.0])
+    model_params = BV_Model_Parameters(
+        bv_bc=jnp.asarray([0.35]),
+        bv_bh=jnp.asarray([2.0]),
+        timepoints=jnp.asarray(timepoints),
+    )
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.asarray(weights),
+        model_parameters=(model_params,),
+        forward_model_weights=jnp.ones(1),
+        normalise_loss_functions=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
+    )
+
+    expected = {
+        "log_pf": residue_uptake_legacy(log_pf, k_ints, timepoints, weights),
+        "rate": residue_uptake_fast(log_pf, k_ints, timepoints, weights),
+        "uptake": residue_uptake_slow2(
+            log_pf, k_ints, timepoints, weights, assignments
+        ),
+    }
+    for mode, oracle in expected.items():
+        forward = BV_uptake_ForwardPass(mode, assignments)
+        actual = Simulation.forward_pure(
+            params, (features,), (forward,)
+        )[0].uptake
+        np.testing.assert_allclose(actual, oracle, rtol=2e-6, atol=2e-7)
+
+
+def test_log_pf_mode_is_the_previous_average_inputs_path():
+    log_pf, k_ints, weights, assignments = inputs()
+    features = BV_input_features(
+        heavy_contacts=jnp.asarray(log_pf / 0.35),
+        acceptor_contacts=jnp.zeros_like(jnp.asarray(log_pf)),
+        k_ints=jnp.asarray(k_ints),
+    )
+    timepoints = np.asarray([0.167, 1.0, 10.0])
+    model_params = BV_Model_Parameters(timepoints=jnp.asarray(timepoints))
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.asarray(weights),
+        model_parameters=(model_params,),
+        forward_model_weights=jnp.ones(1),
+        normalise_loss_functions=jnp.ones(1),
+        forward_model_scaling=jnp.ones(1),
+    )
+    actual = Simulation.forward_pure(
+        params, (features,), (BV_uptake_ForwardPass("log_pf", assignments),)
+    )[0].uptake
+    np.testing.assert_allclose(
+        actual,
+        residue_uptake_legacy(log_pf, k_ints, timepoints, weights),
+        rtol=2e-6,
+        atol=2e-7,
+    )

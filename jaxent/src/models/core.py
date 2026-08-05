@@ -303,21 +303,24 @@ class Simulation:
         """
         chex.assert_rank(params.frame_weight_simplex, 1)
 
-        # Branch per forward pass: linear models average features first (average_first=True),
-        # non-linear models run on frame-wise features and average outputs (average_first=False).
-        # Since forwardpass is a static JIT arg, this branch compiles away.
+        # Since forwardpass is a static JIT arg, this typed branch compiles away.
         output_features = []
         for fp, feat, param in zip(forwardpass, input_features, params.model_parameters):
-            if getattr(fp, "average_first", True):
+            mode = getattr(fp, "frame_averaging_mode", "log_pf")
+            if mode == "log_pf":
                 avg_feat = frame_average_features(
                     feat, params.frame_weight_simplex, frame_average_impl
                 )
                 output = single_pass(fp, avg_feat, param)
-            else:
-                output = single_pass(fp, feat, param)
-                output = frame_average_features(
-                    output, params.frame_weight_simplex, frame_average_impl
+            elif mode in {"rate", "uptake"}:
+                output = fp.average_frames(
+                    feat,
+                    param,
+                    params.frame_weight_simplex,
+                    frame_average_impl,
                 )
+            else:
+                raise ValueError(f"unknown frame-averaging mode: {mode!r}")
             output_features.append(output)
 
         return output_features

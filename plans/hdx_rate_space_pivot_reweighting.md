@@ -358,3 +358,67 @@ the 2-moment version of the same idea. Neither helps if `bc/bh` move — another
   discriminator between fast and slow mixing is unavailable — centroids largely cannot separate the
   two limits directly. This is why the recovery matrix is the instrument rather than a direct
   measurement.
+
+---
+
+## 13. Phase 2 result — the semantics matrix (378 fits, τ=0, maxent ≤ 0.001, tilt < 1)
+
+Source: `jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_phase2_semantics_matrix/phase2_semantics_summary.csv`.
+MAE of recovered open population; rows = target semantics, columns = fitter semantics.
+Stage 0 resolution floors: BI residue 0.02, BI width-10 0.04, TRI residue 0.06.
+
+**ISO_BI residue** (the instrument that works)
+
+| target \ fitter | fast | legacy | slow2 |
+|---|---|---|---|
+| fast | **0.008** | 0.102 | 0.057 |
+| legacy | 0.175 | **0.006** | 0.039 |
+| slow2 | 0.143 | 0.016 | **0.007** |
+
+**ISO_BI width-10**
+
+| target \ fitter | fast | legacy | slow2 |
+|---|---|---|---|
+| fast | **0.049** | 0.122 | 0.063 |
+| legacy | 0.164 | **0.056** | 0.077 |
+| slow2 | 0.065 | 0.071 | **0.053** |
+
+**ISO_TRI residue**
+
+| target \ fitter | fast | legacy | slow2 |
+|---|---|---|---|
+| fast | **0.069** | 0.069 | 0.086 |
+| legacy | 0.104 | **0.058** | 0.053 |
+| slow2 | 0.093 | 0.073 | **0.030** |
+
+### Findings
+
+1. **Frame-averaging semantics is a first-order error source, not a rounding detail.** On BI
+   residue the diagonal is 0.006–0.008 — an order of magnitude below the 0.02 floor — while the
+   worst mismatch is 0.175. The pivot choice costs ~20× the self-consistent recovery error.
+2. **The error is a pure sign-definite bias, not noise.** For every `fast` fitter off-diagonal,
+   `|bias_open| == mae_open` to three decimals: legacy target → −0.175, slow2 target → −0.143.
+   The arithmetic rate mean over-weights open frames, so the fitter compensates by removing open
+   population. Symmetrically, a `legacy` fitter on a `fast` target biases **+0.102**. Direction is
+   exactly the Jensen ordering (AM ≥ GM), so the sign is predictable a priori.
+3. **`legacy` and `slow2` are near-neighbours; `fast` is the outlier.** legacy↔slow2 costs
+   0.016–0.039 on BI residue, versus 0.102–0.175 against `fast`. Averaging log-PF is a better proxy
+   for slow interconversion than for fast.
+4. **Misspecification is visible in ESS, not only in MSE.** A `legacy` fitter on non-legacy targets
+   lands at median ESS 16–95 against 600–730 on the diagonal: it burns tilt budget fighting a
+   forward model it cannot satisfy. ESS collapse is therefore a usable in-practice misspecification
+   alarm where the truth is unknown.
+5. **Peptide width degrades but does not invert the picture.** BI width-10 diagonals (0.049–0.056)
+   sit at the 0.04 floor, so only legacy/fast (0.164) and fast/legacy (0.122) clear it. Residue
+   heterogeneity within a peptide broadens curves the same way a frame mixture does (§7), which is
+   the expected confound.
+6. **TRI residue is mostly at its floor and must not be over-read.** With floor 0.06 only
+   legacy/fast (0.104) and slow2/fast (0.093) are resolvable; the entire `fast`-target row
+   (0.069/0.069/0.086) is not. The one clean signal there is again that `fast` is the outlier.
+
+### Caveats
+
+- All targets are self-consistent by construction; the diagonal measures identifiability, not the
+  correctness of any pivot. Nothing here validates `legacy` as physics.
+- τ = 0 throughout — the EX1 arm (§6 Stage 2) is untested, and §7b smoothness is unread.
+- TRI width-10 excluded (fails the Stage 0 gate; see the Stage 0 record).
