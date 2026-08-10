@@ -93,6 +93,10 @@ folded-protein MD ensemble), not a derived fact. It is exactly the kind of claim
 shuffled-control / sign-flip sanity check should verify, since getting the sign wrong
 actively pushes weight the wrong way rather than merely being a weaker prior.
 
+**ISO limitation (2026-08-05):** the synthetic ISO truth weights are exactly uniform within each
+cluster, so their true within-cluster `log(w)`-on-`G` slope is zero; this dataset cannot test the
+central positive-Boltzmann-coordinate assumption.
+
 ### Penalty and its exact cheap form
 
 ```

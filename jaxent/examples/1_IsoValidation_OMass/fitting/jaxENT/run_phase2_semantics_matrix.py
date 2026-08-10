@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import subprocess
 import sys
@@ -22,10 +23,20 @@ CONFIGS = (
 )
 
 
-def run(command: list[str], dry_run: bool) -> None:
+def run(command: list[str], dry_run: bool, log_path: Path | None = None) -> None:
     print(" ".join(command), flush=True)
     if not dry_run:
-        subprocess.run(command, check=True)
+        if log_path is None:
+            subprocess.run(command, check=True)
+        else:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("w") as log_handle:
+                subprocess.run(
+                    command,
+                    check=True,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                )
 
 
 def population_kl(assignments: np.ndarray, populations: dict[str, float]) -> float:
@@ -55,9 +66,24 @@ def main() -> None:
     )
     parser.add_argument("--n-steps", type=int, default=500)
     parser.add_argument("--n-replicates", type=int, default=3)
+    parser.add_argument("--max-workers", type=int, default=1)
+    parser.add_argument(
+        "--tau-values",
+        type=str,
+        default="0",
+        help="Comma-separated target tau values in minutes; fitters remain tau=0.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
+    tau_values = tuple(float(value) for value in args.tau_values.split(","))
+    if not tau_values or any(tau < 0 for tau in tau_values):
+        parser.error("tau values must be a non-empty list of non-negative numbers")
+    if args.max_workers < 1:
+        parser.error("max-workers must be positive")
+    target_semantics_values = (
+        tuple(SEMANTICS_TO_MODE) if tau_values == (0.0,) else ("fast", "slow2")
+    )
     output_dir = args.output_dir.resolve()
     stage0_dir = args.stage0_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -80,6 +106,7 @@ def main() -> None:
         assignments[ensemble] = np.asarray(table["cluster_assignment"])
 
     cells = []
+    fit_commands: list[tuple[list[str], Path]] = []
     for ensemble, layout, maxent in CONFIGS:
         template_dir = stage0_dir / "_split_templates" / ensemble / layout / "datasplits"
         if not template_dir.exists() and not args.dry_run:
@@ -97,72 +124,74 @@ def main() -> None:
             population_name = "_".join(
                 f"{name}-{value:.3f}" for name, value in populations.items()
             )
-            for target_semantics in SEMANTICS_TO_MODE:
-                target_dir = (
-                    output_dir / ensemble / layout / population_name
-                    / f"target_{target_semantics}"
-                )
-                if not (target_dir / "target_dfrac.dat").exists():
-                    run(
-                        [
-                            sys.executable,
-                            str(generator),
-                            "--ensemble", ensemble,
-                            "--semantics", target_semantics,
-                            "--tau", "0",
-                            "--population", population_text,
-                            "--peptide-width", width,
-                            "--output-dir", str(target_dir),
-                        ],
-                        args.dry_run,
+            for tau in tau_values:
+                tau_name = f"tau-{tau:g}".replace(".", "p")
+                for target_semantics in target_semantics_values:
+                    target_dir = (
+                        output_dir / ensemble / layout / population_name / tau_name
+                        / f"target_{target_semantics}"
                     )
-                split_dir = target_dir / "datasplits"
-                if not args.dry_run and not split_dir.exists():
-                    materialize_cell_splits(
-                        template_dir, split_dir, target_dir / "target_dfrac.dat"
-                    )
-                for fitter_semantics, mode in SEMANTICS_TO_MODE.items():
-                    fit_dir = target_dir / f"fit_{fitter_semantics}"
-                    histories = list((fit_dir / "random").glob("*_results.hdf5"))
-                    if (
-                        not args.prepare_only
-                        and len(histories) < args.n_replicates
-                    ):
+                    if not (target_dir / "target_dfrac.dat").exists():
                         run(
                             [
                                 sys.executable,
-                                str(optimiser),
-                                "--ensemble", ensemble.upper(),
-                                "--loss-function", "MSE",
-                                "--split-types", "random",
-                                "--maxent-values", f"{maxent:g}",
-                                "--n-steps", str(args.n_steps),
-                                "--n-replicates", str(args.n_replicates),
-                                "--datasplit-dir", str(split_dir),
-                                "--output-dir", str(fit_dir),
-                                "--frame-averaging-mode", mode,
+                                str(generator),
+                                "--ensemble", ensemble,
+                                "--semantics", target_semantics,
+                                "--tau", f"{tau:g}",
+                                "--population", population_text,
+                                "--peptide-width", width,
+                                "--output-dir", str(target_dir),
                             ],
                             args.dry_run,
                         )
-                    cells.append(
-                        {
-                            "ensemble": ensemble,
-                            "layout": layout,
-                            "populations": populations,
-                            "tilt_kl": tilt,
-                            "maxent": maxent,
-                            "target_semantics": target_semantics,
-                            "fitter_semantics": fitter_semantics,
-                            "target_dir": str(target_dir),
-                            "datasplit_dir": str(split_dir),
-                            "fit_dir": str(fit_dir),
-                        }
-                    )
+                    split_dir = target_dir / "datasplits"
+                    if not args.dry_run and not split_dir.exists():
+                        materialize_cell_splits(
+                            template_dir, split_dir, target_dir / "target_dfrac.dat"
+                        )
+                    for fitter_semantics, mode in SEMANTICS_TO_MODE.items():
+                        fit_dir = target_dir / f"fit_{fitter_semantics}"
+                        histories = list((fit_dir / "random").glob("*_results.hdf5"))
+                        if (
+                            not args.prepare_only
+                            and len(histories) < args.n_replicates
+                        ):
+                            fit_commands.append(
+                                ([
+                                    sys.executable,
+                                    str(optimiser),
+                                    "--ensemble", ensemble.upper(),
+                                    "--loss-function", "MSE",
+                                    "--split-types", "random",
+                                    "--maxent-values", f"{maxent:g}",
+                                    "--n-steps", str(args.n_steps),
+                                    "--n-replicates", str(args.n_replicates),
+                                    "--datasplit-dir", str(split_dir),
+                                    "--output-dir", str(fit_dir),
+                                    "--frame-averaging-mode", mode,
+                                ], fit_dir / "optimizer.log")
+                            )
+                        cells.append(
+                            {
+                                "ensemble": ensemble,
+                                "layout": layout,
+                                "populations": populations,
+                                "tilt_kl": tilt,
+                                "maxent": maxent,
+                                "tau": tau,
+                                "target_semantics": target_semantics,
+                                "fitter_semantics": fitter_semantics,
+                                "target_dir": str(target_dir),
+                                "datasplit_dir": str(split_dir),
+                                "fit_dir": str(fit_dir),
+                            }
+                        )
 
     (output_dir / "phase2_matrix_manifest.json").write_text(
         json.dumps(
             {
-                "tau": 0.0,
+                "tau_values": tau_values,
                 "tilt_limit": 1.0,
                 "configs": CONFIGS,
                 "n_steps": args.n_steps,
@@ -173,6 +202,14 @@ def main() -> None:
         )
         + "\n"
     )
+    if not args.prepare_only:
+        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+            futures = [
+                executor.submit(run, command, args.dry_run, log_path)
+                for command, log_path in fit_commands
+            ]
+            for future in futures:
+                future.result()
 
 
 if __name__ == "__main__":

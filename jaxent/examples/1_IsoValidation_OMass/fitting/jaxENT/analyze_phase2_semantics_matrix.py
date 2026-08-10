@@ -29,6 +29,49 @@ SEMANTICS_FN = {
 }
 
 
+def within_cluster_smoothness(
+    weights: np.ndarray,
+    boltzmann_coordinate: np.ndarray,
+    assignments: np.ndarray,
+) -> dict[str, float]:
+    """Regress weights on G within each cluster and pool residual variances."""
+    if np.any(weights <= 0.0):
+        raise ValueError("smoothness requires strictly positive simplex weights")
+    if not (weights.shape == boltzmann_coordinate.shape == assignments.shape):
+        raise ValueError("weights, Boltzmann coordinate, and assignments must align")
+
+    result: dict[str, float] = {}
+    pooled_logw_variance = 0.0
+    pooled_w_variance = 0.0
+    log_weights = np.log(weights)
+    for label in np.unique(assignments):
+        mask = assignments == label
+        cluster_mass = float(weights[mask].sum())
+        design = np.column_stack((boltzmann_coordinate[mask], np.ones(mask.sum())))
+        logw_alpha, logw_intercept = np.linalg.lstsq(
+            design, log_weights[mask], rcond=None
+        )[0]
+        w_alpha, w_intercept = np.linalg.lstsq(design, weights[mask], rcond=None)[0]
+        logw_residual_variance = float(
+            np.var(log_weights[mask] - (logw_alpha * boltzmann_coordinate[mask] + logw_intercept))
+        )
+        w_residual_variance = float(
+            np.var(weights[mask] - (w_alpha * boltzmann_coordinate[mask] + w_intercept))
+        )
+        label_key = f"label_{label}"
+        result[f"smooth_cluster_mass_{label_key}"] = cluster_mass
+        result[f"smooth_logw_alpha_{label_key}"] = float(logw_alpha)
+        result[f"smooth_w_alpha_{label_key}"] = float(w_alpha)
+        result[f"smooth_logw_var_{label_key}"] = logw_residual_variance
+        result[f"smooth_w_var_{label_key}"] = w_residual_variance
+        pooled_logw_variance += cluster_mass * logw_residual_variance
+        pooled_w_variance += cluster_mass * w_residual_variance
+
+    result["smooth_logw_var"] = pooled_logw_variance
+    result["smooth_w_var"] = pooled_w_variance
+    return result
+
+
 def load_generator(path: Path):
     spec = importlib.util.spec_from_file_location("generate_iso_targets_phase2", path)
     if spec is None or spec.loader is None:
@@ -54,16 +97,22 @@ def main() -> None:
 
     assignments = {}
     features = {}
+    boltzmann_coordinates = {}
     for ensemble in ("iso_bi", "iso_tri"):
         assignments[ensemble] = pd.read_csv(
             example_root
             / f"data/_clustering_results/cluster_assignments_{ensemble.upper()}.csv"
         )["cluster_assignment"].to_numpy(dtype=int)
-        with np.load(fitting_root / f"_featurise/features_{ensemble}.npz") as data:
-            features[ensemble] = (
-                0.35 * data["heavy_contacts"] + 2.0 * data["acceptor_contacts"],
-                np.asarray(data["k_ints"]),
+        expected_labels = {0, 1} if ensemble == "iso_bi" else {-1, 0, 1}
+        observed_labels = set(np.unique(assignments[ensemble]))
+        if observed_labels != expected_labels:
+            raise ValueError(
+                f"{ensemble} cluster labels {observed_labels} != {expected_labels}"
             )
+        with np.load(fitting_root / f"_featurise/features_{ensemble}.npz") as data:
+            log_pf = 0.35 * data["heavy_contacts"] + 2.0 * data["acceptor_contacts"]
+            features[ensemble] = (log_pf, np.asarray(data["k_ints"]))
+            boltzmann_coordinates[ensemble] = np.asarray(log_pf.sum(axis=0))
 
     def predict(weights, ensemble, layout, semantics):
         log_pf, k_ints = features[ensemble]
@@ -121,11 +170,44 @@ def main() -> None:
                 row[f"recovered_{name}"] = value
                 row[f"error_{name}"] = value - cell["populations"][name]
             row["abs_open_error"] = abs(row["error_open"])
+            row.update(
+                within_cluster_smoothness(
+                    weights,
+                    boltzmann_coordinates[ensemble],
+                    assignments[ensemble],
+                )
+            )
             rows.append(row)
 
     if not rows:
         raise FileNotFoundError("no Phase-2 histories found")
     frame = pd.DataFrame(rows)
+    recovery_columns = [
+        "ensemble",
+        "layout",
+        "maxent",
+        "tilt_kl",
+        "target_semantics",
+        "fitter_semantics",
+        "diagonal",
+        "history_file",
+        "best_step",
+        "mse_fit",
+        "ess_total",
+        "kl_from_prior",
+        "true_open",
+        "true_closed",
+        "recovered_open",
+        "error_open",
+        "recovered_closed",
+        "error_closed",
+        "abs_open_error",
+        "true_intermediate",
+        "recovered_intermediate",
+        "error_intermediate",
+    ]
+    smoothness_columns = [column for column in frame if column not in recovery_columns]
+    frame = frame.reindex(columns=[*recovery_columns, *smoothness_columns])
     frame.to_csv(root / "phase2_semantics_matrix.csv", index=False)
     summary = (
         frame.groupby(
@@ -141,6 +223,77 @@ def main() -> None:
         )
     )
     summary.to_csv(root / "phase2_semantics_summary.csv", index=False)
+
+    paired = frame.copy()
+    paired["_split"] = paired["history_file"].str.extract(r"_split(\d+)_")[0]
+    population_keys = ["true_open", "true_closed"]
+    if "true_intermediate" in paired:
+        population_keys.append("true_intermediate")
+    pair_keys = ["ensemble", "layout", "fitter_semantics", "_split", *population_keys]
+    diagonal_rows = paired[paired["diagonal"]][
+        [*pair_keys, "smooth_logw_var", "smooth_w_var"]
+    ].rename(
+        columns={
+            "smooth_logw_var": "paired_diagonal_logw_var",
+            "smooth_w_var": "paired_diagonal_w_var",
+        }
+    )
+    paired = paired.merge(diagonal_rows, on=pair_keys, validate="many_to_one")
+    for coordinate in ("logw", "w"):
+        paired[f"paired_{coordinate}_ratio"] = (
+            paired[f"smooth_{coordinate}_var"]
+            / paired[f"paired_diagonal_{coordinate}_var"]
+        )
+        paired[f"paired_{coordinate}_delta"] = (
+            paired[f"smooth_{coordinate}_var"]
+            - paired[f"paired_diagonal_{coordinate}_var"]
+        )
+
+    smoothness_summary = (
+        paired.groupby(
+            ["ensemble", "layout", "target_semantics", "fitter_semantics"],
+            as_index=False,
+        )
+        .agg(
+            median_logw_var=("smooth_logw_var", "median"),
+            median_w_var=("smooth_w_var", "median"),
+            median_paired_logw_ratio=("paired_logw_ratio", "median"),
+            median_paired_w_ratio=("paired_w_ratio", "median"),
+            median_paired_logw_delta=("paired_logw_delta", "median"),
+            median_paired_w_delta=("paired_w_delta", "median"),
+            n_fits=("history_file", "size"),
+        )
+    )
+    diagonal = smoothness_summary[
+        smoothness_summary["target_semantics"]
+        == smoothness_summary["fitter_semantics"]
+    ][
+        [
+            "ensemble",
+            "layout",
+            "fitter_semantics",
+            "median_logw_var",
+            "median_w_var",
+        ]
+    ].rename(
+        columns={
+            "median_logw_var": "diagonal_median_logw_var",
+            "median_w_var": "diagonal_median_w_var",
+        }
+    )
+    smoothness_summary = smoothness_summary.merge(
+        diagonal, on=["ensemble", "layout", "fitter_semantics"], validate="many_to_one"
+    )
+    for coordinate in ("logw", "w"):
+        smoothness_summary[f"row_relative_{coordinate}_ratio"] = (
+            smoothness_summary[f"median_{coordinate}_var"]
+            / smoothness_summary[f"diagonal_median_{coordinate}_var"]
+        )
+        smoothness_summary[f"row_relative_{coordinate}_delta"] = (
+            smoothness_summary[f"median_{coordinate}_var"]
+            - smoothness_summary[f"diagonal_median_{coordinate}_var"]
+        )
+    smoothness_summary.to_csv(root / "phase2_smoothness_summary.csv", index=False)
 
     order = ["legacy", "fast", "slow2"]
     for (ensemble, layout), group in summary.groupby(["ensemble", "layout"]):
