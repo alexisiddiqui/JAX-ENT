@@ -1,0 +1,52 @@
+{
+  "analysis": "MoPrP intrinsic-rate condition grid",
+  "best_grid_point_for_moprp_kint": {
+    "max_abs_ln_ratio_to_moprp_kint": 1.6110022182183574,
+    "mean_ln_ratio_to_moprp_kint": 0.08991557776243446,
+    "n_compared": 97,
+    "ph": 4.0,
+    "rms_ln_ratio_to_moprp_kint": 0.4331583462144678,
+    "sd_ln_ratio_to_moprp_kint": 0.423723190032007,
+    "temperature_k": 298.0
+  },
+  "canonical_control": {
+    "max_abs_ln_ratio": 0.6712583303771675,
+    "max_abs_rate_difference_min_inverse": 5.737965909803366,
+    "n_compared": 97,
+    "ph": 4.4,
+    "temperature_k": 298.0
+  },
+  "conclusion": "no grid match",
+  "expfact_revision": "93f4e40a50f6a0749d24f90abd7dbf0f9f77f316",
+  "expfact_root": "/tmp/expfact-2021",
+  "inputs": {
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat": "f069ca46ecd7fd6a6ee4b8a450d9bf634703b10074ee72489dbdbfa16911f181",
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.kint": "7be0f0d23ecec367c65e2feccd97f1e2dc0b6c27ce09accab109061fdc069af1",
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.seq": "f75d2d124d957b9c05492dccbc342d3f53cf7c0b89e91da9d436bc9063acf558",
+    "/tmp/expfact-2021/python/constants_HD.py": "72cafba1d73f723f9319cd99fc12a669444dbecb62fd49147f5e2624f73579be",
+    "/tmp/expfact-2021/python/kint.py": "38fbcf33a276ad7ae7339266ae813aea4a0454099e975ec0c9c080a7e95a94ea"
+  },
+  "outputs": {
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/historical_2021_pdla/condition_grid.csv": "c19ab95fb0e87cd758057c94e30633e8bea0e5352c67ec186be117bac72b11ac"
+  },
+  "ph_grid": [
+    2.5,
+    4.0,
+    4.4,
+    6.5,
+    7.0,
+    7.4
+  ],
+  "rate_convention": "upstream calculate_kint_for_sequence output divided by 60 (hr^-1 to min^-1)",
+  "script": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/identify_kint_conditions.py",
+    "sha256": "8b6530f59a20837b9d996acb56ecda0a874df235d0ca245c7866d8fd7200d715"
+  },
+  "temperature_grid_k": [
+    278.0,
+    288.0,
+    293.0,
+    298.0,
+    310.0
+  ]
+}

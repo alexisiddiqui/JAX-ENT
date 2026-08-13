@@ -1,0 +1,49 @@
+{
+  "comparisons": {
+    "current_3ala": {
+      "c_terminal_note": "Residue 101 is compared without patching; any terminal-reference difference is retained.",
+      "max_abs_ln_ratio": 1.015178633285668,
+      "mean_ln_ratio": -0.3757875725042196,
+      "n_positive_overlap": 97,
+      "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat",
+      "rms_ln_ratio": 0.3814124459186653,
+      "sentinel_disagreement_residue_ids": [],
+      "sha256": "f069ca46ecd7fd6a6ee4b8a450d9bf634703b10074ee72489dbdbfa16911f181"
+    },
+    "historical_expfact_equivalent": {
+      "interpretation": "exact executable model comparison before any file formatting",
+      "max_abs_ln_ratio": 0.0,
+      "max_abs_rate_difference": 0.0,
+      "n_positive_overlap": 97,
+      "source": "direct HDXrate reference='poly' (the historical PDLA-equivalent model)"
+    },
+    "moprp_shipped": {
+      "c_terminal_note": "Residue 101 is compared without patching; any terminal-reference difference is retained.",
+      "max_abs_ln_ratio": 2.2937076937643117,
+      "mean_ln_ratio": 0.8266588053742171,
+      "n_positive_overlap": 97,
+      "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.kint",
+      "rms_ln_ratio": 0.932026574840126,
+      "sentinel_disagreement_residue_ids": [],
+      "sha256": "7be0f0d23ecec367c65e2feccd97f1e2dc0b6c27ce09accab109061fdc069af1"
+    }
+  },
+  "minute_values_equal_seconds_times_60": true,
+  "proline_residue_ids": [
+    14,
+    35,
+    42
+  ],
+  "residue_ids": {
+    "count": 101,
+    "first": 1,
+    "last": 101
+  },
+  "sentinel_residue_ids": [
+    1,
+    14,
+    35,
+    42
+  ],
+  "wrapper_equals_direct_before_conversion": true
+}

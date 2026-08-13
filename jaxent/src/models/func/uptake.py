@@ -1,7 +1,7 @@
 
 
 import numpy as np
-from beartype.typing import Optional
+from beartype.typing import Optional, Sequence
 from hdxrate import k_int_from_sequence
 from MDAnalysis import Universe
 from MDAnalysis.core.groups import Residue, ResidueGroup  # Import Residue class
@@ -9,10 +9,53 @@ from MDAnalysis.core.groups import Residue, ResidueGroup  # Import Residue class
 from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 
+HDXRATE_REFERENCE = "poly"
+HDXRATE_EXCHANGE_TYPE = "HD"
+HDXRATE_D_PERCENTAGE = 100.0
+HDXRATE_PH_CORRECTION = False
+
+
+def calculate_HDXrate_from_sequence(
+    sequence: str | Sequence[str],
+    temperature: float = 300.0,
+    pD: float = 7.0,
+    *,
+    unit: str = "s^-1",
+) -> np.ndarray:
+    """Return intrinsic HD exchange rates for ``sequence`` using the PDLA reference.
+
+    ``pD`` is the effective value supplied to HDXrate: JAX-ENT explicitly disables
+    HDXrate's automatic pH-to-pD correction, so no ``+0.4`` adjustment is made.
+    The compatibility-preserving default unit is reciprocal seconds (``"s^-1"``).
+    Select ``"min^-1"`` only when materialising data for a minute-based protocol;
+    that conversion is exactly ``rates_s * 60``.
+    """
+
+    if unit not in {"s^-1", "min^-1"}:
+        raise ValueError(f"unsupported HDXrate unit {unit!r}; expected 's^-1' or 'min^-1'")
+    rates_s = k_int_from_sequence(
+        sequence,
+        temperature,
+        pD,
+        reference=HDXRATE_REFERENCE,
+        exchange_type=HDXRATE_EXCHANGE_TYPE,
+        d_percentage=HDXRATE_D_PERCENTAGE,
+        ph_correction=HDXRATE_PH_CORRECTION,
+    )
+    rates_s = np.asarray(rates_s, dtype=float)
+    if unit == "s^-1":
+        return rates_s
+    if unit == "min^-1":
+        return rates_s * 60.0
+    raise AssertionError("unreachable")
+
+
 def calculate_HDXrate(
     residue_group: ResidueGroup,
     temperature: float = 300.0,
     pD: float = 7.0,
+    *,
+    unit: str = "s^-1",
 ) -> dict[Residue, float]:
     """
     Calculate the intrinsic rate for a group of residues.
@@ -30,12 +73,15 @@ def calculate_HDXrate(
     temperature : float
         The temperature in Kelvin.
     pD : float
-        The pD value.
+        Effective pD passed through unchanged. No automatic +0.4 correction is applied.
+    unit : {"s^-1", "min^-1"}
+        Output rate unit. The default remains ``s^-1`` for compatibility; ``min^-1``
+        explicitly multiplies HDXrate's native output by 60.
 
     Returns
     -------
     dict[Residue, float]
-        A dictionary mapping each residue to its HDX rate.
+        A dictionary mapping each residue to its HDX rate in ``unit``.
     """
 
     # Fix: residue_list should be a list of Residue objects, not a list of lists
@@ -74,7 +120,7 @@ def calculate_HDXrate(
             "No sequence could be extracted from the residue group.", f"Sequence: {sequence}"
         )
 
-    k_int = k_int_from_sequence(sequence, temperature, pD)
+    k_int = calculate_HDXrate_from_sequence(sequence, temperature, pD, unit=unit)
 
     if not isinstance(k_int, np.ndarray):
         raise TypeError("k_int should be a numpy array.")

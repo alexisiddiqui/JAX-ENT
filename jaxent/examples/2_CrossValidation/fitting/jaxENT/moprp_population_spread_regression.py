@@ -132,8 +132,8 @@ def _bootstrap_crossing(diagonal: pd.DataFrame, point: float | None) -> dict:
 
 
 def run(args: argparse.Namespace) -> None:
-    inputs = common.load_ensemble_inputs("AF2_MSAss")
-    coeffs = population_pivot._coefficient_settings(args.coefficient_lock)
+    inputs = common.load_ensemble_inputs("AF2_MSAss", args.rate_source)
+    coeffs = population_pivot._coefficient_settings(args.coefficient_lock, args.rate_source)
     present, weight_map = population_pivot._population_map(inputs)
     sweep = pd.read_csv(args.sweep_csv)
     expected = {"population_family", "coefficient_setting", "target_pivot", "fitter_pivot", "minority_mass", "tvd", "tvd_gain_over_null"}
@@ -223,6 +223,7 @@ def run(args: argparse.Namespace) -> None:
 
     mechanism_confirmed = overlap_exists and partial_r2 < FAMILY_PARTIAL_R2_THRESHOLD and delta_aic < FAMILY_DELTA_AIC_THRESHOLD
     payload = {
+        "rate_provenance": common.rate_source_provenance(args.rate_source),
         "pre_registered_criterion": {
             "family_is_meaningful_if_partial_r_squared_at_least": FAMILY_PARTIAL_R2_THRESHOLD,
             "or_delta_aic_m1_minus_m2_at_least": FAMILY_DELTA_AIC_THRESHOLD,
@@ -277,6 +278,7 @@ def main() -> None:
     parser.add_argument("--sweep-csv", type=Path, default=here / "_moprp_population_oracle_pivot/synthetic_resolution_sweep.csv")
     parser.add_argument("--coefficient-lock", type=Path, default=here / "_moprp_recovery_coefficient_lock")
     parser.add_argument("--output-dir", type=Path, default=here / "_moprp_population_oracle_pivot")
+    parser.add_argument("--rate-source", choices=tuple(common.RATE_SOURCES), default=common.DEFAULT_RATE_SOURCE)
     run(parser.parse_args())
 
 

@@ -1,0 +1,35 @@
+{
+  "analysis": "MoPrP upstream and local archival provenance trace",
+  "verdict": "median.pfact was fitted with rates calculated in memory by the 2021 exPfact PDLA implementation at 298 K and pH 4.4; moprp.kint was not a fit input",
+  "upstream": {
+    "repository": "https://github.com/pacilab/exPfact",
+    "audited_revision": "34d132930a41c5f1fdaad4b8a119d519c0e66fb3",
+    "moprp_kint_introduced": "93f4e40a50f6a0749d24f90abd7dbf0f9f77f316",
+    "median_pfact_introduced": "1f99a0ccccb5c3862f9a3ae74cf570eb0475c059",
+    "three_ala_reference_introduced": "965391ba28e6e3225bd53a4de67df5559705e66f",
+    "production_command": "python ../python/exPfact.py --temp 298 --pH 4.4 --dexp moprp.dexp --ass moprp.list --harm 1e-8 --rand 10000 --seq moprp.seq --out out --rep 5000",
+    "summary_command": "python ../python/descriptive_statistics.py --res out --top 50"
+  },
+  "normalized_upstream_local_identity": {
+    "normalization": "CRLF converted to LF before SHA-256",
+    "median.pfact": "4a42fc081b43040f7a98db5497ba5bcef236cb246389f8245c3bdc0cb732a05c",
+    "moprp.ass": "84e1dcbf91f4e48f18cfa209b58325c9db51899a6f1178dd3b1d500f6b204043",
+    "moprp.dexp": "c994120c1f4c6f12957e7aa7ac8e8546ad92c5b0a3d2536a66d418f043e54969",
+    "moprp.kint": "66b81b74b945d19d64c60651dcd4b481c7206e0d9eb3438cf4ab457f73665331",
+    "moprp.list": "6acba892121538b97ac28278e4dfb29ac4bf391b3c9ba7ca9f7ad4c2ec33c73d",
+    "moprp.seq": "0704670d993b349c90438c42b273e9332edd67e888e3eb5b194f8017b8dadc2f",
+    "moprp.times": "9fdd0ee17cf20e756e6d5808186c9edaeed52e952aab8fa3fa0764846357b35e"
+  },
+  "raw_local_sha256": {
+    "median.pfact": "b0b4a88c19c9c0327b09f598382bd0965d9fd6b029e19577867a7d3450831e91",
+    "moprp.kint": "7be0f0d23ecec367c65e2feccd97f1e2dc0b6c27ce09accab109061fdc069af1"
+  },
+  "local_trace": {
+    "archive_contains_complete_bundle": true,
+    "extract_data_ValDX_generates_rates_or_refits_pfs": false,
+    "deprecated_notebooks_rate_source": "out__train_MoPrP_af_clean_1Intrinsic_rates.dat (out of scope)",
+    "spectra_readme_source": "pacilab/exPfact validation at master"
+  },
+  "pf_refit_performed": false,
+  "pf_refit_reason": "not needed: upstream production code and dated recipe directly establish the in-memory rate source"
+}

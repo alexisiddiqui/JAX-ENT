@@ -55,8 +55,8 @@ class IntrinsicRateSet:
     residue_ids: np.ndarray
     rates_min: np.ndarray
     provider: str
-    temperature_k: float
-    ph: float
+    temperature_k: float | None
+    ph: float | None
     source: str
 
     def __post_init__(self) -> None:
@@ -220,8 +220,8 @@ def load_intrinsic_rate_file(
     path: str | Path,
     *,
     provider: str,
-    temperature_k: float,
-    ph: float,
+    temperature_k: float | None,
+    ph: float | None,
 ) -> IntrinsicRateSet:
     values = np.loadtxt(path, comments="#", dtype=float)
     if values.ndim != 2 or values.shape[1] != 2:

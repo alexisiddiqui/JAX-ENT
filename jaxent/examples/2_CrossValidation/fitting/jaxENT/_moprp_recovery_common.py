@@ -44,6 +44,40 @@ CLUSTER_CSV = (
     / "global_frame_to_cluster_ensemble.csv"
 )
 CANONICAL_RATE_FILE = MOPRP / "expfact_kint_pH4p4_298K_min.dat"
+DEFAULT_RATE_SOURCE = "expfact_recomputed"
+RATE_SOURCES = {
+    DEFAULT_RATE_SOURCE: {
+        "path": CANONICAL_RATE_FILE,
+        "provider": "exPfact-3Ala-numeric-reference",
+        "temperature_k": 298.0,
+        "ph": 4.4,
+        "units": "min^-1",
+        "ph_correction": None,
+        "ph_convention": "nominal exPfact pH 4.4; compatibility anchor",
+    },
+    "hdxrate_pdla_validated": {
+        "path": (
+            BASE
+            / "fitting/jaxENT/_moprp_kint_provenance/validated_hdxrate_pdla"
+            / "moprp_hdxrate_pdla_pD4p4_298K_min.dat"
+        ),
+        "provider": "HDXrate-0.2.2-poly/PDLA-via-JAX-ENT",
+        "temperature_k": 298.0,
+        "ph": 4.4,
+        "units": "min^-1",
+        "ph_correction": False,
+        "ph_convention": "effective pD 4.4 supplied unchanged; no automatic +0.4 correction",
+    },
+    "moprp_shipped": {
+        "path": MOPRP / "moprp.kint",
+        "provider": "MoPrP-dataset-shipped",
+        "temperature_k": None,
+        "ph": None,
+        "units": "min^-1",
+        "ph_correction": None,
+        "ph_convention": "unknown (dataset-shipped file has no header)",
+    },
+}
 
 # feature stem -> clustering ensemble_name
 ENSEMBLES: dict[str, str] = {
@@ -88,6 +122,9 @@ class BlindedEnsembleInputs:
     timepoints: np.ndarray  # (T,)
     observed_uptake: np.ndarray  # (P, T) experimental dfrac
     n_frames: int
+    rate_source: str
+    rate_file: Path
+    rate_file_sha256: str
 
     def log_pf_by_frame(self, bc: float, bh: float) -> np.ndarray:
         """Per-frame residue log protection factors ``bc*heavy + bh*acceptor`` -> (R, F)."""
@@ -130,7 +167,29 @@ def _complete_peptide_rows(peptide_map, feature_residue_ids: np.ndarray) -> list
     return complete
 
 
-def load_blinded_ensemble_inputs(ensemble: str) -> BlindedEnsembleInputs:
+def rate_source_provenance(rate_source: str = DEFAULT_RATE_SOURCE) -> dict[str, object]:
+    """Return resolved, honest provenance for one configured intrinsic-rate source."""
+
+    if rate_source not in RATE_SOURCES:
+        raise ValueError(f"unknown rate source {rate_source!r}; expected one of {list(RATE_SOURCES)}")
+    spec = RATE_SOURCES[rate_source]
+    path = Path(spec["path"]).resolve()
+    return {
+        "rate_source": rate_source,
+        "rate_file": str(path),
+        "rate_file_sha256": sha256(path),
+        "provider": spec["provider"],
+        "temperature_k": spec["temperature_k"],
+        "ph": spec["ph"],
+        "units": spec["units"],
+        "ph_correction": spec["ph_correction"],
+        "ph_convention": spec["ph_convention"],
+    }
+
+
+def load_blinded_ensemble_inputs(
+    ensemble: str, rate_source: str = DEFAULT_RATE_SOURCE
+) -> BlindedEnsembleInputs:
     """Assemble HDX/trajectory inputs without reading NMR states or populations."""
 
     if ensemble not in ENSEMBLES:
@@ -138,11 +197,12 @@ def load_blinded_ensemble_inputs(ensemble: str) -> BlindedEnsembleInputs:
     ensemble_label = ENSEMBLES[ensemble]
 
     dataset = load_expfact_dataset(MOPRP)
-    canonical_rates = load_intrinsic_rate_file(
-        CANONICAL_RATE_FILE,
-        provider="exPfact-3Ala-numeric-reference",
-        temperature_k=298.0,
-        ph=4.4,
+    provenance = rate_source_provenance(rate_source)
+    rates = load_intrinsic_rate_file(
+        Path(provenance["rate_file"]),
+        provider=str(provenance["provider"]),
+        temperature_k=provenance["temperature_k"],
+        ph=provenance["ph"],
     )
 
     feature_ids, heavy, acceptor = _feature_bundle(ensemble)
@@ -155,9 +215,9 @@ def load_blinded_ensemble_inputs(ensemble: str) -> BlindedEnsembleInputs:
     aligned_map = dataset.peptide_map.subset_peptides(complete).aligned_to(feature_ids)
     mapping = np.asarray(aligned_map.matrix, dtype=np.float64)  # (P, R), row-normalized
 
-    k_ints = np.asarray(canonical_rates.aligned(feature_ids), dtype=np.float64)
+    k_ints = np.asarray(rates.aligned(feature_ids), dtype=np.float64)
     if not (np.isfinite(k_ints).all() and (k_ints > 0).all()):
-        raise ValueError(f"{ensemble}: canonical rates are not all finite and positive")
+        raise ValueError(f"{ensemble}: {rate_source} rates are not all finite and positive")
 
     return BlindedEnsembleInputs(
         ensemble=ensemble,
@@ -171,6 +231,9 @@ def load_blinded_ensemble_inputs(ensemble: str) -> BlindedEnsembleInputs:
         timepoints=np.asarray(dataset.protocol.timepoints_min, dtype=np.float64),
         observed_uptake=np.asarray(dataset.observed_uptake, dtype=np.float64),
         n_frames=n_frames,
+        rate_source=rate_source,
+        rate_file=Path(provenance["rate_file"]),
+        rate_file_sha256=str(provenance["rate_file_sha256"]),
     )
 
 
@@ -189,10 +252,12 @@ def reveal_nmr_reference(
     return states, tuple(support), np.asarray(targets, dtype=np.float64), reference_weights
 
 
-def load_ensemble_inputs(ensemble: str) -> EnsembleInputs:
+def load_ensemble_inputs(
+    ensemble: str, rate_source: str = DEFAULT_RATE_SOURCE
+) -> EnsembleInputs:
     """Assemble legacy recovery inputs, including NMR pseudo-truth."""
 
-    blinded = load_blinded_ensemble_inputs(ensemble)
+    blinded = load_blinded_ensemble_inputs(ensemble, rate_source)
     states, support, targets, reference_weights = reveal_nmr_reference(
         ensemble, expected_frames=blinded.n_frames
     )
@@ -208,6 +273,9 @@ def load_ensemble_inputs(ensemble: str) -> EnsembleInputs:
         timepoints=blinded.timepoints,
         observed_uptake=blinded.observed_uptake,
         n_frames=blinded.n_frames,
+        rate_source=blinded.rate_source,
+        rate_file=blinded.rate_file,
+        rate_file_sha256=blinded.rate_file_sha256,
         states=states,
         reference_weights=reference_weights,
         support=support,
@@ -215,24 +283,30 @@ def load_ensemble_inputs(ensemble: str) -> EnsembleInputs:
     )
 
 
-def blinded_input_hashes() -> dict[str, str]:
+def blinded_input_hashes(rate_source: str = DEFAULT_RATE_SOURCE) -> dict[str, str]:
     """SHA-256 inputs allowed before the NMR pseudo-truth is revealed."""
 
-    hashes = {"canonical_rate_file": sha256(CANONICAL_RATE_FILE)}
+    provenance = rate_source_provenance(rate_source)
+    hashes = {"rate_file": str(provenance["rate_file_sha256"])}
+    if rate_source == DEFAULT_RATE_SOURCE:
+        hashes["canonical_rate_file"] = hashes["rate_file"]
     for stem in ENSEMBLES:
         hashes[f"features_{stem}_hard.npz"] = sha256(FEATURES_V2 / f"features_{stem}_hard.npz")
         hashes[f"topology_{stem}_hard.json"] = sha256(FEATURES_V2 / f"topology_{stem}_hard.json")
     return hashes
 
 
-def input_hashes() -> dict[str, str]:
+def input_hashes(rate_source: str = DEFAULT_RATE_SOURCE) -> dict[str, str]:
     """SHA-256 of every raw input, for the audit manifest."""
 
+    provenance = rate_source_provenance(rate_source)
     hashes = {
         "state_ratios_json": sha256(STATE_RATIOS_JSON),
         "cluster_csv": sha256(CLUSTER_CSV),
-        "canonical_rate_file": sha256(CANONICAL_RATE_FILE),
+        "rate_file": str(provenance["rate_file_sha256"]),
     }
+    if rate_source == DEFAULT_RATE_SOURCE:
+        hashes["canonical_rate_file"] = hashes["rate_file"]
     for stem in ENSEMBLES:
         hashes[f"features_{stem}_hard.npz"] = sha256(FEATURES_V2 / f"features_{stem}_hard.npz")
         hashes[f"topology_{stem}_hard.json"] = sha256(FEATURES_V2 / f"topology_{stem}_hard.json")

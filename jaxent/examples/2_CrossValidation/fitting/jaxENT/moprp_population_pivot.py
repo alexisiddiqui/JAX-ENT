@@ -41,17 +41,22 @@ ETA = 0.01
 TARGET_STATES = ("Folded", "PUF1", "PUF2")
 
 
-def _expfact_data(inputs):
+def _expfact_data(inputs, litmus_dir: Path):
     _, overlap, reference = _load_expfact_reference(inputs)
-    rows = list(csv.DictReader((Path(__file__).parent / "_moprp_pivot_litmus/residue_results.csv").open()))
+    rows = list(csv.DictReader((litmus_dir / "residue_results.csv").open()))
     ranges = {int(r["residue_id"]): float(r["expfact_multistart_range"]) for r in rows}
     spread = np.asarray([ranges[int(r)] for r in inputs.feature_residue_ids[overlap]])
     finite = np.isfinite(spread)
     return overlap, reference, spread, finite
 
 
-def _coefficient_settings(path: Path) -> dict:
+def _coefficient_settings(path: Path, rate_source: str) -> dict:
     payload = json.loads((path / "coefficient_lock.json").read_text())
+    recorded = payload.get("rate_provenance", {}).get("rate_source", common.DEFAULT_RATE_SOURCE)
+    if recorded != rate_source:
+        raise ValueError(
+            f"coefficient lock rate source {recorded!r} does not match requested {rate_source!r}"
+        )
     by_pivot = payload["frozen_settings_by_pivot"]
     return {p: {s: by_pivot[p][s] for s in COEFFICIENT_SETTINGS} for p in PIVOTS}
 
@@ -294,9 +299,9 @@ def run(args):
         args.families = ("folded_dominant",)
         args.sweep_starts = "single"
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    inputs = common.load_ensemble_inputs("AF2_MSAss")
-    coeffs = _coefficient_settings(args.coefficient_lock)
-    overlap, reference_pf, spread, finite_spread = _expfact_data(inputs)
+    inputs = common.load_ensemble_inputs("AF2_MSAss", args.rate_source)
+    coeffs = _coefficient_settings(args.coefficient_lock, args.rate_source)
+    overlap, reference_pf, spread, finite_spread = _expfact_data(inputs, args.litmus_dir)
     medoid_indices, medoid_diagnostics = _medoids(inputs)
     modes = {
         "full_500": (np.arange(inputs.n_frames),),
@@ -460,16 +465,26 @@ def run(args):
         z, inputs.k_ints, inputs.timepoints, inputs.mapping, inputs.reference_weights, "legacy"
     ))
     legacy_regression = float(np.max(np.abs(regression_old - regression_new)))
-    litmus = json.loads((Path(__file__).parent / "_moprp_pivot_litmus/moprp_pivot_litmus.json").read_text())
+    litmus = json.loads((args.litmus_dir / "moprp_pivot_litmus.json").read_text())
+    litmus_rate_source = litmus.get("rate_provenance", {}).get(
+        "rate_source", common.DEFAULT_RATE_SOURCE
+    )
+    if litmus_rate_source != args.rate_source:
+        raise ValueError(
+            f"litmus rate source {litmus_rate_source!r} does not match requested {args.rate_source!r}"
+        )
     legacy_pf = np.asarray(pivot_effective_log_pf(z, inputs.reference_weights, "legacy"))[overlap]
     fast_pf = np.asarray(pivot_effective_log_pf(z, inputs.reference_weights, "fast"))[overlap]
     mirror_consistency = {
-        "legacy_rmse": float(np.max(np.abs(legacy_pf - np.asarray([float(r["legacy_log_pf"]) for r in csv.DictReader((Path(__file__).parent / "_moprp_pivot_litmus/residue_results.csv").open())])))),
-        "fast_rmse": float(np.max(np.abs(fast_pf - np.asarray([float(r["fast_log_pf"]) for r in csv.DictReader((Path(__file__).parent / "_moprp_pivot_litmus/residue_results.csv").open())])))),
+        "legacy_rmse": float(np.max(np.abs(legacy_pf - np.asarray([float(r["legacy_log_pf"]) for r in csv.DictReader((args.litmus_dir / "residue_results.csv").open())])))),
+        "fast_rmse": float(np.max(np.abs(fast_pf - np.asarray([float(r["fast_log_pf"]) for r in csv.DictReader((args.litmus_dir / "residue_results.csv").open())])))),
     }
     payload = {
         "description": "MoPrP step-2 population recovery by pivot; real primary plus synthetic calibration",
+        "rate_provenance": common.rate_source_provenance(args.rate_source),
         "ensemble": "AF2_MSAss",
+        "execution_mode": "smoke" if args.smoke else "full",
+        "optimization_steps": steps,
         "coefficient_settings": coeffs,
         "eta_primary": ETA,
         "primary_real_uptake": primary,
@@ -510,7 +525,7 @@ def run(args):
             "exPfact is ensemble/pivot-independent but fitted from the same uptake and is smoothed and degenerate.",
             "w_NMR is NMR-derived pseudo-truth with assumed uniform within-state frame weights.",
         ],
-        "input_hashes": common.input_hashes(),
+        "input_hashes": common.input_hashes(args.rate_source),
     }
     (args.output_dir / "population_pivot_results.json").write_text(json.dumps(payload, indent=2) + "\n")
     with (args.output_dir / "synthetic_resolution_sweep.csv").open("w", newline="") as handle:
@@ -524,6 +539,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).parent / "_moprp_population_oracle_pivot")
     parser.add_argument("--coefficient-lock", type=Path, default=Path(__file__).parent / "_moprp_recovery_coefficient_lock")
+    parser.add_argument("--litmus-dir", type=Path, default=Path(__file__).parent / "_moprp_pivot_litmus")
+    parser.add_argument("--rate-source", choices=tuple(common.RATE_SOURCES), default=common.DEFAULT_RATE_SOURCE)
     parser.add_argument("--steps", type=int, default=1500)
     parser.add_argument("--lr", type=float, default=0.05)
     parser.add_argument("--smoke", action="store_true")

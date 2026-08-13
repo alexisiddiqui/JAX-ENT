@@ -181,7 +181,7 @@ def _absorption_readout(optima: dict, scaled: dict, ensembles) -> dict:
 
 def run(args: argparse.Namespace) -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    inputs_list = [common.load_ensemble_inputs(name) for name in common.ENSEMBLES]
+    inputs_list = [common.load_ensemble_inputs(name, args.rate_source) for name in common.ENSEMBLES]
     ensembles = [(inputs, _peptide_map(inputs)) for inputs in inputs_list]
 
     legacy_regression = {}
@@ -203,7 +203,9 @@ def run(args: argparse.Namespace) -> None:
         exclude_peptide1=False,
     )
     expected_litmus_mse = 0.3701202**2
-    if not np.isclose(litmus_mse, expected_litmus_mse, rtol=2e-6, atol=1e-10):
+    if args.rate_source == common.DEFAULT_RATE_SOURCE and not np.isclose(
+        litmus_mse, expected_litmus_mse, rtol=2e-6, atol=1e-10
+    ):
         raise AssertionError(f"litmus cross-check failed: {litmus_mse} != {expected_litmus_mse}")
 
     jensen_violations = 0
@@ -258,6 +260,7 @@ def run(args: argparse.Namespace) -> None:
 
     payload = {
         "description": "per-pivot shared non-negative BV coefficient lock at w_NMR, peptide 1 excluded",
+        "rate_provenance": common.rate_source_provenance(args.rate_source),
         "semantics": "per_pivot: legacy=average_first, fast=rate_average, slow-N=frame_mixture",
         "frozen_settings": frozen_by_pivot["legacy"],
         "frozen_settings_by_pivot": frozen_by_pivot,
@@ -291,7 +294,7 @@ def run(args: argparse.Namespace) -> None:
             "all_scaled_published_interior": True,
         },
         "n_frames": {inputs.ensemble: inputs.n_frames for inputs in inputs_list},
-        "input_hashes": common.input_hashes(),
+        "input_hashes": common.input_hashes(args.rate_source),
     }
     (args.output_dir / "coefficient_lock.json").write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -319,6 +322,7 @@ def main() -> None:
         default=Path(__file__).resolve().parent / "_moprp_recovery_coefficient_lock",
     )
     parser.add_argument("--smoke", action="store_true", help="coarse coefficient-profile grid")
+    parser.add_argument("--rate-source", choices=tuple(common.RATE_SOURCES), default=common.DEFAULT_RATE_SOURCE)
     run(parser.parse_args())
 
 

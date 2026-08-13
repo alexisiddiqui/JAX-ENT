@@ -297,6 +297,14 @@ no Σ-weighted number from the shipped matrix should enter a conclusion.
 
 ## 13. Step 1 result — full-ensemble exPfact pivot litmus
 
+**Intrinsic-rate provenance amendment (2026-08-10; see the kint handoff §8):** the shipped
+`median.pfact` was fitted by exPfact with rates calculated in memory at 298 K/pH 4.4 using the 2021
+PDLA constants. It was not fitted with the adjacent `moprp.kint`, and the historical vector also
+predates and differs from the current 3Ala `expfact_kint_pH4p4_298K_min.dat`. Therefore this
+section's BV-versus-exPfact PF scoring is not an exact same-rate comparison. Retain it as a
+rate-source-conditional diagnostic; do not use its absolute PF distances to rank pivots or describe
+the current canonical file as the source of the shipped PF reference.
+
 Implemented in `fitting/jaxENT/moprp_pivot_litmus.py` and run on the 500-frame AF2-MSAss
 ensemble at fixed `w_NMR`. No frame weight was fitted or changed. The only search was a 41×41
 coefficient grid, `bc ∈ [0,1]` and `bh ∈ [0,4]`. Machine-readable output is in
@@ -661,6 +669,12 @@ Thus fast has the most locally resolved population directions at its optimum —
 conditioning agrees with both the synthetic diagonal and the real-data recovery ordering.
 
 ### 15.3 Protection-factor mirror and 2×2 cross-score
+
+**Intrinsic-rate provenance amendment (2026-08-10; see the kint handoff §8):** this mirror compares
+BV predictions made with the current 3Ala 298 K/pH 4.4 vector against `median.pfact`, which was
+fitted with exPfact's historical 2021 PDLA vector at the same nominal conditions. It is therefore a
+cross-rate as well as a cross-model score. The existing conclusion that the PF mirror cannot rank
+pivots is unchanged, but its absolute PF RMSEs are not same-rate validation scores.
 
 The PF mirror is restricted to legacy and fast. `slow-N` remains uptake-only because a mixture of
 exponentials has no exact scalar effective PF. At locked coefficients:

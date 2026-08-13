@@ -1,0 +1,33 @@
+{
+  "conversion": "multiply by 60 exactly",
+  "d_percentage": 100.0,
+  "exchange_type": "HD",
+  "hdxrate_version": "0.2.2",
+  "jaxent_commit": "c96b87d6fb7ef19bb4ec6e5acffd6db516e3b4a9",
+  "native_units": "s^-1",
+  "output": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/validated_hdxrate_pdla/moprp_hdxrate_pdla_pD4p4_298K_min.dat",
+    "sha256": "43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c"
+  },
+  "output_units": "min^-1",
+  "pD": 4.4,
+  "pD_convention": "effective pD supplied unchanged; no automatic +0.4 correction",
+  "ph_correction": false,
+  "reference": "poly",
+  "residue_rule": "one-based IDs matching moprp.seq",
+  "script": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/materialise_hdxrate_pdla.py",
+    "sha256": "4321a2ead114c8ac1397ab3cbed008bdd9643ec2788da524377a1204a6542a45"
+  },
+  "sentinel_rule": "-1 for HDXrate nonpositive residues and proline; values never logged",
+  "sequence": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.seq",
+    "sha256": "f75d2d124d957b9c05492dccbc342d3f53cf7c0b89e91da9d436bc9063acf558"
+  },
+  "source": "JAX-ENT HDXrate/PDLA validated arm",
+  "temperature_k": 298.0,
+  "validation_report": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/validated_hdxrate_pdla/validation_report.json",
+    "sha256": "d54a690e9fe569661dce00b033a46c35f846b0789182d339ffb9f12ba6228daa"
+  }
+}

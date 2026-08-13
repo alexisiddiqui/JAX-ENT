@@ -165,7 +165,7 @@ def _scan(inputs, peptide_map, weights, overlap_mask, reference_pf, reference_cu
 
 def run(args: argparse.Namespace) -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    inputs = common.load_blinded_ensemble_inputs("AF2_MSAss")
+    inputs = common.load_blinded_ensemble_inputs("AF2_MSAss", args.rate_source)
     _, _, _, weights = common.reveal_nmr_reference(
         "AF2_MSAss", expected_frames=inputs.n_frames
     )
@@ -279,6 +279,7 @@ def run(args: argparse.Namespace) -> None:
     frozen["fast"]["versus_expfact_pf"] = _metrics(fast_pf[overlap_mask], reference_pf)
     payload = {
         "description": "fit-free full-ensemble MoPrP pivot litmus at fixed w_NMR",
+        "rate_provenance": common.rate_source_provenance(args.rate_source),
         "ensemble": "AF2_MSAss",
         "n_frames": inputs.n_frames,
         "overlap": {
@@ -347,6 +348,7 @@ def main() -> None:
     parser.add_argument("--grid-size", type=int, default=DEFAULT_GRID_SIZE)
     parser.add_argument("--starts", type=int, default=20)
     parser.add_argument("--maxiter", type=int, default=5000)
+    parser.add_argument("--rate-source", choices=tuple(common.RATE_SOURCES), default=common.DEFAULT_RATE_SOURCE)
     args = parser.parse_args()
     if args.grid_size < 2 or args.starts < 1 or args.maxiter < 1:
         parser.error("grid-size must be >=2 and starts/maxiter must be positive")

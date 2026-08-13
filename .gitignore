@@ -234,3 +234,12 @@ jaxent/examples/2_CrossValidation/data/_MoPrP/*
 !jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat
 !jaxent/examples/2_CrossValidation/data/_MoPrP/spectra/
 !jaxent/examples/2_CrossValidation/data/_MoPrP/spectra/*
+
+# Version the immutable MoPrP intrinsic-rate provenance record and the validated
+# HDXrate/PDLA sensitivity arm despite the general generated-artifact rules above.
+!jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/
+!jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/**
+!jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/
+jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/*
+!jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/hdxrate_pdla_validated/
+!jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/hdxrate_pdla_validated/**

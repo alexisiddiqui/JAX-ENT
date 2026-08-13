@@ -76,3 +76,33 @@ def test_log_pf_matches_bv_definition(common):
     expected = 0.35 * inputs.heavy_contacts + 2.0 * inputs.acceptor_contacts
     np.testing.assert_allclose(log_pf, expected)
     assert log_pf.shape == (inputs.feature_residue_ids.size, 500)
+
+
+def test_rate_source_selector_and_provenance(common):
+    canonical = common.load_blinded_ensemble_inputs("AF2_MSAss")
+    shipped = common.load_blinded_ensemble_inputs("AF2_MSAss", "moprp_shipped")
+
+    assert canonical.rate_source == "expfact_recomputed"
+    assert canonical.rate_file == common.CANONICAL_RATE_FILE.resolve()
+    assert shipped.rate_source == "moprp_shipped"
+    assert shipped.rate_file == (common.MOPRP / "moprp.kint").resolve()
+    assert canonical.rate_file_sha256.startswith("f069ca46ecd7fd6a")
+    assert shipped.rate_file_sha256.startswith("7be0f0d23ecec367")
+    assert not np.array_equal(canonical.k_ints, shipped.k_ints)
+
+    provenance = common.rate_source_provenance("moprp_shipped")
+    assert provenance["temperature_k"] is None
+    assert provenance["ph"] is None
+
+    pdla = common.load_blinded_ensemble_inputs("AF2_MSAss", "hdxrate_pdla_validated")
+    pdla_provenance = common.rate_source_provenance("hdxrate_pdla_validated")
+    assert pdla.rate_source == "hdxrate_pdla_validated"
+    assert pdla.rate_file_sha256 == "43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c"
+    assert pdla_provenance["units"] == "min^-1"
+    assert pdla_provenance["ph_correction"] is False
+    assert pdla_provenance["ph"] == 4.4
+
+
+def test_unknown_rate_source_is_rejected(common):
+    with pytest.raises(ValueError, match="unknown rate source"):
+        common.load_blinded_ensemble_inputs("AF2_MSAss", "not-a-source")
