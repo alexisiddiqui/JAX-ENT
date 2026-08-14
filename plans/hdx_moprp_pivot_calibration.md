@@ -969,3 +969,188 @@ Findings:
 
 Pre-Phase-4 headline established synthetically: new-Σ ≈ MSE (no harm, negligible rotation, sane
 conditioning), while the shipped precision actively degrades recovery under realistic noise.
+
+## 19. Phase 2.5 finite-gating detectability — Phase 3.5 skipped (2026-08-14)
+
+Phase 2.5 of `hdx_noise_model_implementation_handoff.md` (§3 Phase 2.5, §6) is complete. It is a
+simulation-only study at MoPrP's real geometry (14 peptides, 15 timepoints, 76 peptide-covered
+residues) asking the single registered question: at this timepoint grid, N = 210, and the fitted
+noise level, what gating speed is slow enough to be distinguished from strict EX2? Surfaces were
+generated from the finite-gating LL backend across the registered ladder
+`c ∈ {1e4, 1e2, 10, 3, 1, 0.3}` with `gamma = c · median(k_int)`, plus a strict-EX2 reverse-null
+row, 25 replicates per rung, scored by blocked three-timepoint conditional Gaussian held-out NLL.
+Truth noise scales were the frozen Phase 3 values (`sigma_exp = 0.0586156`,
+`tau_peptide = 0.0143907`); the primary arms' covariance is gamma-independent under the accepted
+Phase 3 architecture, so only the mean depends on gamma.
+
+**The detectability floor is `c = 3`** — finite gating is distinguishable only once
+`gamma <= 3 · median(k_int)`, and the floor is strictly bracketed as `[3, 10)`. The `c = 10` rung's
+mean advantage (0.0090) clears the null while its 5th percentile (−0.0023) does not, and the
+`c = 3` detection is marginal (q05 0.00666 against null q95 0.003795, about 1.75× separation).
+The floor is quoted dimensionlessly because its absolute value is rate-source dependent: under the
+validated HDXrate/PDLA rates used by all of Phase 2 and 2.5 it is `gamma = 2.4599 min^-1`
+(`gamma^-1 = 0.41 min`), while under the `moprp_shipped` rates that Phase 3 froze the same rung is
+`gamma = 1.0696 min^-1`.
+
+**Decision: Phase 3.5 is skipped.** Because `p_open = 1/PF << 1`, `gamma ≈ k_close`, so detection
+requires `k_close <~ 3 k_int` — whereas EX2 is defined by `k_close >> k_int`. The detectable window
+therefore lies entirely in the EX1/EXX crossover rather than the EX2 regime. On the stated premise
+that native-state closing rates for a folded protein exceed 0.04 s^-1 by orders of magnitude (a
+domain premise recorded as such, not derived here), no physically plausible MoPrP gating rate falls
+inside the detectable window, and the §3 Phase 2.5 kill rule applies exactly as it did for the ANM
+arm. This is the pre-registered expected outcome: it is positive evidence that MoPrP centroid
+uptake is EX2 at this resolution and it retires the EX2 caveat rather than failing a stage. The
+peptide-1 envelope spot check (handoff §8: EX2 favoured by 29×, 36× and 2.1× SSE, with
+`observed < EX2 < EX1` widths) points the same way independently.
+
+Controls all pass. The K1 fast-limit control was decoupled from the ladder and pinned at `c = 1e6`,
+giving max `|LL − EX2| = 3.2256e-07` against a 1e-6 tolerance; it is deliberately not
+`GAMMA_LADDER[0]`, because `c = 1e4` carries real `O(k_int/gamma)` physics (3.2248e-05) and would
+fail a fast-limit assertion for physical rather than numerical reasons. The propagator's functional
+form is confirmed by clean first-order scaling — consecutive decade ratios 9.998393 and 9.999417
+against a target of 10. On the reverse null the minimum fitted `c` over 25 EX2-generated replicates
+is 9.33, so no replicate entered the detectable zone and the null cannot manufacture a false
+positive; fitted gamma above the floor is a lower bound rather than an estimate, because the
+log-gamma direction is flat there. A standing positive control was added to the summary: where
+gamma is identifiable it is recovered essentially unbiased (median fitted/true `c` = 0.953, 1.007
+and 1.013 at `c` = 3, 1 and 0.3).
+
+The mandatory confounding check found the strongest partner to be
+`corr(log gamma, sigma_exp) = −0.5844` at `c = 1`, with `kappa`, `tau_time` and `tau_peptide` all
+at `|corr| <= 0.23`. This confirms the pre-registered constraint that a Phase 3.5 K2 would have had
+to run with Sigma frozen and that a fitted-Sigma K2 is inadmissible; it also deviates from §2.5
+step 4's expectation that gamma would trade against `kappa`, `tau_z` or `tau_time`.
+
+Limitations recorded rather than smoothed over: Phase 2 and 2.5 ran on `hdxrate_pdla_validated`
+rates while Phase 3 froze its covariance under `moprp_shipped`, so the truth noise scales are
+imported across rate arms — the dimensionless floor and the kill argument are invariant to this,
+but the absolute gamma is not. A guard rejecting overflowing optimiser trial points was added
+mid-study, after registration; it is a numerical guard rather than an objective change, but it can
+only affect the K2 arm and is asymmetric by construction. Convergence was K0 175/175, K2 172/175,
+confounding K2 75/75, with all three K2 failures in the flat undetected region and none in a
+detected rung. Artifacts, controls and full provenance are under
+`fitting/jaxENT/_moprp_sigma_identifiability/gamma_full/`; the decision is also recorded in that
+directory's `phase2_decisions.md`.
+
+## 20. Phase 4 frozen-Sigma substitution — results available, freeze withheld (2026-08-14)
+
+Phase 4 was implemented before the gated Phase 5 exPfact diagnostic, using the AF2-MSAss full
+500-frame ensemble and the `moprp_shipped` intrinsic-rate arm under which Phase 3 fitted the
+covariance. Frame weights remain uniform within each of the five present structural states, so the
+optimised reweighting variables are state populations rather than 500 independent frame weights.
+Peptide 1 is removed from the uptake objective by the registered time-major strided marginal:
+indices `i % 14 != 0`, reducing the frozen covariance from 210×210 to 195×195 before a fresh
+Cholesky factorisation. This is not the superficially valid but incorrect contiguous `[15:,15:]`
+slice.
+
+Three uptake-residual metrics were compared. `eye_mse` is the untouched mean squared error.
+`shipped_sigma` applies the shipped 14×14 `Sigma_inv` independently at each timepoint after removing
+peptide 1 and trace-normalising the retained 13×13 precision. `frozen_joint` applies the full
+195×195 frozen Cholesky in time-major order. The joint log determinant is constant with respect to
+population/BV optimisation and is removed from the optimisation step. Every arm is divided by its
+own uniform-population baseline, so the KL coefficient retains the same relative scale. The frozen
+Cholesky is carried through `stop_gradient` and cannot become candidate-dependent.
+
+### 20.1 Registered reweighting-only sweep at locked BV coefficients
+
+The registered sweep crossed three pivots (`legacy`, `fast`, `slow-N`), two coefficient settings
+(`published`, `constrained_optimum`), and three metrics. Averaging the six pivot/coefficient cells
+gives:
+
+| Arm | Mean recovery | Mean decoy mass |
+|---|---:|---:|
+| eye-MSE | 36.229% | 0.39454 |
+| shipped Sigma | 47.390% | 0.06916 |
+| frozen joint Sigma | 39.696% | 0.36753 |
+
+Those averages conceal a dominant pivot/coefficient interaction:
+
+| Pivot / coefficients | eye-MSE recovery, decoy | shipped Sigma recovery, decoy | frozen joint Sigma recovery, decoy |
+|---|---:|---:|---:|
+| legacy / published | 0.004%, 0.99999 | 50.855%, 0.39768 | 0.005%, 0.99999 |
+| legacy / constrained | 50.885%, 0.00526 | 31.657%, 0.00016 | 59.151%, 0.00055 |
+| fast / published | 16.383%, 0.21620 | 66.094%, 0.01643 | 16.184%, 0.17024 |
+| fast / constrained | 92.353%, 0.00005 | 38.976%, 0.00044 | 95.054%, 0.00005 |
+| slow-N / published | 0.762%, 0.99472 | 89.788%, 0.00009 | 5.689%, 0.92702 |
+| slow-N / constrained | 56.985%, 0.15104 | 6.971%, 0.00014 | 62.094%, 0.10733 |
+
+The frozen joint metric remains close to eye-MSE, as predicted by §18, but the aggregate claim that
+the shipped precision simply underperforms is false at locked coefficients. Its apparent advantage
+under published BV is not stable: it reverses under the constrained coefficients. The most relevant
+previously supported specification, `fast` with constrained BV, gives 92.35% recovery for eye-MSE,
+95.05% for frozen joint Sigma, and 38.98% for shipped Sigma. The shipped matrix therefore changes
+the interaction between mean-model error and population reweighting rather than contributing a
+generally superior population metric. Recovery is measured against the independent NMR population,
+not against a population that generated the real uptake, so a lower weighted uptake objective is
+not itself evidence of better recovery.
+
+### 20.2 Follow-up diagnostic with BV fitting enabled
+
+After reviewing the locked-BV result, a matched diagnostic jointly optimised the state populations
+and non-negative `(Bc, Bh)` in every pivot/metric cell. It used both published and constrained BV
+initialisations, the neutral/random/adversarial population starts, 12 starts per cell, and 1,500
+Adam steps. Each metric's normaliser was fixed at its published-BV uniform-population value; it was
+not recomputed at candidate BV coefficients, which would create a circular escape route through the
+denominator. Since coefficients are free, this comparison has three pivot cells per arm rather than
+the registered six locked-setting cells.
+
+| Arm | Mean recovery | Mean decoy mass |
+|---|---:|---:|
+| eye-MSE | 60.371% | 0.17277 |
+| shipped Sigma | 23.980% | 0.52702 |
+| frozen joint Sigma | 59.799% | 0.17670 |
+
+| Pivot | eye-MSE recovery, decoy | shipped Sigma recovery, decoy | frozen joint Sigma recovery, decoy |
+|---|---:|---:|---:|
+| legacy | 48.763%, 0.11721 | 56.986%, 0.31217 | 49.059%, 0.12653 |
+| fast | 94.702%, 0.00004 | 14.911%, 0.26903 | 90.812%, 0.00004 |
+| slow-N | 37.648%, 0.40107 | 0.043%, 0.99986 | 39.528%, 0.40353 |
+
+This diagnostic restores the §18 ordering: frozen joint Sigma is effectively comparable to
+eye-MSE, while the shipped precision is substantially worse and selects an almost pure PUF3 decoy
+under `slow-N`. It also reproduces the known BV degeneracy: nearly every selected solution drives
+`Bh` to approximately zero. The result is therefore useful for diagnosing the covariance/BV
+interaction but is not a physically credible new BV calibration and does not supersede the locked
+coefficient registration.
+
+### 20.3 What the accepted frozen Sigma contains
+
+The accepted Phase 3 covariance requires a clarification. Phase 3 refitted a 76-residue PF centre,
+tested nonlinear EX2 propagation of PF uncertainty with 5,000 draws, and used the PF-derived mean
+uptake to construct candidate geometry. Cross-validation then rejected the propagated-PF component
+(`tau_z = 0`). The frozen `peptide_only` covariance is therefore
+
+`Sigma = sigma_exp^2 I + tau_peptide^2 Z_p Z_p^T + 1e-10 I`,
+
+with `sigma_exp = 0.0586156`, `tau_peptide = 0.0143907`, and
+`Z_p[(t,p),p] = mean_uptake[p,t]`. PFs affect the accepted Sigma indirectly through this mean-based
+peptide-persistent loading, but the final covariance does not contain the rejected nonlinear PF
+uncertainty covariance. Phase 4 itself consumes only predicted uptake, observed uptake, and the
+frozen Cholesky; it does not add PF observations to the downstream likelihood.
+
+### 20.4 Verification status and decision
+
+Two registered covariance checks pass. Zeroing every cross-time block and refactorising gives a
+joint NLL exactly equal to the sum of the per-timepoint block NLLs (absolute difference 0.0 against
+a 1e-10 tolerance). The frozen marginal Cholesky is bitwise identical before and after optimisation,
+with SHA-256 `07e72032624c77644077929a03f85f0189f9c1c493ab038f79a66944dfbd374b`, and is explicitly
+carried under `stop_gradient`. The focused sigma/loss-registry suite passed 58 tests; Ruff and
+`git diff --check` pass.
+
+The registered default-path byte-identity gate does **not** pass. The pre-existing default artifact
+had SHA-256 `17971aa7c77a7f6ff5abc3ed9833d8ab39e3879137d49fca23a32ceb351e5323`, while two literal
+no-flag reruns of the otherwise unchanged default runner produced different hashes,
+`da2f7e45629869d33a0db634869977ad8c95c6e74b658e1b9ff8f31716f7ea9a` and
+`663531fa8763e91e56aa465bdd80940d63d2243be24f315e9328c529f4f10733`. The `metric=None` uptake-loss
+body is retained as a separate textually unchanged branch, so this exposes pre-existing
+cross-process byte nondeterminism in the full JAX optimisation/output path rather than a demonstrated
+metric-hook drift. Nevertheless, the registered gate is byte-level and cannot be declared passed.
+
+**Status: Phase 4 results exist but the Phase 4 manifest is not frozen.** The scientific readout is
+new-Sigma approximately equal to eye-MSE, with no stable new-Sigma advantage, while shipped-Sigma
+behaviour is strongly coupled to BV/pivot misspecification and degrades sharply once BV is fitted.
+The failed byte-reproducibility gate must be replaced by an agreed deterministic or numerical
+equivalence criterion, or made reproducible in the execution environment, before Phase 4 can be
+frozen. Phase 5 remains gated and must not be run with `--primary-results-frozen` yet. Registered
+artifacts are under `fitting/jaxENT/_moprp_sigma_phase4/`; the BV-enabled diagnostic is under
+`fitting/jaxENT/_moprp_sigma_phase4_bv/`.

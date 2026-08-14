@@ -4,14 +4,25 @@ import jax
 import jax.numpy as jnp
 import optax  # Import optax library for the convex_kl_divergence function
 from jax import Array
+from jax.scipy.linalg import solve_triangular
 from optax.losses import safe_softmax_cross_entropy
 
 from jaxent.src.custom_types import InitialisedSimulation
 from jaxent.src.custom_types.protocols import DataloaderLike, SimulationLike
-from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.core import Simulation
+
+
+_JOINT_GAUSSIAN_CHOLESKY: Array | None = None
+
+
+def configure_hdx_uptake_joint_gaussian_loss(cholesky: Array) -> None:
+    """Freeze the loss-owned joint Cholesky factor used by the Gaussian loss."""
+    global _JOINT_GAUSSIAN_CHOLESKY
+    factor = jnp.asarray(cholesky)
+    if factor.ndim != 2 or factor.shape[0] != factor.shape[1]:
+        raise ValueError("cholesky must be a square matrix")
+    _JOINT_GAUSSIAN_CHOLESKY = jax.lax.stop_gradient(factor)
 
 
 def hdx_pf_l2_loss(
@@ -1871,6 +1882,43 @@ def hdx_uptake_mean_centred_sigma_MSE_loss(
     return train_loss, val_loss
 
 
+def hdx_uptake_joint_gaussian_loss(
+    model: SimulationLike, dataset: DataloaderLike, prediction_index: int
+) -> tuple[Array, Array]:
+    """Joint Gaussian uptake NLL using a frozen, loss-owned Cholesky factor.
+
+    Configure the factor with :func:`configure_hdx_uptake_joint_gaussian_loss`.  The
+    dataset covariance is deliberately never read: loader covariance matrices are
+    trace-normalised precisions and are not the primary joint likelihood.
+    """
+    if _JOINT_GAUSSIAN_CHOLESKY is None:
+        raise RuntimeError("configure the frozen joint Gaussian Cholesky before using this loss")
+    predictions = model.outputs[prediction_index]
+    frozen_chol = jax.lax.stop_gradient(_JOINT_GAUSSIAN_CHOLESKY)
+
+    def compute_loss(split):
+        residual_by_time = []
+        for timepoint_idx in range(split.y_true.shape[1]):
+            predicted = apply_sparse_mapping(
+                split.residue_feature_ouput_mapping, predictions.uptake[timepoint_idx]
+            )
+            residual_by_time.append(predicted - split.y_true[:, timepoint_idx, 0])
+        residual = jnp.stack(residual_by_time).reshape(-1)
+        if frozen_chol.shape != (residual.size, residual.size):
+            raise ValueError(
+                f"frozen Cholesky shape {frozen_chol.shape} does not match "
+                f"time-major residual length {residual.size}"
+            )
+        whitened = solve_triangular(frozen_chol, residual, lower=True)
+        return (
+            0.5 * jnp.vdot(whitened, whitened)
+            + jnp.sum(jnp.log(jnp.diag(frozen_chol)))
+            + 0.5 * residual.size * jnp.log(2.0 * jnp.pi)
+        )
+
+    return compute_loss(dataset.train), compute_loss(dataset.val)
+
+
 # ---------------------------------------------------------------------------
 # Loss Registry
 # ---------------------------------------------------------------------------
@@ -1894,6 +1942,7 @@ LOSS_REGISTRY: dict[str, object] = {
     "mcMSE": hdx_uptake_mean_centred_eye_MSE_loss,
     "Sigma_MSE": hdx_uptake_sigma_MSE_loss,
     "mcSigma_MSE": hdx_uptake_mean_centred_sigma_MSE_loss,
+    "joint_gaussian": hdx_uptake_joint_gaussian_loss,
     # --- Other uptake losses ---
     "MAE": hdx_uptake_MAE_loss,
     "mcMAE": hdx_uptake_mean_centred_MAE_loss,

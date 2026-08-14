@@ -35,6 +35,23 @@ STRUCTURE = common.BASE / "data/MoPrP_max_plddt_4334.pdb"
 STRUCTURE_SHA256 = "1fd3090c54142ff464bab9f46facedea5bbad14621f8abadf46079958ff60453"
 ANM_CUTOFF = 24.0
 PARAMETER_NAMES = ("sigma_exp", "tau_z", "tau_peptide", "tau_time", "kappa")
+GAMMA_LADDER = (1e4, 1e2, 10.0, 3.0, 1.0, 0.3)
+# K1 is deliberately separate: GAMMA_LADDER[0] still carries O(k_int/gamma) physics.
+K1_FAST_LIMIT_C = 1e6
+K1_SCALING_C = (1e4, 1e5, 1e6)
+K1_TOLERANCE = 1e-6
+# Every *_full manifest must carry an identical key set (asserted by the unit tests), so these
+# gamma-only fields are written as None by the other questions. backfill_manifests uses this list
+# to lift manifests written before a field existed up to the current schema.
+GAMMA_MANIFEST_KEYS = (
+    "median_k_int_per_min", "gamma_ladder_units",
+    "k1_fast_limit_max_abs", "k1_fast_limit_c", "k1_fast_limit_tolerance",
+    "k1_scaling_check", "k1_control_rationale",
+    "ll_logpf_clip_count", "ll_covariance_sensitivity_approximation",
+    "truth_parameter_provenance", "post_hoc_provenance_additions",
+)
+K1_SCALING_RTOL = 0.02
+TARGET_MODES = Path(__file__).with_name("_moprp_sigma_noise_model") / "target_modes.npz"
 NUMERICAL_FLOOR = 1e-10
 UPTAKE_NORMALISATION = (
     "MoPrP uptake is peptide-wise maxD normalised using a completely deuterated control subjected to\n"
@@ -50,6 +67,7 @@ SEED_REGISTRY = {
     "scale_surface": "3000 + replicate + int(100 * ratio); paired across varied components",
     "delta_monte_carlo": 4000,
 }
+GAMMA_SEED = "5000 + 101 * replicate + rung_index"
 
 
 @dataclass(frozen=True)
@@ -60,6 +78,7 @@ class SimulationParameters:
     tau_time: float = 0.02
     kappa: float = 0.5
     anm_lambda: float = 0.0
+    log_gamma: float | None = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +191,42 @@ def covariance_from_parameters(
     return np.asarray(covariance)
 
 
+def mean_for_kinetics(geometry: Geometry, log_gamma: float | None) -> np.ndarray:
+    """Return the peptide mean under strict EX2 or finite-gating LL kinetics."""
+    if log_gamma is None:
+        return np.asarray(geometry.mean)
+    residue_uptake = noise.LLBackend().residue_uptake(
+        np.clip(geometry.log_pf, 0.0, None), geometry.k_int, geometry.times,
+        kinetics=log_gamma,
+    )
+    return np.asarray(noise.peptide_uptake(residue_uptake, geometry.mapping))
+
+
+def _k1_scaling_diagnostics(geometry: Geometry, median_rate: float) -> dict[str, object]:
+    """Assert and return the asymptotic inverse-gamma LL-to-EX2 scaling control."""
+    differences = {
+        str(c): float(np.max(np.abs(
+            mean_for_kinetics(geometry, np.log(c * median_rate)) - geometry.mean
+        )))
+        for c in K1_SCALING_C
+    }
+    ratios = []
+    for lower_c, upper_c in zip(K1_SCALING_C[:-1], K1_SCALING_C[1:]):
+        ratio = differences[str(lower_c)] / differences[str(upper_c)]
+        if not np.isclose(ratio, 10.0, rtol=K1_SCALING_RTOL, atol=0.0):
+            raise AssertionError(
+                f"K1 inverse-gamma scaling failed for c={lower_c:g} to c={upper_c:g}: "
+                f"ratio={ratio:.8g}"
+            )
+        ratios.append({"lower_c": lower_c, "upper_c": upper_c, "ratio": ratio})
+    return {
+        "max_abs_by_c": differences,
+        "consecutive_decade_ratios": ratios,
+        "ratio_target": 10.0,
+        "ratio_relative_tolerance": K1_SCALING_RTOL,
+    }
+
+
 def simulate_surface(
     geometry: Geometry,
     parameters: SimulationParameters,
@@ -218,7 +273,9 @@ def conditional_gaussian_nll(residual, covariance, train_indices, test_indices) 
 def _decode(raw: np.ndarray, template: SimulationParameters, free: tuple[str, ...]):
     values = asdict(template)
     for name, value in zip(free, raw):
-        if name == "kappa" or name == "anm_lambda":
+        if name == "log_gamma":
+            values[name] = float(value)
+        elif name == "kappa" or name == "anm_lambda":
             values[name] = float(expit(value))
         else:
             values[name] = float(np.exp(value))
@@ -229,12 +286,71 @@ def _encode(parameters: SimulationParameters, free: tuple[str, ...]):
     values = []
     for name in free:
         value = getattr(parameters, name)
-        if name == "kappa" or name == "anm_lambda":
+        if name == "log_gamma":
+            if value is None:
+                raise ValueError("free log_gamma requires a finite initial value")
+            values.append(float(value))
+        elif name == "kappa" or name == "anm_lambda":
             value = np.clip(value, 1e-6, 1 - 1e-6)
             values.append(np.log(value / (1 - value)))
         else:
             values.append(np.log(max(value, 1e-8)))
     return np.asarray(values)
+
+
+def fit_kinetic_parameters(
+    surface: np.ndarray,
+    geometry: Geometry,
+    initial: SimulationParameters,
+    *,
+    free: tuple[str, ...],
+    train_indices: np.ndarray | None = None,
+    maxiter: int = 250,
+) -> tuple[SimulationParameters, float, bool]:
+    """Fit kinetic and frozen-architecture covariance parameters."""
+    n = geometry.n_peptides * geometry.n_timepoints
+    indices = np.arange(n) if train_indices is None else np.asarray(train_indices)
+
+    def objective(raw):
+        if not np.all(np.isfinite(raw)) or np.any(np.abs(raw) > 100.0):
+            return 1e30
+        try:
+            parameters = _decode(raw, initial, free)
+            residual = np.asarray(noise.vectorize_time_major(
+                surface - mean_for_kinetics(geometry, parameters.log_gamma)
+            ))
+            covariance = covariance_from_parameters(geometry, parameters)
+        except (FloatingPointError, OverflowError, ValueError):
+            return 1e30
+        if not np.all(np.isfinite(residual)) or not np.all(np.isfinite(covariance)):
+            return 1e30
+        selected = covariance[np.ix_(indices, indices)]
+        try:
+            chol = np.linalg.cholesky(selected)
+        except np.linalg.LinAlgError:
+            return 1e30
+        return float(noise.gaussian_nll_from_cholesky(residual[indices], chol))
+
+    result = minimize(objective, _encode(initial, free), method="L-BFGS-B",
+                      options={"maxiter": maxiter, "ftol": 1e-9})
+    return _decode(result.x, initial, free), float(result.fun), bool(result.success)
+
+
+def kinetic_cross_fitted_score(surface, geometry, initial, *, free, maxiter=250):
+    """Return conditional held-out NLL with kinetic parameters refit per time fold."""
+    total = 0.0
+    estimates = []
+    for train, test in time_folds(geometry.n_peptides, geometry.n_timepoints):
+        fitted, _, success = fit_kinetic_parameters(
+            surface, geometry, initial, free=free, train_indices=train, maxiter=maxiter
+        )
+        residual = np.asarray(noise.vectorize_time_major(
+            surface - mean_for_kinetics(geometry, fitted.log_gamma)
+        ))
+        covariance = covariance_from_parameters(geometry, fitted)
+        total += conditional_gaussian_nll(residual, covariance, train, test)
+        estimates.append({**asdict(fitted), "success": success})
+    return total, estimates
 
 
 def fit_parameters(
@@ -348,6 +464,141 @@ def summarize_anm(frame: pd.DataFrame) -> pd.DataFrame:
                                and np.mean(advantage) - 1.96*advantage_se > null_advantage_upper
                                and np.mean(fitted) - 1.96*fitted_se > null_fitted_upper),
         })
+    return pd.DataFrame(rows)
+
+
+def _gamma_truth_parameters() -> tuple[SimulationParameters, str]:
+    target = np.load(TARGET_MODES)
+    fitted = dict(zip(target["parameter_names"].astype(str), target["parameters"].astype(float)))
+    parameters = SimulationParameters(
+        sigma_exp=fitted["sigma_exp"], tau_z=0.0,
+        tau_peptide=fitted["tau_peptide"], tau_time=0.0, kappa=0.0,
+    )
+    return parameters, common.sha256(TARGET_MODES)
+
+
+def run_gamma(geometry, replicates, maxiter):
+    """Run the finite-gating ladder, reverse null, and slow-rung confounding check."""
+    base, _ = _gamma_truth_parameters()
+    median_rate = float(np.median(geometry.k_int))
+    initial_log_gamma = float(np.log(median_rate * 10.0))
+    rows = []
+    rungs = [("ex2", np.inf, None)] + [
+        (f"{c:g}", c, float(np.log(c * median_rate))) for c in GAMMA_LADDER
+    ]
+    covariance = covariance_from_parameters(geometry, base)
+    chol = np.linalg.cholesky(covariance)
+    for rung_index, (rung, c, true_log_gamma) in enumerate(rungs):
+        truth_mean = mean_for_kinetics(geometry, true_log_gamma)
+        for replicate in range(replicates):
+            rng = np.random.default_rng(5000 + 101 * replicate + rung_index)
+            residual = chol @ rng.standard_normal(covariance.shape[0])
+            surface = truth_mean + np.asarray(noise.unvectorize_time_major(
+                residual, geometry.n_peptides, geometry.n_timepoints
+            ))
+            arm_results = {}
+            for arm, initial, free in (
+                ("k0", replace(base, log_gamma=None), ("sigma_exp", "tau_peptide")),
+                ("k2", replace(base, log_gamma=initial_log_gamma),
+                 ("log_gamma", "sigma_exp", "tau_peptide")),
+            ):
+                fitted, objective, success = fit_kinetic_parameters(
+                    surface, geometry, initial, free=free, maxiter=maxiter
+                )
+                score, estimates = kinetic_cross_fitted_score(
+                    surface, geometry, fitted, free=free, maxiter=maxiter
+                )
+                arm_results[arm] = (score, fitted, objective, success, estimates)
+            advantage = (arm_results["k0"][0] - arm_results["k2"][0]) / surface.size
+            for arm in ("k0", "k2"):
+                score, fitted, objective, success, estimates = arm_results[arm]
+                rows.append({
+                    "question": "gamma", "rung": rung, "true_c": c,
+                    "true_log_gamma": true_log_gamma, "replicate": replicate, "arm": arm,
+                    "heldout_nll": score, "heldout_nll_per_cell": score / surface.size,
+                    "advantage_k0_minus_k2_per_cell": advantage,
+                    "fitted_log_gamma": fitted.log_gamma,
+                    "mean_fold_log_gamma": np.nanmean([
+                        x["log_gamma"] for x in estimates if x["log_gamma"] is not None
+                    ]) if arm == "k2" else np.nan,
+                    "fitted_sigma_exp": fitted.sigma_exp,
+                    "fitted_tau_peptide": fitted.tau_peptide,
+                    "fitted_tau_time": fitted.tau_time, "fitted_kappa": fitted.kappa,
+                    "objective": objective, "success": success,
+                })
+            if np.isfinite(c) and c <= 3.0:
+                free = ("log_gamma", "sigma_exp", "tau_peptide", "tau_time", "kappa")
+                initial = replace(base, log_gamma=initial_log_gamma, tau_time=0.01, kappa=0.1)
+                fitted, objective, success = fit_kinetic_parameters(
+                    surface, geometry, initial, free=free, maxiter=maxiter
+                )
+                score, _ = kinetic_cross_fitted_score(
+                    surface, geometry, fitted, free=free, maxiter=maxiter
+                )
+                rows.append({
+                    "question": "gamma", "rung": rung, "true_c": c,
+                    "true_log_gamma": true_log_gamma, "replicate": replicate,
+                    "arm": "k2_confounding", "heldout_nll": score,
+                    "heldout_nll_per_cell": score / surface.size,
+                    "advantage_k0_minus_k2_per_cell": np.nan,
+                    "fitted_log_gamma": fitted.log_gamma, "mean_fold_log_gamma": np.nan,
+                    "fitted_sigma_exp": fitted.sigma_exp,
+                    "fitted_tau_peptide": fitted.tau_peptide,
+                    "fitted_tau_time": fitted.tau_time, "fitted_kappa": fitted.kappa,
+                    "objective": objective, "success": success,
+                })
+    return pd.DataFrame(rows)
+
+
+def summarize_gamma(frame: pd.DataFrame, median_rate: float) -> pd.DataFrame:
+    """Calibrate finite-gating detection against the strict-EX2 reverse null."""
+    primary = frame[frame["arm"] == "k2"]
+    null = np.asarray(primary[primary["rung"] == "ex2"]["advantage_k0_minus_k2_per_cell"])
+    null_q95 = float(np.quantile(null, 0.95))
+    reverse = np.asarray(primary[primary["rung"] == "ex2"]["fitted_log_gamma"])
+    reverse_relative = reverse - np.log(median_rate)
+    rows = []
+    for rung, group in primary.groupby("rung", sort=False):
+        advantage = np.asarray(group["advantage_k0_minus_k2_per_cell"])
+        c = float(group["true_c"].iloc[0])
+        confounding = frame[(frame["rung"] == rung) & (frame["arm"] == "k2_confounding")]
+        # Standing positive control: where gamma is identifiable the fitted rate must recover the
+        # truth; on the ex2 null the load-bearing statistic is the MINIMUM fitted c, which must
+        # stay above the detectability floor so the null cannot manufacture a false positive.
+        fitted_c = np.exp(np.asarray(group["fitted_log_gamma"], dtype=float)) / median_rate
+        fitted_c = fitted_c[np.isfinite(fitted_c)]
+        row = {
+            "rung": rung, "true_c": c, "replicates": len(group),
+            "fitted_c_min": float(np.min(fitted_c)) if fitted_c.size else np.nan,
+            "fitted_c_q05": float(np.quantile(fitted_c, 0.05)) if fitted_c.size else np.nan,
+            "fitted_c_q50": float(np.quantile(fitted_c, 0.50)) if fitted_c.size else np.nan,
+            "fitted_c_q95": float(np.quantile(fitted_c, 0.95)) if fitted_c.size else np.nan,
+            "recovery_ratio_median": (
+                float(np.median(fitted_c) / c) if fitted_c.size and np.isfinite(c) else np.nan
+            ),
+            "mean_advantage_nll_per_cell": float(np.mean(advantage)),
+            "advantage_q05": float(np.quantile(advantage, 0.05)),
+            "advantage_q95": float(np.quantile(advantage, 0.95)),
+            "null_advantage_q95": null_q95,
+            "detectable": bool(rung != "ex2" and len(group) > 1
+                               and np.quantile(advantage, 0.05) > null_q95),
+            "reverse_log_gamma_relative_q05": (
+                float(np.quantile(reverse_relative, 0.05)) if rung == "ex2" else np.nan
+            ),
+            "reverse_log_gamma_relative_q50": (
+                float(np.quantile(reverse_relative, 0.50)) if rung == "ex2" else np.nan
+            ),
+            "reverse_log_gamma_relative_q95": (
+                float(np.quantile(reverse_relative, 0.95)) if rung == "ex2" else np.nan
+            ),
+        }
+        for scale in ("sigma_exp", "tau_peptide", "tau_time", "kappa"):
+            column = f"fitted_{scale}"
+            row[f"confounding_corr_log_gamma_{scale}"] = (
+                float(confounding["fitted_log_gamma"].corr(confounding[column]))
+                if len(confounding) > 1 else np.nan
+            )
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -527,10 +778,14 @@ def _recordkeeping(question: str) -> dict[str, object]:
         "uptake_normalisation": UPTAKE_NORMALISATION,
         "anm_variant": _anm_variant(question),
         "numerical_floor": NUMERICAL_FLOOR,
-        "seeds": SEED_REGISTRY,
-        "uptake_backend": "ex2",
-        "ll_gamma_parameterisation": None,
-        "ll_log_gamma": None,
+        "seeds": ({**SEED_REGISTRY, "gamma_surface": GAMMA_SEED}
+                  if question in {"gamma", "all"} else SEED_REGISTRY),
+        "uptake_backend": "ll" if question in {"gamma", "all"} else "ex2",
+        "ll_gamma_parameterisation": (
+            "log_gamma; gamma = k_open + k_close; p_open = exp(-log_pf)"
+            if question in {"gamma", "all"} else None
+        ),
+        "ll_log_gamma": list(GAMMA_LADDER) if question in {"gamma", "all"} else None,
     }
 
 
@@ -540,11 +795,15 @@ def backfill_manifests(root: Path) -> None:
         manifest = json.loads(path.read_text())
         question = path.parent.name.removesuffix("_full")
         manifest.update(_recordkeeping(question))
+        for key in GAMMA_MANIFEST_KEYS:
+            manifest.setdefault(key, None)
         path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
 
 
 def run(args):
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = (args.output_dir / f"gamma_{args.profile}"
+                  if args.question == "gamma" else args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     structure_digest = common.sha256(STRUCTURE)
     if structure_digest != STRUCTURE_SHA256:
         raise ValueError(f"unexpected structure SHA-256: {structure_digest}")
@@ -553,10 +812,12 @@ def run(args):
     base = SimulationParameters()
     if args.profile == "smoke":
         lambdas, ratios, spreads, replicates, draws, maxiter = [0.0, 0.5], [0.5, 2.0], [0.05, 0.2], 1, 300, 35
+        gamma_replicates = 2
     else:
         lambdas, ratios, spreads, replicates, draws, maxiter = np.linspace(0, 1, 6), [0.25, 0.5, 1, 2, 4], [0.025, 0.05, 0.1, 0.2, 0.4], args.replicates, args.mc_draws, args.maxiter
+        gamma_replicates = replicates
     frames = {}
-    requested = ("anm", "sign", "scale", "delta") if args.question == "all" else (args.question,)
+    requested = ("anm", "sign", "scale", "delta", "gamma") if args.question == "all" else (args.question,)
     if "anm" in requested:
         frames["anm"] = run_anm(geometry, base, lambdas, replicates, maxiter)
         frames["anm_summary"] = summarize_anm(frames["anm"])
@@ -569,8 +830,24 @@ def run(args):
     if "delta" in requested:
         frames["delta"] = run_delta(geometry, spreads, draws)
         frames["delta_summary"] = summarize_delta(frames["delta"])
+    k1_max_abs = None
+    k1_scaling_check = None
+    target_hash = None
+    median_rate = None
+    if "gamma" in requested:
+        median_rate = float(np.median(geometry.k_int))
+        fastest_log_gamma = float(np.log(K1_FAST_LIMIT_C * median_rate))
+        k1_max_abs = float(np.max(np.abs(
+            mean_for_kinetics(geometry, fastest_log_gamma) - geometry.mean
+        )))
+        if k1_max_abs > K1_TOLERANCE:
+            raise AssertionError(f"K1 fast-limit control failed: max abs = {k1_max_abs:.3g}")
+        k1_scaling_check = _k1_scaling_diagnostics(geometry, median_rate)
+        frames["gamma"] = run_gamma(geometry, gamma_replicates, maxiter)
+        frames["gamma_summary"] = summarize_gamma(frames["gamma"], median_rate)
+        _, target_hash = _gamma_truth_parameters()
     for name, frame in frames.items():
-        frame.to_csv(args.output_dir / f"{name}.csv", index=False)
+        frame.to_csv(output_dir / f"{name}.csv", index=False)
     manifest = {
         "phase": 2,
         "profile": args.profile,
@@ -590,9 +867,35 @@ def run(args):
             "Only full-profile summaries are scientific. Detectability requires paired held-out "
             "NLL advantage and fitted effect lower 95% bounds above their registered nulls."
         ),
+        "k1_fast_limit_max_abs": k1_max_abs,
+        # The ladder is dimensionless (c = gamma / median k_int), so the absolute floor in min^-1
+        # depends on the rate source. Record the scale that converts one to the other.
+        "median_k_int_per_min": median_rate,
+        "gamma_ladder_units": (
+            "c is dimensionless; gamma = c * median_k_int_per_min (min^-1)"
+            if median_rate is not None else None
+        ),
+        "k1_fast_limit_c": K1_FAST_LIMIT_C if "gamma" in requested else None,
+        "k1_fast_limit_tolerance": K1_TOLERANCE if "gamma" in requested else None,
+        "k1_scaling_check": k1_scaling_check,
+        "k1_control_rationale": (
+            "The fast-limit control is deliberately decoupled from GAMMA_LADDER[0] because "
+            "the ladder's fastest rung carries real O(k_int/gamma) physics."
+            if "gamma" in requested else None
+        ),
+        "ll_logpf_clip_count": int(np.count_nonzero(geometry.log_pf < 0)) if "gamma" in requested else None,
+        "ll_covariance_sensitivity_approximation": (
+            "EX2 sensitivities retained for tau_time/kappa confounding check; primary gamma covariance is gamma-independent"
+            if "gamma" in requested else None
+        ),
+        "truth_parameter_provenance": ({
+            "path": str(TARGET_MODES.resolve()), "sha256": target_hash,
+            "parameter_names": ["sigma_exp", "tau_peptide"],
+        } if "gamma" in requested else None),
+        "post_hoc_provenance_additions": None,
         **_recordkeeping(args.question),
     }
-    (args.output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
 
 def main():
@@ -600,7 +903,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path(__file__).with_name("_moprp_sigma_identifiability"))
     parser.add_argument("--ensemble", choices=tuple(common.ENSEMBLES), default="AF2_MSAss")
     parser.add_argument("--rate-source", choices=tuple(common.RATE_SOURCES), default="hdxrate_pdla_validated")
-    parser.add_argument("--question", choices=("all", "anm", "sign", "scale", "delta"), default="all")
+    parser.add_argument("--question", choices=("all", "anm", "sign", "scale", "delta", "gamma"), default="all")
     parser.add_argument("--profile", choices=("smoke", "full"), default="smoke")
     parser.add_argument("--replicates", type=int, default=25)
     parser.add_argument("--mc-draws", type=int, default=5000)

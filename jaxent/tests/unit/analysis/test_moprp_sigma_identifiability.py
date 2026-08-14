@@ -78,6 +78,62 @@ def test_parameter_transform_roundtrip_and_reduced_fit_is_finite():
     assert fitted.sigma_exp > 0
 
 
+def test_log_gamma_transform_and_kinetic_means():
+    geometry = tiny_geometry()
+    parameters = study.SimulationParameters(log_gamma=-2.3)
+    decoded = study._decode(study._encode(parameters, ("log_gamma",)), parameters,
+                            ("log_gamma",))
+    assert decoded.log_gamma == parameters.log_gamma
+    np.testing.assert_array_equal(study.mean_for_kinetics(geometry, None), geometry.mean)
+    fast = np.log(np.median(geometry.k_int) * 1e6)
+    np.testing.assert_allclose(study.mean_for_kinetics(geometry, fast), geometry.mean,
+                               atol=2e-6)
+
+
+def test_slow_kinetic_fit_recovers_gamma_and_beats_ex2():
+    geometry = tiny_geometry()
+    true_log_gamma = float(np.log(np.median(geometry.k_int) * 0.3))
+    surface = study.mean_for_kinetics(geometry, true_log_gamma)
+    initial = study.SimulationParameters(sigma_exp=1e-4, tau_z=0, tau_peptide=0,
+                                         tau_time=0, kappa=0, log_gamma=np.log(2.0))
+    fitted, k2_objective, _ = study.fit_kinetic_parameters(
+        surface, geometry, initial, free=("log_gamma",), maxiter=150
+    )
+    k0, k0_objective, _ = study.fit_kinetic_parameters(
+        surface, geometry, study.SimulationParameters(sigma_exp=1e-4, tau_z=0,
+        tau_peptide=0, tau_time=0, kappa=0), free=(), maxiter=5
+    )
+    assert k0.log_gamma is None
+    assert abs(fitted.log_gamma - true_log_gamma) < 0.05
+    assert k2_objective < k0_objective
+
+
+def test_reverse_null_drives_gamma_to_fast_limit():
+    geometry = tiny_geometry()
+    initial = study.SimulationParameters(sigma_exp=1e-4, tau_z=0, tau_peptide=0,
+                                         tau_time=0, kappa=0, log_gamma=np.log(10.0))
+    fitted, _, _ = study.fit_kinetic_parameters(
+        geometry.mean, geometry, initial, free=("log_gamma",), maxiter=200
+    )
+    assert fitted.log_gamma >= np.log(np.median(geometry.k_int) * 1e4)
+
+
+def test_ll_ex2_difference_scales_as_inverse_gamma():
+    geometry = tiny_geometry()
+    median_rate = float(np.median(geometry.k_int))
+    differences = np.asarray([
+        np.max(np.abs(
+            study.mean_for_kinetics(geometry, np.log(c * median_rate)) - geometry.mean
+        ))
+        for c in study.K1_SCALING_C
+    ])
+    assert np.all(np.diff(differences) < 0)
+    np.testing.assert_allclose(
+        differences[:-1] / differences[1:], 10.0,
+        rtol=study.K1_SCALING_RTOL, atol=0.0,
+    )
+
+
 def test_time_folds_cover_every_coordinate_once():
     folds = list(study.time_folds(3, 5, block=2))
     held = np.concatenate([test for _, test in folds])
@@ -105,20 +161,35 @@ def test_recordkeeping_schema_and_verbatim_normalisation(monkeypatch):
     assert records[1]["anm_variant"]["used_in_question"]
     assert not records[2]["anm_variant"]["used_in_question"]
     assert not records[3]["anm_variant"]["used_in_question"]
+    gamma = study._recordkeeping("gamma")
+    assert gamma["uptake_backend"] == "ll"
+    assert gamma["ll_gamma_parameterisation"]
+    assert gamma["ll_log_gamma"] == list(study.GAMMA_LADDER)
 
 
 def test_generated_full_manifests_share_recordkeeping_keys():
     root = FITTING_DIR / "_moprp_sigma_identifiability"
     paths = sorted(root.glob("*_full/manifest.json"))
-    assert len(paths) == 4
+    assert len(paths) == 5  # anm, delta, gamma, scale, sign
     manifests = [json.loads(path.read_text()) for path in paths]
     assert all(set(manifest) == set(manifests[0]) for manifest in manifests)
-    for manifest in manifests:
+    for path, manifest in zip(paths, manifests):
+        question = path.parent.name.removesuffix("_full")
         assert manifest["git_commit"]
         assert manifest["numerical_floor"] == 1e-10
-        assert manifest["uptake_backend"] == "ex2"
         assert manifest["uptake_normalisation"] == study.UPTAKE_NORMALISATION
-        assert manifest["seeds"] == study.SEED_REGISTRY
+        # Phase 2.5 is the only question that activates the finite-gating backend.
+        if question == "gamma":
+            assert manifest["uptake_backend"] == "ll"
+            assert manifest["seeds"] == {**study.SEED_REGISTRY, "gamma_surface": study.GAMMA_SEED}
+            # the absolute floor is rate-source dependent; the ladder itself is dimensionless
+            assert manifest["median_k_int_per_min"] > 0
+            assert manifest["k1_fast_limit_c"] == study.K1_FAST_LIMIT_C
+            assert manifest["k1_fast_limit_max_abs"] <= study.K1_TOLERANCE
+        else:
+            assert manifest["uptake_backend"] == "ex2"
+            assert manifest["seeds"] == study.SEED_REGISTRY
+            assert manifest["median_k_int_per_min"] is None
 
 
 def test_phase3_delta_gate_is_fixed_at_point_one():

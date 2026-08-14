@@ -225,7 +225,7 @@ def _null_population(inputs):
 
 def _run_fit(inputs, log_pf, present, weight_map, pivot, target, target_space, truth, steps, lr,
              n_random, overlap, reference_pf, spread_finite, eta=ETA, all_starts=True,
-             report_observed_uptake_mse=False):
+             report_observed_uptake_mse=False, metric=None):
     keep = np.ones(inputs.mapping.shape[0], dtype=bool)
     keep[common.PEPTIDE1_INDEX] = False
     mapping = inputs.mapping[keep]
@@ -238,16 +238,28 @@ def _run_fit(inputs, log_pf, present, weight_map, pivot, target, target_space, t
 
     if target_space == "uptake":
         target_array = jnp.asarray(target)
-        baseline = jnp.mean((uptake_repr(uniform_weights) - target_array) ** 2)
-        baseline = jnp.maximum(baseline, 1e-12)
+        if metric is None:
+            baseline = jnp.mean((uptake_repr(uniform_weights) - target_array) ** 2)
+            baseline = jnp.maximum(baseline, 1e-12)
 
-        def repr_weights(weights):
-            return uptake_repr(weights).reshape(-1)
+            def repr_weights(weights):
+                return uptake_repr(weights).reshape(-1)
 
-        def loss(theta):
-            population = jax.nn.softmax(theta)
-            prediction = uptake_repr(weight_map @ population)
-            return jnp.mean((prediction - target_array) ** 2) / baseline + eta * kl_to_uniform(population)
+            def loss(theta):
+                population = jax.nn.softmax(theta)
+                prediction = uptake_repr(weight_map @ population)
+                return jnp.mean((prediction - target_array) ** 2) / baseline + eta * kl_to_uniform(population)
+        else:
+            baseline = metric(uptake_repr(uniform_weights) - target_array)
+            baseline = jnp.maximum(baseline, 1e-12)
+
+            def repr_weights(weights):
+                return uptake_repr(weights).reshape(-1)
+
+            def loss(theta):
+                population = jax.nn.softmax(theta)
+                prediction = uptake_repr(weight_map @ population)
+                return metric(prediction - target_array) / baseline + eta * kl_to_uniform(population)
     else:
         target_array = jnp.asarray(target)
         overlap_j = jnp.asarray(overlap)
