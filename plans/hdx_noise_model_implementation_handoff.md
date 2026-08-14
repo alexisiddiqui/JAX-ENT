@@ -156,7 +156,7 @@ rescales to `trace(W)=n` at dataset creation). Consequences:
 | 0.1 rates | **RESOLVED 2026-08-13.** JAX-ENT explicitly calls HDXrate 0.2.2 with `reference="poly"`, `exchange_type="HD"`, `d_percentage=100.0`, and `ph_correction=False`; the native s⁻¹ vector is converted to min⁻¹ only during MoPrP materialisation. The immutable output SHA-256 is `43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c`; manifest and residue-by-residue validation are under `_moprp_kint_provenance/validated_hdxrate_pdla/`. The existing 3Ala default remains unchanged. | resolved; validated PDLA is the corrected-rate sensitivity arm |
 | 0.2 uptake provenance | **RESOLVED — see §7.** Remaining action is clerical: paste the §7.1 manifest paragraph into `_moprp_recovery_common.py` and every manifest; assert no second back-exchange factor exists anywhere in the pipeline | (was: interpretation of the peptide-persistent term — now *fixes* that interpretation, see §7.3) |
 | 0.3 EX1 spot check | **RESOLVED — see §8.** Peptide 1 favours EX2 over correlated all-or-none exchange; 13/14 peptides remain unscreened | centroid-EX2 premise survives for peptide 1 only |
-| 0.4 masks | **RESOLVED — see §9.** PF reference is `median.pfact`; `R` = the 76 peptide-covered residues; no peptide is dropped. Remaining action is the Phase 1 construction obligation in §9.4 | (was: silent sentinel corruption of C_z — the mechanism is real but narrower than assumed, see §9.2) |
+| 0.4 masks | **RESOLVED — see §9.** PF reference is `median.pfact`; `R` = the 76 peptide-covered residues; no peptide is dropped. Remaining action is the Phase 1 construction obligation in §9.4, now joined by the §10.3 refit-reference decision | (was: silent sentinel corruption of C_z — the mechanism is real but narrower than assumed, see §9.2) |
 | 0.5 weights provenance | **RESOLVED — see §10.** `moprp.weights` is `w = 1/σ`. The weights did **not** enter `median.pfact` (upstream `--weights` defaults off and the documented generating command omits it), so the Phase 3 empirical-variance comparison is non-circular. Two carry-forwards: an upstream squaring bug (§10.1) that any Phase 5 exPfact refit must avoid, and the PF-reference bias constraint (§10.3). | resolved |
 
 ### Phase 1 — machinery correctness (unit tests first, design §17.1)
@@ -686,12 +686,25 @@ which §7.3 already primes to expect support. `τ_P` could then be "supported" f
 nothing to do with maxD residual, and §7.3's pre-registered expectation would be confirmed
 spuriously.
 
-Two decisions required before Phase 1 construction:
+**Decisions taken 2026-08-13 (user):**
 
-1. whether the PF reference should be a **refit** (`fit_ex2_solution_set`, ≥50 starts — already
-   required by §1.2/§2.4 for mode structure) with the shipped median retained only as a comparator;
-2. whether the per-peptide bias vector must be reported alongside any fitted `τ_P`, as a mandatory
-   confound readout, so the two cannot be conflated.
+1. **The PF reference is a refit, not the shipped median.** `fit_ex2_solution_set` at ≥50 starts
+   (§1.2, §8.1) over the 76-residue set, on `moprp.dexp` with `moprp.kint`, unweighted. The shipped
+   `median.pfact` is retained as a **comparator only** — it is reported against the refit (log-PF
+   correlation, per-residue deltas, per-peptide residual bias for both) and never enters `C_z`.
+   Note the refit is not a like-for-like reproduction of the upstream protocol: exPfact used
+   `--harm 1e-8` smoothing and took the median of the top 50 of 5,000 restarts, so a plain
+   multistart refit will differ for reasons beyond convergence. Record the harmonic setting used
+   (`harmonic_strength`) explicitly in the manifest; the design's mode-clustering (§8.1) replaces
+   median aggregation, so no median-of-solutions step is reintroduced.
+2. **The per-peptide residual bias vector is a mandatory readout** wherever `τ_P` is fitted or
+   reported, for the refit reference as well as the comparator. Adopted because it is nearly free
+   and is the only thing that keeps a supported `τ_P` interpretable under §7.3.
 
-Until resolved, this supersedes nothing in §9 (the residue set and sentinel findings stand) but
-adds a constraint on how the reference is *used*.
+Manifest obligations added: PF-reference kind (`refit` | `shipped_median`), start count, seed,
+harmonic strength, and the refit's own per-peptide bias vector.
+
+This supersedes nothing in §9 (the residue set and sentinel findings stand); it constrains how
+the reference is *used* and replaces §9.3's "PF reference is `median.pfact`" for the purpose of
+building `C_z`. §9.3's coverage argument — `R` = the 76 covered residues, no peptide dropped —
+is unaffected and still governs.
