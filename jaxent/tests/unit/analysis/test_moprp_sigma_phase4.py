@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FITTING_DIR = REPO_ROOT / "jaxent/examples/2_CrossValidation/fitting/jaxENT"
 sys.path.insert(0, str(FITTING_DIR))
 phase4 = importlib.import_module("moprp_sigma_phase4")
+equivalence = importlib.import_module("phase4_default_path_equivalence")
 sys.path.remove(str(FITTING_DIR))
 
 
@@ -44,3 +45,33 @@ def test_eye_mse_arm_is_exact_untouched_expression():
 
 def test_joint_gaussian_loss_is_registered_additively():
     assert LOSS_REGISTRY["joint_gaussian"] is hdx_uptake_joint_gaussian_loss
+
+
+def test_default_path_compare_identical_payloads_have_zero_deviation():
+    payload = {"rows": [{"score": 1.5, "selected": True}], "label": "default"}
+    assert equivalence.flatten_numeric(payload) == {"rows.0.score": 1.5}
+    result = equivalence.compare(payload, payload)
+    assert result["max_abs"] == result["max_rel"] == 0.0
+    assert result["structure_identical"]
+
+
+def test_default_path_compare_reports_perturbed_numeric_path():
+    a = {"outer": {"small": 1.0, "large": 4.0}}
+    b = {"outer": {"small": 1.0, "large": 4.25}}
+    result = equivalence.compare(a, b)
+    assert result["max_abs"] == 0.25
+    assert result["argmax_path"] == "outer.large"
+    assert result["structure_identical"]
+
+
+def test_default_path_compare_rejects_key_or_string_changes_structurally():
+    original = {"value": 1.0, "label": "unchanged"}
+    assert not equivalence.compare(original, {"renamed": 1.0, "label": "unchanged"})[
+        "structure_identical"
+    ]
+    assert not equivalence.compare(original, {"value": 1.0, "label": "changed"})[
+        "structure_identical"
+    ]
+    assert equivalence.compare(original, {"label": "unchanged", "value": 1.0})[
+        "structure_identical"
+    ]
