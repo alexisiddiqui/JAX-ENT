@@ -1,0 +1,8 @@
+archives/
+catalog/
+metadata/
+raw/
+staging/
+quarantine/
+*.aria2
+

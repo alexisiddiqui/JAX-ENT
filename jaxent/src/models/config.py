@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import Literal
 
 import chex
 
@@ -25,14 +26,37 @@ class BV_model_Config(BaseConfig):
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
     peptide: bool = False
     switch: bool = False
+    contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch"] = "hard"
+    switch_scale_nc: float = 10.0
+    switch_scale_nh: float = 10.0
     # Protein N termini are handled chain-wise by BV_model's terminal policy.
     mda_selection_exclusion: str = "resname PRO"
     # General featurisation may include explicitly modelled solvent/cosolutes.
     # Protein-only parity analyses must opt in as protocol metadata.
     mda_contact_environment: str = "all"
 
-    def __init__(self, num_timepoints: int | None = None, timepoints: Array | None = None, switch: bool | None = None) -> None:
+    def __init__(
+        self,
+        num_timepoints: int | None = None,
+        timepoints: Array | None = None,
+        switch: bool | None = None,
+        contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch"] | None = None,
+        switch_scale_nc: float = 10.0,
+        switch_scale_nh: float = 10.0,
+    ) -> None:
         super().__init__()
+        if contact_mode is not None and switch is not None:
+            raise ValueError("contact_mode and the legacy switch argument are mutually exclusive")
+        if contact_mode is None:
+            contact_mode = "legacy_switch" if switch else "hard"
+        if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch"}:
+            raise ValueError(f"unknown contact_mode: {contact_mode!r}")
+        if switch_scale_nc <= 0 or switch_scale_nh <= 0:
+            raise ValueError("Bradshaw switch scales must be positive")
+        self.contact_mode = contact_mode
+        self.switch = contact_mode == "legacy_switch"
+        self.switch_scale_nc = float(switch_scale_nc)
+        self.switch_scale_nh = float(switch_scale_nh)
         if timepoints is not None:
             self.timepoints = timepoints
             if num_timepoints is not None and num_timepoints != len(timepoints):
@@ -56,8 +80,6 @@ class BV_model_Config(BaseConfig):
             else:
                 raise ValueError("Please make sure your timepoint/prior parameters make sense")
             self.num_timepoints = num_timepoints
-        if switch is not None:
-            self.switch = switch
 
     @property
     def forward_parameters(self) -> Model_Parameters:

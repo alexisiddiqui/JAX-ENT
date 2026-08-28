@@ -1,0 +1,110 @@
+protocol:
+  temperature_k: 300.0
+  bv_bc: 0.35
+  bv_bh: 2.0
+  heavy_midpoint_angstrom: 6.5
+  acceptor_midpoint_angstrom: 2.4
+  contact_mode: bradshaw_switch
+  switch_function: rational_6_12
+  switch_scale_nc_angstrom: 10.0
+  switch_scale_nh_angstrom: 10.0
+  residue_ignore: [-2, 2]
+  contact_environment: all
+  contact_threads: 10
+  reference_implementation: ../1_IsoValidation_OMass/data/_Bradshaw/Reproducibility_pack_v2/code/calc_hdx/Functions.py
+
+benchmark:
+  system_id: 1u6t_A
+  replica: 1
+  residues: 121
+  frames: 1001
+  estimated_seconds: 11.5
+
+full_dataset:
+  systems: 111
+  replicas_per_system: 3
+  total_frames: 333333
+  summed_residues: 14319
+  estimated_serial_seconds: 4085.0
+  estimated_feature_values: 85999914
+
+analysis:
+  redesign_version: within_basin_pc1_v1
+  seed: 20260826
+  equilibration_ns: 10.0
+  frame_interval_ns: 0.1
+  gas_constant_kcal_mol_k: 0.00198720425864083
+  convergence:
+    ks_max: 0.15
+    js_bits_max: 0.05
+    histogram_bins_min: 10
+    histogram_bins_max: 30
+    bootstrap_samples: 1000
+  basins:
+    atom_selection: "protein and name CA"
+    dbscan_eps_angstrom: 2.0
+    dbscan_min_samples: 50
+    min_frames_per_replica: 50
+    workers: 2
+  stage1:
+    bootstrap_samples: 1000
+    permutation_samples: 1000
+    population_null_alpha: 0.05
+    min_informative_systems: 20
+    min_usable_basins: 3
+    min_delta_f_range_kcal_mol: 0.5
+    majority_fraction: 0.60
+    sign_consistency_fraction: 0.70
+    native_ca_cutoff_angstrom: 8.0
+    native_sequence_separation: 3
+    native_distance_multiplier: 1.2
+    pc1_bins_min: 15
+    pc1_bins_max: 30
+    min_frames_per_bin: 20
+    min_common_bins_per_fold: 5
+    max_heldout_out_of_range_fraction: 0.05
+  stage2:
+    workers: 8
+    bootstrap_samples: 1000
+    benchmark_bootstrap_samples: 5
+    population_bootstrap_samples: 10000
+    bootstrap_blocks_per_replica: 5
+    direction_grid_points: 129
+    condition_number_max: 1.0e8
+    correlation_max: 0.95
+    jax_parity_atol: 1.0e-6
+  pairwise_geometry:
+    workers: 2
+    train_pairs: 75000
+    test_pairs: 50000
+    distance_chunk_size: 5000
+    sigma_floor: 1.0e-8
+    interval_bins: 10
+    system_bootstrap_samples: 10000
+    support_audit:
+      w1_support_quantiles: 256
+      w1_max_chunk_values: 2000000
+      target_pair_sample: 1000
+    boundary_audit:
+      tail_fraction: 0.10
+      tail_minimum_pairs: 30
+      distribution_bins: 20
+      distribution_smoothing: 1.0e-12
+    vector_audit:
+      knn_train_pairs: 5000
+      knn_test_pairs: 10000
+      inner_pairs_per_replica: 5000
+      ridge_alphas: [1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1, 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 1000000.0]
+      pca_variance: [0.80, 0.90, 0.95, 0.99]
+      knn_neighbors: [5, 15, 50, 150]
+      likelihood:
+        variance_alphas: [1.0e-4, 1.0e-2, 1.0, 100.0, 10000.0]
+        sigma_floor_iqr: 0.01
+        mean_scale_bins: [1, 3, 5, 10, 20]
+    strict_conformal:
+      pairs_per_replica: 25000
+      ridge_tuning_fraction: 0.20
+      mondrian_bins: 10
+      coverage: 0.90
+      pf_support_vectors: 5000
+      novelty_quantile: 0.95

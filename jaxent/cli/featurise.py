@@ -137,6 +137,30 @@ def main():
         default=False, 
         help="Flag to indicate if the model is peptide-based.",
     )
+    bv_parser.add_argument(
+        "--contact_mode",
+        choices=("hard", "legacy_switch", "bradshaw_switch"),
+        default=None,
+        help="Explicit BV contact construction. Prefer this over the legacy --switch flag.",
+    )
+    bv_parser.add_argument(
+        "--switch_scale_nc",
+        type=float,
+        default=10.0,
+        help="Bradshaw heavy-contact switch scale in Angstroms.",
+    )
+    bv_parser.add_argument(
+        "--switch_scale_nh",
+        type=float,
+        default=10.0,
+        help="Bradshaw acceptor-contact switch scale in Angstroms.",
+    )
+    bv_parser.add_argument(
+        "--mda_contact_environment",
+        type=str,
+        default="all",
+        help="MDAnalysis selection for atoms allowed to protect the amide.",
+    )
 
     # Linear BV Model Subparser (inherits from BV, so similar args)
     linear_bv_parser = subparsers.add_parser(
@@ -305,9 +329,16 @@ def main():
     # Create ForwardModel based on selected type
     forward_model: ForwardModel
     if args.model_type == "bv":
-        config = BV_model_Config(num_timepoints=args.num_timepoints)
+        if args.switch and args.contact_mode is not None:
+            parser.error("--switch and --contact_mode are mutually exclusive")
+        config = BV_model_Config(
+            num_timepoints=args.num_timepoints,
+            switch=True if args.switch else None,
+            contact_mode=args.contact_mode,
+            switch_scale_nc=args.switch_scale_nc,
+            switch_scale_nh=args.switch_scale_nh,
+        )
         config.temperature = args.temperature
-        config.switch = args.switch
         config.bv_bc = jnp.array(args.bv_bc)
         config.bv_bh = jnp.array(args.bv_bh)
         config.ph = args.ph
@@ -318,6 +349,7 @@ def main():
         config.peptide_trim = args.peptide_trim
         config.peptide = args.peptide
         config.mda_selection_exclusion = args.mda_selection_exclusion
+        config.mda_contact_environment = args.mda_contact_environment
         forward_model = BV_model(config=config)
     elif args.model_type == "linear_bv":
         config = linear_BV_model_Config(num_timepoints=args.num_timepoints)

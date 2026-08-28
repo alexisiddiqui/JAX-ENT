@@ -10,6 +10,34 @@ from tqdm import tqdm
 from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 
+ContactMode = Literal["hard", "legacy_switch", "bradshaw_switch"]
+
+
+def bradshaw_rational_6_12(
+    distance: np.ndarray | float,
+    *,
+    center: float,
+    scale: float,
+) -> np.ndarray:
+    """Bradshaw/Radou continuous rational 6--12 contact switch.
+
+    The reference implementation evaluates
+
+    ``(1-y**6) / (1-y**12)``, where ``y=(distance-center)/scale``,
+
+    for every eligible atom pair.  The expression is exactly
+    ``1 / (1+y**6)`` after cancelling the removable singularity at
+    ``abs(y) == 1``; the simplified form is used here for numerical safety.
+    Distances, ``center``, and ``scale`` must use the same units.
+    """
+    if center < 0:
+        raise ValueError("center must be non-negative")
+    if scale <= 0:
+        raise ValueError("scale must be positive")
+    values = np.asarray(distance, dtype=float)
+    return 1.0 / (1.0 + ((values - center) / scale) ** 6)
+
+
 # def calc_BV_contacts_universe(
 #     universe: Universe,
 #     target_atoms: AtomGroup,
@@ -131,6 +159,8 @@ def calc_BV_contacts_universe(
     switch: bool = False,
     n_jobs: int = 10,
     environment_selection: str = "all",
+    contact_mode: ContactMode | None = None,
+    switch_scale: float = 10.0,
 ) -> Sequence[Sequence[float]]:
     """Calculate Best--Vendruscolo contacts for backbone amide donors.
 
@@ -146,17 +176,30 @@ def calc_BV_contacts_universe(
         contact_selection: "heavy" or "oxygen"
         radius: Cutoff distance in Angstroms
         residue_ignore: Relative residue range to ignore (start, end)
-        switch: Use the legacy JAX-ENT rational switched-contact sensitivity.
+        switch: Backward-compatible alias selecting ``legacy_switch`` when true.
         n_jobs: Number of OpenMP threads to use for distance calculation
         environment_selection: MDAnalysis selection defining atoms that may
             protect the amide. General featurisation includes all explicitly
             modelled atoms; a protein-only experiment must request ``protein``.
+        contact_mode: Explicit contact construction. ``hard`` counts contacts
+            within ``radius``; ``legacy_switch`` applies JAX-ENT's truncated
+            rational switch; ``bradshaw_switch`` applies the Bradshaw/Radou
+            continuous rational 6--12 switch to every eligible pair.
+        switch_scale: Width of ``bradshaw_switch`` in Angstroms.
 
     Returns:
         List of contact counts per frame (N_targets, N_frames)
     """
     if radius <= 0:
         raise ValueError("radius must be positive")
+    if contact_mode is None:
+        contact_mode = "legacy_switch" if switch else "hard"
+    if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch"}:
+        raise ValueError(f"unknown contact_mode: {contact_mode!r}")
+    if switch and contact_mode != "legacy_switch":
+        raise ValueError("switch=True cannot be combined with an explicit non-legacy contact_mode")
+    if contact_mode == "bradshaw_switch" and switch_scale <= 0:
+        raise ValueError("switch_scale must be positive")
     if residue_ignore[0] > residue_ignore[1]:
         raise ValueError("residue_ignore must be ordered (lower, upper)")
     if len(target_atoms) == 0:
@@ -242,10 +285,17 @@ def calc_BV_contacts_universe(
         )
         dists[ignore_mask] = np.inf
 
-        if switch:
+        if contact_mode == "legacy_switch":
             within_cutoff = dists <= radius
             switch_values = np.zeros_like(dists)
             switch_values[within_cutoff] = rational_switch(dists[within_cutoff], radius)
+            results[:, frame_index] = np.sum(switch_values, axis=1)
+        elif contact_mode == "bradshaw_switch":
+            switch_values = bradshaw_rational_6_12(
+                dists,
+                center=radius,
+                scale=switch_scale,
+            )
             results[:, frame_index] = np.sum(switch_values, axis=1)
         else:
             results[:, frame_index] = np.sum(dists <= radius, axis=1)

@@ -1,0 +1,16 @@
+manifest_version: 1
+created_at_utc: 2026-08-26T17:11:01.917127+00:00
+catalog_url: https://www.dsimb.inserm.fr/ATLAS/api/parsable?dataset=ATLAS
+catalog_member: ATLAS_parsable_latest/2023_03_09_ATLAS_info.tsv
+catalog_sha256: c9cba2b7190676814bb83daf11fcfe92ad0c3a3cdaca4eb4782ca6b98c67b75e
+source_rows: 1938
+selected_rows: 111
+filters:
+  minimum_length: 60
+  maximum_length: 250
+  non_redundant_protein: true
+  contact_ligand: false
+  contact_nucleotide: false
+  contact_ion: allowed
+rmsf_tercile_lower: 0.883333333333
+rmsf_tercile_upper: 1.61

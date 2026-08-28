@@ -196,14 +196,14 @@ class mda_TopologyAdapter:
         chainID_value = None
         segid_value = None
         if not isinstance(sample_atom, Universe) and hasattr(sample_atom, "chainID"):
-            has_chainID = True
-            chainID_value = sample_atom.chainID.strip()
+            chainID_value = sample_atom.chainID.strip() or None
+            has_chainID = chainID_value is not None
         else:
             has_chainID = False
 
         if not isinstance(sample_atom, Universe) and hasattr(sample_atom, "segid"):
-            has_segid = True
-            segid_value = sample_atom.segid.strip()
+            segid_value = sample_atom.segid.strip() or None
+            has_segid = segid_value is not None
         else:
             has_segid = False
 

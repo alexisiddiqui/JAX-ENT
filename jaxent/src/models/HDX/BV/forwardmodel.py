@@ -266,6 +266,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 residue_ignore=self.config.residue_ignore,
                 switch=self.config.switch,
                 environment_selection=self.config.mda_contact_environment,
+                contact_mode=self.config.contact_mode,
+                switch_scale=self.config.switch_scale_nc,
             )
 
             # Calculate O atom contacts (H-bond acceptors) using H atoms
@@ -277,6 +279,8 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 residue_ignore=self.config.residue_ignore,
                 switch=self.config.switch,
                 environment_selection=self.config.mda_contact_environment,
+                contact_mode=self.config.contact_mode,
+                switch_scale=self.config.switch_scale_nh,
             )
 
             # --- Ensure ordering matches self.topology_order ---

@@ -1,0 +1,15 @@
+manifest_version: 1
+created_at_utc: 2026-08-26T17:11:01.917648+00:00
+source_url: https://www.dsimb.inserm.fr/ATLAS/api/MD_parameters
+archive_sha256: 0fb6e4ffbbdc0f624d071b63bf89839d83e543acb1d21e75973b76cec850a951
+production_mdp_member: 3_production.mdp
+production_mdp_sha256: 88918744106de5674a5ea254c47720c1ca42138f63e0d80d7984f61847dff89e
+integrator: md
+dt_ps: 0.002
+nsteps: 50000000
+nstxout_compressed: 5000
+temperature_k: 300
+temperature_coupling: Nose-Hoover
+pressure_bar: 1
+pressure_coupling: Parrinello-Rahman
+ensemble: NPT

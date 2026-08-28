@@ -21,6 +21,7 @@ dependencies = [
     "networkx[default]",
     "numpy",
     "optax>=0.2.4",
+    "pyarrow",
     "pyyaml",
     "scikit-learn",
     "scipy",

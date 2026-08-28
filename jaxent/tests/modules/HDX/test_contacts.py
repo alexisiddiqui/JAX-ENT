@@ -4,7 +4,10 @@ import MDAnalysis as mda
 import numpy as np
 import beartype.roar
 
-from jaxent.src.models.func.contacts import calc_BV_contacts_universe
+from jaxent.src.models.func.contacts import (
+    bradshaw_rational_6_12,
+    calc_BV_contacts_universe,
+)
 
 
 def create_test_universe(n_frames=2):
@@ -241,6 +244,59 @@ class TestCalcBVContacts(unittest.TestCase):
 
         # Only frame 0 is changed
         np.testing.assert_allclose(contacts[0][0], expected_val, atol=1e-5)
+
+    def test_bradshaw_switch_matches_reference_rational_6_12(self):
+        distances = np.array([0.0, 1.2, 2.4, 6.5, 9.0, 12.0, 20.0])
+        center = 2.4
+        scale = 10.0
+        y = (distances - center) / scale
+        reference = (1.0 - y**6) / (1.0 - y**12)
+
+        actual = bradshaw_rational_6_12(distances, center=center, scale=scale)
+
+        np.testing.assert_allclose(actual, reference, rtol=1e-13, atol=1e-13)
+        np.testing.assert_allclose(
+            bradshaw_rational_6_12(
+                np.array([center, center - scale, center + scale]),
+                center=center,
+                scale=scale,
+            ),
+            [1.0, 0.5, 0.5],
+        )
+
+    def test_bradshaw_switch_includes_pairs_beyond_midpoint(self):
+        target = self.universe.select_atoms("resid 1 and name N")
+        radius = 2.0
+
+        hard = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="hard",
+        )
+        legacy = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="legacy_switch",
+        )
+        bradshaw = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="bradshaw_switch",
+            switch_scale=10.0,
+        )
+
+        np.testing.assert_allclose(hard, [[0.0, 0.0]])
+        np.testing.assert_allclose(legacy, [[0.0, 0.0]])
+        self.assertTrue(np.all(np.asarray(bradshaw) > 0.0))
 
     def test_no_contacts_found(self):
         """Test case where no contacts should be found."""
