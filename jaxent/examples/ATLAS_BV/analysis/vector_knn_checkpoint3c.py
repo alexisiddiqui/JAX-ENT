@@ -101,10 +101,12 @@ def probability_mass_errors(
         np.sum(predicted * np.log(predicted / midpoint))
         + np.sum(target * np.log(target / midpoint))
     )
+    # JSD is non-negative analytically; guard sqrt against sub-ulp cancellation.
+    jsd = max(0.0, float(jsd))
     return {
         "distribution_l1": float(np.sum(np.abs(delta))),
         "distribution_l2": float(np.sqrt(np.sum(delta**2))),
-        "distribution_jsd": float(jsd),
+        "distribution_jsd": jsd,
         "distribution_sqrt_jsd": float(np.sqrt(jsd)),
         "distribution_kld_target_to_prediction": float(np.sum(target * np.log(target / predicted))),
         "distribution_recovery": float(1.0 - np.sqrt(jsd)),

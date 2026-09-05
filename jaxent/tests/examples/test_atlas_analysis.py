@@ -103,6 +103,45 @@ from jaxent.examples.ATLAS_BV.analysis.strict_likelihood_checkpoint9 import (
     gaussian_mass as strict_gaussian_mass,
     interval_score as strict_interval_score,
 )
+from jaxent.examples.ATLAS_BV.analysis.opening_distance_checkpoint10 import (
+    bernoulli_pair_distance,
+    frame_disjoint_pair_split,
+    opening_probability,
+    transform_opening_profiles,
+)
+from jaxent.examples.ATLAS_BV.analysis.conditional_likelihood_checkpoint11 import (
+    kernel_weights,
+    mixture_mean,
+    mixture_probability_mass,
+    weighted_quantiles,
+)
+from jaxent.examples.ATLAS_BV.analysis.joint_lowrank_checkpoint12 import (
+    component_count,
+    fit_frame_pca,
+)
+from jaxent.examples.ATLAS_BV.analysis.bv_refit_checkpoint13 import (
+    bv_change_vectors,
+    select_coefficients,
+)
+
+
+def test_bv_change_vectors_apply_coefficients_before_absolute_value():
+    heavy = np.array([[1.0, -2.0], [0.5, 3.0]])
+    acceptor = np.array([[-0.25, 1.0], [2.0, -1.0]])
+    np.testing.assert_allclose(
+        bv_change_vectors(heavy, acceptor, 0.35, 2.0),
+        np.abs(0.35 * heavy + 2.0 * acceptor),
+    )
+
+
+def test_bv_coefficient_selection_defaults_without_disjoint_validation():
+    changes = np.ones((4, 2)); targets = {"rmsd": np.arange(4.), "w1": np.arange(4.)}
+    bc, bh, loss, mode = select_coefficients(
+        changes, changes, targets, np.ones(4, dtype=bool), np.zeros(4, dtype=bool), 0.35, 2.0
+    )
+    assert (bc, bh) == (0.35, 2.0)
+    assert np.isnan(loss)
+    assert mode == "prespecified_no_disjoint_pair_split"
 
 
 def test_holm_adjust_controls_family_and_preserves_order():
@@ -140,6 +179,124 @@ def test_extended_mass_errors_are_zero_for_exact_probability_mass():
     assert result["distribution_recovery"] == pytest.approx(1.0)
     assert result["distribution_cosine_distance"] == pytest.approx(0.0)
     assert result["distribution_correlation_distance"] == pytest.approx(0.0)
+
+
+def test_opening_probability_is_stable_and_has_expected_direction():
+    observed = opening_probability(np.array([-1000.0, 0.0, 1000.0]))
+
+    assert np.isfinite(observed).all()
+    assert observed[0] == pytest.approx(1.0)
+    assert observed[1] == pytest.approx(0.5)
+    assert observed[2] == pytest.approx(0.0)
+
+
+def test_bernoulli_distances_are_symmetric_finite_and_zero_on_identity():
+    probability = np.array([[0.1, 0.1, 0.9], [0.2, 0.2, 0.8]])
+    for metric in ("sqrt_jsd", "jeffreys"):
+        forward = bernoulli_pair_distance(probability, np.array([0, 0]), np.array([1, 2]), metric)
+        reverse = bernoulli_pair_distance(probability, np.array([1, 2]), np.array([0, 0]), metric)
+        assert np.isfinite(forward).all()
+        assert forward == pytest.approx(reverse)
+        assert forward[0] == pytest.approx(0.0)
+        assert forward[1] > 0.0
+
+
+def test_opening_profile_statistics_use_fit_frames_only():
+    probability = np.array([[0.1, 0.2, 0.9], [0.3, 0.5, 0.8]])
+    transformed, _ = transform_opening_profiles(
+        probability, np.array([0, 1]), "residue_zscore", 1e-8
+    )
+
+    assert transformed[:, :2].mean(axis=1) == pytest.approx(0.0)
+    assert transformed[:, :2].std(axis=1) == pytest.approx(1.0)
+
+
+def test_frame_disjoint_tuning_split_has_no_shared_endpoints():
+    left, right = np.triu_indices(10, 1)
+    fit, validation = frame_disjoint_pair_split(left, right, 0.2)
+
+    fit_frames = set(np.concatenate([left[fit], right[fit]]))
+    validation_frames = set(np.concatenate([left[validation], right[validation]]))
+    assert fit_frames.isdisjoint(validation_frames)
+
+
+def test_frame_disjoint_tuning_chooses_a_viable_contiguous_block():
+    left = np.array([0, 0, 4, 8, 8])
+    right = np.array([1, 2, 5, 9, 10])
+    fit, validation = frame_disjoint_pair_split(left, right, 0.2)
+
+    assert fit.any() and validation.any()
+    assert set(np.concatenate([left[fit], right[fit]])).isdisjoint(
+        set(np.concatenate([left[validation], right[validation]]))
+    )
+
+
+def test_frame_disjoint_tuning_marks_impossible_star_graph_for_fallback():
+    left = np.zeros(9, dtype=int)
+    right = np.arange(1, 10)
+    fit, validation = frame_disjoint_pair_split(left, right, 0.2)
+
+    assert fit.all()
+    assert not validation.any()
+
+
+def test_kernel_weights_are_normalized_and_exact_match_dominates():
+    distances = np.array([[0.0, 1.0, 2.0], [1.0, 2.0, 3.0]])
+    weights = kernel_weights(distances, 3, 1.0)
+
+    assert weights.sum(axis=1) == pytest.approx(1.0)
+    assert weights[0] == pytest.approx([1.0, 0.0, 0.0])
+
+
+def test_weighted_quantiles_and_mixture_mean_use_neighbor_mass():
+    values = np.array([[1.0, 2.0, 9.0]])
+    weights = np.array([[0.6, 0.3, 0.1]])
+    quantiles = weighted_quantiles(values, weights, (0.05, 0.5, 0.95))
+    mean = mixture_mean(
+        np.array([[0.0, 1.0, 2.0]]), np.array([[0, 1, 2]]),
+        np.array([1.0, 2.0, 9.0]), 3, 1.0,
+    )
+
+    assert quantiles[0] == pytest.approx([1.0, 1.0, 9.0])
+    assert mean[0] == pytest.approx(1.0)
+
+
+def test_mixture_probability_mass_is_normalized():
+    mass = mixture_probability_mass(
+        np.array([[0.1, 0.2], [0.2, 0.3]]), np.array([[0, 1], [1, 2]]),
+        np.array([0.1, 0.5, 0.9]), np.array([True, True]), 2, 1.0, 0.0, 1.0, 5,
+    )
+
+    assert np.isfinite(mass).all()
+    assert mass.sum() == pytest.approx(1.0)
+
+
+def test_probability_mass_errors_clamp_roundoff_below_zero_jsd():
+    mass = np.array([0.0, 1.0, 0.0])
+    result = probability_mass_errors(mass, mass, np.finfo(float).tiny)
+
+    assert result["distribution_jsd"] >= 0.0
+    assert np.isfinite(result["distribution_sqrt_jsd"])
+
+
+def test_joint_pca_is_fit_on_requested_frames_and_transforms_all_frames():
+    log_pf = np.array([
+        [0.0, 1.0, 2.0, 30.0],
+        [0.0, 2.0, 4.0, -20.0],
+        [1.0, 1.0, 1.0, 50.0],
+    ])
+    scores, cumulative = fit_frame_pca(log_pf, np.array([0, 1, 2]))
+
+    assert scores.shape[0] == log_pf.shape[1]
+    assert cumulative[-1] == pytest.approx(1.0)
+
+
+def test_joint_component_count_is_minimum_reaching_threshold():
+    cumulative = np.array([0.6, 0.85, 0.96, 1.0])
+
+    assert component_count(cumulative, 0.8) == 2
+    assert component_count(cumulative, 0.95) == 3
+    assert component_count(cumulative, 0.99) == 4
 
 
 def test_gaussian_conditional_mass_is_normalized_and_finite():

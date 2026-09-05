@@ -1,0 +1,11 @@
+name: jaxent-openmm-vacuum
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - openmm=8.5.2
+  - mdanalysis=2.10.0
+  - numpy=2.2
+  - pandas=2.3
+  - pyarrow=21
+  - pyyaml=6.0

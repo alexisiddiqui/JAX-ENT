@@ -105,13 +105,157 @@ case "${1:-}" in
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.strict_likelihood_comparison "$@"
     ;;
+  geometry-opening-screen)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.opening_distance_checkpoint10 "$@"
+    ;;
+  geometry-opening-screen-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.opening_distance_comparison "$@"
+    ;;
+  geometry-fixed-metric-plot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.fixed_metric_recovery_plot "$@"
+    ;;
+  geometry-fixed-metrics)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.fixed_metric_checkpoint14 "$@"
+    ;;
+  geometry-global-w1)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.global_w1_checkpoint15 "$@"
+    ;;
+  geometry-global-w1-plot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.global_w1_recovery_plot "$@"
+    ;;
+  geometry-global-rmsd)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.global_w1_checkpoint15 --target rmsd "$@"
+    ;;
+  geometry-global-rmsd-plot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.global_rmsd_recovery_plot "$@"
+    ;;
+  geometry-opening-likelihood)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.conditional_likelihood_checkpoint11 "$@"
+    ;;
+  geometry-opening-likelihood-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.conditional_likelihood_comparison "$@"
+    ;;
+  geometry-opening-joint)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.joint_lowrank_checkpoint12 "$@"
+    ;;
+  geometry-opening-joint-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.joint_lowrank_comparison "$@"
+    ;;
+  geometry-bv-refit)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.bv_refit_checkpoint13 "$@"
+    ;;
+  geometry-bv-refit-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.bv_refit_comparison "$@"
+    ;;
+  geometry-kde-population)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.kde_population_checkpoint17 "$@"
+    ;;
+  geometry-kde-population-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.kde_population_report_checkpoint17 "$@"
+    ;;
+  geometry-thermodynamic-population)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.thermodynamic_population_checkpoint18 "$@"
+    ;;
+  geometry-thermodynamic-population-report)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.thermodynamic_population_report_checkpoint18 "$@"
+    ;;
+  geometry-thermodynamic-combination-pilot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.thermodynamic_combination_pilot_checkpoint19 "$@"
+    ;;
+  geometry-contact-difference-pilot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.contact_difference_pilot_checkpoint20 "$@"
+    ;;
+  geometry-pf-information-pilot)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.pf_information_pilot_checkpoint21 "$@"
+    ;;
+  geometry-cluster-stratified)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.cluster_stratified_checkpoint22 "$@"
+    ;;
+  openmm-env)
+    shift
+    exec "${example_dir}/openmm_vacuum_env.sh" create "$@"
+    ;;
+  openmm-audit)
+    shift
+    exec "${example_dir}/openmm_vacuum_env.sh" run python "${example_dir}/analysis/openmm_vacuum_score_checkpoint23.py" audit "$@"
+    ;;
+  openmm-score)
+    shift
+    exec "${example_dir}/openmm_vacuum_env.sh" run python "${example_dir}/analysis/openmm_vacuum_score_checkpoint23.py" score "$@"
+    ;;
+  openmm-score-parallel)
+    shift
+    exec "${example_dir}/openmm_score_parallel.sh" "$@"
+    ;;
+  geometry-openmm-energy)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.openmm_energy_population_checkpoint23 "$@"
+    ;;
+  pyrosetta-audit)
+    shift
+    exec "${example_dir}/pyrosetta_score_env.sh" "${example_dir}/analysis/pyrosetta_energy_score_checkpoint24.py" audit "$@"
+    ;;
+  pyrosetta-score)
+    shift
+    exec "${example_dir}/pyrosetta_score_env.sh" "${example_dir}/analysis/pyrosetta_energy_score_checkpoint24.py" score "$@"
+    ;;
+  pyrosetta-score-parallel)
+    shift
+    exec "${example_dir}/pyrosetta_score_parallel.sh" "$@"
+    ;;
+  geometry-pyrosetta-energy)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.pyrosetta_energy_population_checkpoint24 "$@"
+    ;;
+  geometry-alpha-variance)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.alpha_variance_checkpoint25 "$@"
+    ;;
+  geometry-pyrosetta-graph)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.pyrosetta_graph_checkpoint26 "$@"
+    ;;
+  geometry-work-graph)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.work_graph_checkpoint27 "$@"
+    ;;
+  geometry-local-variance)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.local_variance_checkpoint28 "$@"
+    ;;
+  geometry-variance-graph)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.variance_graph_checkpoint29 "$@"
+    ;;
   all-analysis)
     shift
     uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.basin_census "$@"
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.within_basin_stage1
     ;;
   *)
-    echo "usage: $0 {benchmark|featurise|convergence|basin-census|stage1|stage2|geometry-stage1|geometry-support-audit|geometry-boundary-audit|geometry-vector-audit|geometry-vector-ridge|geometry-vector-knn|geometry-vector-compare|geometry-vector-likelihood|geometry-likelihood-compare|geometry-scale-calibration|geometry-scale-compare|geometry-novelty-calibration|geometry-novelty-compare|geometry-nearest-calibration|geometry-nearest-compare|geometry-conformal-strict|geometry-conformal-compare|geometry-opening-baseline|geometry-opening-baseline-report|all-analysis} [options]" >&2
+    echo "usage: $0 {...|geometry-cluster-stratified|openmm-env|openmm-audit|openmm-score|openmm-score-parallel|geometry-openmm-energy|pyrosetta-audit|pyrosetta-score|pyrosetta-score-parallel|geometry-pyrosetta-energy|geometry-alpha-variance|geometry-pyrosetta-graph|all-analysis} [options]" >&2
     exit 2
     ;;
 esac

@@ -3,16 +3,19 @@ distribution. JAX-ENT computes log protection factors, which are related to the 
 free energy by `DeltaG_open = RT ln(PF)` under the usual EX2 interpretation. The conformational PMF
 is `F_conf = -RT ln(p)`, so the physical comparison is `F_conf` against `-DeltaG_open`.
 
-> **Current status (2026-08-28).** The occupancy-based Stage 1 and exploratory Stage 2 below are
+> **Current status (2026-09-04).** The occupancy-based Stage 1 and exploratory Stage 2 below are
 > retained as a historical, falsified track. Stage 2 already fitted `(bc,bh)` separately for every
 > system with leave-one-replica-out evaluation; it did not pool proteins into one fit. Its parameter
-> collapse was caused by scale non-identifiability in the Absolute-L1 PMF objective. The current
-> redesign measures fixed-coefficient PF geometry against pairwise C-alpha RMSD and coordinate-W1
-> across all 111 systems, without basin calls or occupancy bins. Its strict six-way conformal audit
-> is now complete: global common-support coverage is approximately nominal, but common-support
-> W1-q5 coverage is only 60.0% for the selected per-residue ridge model (95% CI 54.5–65.3%). The
-> evidence therefore supports a representation limit in fixed BV features for large structural
-> departures, while retaining useful residue-aware signal. See `CHECKPOINT8_STRICT_CONFORMAL.md`.
+> collapse was caused by scale non-identifiability in the Absolute-L1 PMF objective, so fitted BV
+> coefficients are not interpreted chemically. The current population track compares predictions
+> from fixed-BV log-PF profiles against an MD-only structural-W1 KDE target. Work Scale is the
+> strongest standalone magnitude predictor: checkpoint 18's full run recovers 87.7% to 42.6% from
+> the nearest through most distant global-W1 bands. The checkpoint-21 paired pilot finds that raw or
+> mean-centred PF-W1 and diagonal variance-scaled information distances do not improve Work Scale in
+> q4/q5, so it stops before a 111-system expansion. This is evidence against those distance
+> transformations, not against the substantial fixed-BV population signal already observed. See
+> `CHECKPOINT17_KDE_POPULATION.md`, `CHECKPOINT18_THERMODYNAMIC_POPULATION.md`, and
+> `CHECKPOINT21_PF_INFORMATION_PILOT.md`.
 
 # Aim
 The investigation aims to understand whether the laplacian concept in plans/ makes sense from a physical basis. The question we wish to answer is how differences in population are related to differences in measured protection factors. The options for the distance space is:
@@ -902,3 +905,50 @@ persisted outputs, as examples 1–3 do.
   rather than relying on the default, since MISATO (§5) will not match.
 - **Freeze the residue set per system** and record `n_res` with every `α`; `G` is extensive.
 - Report systems excluded by the convergence gate alongside the results, with counts.
+
+## 8. Checkpoint 28 — local variance scaling (completed)
+
+`geometry-local-variance` evaluates two-sided, local variance features for Work Scale, Work Shape,
+legacy Work Density, PF L1/L2, PyRosetta ref2015 total and OpenMM total. Neighbours are defined only
+by frame-coordinate W1. Hyperparameters (`k = 5, 10, 20, 50`; shrinkage = 0.001, 0.01, 0.1) are
+selected with replica A for fitting, replica B for selection and untouched replica C for testing.
+The run is resumable through per-system parquet parts.
+
+Across all 111 systems, the Work Scale local log-variance magnitude achieved 77.7% balanced mean
+distribution recovery versus 73.6% for direct Work Scale (+4.09 percentage points), while its
+between-system SD fell by 28.4%. The improvement includes q4 (70.9% versus 59.0%) and q5 (62.6%
+versus 58.8%). For signed changes, the Work Scale variance-aware ridge improved q5 recovery from
+50.8% to 59.7% and q5 sign accuracy from 70.0% to 78.0%. Thus local conformational variance contains
+useful second-order information beyond the direct energetic difference.
+
+This is a conditional ensemble diagnostic, not a structure-free predictor: structural W1 defines
+the neighbourhoods. It therefore demonstrates that local basin width helps recover the MD target,
+but it must not be presented as prospective prediction when structural coordinates are unavailable.
+The persisted success table and figures are under
+`outputs/analysis/pairwise_geometry/checkpoint28_local_variance/full/`.
+
+Run the complete analysis with:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-local-variance --full --workers 6
+```
+
+## 9. Checkpoint 29 — variance-aware Work graph (pilot stopped)
+
+`geometry-variance-graph` tests whether checkpoint 28's endpoint variance signal improves when it
+is accumulated along graph shortest paths. It compares graphs constructed in standardized
+Work-Scale space, three-metric Work space, and structural-W1 space. Replica 1 fits scale
+coefficients, replica 2 selects neighbourhood/coupling parameters, and replica 3 remains untouched.
+
+The 24-system pilot failed the preregistered advancement gate. Direct Work Scale recovered 86.8%
+in q0 and 59.3% in q5. The Work-Scale energy-only graph was effectively identical (86.8%, 59.4%);
+adding accumulated variance reduced recovery to 85.1% and 57.5%. The three-metric Work graph and
+structural-W1 variance paths were worse. Signed directed paths improved some central bands but did
+not improve q5 over the direct signed baseline.
+
+The result distinguishes a useful endpoint property from a useful path metric: local basin-width
+contrast carries information, but its absolute changes are not additive along a path. Accumulating
+them double-counts intermediate fluctuations and erases the checkpoint-28 endpoint advantage. The
+111-system run and expensive shuffled/rewired controls were therefore not run. Results, the formal
+gate decision, fitted parameters and graph audit are under
+`outputs/analysis/pairwise_geometry/checkpoint29_variance_graph/pilot/`.

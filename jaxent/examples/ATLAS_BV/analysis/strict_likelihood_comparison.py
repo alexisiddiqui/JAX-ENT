@@ -58,6 +58,26 @@ def paired_preprocessing(system: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def primary_intervals(system: pd.DataFrame) -> list[dict]:
+    selected = system[
+        (system.target == "w1") & (system.band == "q5")
+        & (system.stratum == "common_support")
+    ]
+    rows = []
+    for (model, calibration), block in selected.groupby(["model", "calibration"]):
+        row = {"model": model, "calibration": calibration, "systems": len(block)}
+        for index, (metric, multiplier) in enumerate((
+            ("distribution_recovery", 100.0), ("coverage_90", 100.0),
+            ("mean_interval_score", 1.0),
+        )):
+            values = multiplier * block[metric].to_numpy()
+            low, high = bootstrap_median_ci(values, 10000, 950 + 10 * len(rows) + index)
+            row[f"median_{metric}"] = float(np.median(values))
+            row[f"{metric}_ci95_low"] = low; row[f"{metric}_ci95_high"] = high
+        rows.append(row)
+    return rows
+
+
 def plot_fit(population: pd.DataFrame, path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), sharey=True)
     for axis, target in zip(axes, ("rmsd", "w1")):
@@ -120,6 +140,7 @@ def main() -> None:
         "checkpoint": "9", "status": "complete", "systems": int(system.system_id.nunique()),
         "decision": "strict_baseline_established_stage_2_requires_review",
         "primary_w1_q5_common_support": selected.to_dict(orient="records"),
+        "primary_system_bootstrap": primary_intervals(system),
         "paired_zscore_minus_raw": effects.to_dict(orient="records"),
         "metric_contract": {
             "fit_error": "dimensionless probability-mass error",

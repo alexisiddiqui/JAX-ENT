@@ -94,6 +94,143 @@ calibration failure.
 ./jaxent/examples/ATLAS_BV/commands.sh geometry-conformal-compare
 ```
 
+Checkpoint 9 is complete. See `CHECKPOINT9_STRICT_LIKELIHOOD.md`. The strict Gaussian conditional
+baseline reaches `83.1%` common-support W1-q5 recovery with marginal calibration but only `60.0%`
+coverage. Mondrian calibration raises coverage to `70.1%` while lowering recovery to `81.3%`.
+A-only z-scoring is numerically indistinguishable and is not promoted. The declared joint
+fit/calibration gate remains closed, so the next reviewed checkpoint is the opening-probability and
+naive-distance screen.
+
+Checkpoint 10 is complete. See `CHECKPOINT10_OPENING_SCREEN.md`. Converting fixed-BV log-PF to
+`p_open = expit(-logPF)` loses rather than restores transferable W1-tail information. The honest
+A-selected opening pipeline reaches only `40.5%` common-support W1-q5 recovery and `25.2%` Mondrian
+coverage, losing `11.2` recovery points against raw log-PF vector ridge. L1/L2, cosine,
+correlation, Bernoulli sqrt(JSD), symmetric KLD, mean centring and A-only z-scoring all fail to beat
+their matched log-PF baselines. Stage 3 should therefore retain raw log-PF ridge as primary while
+testing raw opening changes only as the prespecified physical comparison.
+
+Checkpoint 11 is complete. See `CHECKPOINT11_CONDITIONAL_LIKELIHOOD.md`. Strict raw log-PF ridge
+Gaussian remains best at `83.1%` common-support W1-q5 recovery and `70.1%` Mondrian coverage.
+Opening Gaussian falls to `79.1%`/`21.8%`; raw log-PF and opening kNN mixtures reach only
+`50.7%`/`54.2%` and `46.9%`/`38.5%`, respectively. The earlier local-mixture gain does not survive
+when A alone supplies neighbours and B is reserved for calibration. Stage 3 therefore fails its
+joint fit/calibration gate. Proceed to A-only low-rank joint log-PF modes; run contact-community
+features only if the low-rank trigger passes.
+
+Checkpoint 12A is complete. See `CHECKPOINT12_JOINT_LOWRANK.md`. A-only PCA joint modes worsen both
+fit and calibration: low-rank Gaussian reaches `81.7%` common-support W1-q5 recovery and `51.5%`
+Mondrian coverage, a paired `-2.32` recovery-point change versus raw per-residue Gaussian (95% CI
+`-3.04` to `-1.14`). Low-rank kNN reaches only `49.7%`/`52.4%`. The declared `+2`-point
+contact-community trigger is therefore closed, so contact blocks are skipped. The remaining
+contingent stage is system-specific BV coefficient refitting with strict replica isolation.
+
+Checkpoint 13 is complete. See `CHECKPOINT13_BV_REFIT.md`. Strict per-system coefficient refitting
+raises common-support W1-q5 recovery by only `0.13` percentage points (95% CI `0.03–0.32`) to
+`83.24%`, while Mondrian coverage remains `72.38%`. In 97.60% of ordered assignments at least one
+coefficient hits the search boundary, most commonly `bc×2, bh×0.5`; this is not an identified new
+BV parameter set. The final fixed-BV gate fails. The staged geometry investigation is complete;
+any continuation should introduce new forward information such as M8 SASA/polar-distance features,
+not further recalibration of the same contact/acceptor representation.
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-bv-refit --workers 4
+./jaxent/examples/ATLAS_BV/commands.sh geometry-bv-refit-report
+```
+
+The later population track uses an MD structural-W1 KDE target rather than structural-distance
+prediction. Checkpoints 17 and 18 contain the full fixed-BV and thermodynamic metric runs. The
+checkpoint-21 pilot adds raw/mean-centred PF-W1 and replica-A variance-scaled information distances:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-pf-information-pilot
+```
+
+No checkpoint-21 candidate passes the q4/q5 expansion gate. Work Scale remains the strongest
+standalone predictor through q4; neither PF-W1 nor variance scaling improves its paired q5 result.
+Direct structural W1 and periodic backbone phi/psi dRMSD controls also underperform Work Scale.
+Circular z-scoring improves the squared dRMSD control modestly relative to raw dRMSD but remains far
+below Work Scale in the tail.
+See `CHECKPOINT21_PF_INFORMATION_PILOT.md` for the definitions and complete tail comparison.
+
+Checkpoint 22 stratifies the same MD structural-W1 population target by A-only structural clusters:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-cluster-stratified
+```
+
+The 12-system pilot finds higher provisional Work Scale q5 recovery within clusters (69.8%) than
+between clusters (50.4%), but only two and five systems respectively support those cells. The
+tail-aware 8/12 expansion gate therefore fails; the 111-system run is intentionally not launched.
+See `CHECKPOINT22_CLUSTER_STRATIFIED.md` for all definitions and the density-clustering audit.
+
+Checkpoint 23 adds an independent OpenMM CHARMM36 protein-vacuum energy control. The disposable
+OpenMM environment remains separate from JAX-ENT:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh openmm-env
+./jaxent/examples/ATLAS_BV/commands.sh openmm-audit
+./jaxent/examples/ATLAS_BV/commands.sh openmm-score --pilot --platform OpenCL
+./jaxent/examples/ATLAS_BV/commands.sh geometry-openmm-energy
+```
+
+All 111 topologies pass. In the 12-system pilot, fitted total/torsional/nonbonded vacuum-energy
+differences reach roughly 58–62% q5 recovery, while direct 300 K Boltzmann predictions reach only
+19–24%. See `CHECKPOINT23_OPENMM_VACUUM.md`.
+
+Checkpoint 24 tests PyRosetta `ref2015` and `ref2015_cart` scores on the same raw coordinates and
+population target. It reuses the existing `neuralplexer_dev` Python 3.10 environment and runs
+independent systems in parallel:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh pyrosetta-audit
+PYROSETTA_WORKERS=6 ./jaxent/examples/ATLAS_BV/commands.sh pyrosetta-score-parallel
+./jaxent/examples/ATLAS_BV/commands.sh geometry-pyrosetta-energy
+```
+
+All 111 systems pass the mapping audit. In the five-system q5 pilot subset, fitted `ref2015_cart`
+reaches 69.0% median recovery and its Cartesian-bonded component reaches 70.0%, compared with 52.8%
+for Work Scale and 59.2% for OpenMM total energy. Raw unit-scale REU differences remain poor and
+are not physical Boltzmann predictions. See `CHECKPOINT24_PYROSETTA_ENERGY.md`.
+
+Checkpoint 25 compares each fitted system alpha with the variance of its exact unscaled replica-A
+pair predictor:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-alpha-variance --workers 6
+```
+
+Alpha is strongly inversely rank-correlated with predictor variance for Work Scale (rho=-0.86),
+legacy Work Density (-0.85), `ref2015` total (-0.98), and `ref2015_cart` total (-0.93).
+The completed 111-system OpenMM total-energy cohort gives rho=-0.56. Correlations with MD target
+variance are weak for the thermodynamic and Rosetta metrics, whereas OpenMM is moderately positive
+(rho=0.56). See `CHECKPOINT25_ALPHA_VARIANCE.md`.
+
+Checkpoint 26 tests whether structural-W1 graph geodesics can improve standard `ref2015` energy
+differences without rescoring trajectories:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-pyrosetta-graph --pilot --workers 4
+```
+
+The predefined 24-system pilot gate fails. Energy-weighted and uphill paths gain about 6 paired
+recovery points at q0 but lose 13--14 points at q5 and do not separate cleanly from geometry-only or
+energy-shuffled controls. Signed fits collapse to alpha=0 in 7/24 systems. Work Scale remains the
+best balanced inexpensive predictor, while direct `ref2015` is preferable to the graph variants.
+A subsequently requested full 111-system run confirms this: direct `ref2015` magnitude recovery is
+71.5%/61.9% at q0/q5, versus 73.5%/33.2% for energy-weighted W1 and 89.2%/59.2% for Work Scale.
+See `CHECKPOINT26_PYROSETTA_GRAPH.md`.
+
+Checkpoint 27 repeats the graph construction using Work Scale, Work Shape, and legacy Work Density:
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-work-graph --workers 6
+```
+
+Across all 111 systems, graph transformation degrades Work Scale from 89.2%/59.2% q0/q5 recovery
+to at best 79.6%/45.9%. Shape and legacy Density show large local q0 gains, but their paths converge
+toward the 69.8%/35.6% geometry-only control and lose or fail to improve q5. Direct Work Scale
+therefore remains the best balanced Work predictor. See `CHECKPOINT27_WORK_GRAPH.md`.
+
 ## Historical occupancy sequence
 
 Run from the repository root:
