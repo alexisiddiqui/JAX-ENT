@@ -289,6 +289,14 @@ def run_optimization(
             "effective_settings": {
                 "execution_mode": execution_mode,
                 "frame_average_impl": frame_average_impl,
+                "frame_averaging_mode": next(
+                    (
+                        getattr(forward_pass, "frame_averaging_mode")
+                        for forward_pass in forward_model.forward.values()
+                        if hasattr(forward_pass, "frame_averaging_mode")
+                    ),
+                    "log_pf",
+                ),
                 "lr_adjustment": lr_adjustment,
                 "step_chunk_size": step_chunk_size,
                 "reset_threshold_cooldown_on_oscillation": (

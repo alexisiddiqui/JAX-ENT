@@ -111,7 +111,9 @@ def run_maxent_sweep(
     frame_average_impl: str = "tensordot",
     datasplit_dir: str = None,
     initial_frame_weights=None,
-    frame_averaging_mode: Literal["log_pf", "rate", "uptake"] = "log_pf",
+    frame_averaging_mode: Literal[
+        "log_pf", "rate", "uptake", "frame_uptake"
+    ] = "log_pf",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -560,7 +562,7 @@ def main():
     )
     parser.add_argument(
         "--frame-averaging-mode",
-        choices=("log_pf", "rate", "uptake"),
+        choices=("log_pf", "rate", "uptake", "frame_uptake"),
         default="log_pf",
         help="Where frame averaging occurs in the HDX forward calculation.",
     )

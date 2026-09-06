@@ -10,7 +10,7 @@ from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.topology import Partial_Topology
 
-FrameAveragingMode = Literal["log_pf", "rate", "uptake"]
+FrameAveragingMode = Literal["log_pf", "rate", "uptake", "frame_uptake"]
 
 
 @runtime_checkable

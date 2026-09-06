@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Runs:
 # optimise_ISO_TRI_BI_splits_maxENT.py
 # ../analysis/recovery_analysis_ISO_TRI_BI_precluster.py
@@ -34,8 +35,10 @@ ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
 DEFAULT_LOSSES_STR="MSE,Sigma_MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
+DEFAULT_FRAME_AVERAGING_MODES_STR="log_pf"
+FRAME_AVERAGING_MODES_STR="$DEFAULT_FRAME_AVERAGING_MODES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
-DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster"
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
 # --- end added block ---
@@ -91,12 +94,16 @@ while [[ $# -gt 0 ]]; do
       LOSSES_STR="$2"; shift 2;;
     --losses=*)
       LOSSES_STR="${1#*=}"; shift;;
+    --frame-averaging-modes)
+      FRAME_AVERAGING_MODES_STR="$2"; shift 2;;
+    --frame-averaging-modes=*)
+      FRAME_AVERAGING_MODES_STR="${1#*=}"; shift;;
     --split-types)
       SPLIT_TYPES_STR="$2"; shift 2;;
     --split-types=*)
       SPLIT_TYPES_STR="${1#*=}"; shift;;
     -h|--help)
-      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--split-types s,t] [--maxent-values a,b,c] [--dir-name name] [--n-steps N] [--learning-rate Y] [--lr-adjustment on|off] [--frame-average-impl tensordot|legacy_sum] [--step-chunk-size N] [-j|--jobs N]"
+      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--frame-averaging-modes log_pf,rate,uptake,frame_uptake] [--split-types s,t] [--maxent-values a,b,c] [--dir-name name] [--n-steps N] [--learning-rate Y] [--lr-adjustment on|off] [--frame-average-impl tensordot|legacy_sum] [--step-chunk-size N] [-j|--jobs N]"
       exit 0;;
     *)
       break;;
@@ -109,12 +116,14 @@ echo "DIR_NAME: $DIR_NAME"
 echo "n-steps: $N_STEPS, learning-rate: $LEARNING_RATE, lr-adjustment: $LR_ADJUSTMENT, frame-average-impl: $FRAME_AVERAGE_IMPL, step-chunk-size: $STEP_CHUNK_SIZE, ema-alpha: $EMA_ALPHA, forward-model-scaling: $FORWARD_MODEL_SCALING"
 echo "Ensembles (raw): $ENSEMBLES_STR"
 echo "Losses (raw): $LOSSES_STR"
+echo "Frame averaging modes (raw): $FRAME_AVERAGING_MODES_STR"
 echo "Split types (raw): $SPLIT_TYPES_STR"
 
 # Convert comma-separated strings into arrays
 IFS=',' read -r -a MAXENT_VALUES <<< "$MAXENT_VALUES_STR"
 IFS=',' read -r -a ENSEMBLES <<< "$ENSEMBLES_STR"
 IFS=',' read -r -a LOSSES <<< "$LOSSES_STR"
+IFS=',' read -r -a FRAME_AVERAGING_MODES <<< "$FRAME_AVERAGING_MODES_STR"
 IFS=',' read -r -a SPLIT_TYPES <<< "$SPLIT_TYPES_STR"
 # --- end changed block ---
 
@@ -162,126 +171,116 @@ mkdir -p logs
 if [[ "$LR_ADJUSTMENT" != "on" && "$LR_ADJUSTMENT" != "off" ]]; then echo "Invalid --lr-adjustment" >&2; exit 2; fi
 if [[ "$FRAME_AVERAGE_IMPL" != "tensordot" && "$FRAME_AVERAGE_IMPL" != "legacy_sum" ]]; then echo "Invalid --frame-average-impl" >&2; exit 2; fi
 if ! [[ "$STEP_CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then echo "--step-chunk-size must be >= 1" >&2; exit 2; fi
-OUTPUT_DIR="$DIR_NAME"
-OPT_OUTPUT_DIR="${DIR_WD}/${OUTPUT_DIR}"
-if [[ -e "$OPT_OUTPUT_DIR" ]]; then echo "Refusing to reuse existing output directory: $OPT_OUTPUT_DIR" >&2; exit 2; fi
-python -m jaxent.examples.common.manifest --output-dir "$OPT_OUTPUT_DIR" --example 1 --ensembles "$ENSEMBLES_STR" --losses "$LOSSES_STR" --split-types "$SPLIT_TYPES_STR" --maxent-values "$MAXENT_VALUES_STR" --learning-rate "$LEARNING_RATE" --lr-adjustment "$LR_ADJUSTMENT" --frame-average-impl "$FRAME_AVERAGE_IMPL" --step-chunk-size "$STEP_CHUNK_SIZE" --n-steps "$N_STEPS" --jobs "$PARALLEL_JOBS"
-# --- Fixed: remove stray brace in ANA_OUTPUT_DIR ---
-ANA_OUTPUT_DIR="${ANA_DIR}/${OUTPUT_DIR}"
-# --- end fix ---
-echo "Output directory: $OPT_OUTPUT_DIR"
-mkdir -p "${OPT_OUTPUT_DIR}/logs"
-for ENSEMBLE in "${ENSEMBLES[@]}"; do
-  for LOSS in "${LOSSES[@]}"; do
-    echo "Running $ENSEMBLE-$LOSS in parallel for maxent log-scaled values"
-    for SPLIT in "${SPLIT_TYPES[@]}"; do
-      echo "  Split type: $SPLIT"
-      for MAXENT in "${MAXENT_VALUES[@]}"; do
-        echo "    Maxent: $MAXENT"
-        # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
-        wait_for_slot
-        python optimise_ISO_TRI_BI_splits_Sigma.py \
-          --ensemble "$ENSEMBLE" \
-          --loss-function "$LOSS" \
-          --maxent-range "$MAXENT,$MAXENT" \
-          --split-types "$SPLIT" \
-          --n-steps "$N_STEPS" \
-          --learning-rate "$LEARNING_RATE" \
-          --lr-adjustment "$LR_ADJUSTMENT" \
-          --frame-average-impl "$FRAME_AVERAGE_IMPL" \
-          --step-chunk-size "$STEP_CHUNK_SIZE" \
-          --ema-alpha "$EMA_ALPHA" \
-          --forward-model-scaling "$FORWARD_MODEL_SCALING" \
-          --output-dir "$OPT_OUTPUT_DIR" \
-          > "${OPT_OUTPUT_DIR}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_split${SPLIT}.log" 2>&1 &
+for FRAME_AVERAGING_MODE in "${FRAME_AVERAGING_MODES[@]}"; do
+  case "$FRAME_AVERAGING_MODE" in
+    log_pf|rate|uptake|frame_uptake) ;;
+    *) echo "Invalid frame averaging mode: $FRAME_AVERAGING_MODE" >&2; exit 2;;
+  esac
+done
+
+RUN_TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+RESULT_DIRS=()
+
+run_campaign() {
+  local frame_averaging_mode="$1"
+  local output_dir="${DIR_NAME}_${frame_averaging_mode}_${RUN_TIMESTAMP}"
+  local opt_output_dir="${DIR_WD}/${output_dir}"
+  local ana_output_dir="${ANA_DIR}/${output_dir}"
+  local basename processed_dir scores_basename scores_dir analysis_dir cluster_pop_csv
+  local plot_extra_args=()
+
+  if [[ -e "$opt_output_dir" ]]; then
+    echo "Refusing to reuse existing output directory: $opt_output_dir" >&2
+    exit 2
+  fi
+  python -m jaxent.examples.common.manifest \
+    --output-dir "$opt_output_dir" --example 1 \
+    --ensembles "$ENSEMBLES_STR" --losses "$LOSSES_STR" \
+    --split-types "$SPLIT_TYPES_STR" --maxent-values "$MAXENT_VALUES_STR" \
+    --learning-rate "$LEARNING_RATE" --lr-adjustment "$LR_ADJUSTMENT" \
+    --frame-average-impl "$FRAME_AVERAGE_IMPL" \
+    --frame-averaging-mode "$frame_averaging_mode" \
+    --step-chunk-size "$STEP_CHUNK_SIZE" --n-steps "$N_STEPS" \
+    --jobs "$PARALLEL_JOBS"
+  RESULT_DIRS+=("$opt_output_dir")
+  mkdir -p "${opt_output_dir}/logs"
+  echo "Starting frame averaging campaign: $frame_averaging_mode"
+  echo "Output directory: $opt_output_dir"
+
+  for ENSEMBLE in "${ENSEMBLES[@]}"; do
+    for LOSS in "${LOSSES[@]}"; do
+      for SPLIT in "${SPLIT_TYPES[@]}"; do
+        local batch_pids=()
+        echo "Running $ENSEMBLE-$LOSS, split $SPLIT, mode $frame_averaging_mode"
+        for MAXENT in "${MAXENT_VALUES[@]}"; do
+          wait_for_slot
+          python optimise_ISO_TRI_BI_splits_Sigma.py \
+            --ensemble "$ENSEMBLE" --loss-function "$LOSS" \
+            --maxent-range "$MAXENT,$MAXENT" --split-types "$SPLIT" \
+            --n-steps "$N_STEPS" --learning-rate "$LEARNING_RATE" \
+            --lr-adjustment "$LR_ADJUSTMENT" \
+            --frame-average-impl "$FRAME_AVERAGE_IMPL" \
+            --frame-averaging-mode "$frame_averaging_mode" \
+            --step-chunk-size "$STEP_CHUNK_SIZE" --ema-alpha "$EMA_ALPHA" \
+            --forward-model-scaling "$FORWARD_MODEL_SCALING" \
+            --output-dir "$opt_output_dir" \
+            > "${opt_output_dir}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_split${SPLIT}.log" 2>&1 &
+          batch_pids+=("$!")
+        done
+        for batch_pid in "${batch_pids[@]}"; do
+          wait "$batch_pid"
+        done
       done
-      wait  # Wait for all background jobs for this SPLIT to finish
-      echo "Completed $ENSEMBLE-$LOSS with $SPLIT"
     done
   done
+
+  echo "Running analysis for $frame_averaging_mode..."
+  python "${ANA_DIR}/recovery_analysis_ISO_TRI_BI_precluster.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/recovery_analysis.log" 2>&1
+  python "${ANA_DIR}/weights_validation_ISO_TRI_BI_precluster.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/weights_validation.log" 2>&1
+  python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/CV_validation.log" 2>&1
+  python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/Analyse_Loss.log" 2>&1
+  python "${ANA_DIR}/process_optimisation_results.py" \
+    --results-dir "$opt_output_dir" --datasplit-dir "${DIR_WD}/_datasplits" \
+    --features-dir "${DIR_WD}/_featurise" \
+    --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+    --frame-averaging-mode "$frame_averaging_mode" \
+    > "${opt_output_dir}/logs/process_optimisation_results.log" 2>&1
+
+  basename=$(basename "$opt_output_dir")
+  processed_dir="${DIR_WD}/_processed_${basename}"
+  python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+    --processed-data-dir "$processed_dir" --datasplit-dir "${DIR_WD}/_datasplits" \
+    --features-dir "${DIR_WD}/_featurise" \
+    --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+    > "${opt_output_dir}/logs/score_models.log" 2>&1
+
+  scores_basename=$(basename "$processed_dir")
+  scores_dir="${processed_dir}/_scores_${scores_basename}"
+  python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
+    --scores-csv-path "${scores_dir}/model_scores.csv" \
+    --target-metric recovery_percent --filter-mode both --analyze-subsets \
+    > "${opt_output_dir}/logs/analyse_scores_mixed_linear_model.log" 2>&1
+
+  analysis_dir="${processed_dir}/_analysis__scores_${scores_basename}"
+  cluster_pop_csv="${ana_output_dir}/conformational_recovery_maxent_data.csv"
+  if [[ -f "$cluster_pop_csv" ]]; then
+    plot_extra_args+=(--cluster-populations-csv "$cluster_pop_csv")
+  fi
+  python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
+    --before-csv "${analysis_dir}/whole_dataset/model_selection_performance_summary.csv" \
+    --after-csv "${analysis_dir}_filtered/whole_dataset/model_selection_performance_summary.csv" \
+    --output-dir "${analysis_dir}/plots_selection" "${plot_extra_args[@]}" \
+    > "${opt_output_dir}/logs/plot_selected_models.log" 2>&1
+  python "${ANA_DIR}/extract_selected_models.py" \
+    --processed-data-dir "$processed_dir" --scores-csv "${scores_dir}/model_scores.csv" \
+    --selection-csv "${analysis_dir}/whole_dataset/model_selection_performance_summary.csv" \
+    > "${opt_output_dir}/logs/extract_selected_models.log" 2>&1
+  echo "Completed frame averaging campaign: $frame_averaging_mode"
+}
+
+for FRAME_AVERAGING_MODE in "${FRAME_AVERAGING_MODES[@]}"; do
+  run_campaign "$FRAME_AVERAGING_MODE"
 done
-wait  # Wait for all background jobs to finish
-echo "All optimisation tasks completed."
-echo "Starting analysis scripts..."
-# Run analysis scripts sequentially
-echo "Running recovery analysis..."
-python "${ANA_DIR}/recovery_analysis_ISO_TRI_BI_precluster.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/recovery_analysis.log" 2>&1
-echo "Running weights validation..."
-python "${ANA_DIR}/weights_validation_ISO_TRI_BI_precluster.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/weights_validation.log" 2>&1
-echo "Running CV validation..."
-python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/CV_validation.log" 2>&1
-python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
 
-# New comprehensive analysis pipeline
-echo "Processing optimization results..."
-python "${ANA_DIR}/process_optimisation_results.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  --datasplit-dir "${DIR_WD}/_datasplits" \
-  --features-dir "${DIR_WD}/_featurise" \
-  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
-  > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
-
-# Determine the processed data directory name
-# process_optimisation_results.py creates _processed_<basename> as a SIBLING of OPT_OUTPUT_DIR
-BASENAME=$(basename "$OPT_OUTPUT_DIR")
-PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
-
-echo "Scoring models..."
-python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
-  --processed-data-dir "$PROCESSED_DIR" \
-  --datasplit-dir "${DIR_WD}/_datasplits" \
-  --features-dir "${DIR_WD}/_featurise" \
-  --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
-  > "${OPT_OUTPUT_DIR}/logs/score_models.log" 2>&1
-
-# Determine the scores directory name
-# score_models_ISO_TRI_BI.py creates _scores_<basename> INSIDE PROCESSED_DIR
-SCORES_BASENAME=$(basename "$PROCESSED_DIR")
-SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
-
-echo "Analyzing scores with mixed linear model..."
-python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
-  --scores-csv-path "${SCORES_DIR}/model_scores.csv" \
-  --target-metric "recovery_percent" \
-  --filter-mode "both" \
-  --analyze-subsets \
-  > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
-
-# Determine the analysis directory name
-# analyse_scores_mixed_linear_model.py creates _analysis_<scores_parent_basename> as a SIBLING of SCORES_DIR
-# For unfiltered: _analysis__scores_<SCORES_BASENAME>
-# For filtered:   _analysis__scores_<SCORES_BASENAME>_filtered
-ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
-
-# Plot model selection results for both filtered and unfiltered
-echo "Plotting selected models (unfiltered)..."
-CLUSTER_POP_CSV="${ANA_OUTPUT_DIR}/conformational_recovery_maxent_data.csv"
-PLOT_EXTRA_ARGS=()
-if [ -f "$CLUSTER_POP_CSV" ]; then
-  PLOT_EXTRA_ARGS+=(--cluster-populations-csv "$CLUSTER_POP_CSV")
-fi
-python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
-  --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
-  --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
-  --output-dir "${ANALYSIS_DIR}/plots_selection" \
-  "${PLOT_EXTRA_ARGS[@]}" \
-  > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
-
-echo "Extracting selected models..."
-python "${ANA_DIR}/extract_selected_models.py" \
-  --processed-data-dir "$PROCESSED_DIR" \
-  --scores-csv "${SCORES_DIR}/model_scores.csv" \
-  --selection-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
-  > "${OPT_OUTPUT_DIR}/logs/extract_selected_models.log" 2>&1
-
-echo "All analysis tasks completed."
-echo "Results are saved in $OPT_OUTPUT_DIR"
-echo "Script finished."
+echo "All frame averaging campaigns completed."
+printf '  %s\n' "${RESULT_DIRS[@]}"

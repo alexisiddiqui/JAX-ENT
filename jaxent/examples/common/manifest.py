@@ -145,6 +145,7 @@ def write_prelaunch_manifest(
     step_chunk_size: int,
     n_steps: int,
     jobs: int,
+    frame_averaging_mode: str = "log_pf",
     num_splits: int = 3,
     timepoints_file: str | Path | None = None,
 ) -> Path:
@@ -155,6 +156,8 @@ def write_prelaunch_manifest(
         raise ValueError("lr_adjustment must be on or off")
     if frame_average_impl not in {"tensordot", "legacy_sum"}:
         raise ValueError("frame_average_impl is invalid")
+    if frame_averaging_mode not in {"log_pf", "rate", "uptake", "frame_uptake"}:
+        raise ValueError("frame_averaging_mode is invalid")
     if step_chunk_size < 1:
         raise ValueError("step_chunk_size must be >= 1")
     bv_values = [None] if bv_values is None else bv_values
@@ -199,6 +202,7 @@ def write_prelaunch_manifest(
             "learning_rate": learning_rate,
             "lr_adjustment": lr_adjustment,
             "frame_average_impl": frame_average_impl,
+            "frame_averaging_mode": frame_averaging_mode,
             "step_chunk_size": step_chunk_size,
             "n_steps": n_steps,
             "execution_mode": "compiled",
@@ -238,6 +242,11 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, required=True)
     parser.add_argument("--lr-adjustment", choices=["on", "off"], required=True)
     parser.add_argument("--frame-average-impl", choices=["tensordot", "legacy_sum"], required=True)
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=["log_pf", "rate", "uptake", "frame_uptake"],
+        default="log_pf",
+    )
     parser.add_argument("--step-chunk-size", type=int, required=True)
     parser.add_argument("--n-steps", type=int, required=True)
     parser.add_argument("--jobs", type=int, required=True)
@@ -260,6 +269,7 @@ def main() -> None:
         step_chunk_size=args.step_chunk_size,
         n_steps=args.n_steps,
         jobs=args.jobs,
+        frame_averaging_mode=args.frame_averaging_mode,
         timepoints_file=args.timepoints_file,
     )
 

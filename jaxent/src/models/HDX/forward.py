@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -80,6 +81,12 @@ class BV_uptake_ForwardPass(
         if self.frame_averaging_mode == "rate":
             mean_rate = rates @ frame_weights
             uptake = 1.0 - jnp.exp(-timepoints[:, None] * mean_rate[None, :])
+            return uptake_BV_output_features(uptake)
+        if self.frame_averaging_mode == "frame_uptake":
+            uptake = jax.vmap(
+                lambda timepoint: (1.0 - jnp.exp(-timepoint * rates))
+                @ frame_weights
+            )(timepoints)
             return uptake_BV_output_features(uptake)
         if self.frame_averaging_mode != "uptake":
             raise ValueError(

@@ -77,12 +77,15 @@ def test_manifest_records_timepoint_values_and_source_hash(tmp_path: Path) -> No
         step_chunk_size=100,
         n_steps=5000,
         jobs=1,
+        frame_averaging_mode="frame_uptake",
         timepoints_file=source,
     )
 
     import json
 
     recorded = json.loads(manifest_path.read_text())["resolved_inputs"]["timepoints"]
+    factors = json.loads(manifest_path.read_text())["factors"]
+    assert factors["frame_averaging_mode"] == "frame_uptake"
     assert recorded["source"] == str(source.resolve())
     assert recorded["values_minutes"] == [6.0, 60.0]
     assert len(recorded["sha256"]) == 64

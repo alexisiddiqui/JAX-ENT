@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 
 import numpy as np
+import jax
 import jax.numpy as jnp
 
 from jaxent.examples.common.analysis.frame_averaging import (
     effective_rates,
     residue_uptake_fast,
+    residue_uptake_frame,
     residue_uptake_legacy,
     residue_uptake_slow2,
     weights_from_cluster_populations,
@@ -60,6 +62,42 @@ def test_slow2_uptake_is_bounded_above_by_fast():
     slow = residue_uptake_slow2(log_pf, k_ints, times, weights, assignments)
     fast = residue_uptake_fast(log_pf, k_ints, times, weights)
     assert np.all(slow <= fast + 1e-14)
+
+
+def test_frame_uptake_is_bounded_above_by_grouped_uptake():
+    log_pf, k_ints, weights, assignments = inputs()
+    times = np.asarray([0.01, 0.2, 1.0, 10.0])
+    frame = residue_uptake_frame(log_pf, k_ints, times, weights)
+    grouped = residue_uptake_slow2(
+        log_pf, k_ints, times, weights, assignments
+    )
+    assert np.all(frame <= grouped + 1e-14)
+
+
+def test_frame_uptake_matches_single_frame_and_has_finite_weight_gradient():
+    log_pf, k_ints, _, _ = inputs()
+    timepoints = np.asarray([0.01, 0.2, 1.0])
+    single = residue_uptake_frame(
+        log_pf[:, :1], k_ints, timepoints, np.ones(1)
+    )
+    np.testing.assert_allclose(
+        single,
+        residue_uptake_fast(log_pf[:, :1], k_ints, timepoints, np.ones(1)),
+    )
+
+    features = BV_input_features(
+        heavy_contacts=jnp.asarray(log_pf / 0.35),
+        acceptor_contacts=jnp.zeros_like(jnp.asarray(log_pf)),
+        k_ints=jnp.asarray(k_ints),
+    )
+    model_params = BV_Model_Parameters(timepoints=jnp.asarray(timepoints))
+    forward = BV_uptake_ForwardPass("frame_uptake")
+    gradient = jax.grad(
+        lambda weights: jnp.sum(
+            forward.average_frames(features, model_params, weights).uptake
+        )
+    )(jnp.full(log_pf.shape[1], 1.0 / log_pf.shape[1]))
+    assert jnp.all(jnp.isfinite(gradient))
 
 
 def test_tau_zero_is_ex2():
@@ -160,6 +198,9 @@ def test_typed_forward_modes_match_target_oracles():
         "rate": residue_uptake_fast(log_pf, k_ints, timepoints, weights),
         "uptake": residue_uptake_slow2(
             log_pf, k_ints, timepoints, weights, assignments
+        ),
+        "frame_uptake": residue_uptake_frame(
+            log_pf, k_ints, timepoints, weights
         ),
     }
     for mode, oracle in expected.items():

@@ -91,7 +91,7 @@ while [[ $# -gt 0 ]]; do
     --split-types=*)
       SPLIT_TYPES_STR="${1#*=}"; shift;;
     -h|--help)
-      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--frame-averaging-modes log_pf,rate,uptake] [--split-types s,t] [--maxent-values a,b,c] [--dir-name name] [--n-steps N] [--learning-rate Y] [--ema-alpha Z] [--forward-model-scaling S] [-j|--jobs N]"
+      echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--frame-averaging-modes log_pf,rate,uptake,frame_uptake] [--split-types s,t] [--maxent-values a,b,c] [--dir-name name] [--n-steps N] [--learning-rate Y] [--ema-alpha Z] [--forward-model-scaling S] [-j|--jobs N]"
       exit 0;;
     *)
       break;;
@@ -158,8 +158,8 @@ mkdir -p logs
 # MAXENT_VALUES=(100000 1000000 10000000 100000000 1000000000)
 # MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000 1000000 1000000000)
 for FRAME_AVERAGING_MODE in "${FRAME_AVERAGING_MODES[@]}"; do
-  if [[ "$FRAME_AVERAGING_MODE" != "log_pf" && "$FRAME_AVERAGING_MODE" != "rate" && "$FRAME_AVERAGING_MODE" != "uptake" ]]; then
-    echo "Invalid frame averaging mode: $FRAME_AVERAGING_MODE (expected log_pf, rate, or uptake)" >&2
+  if [[ "$FRAME_AVERAGING_MODE" != "log_pf" && "$FRAME_AVERAGING_MODE" != "rate" && "$FRAME_AVERAGING_MODE" != "uptake" && "$FRAME_AVERAGING_MODE" != "frame_uptake" ]]; then
+    echo "Invalid frame averaging mode: $FRAME_AVERAGING_MODE (expected log_pf, rate, uptake, or frame_uptake)" >&2
     exit 2
   fi
 done

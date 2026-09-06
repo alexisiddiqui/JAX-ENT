@@ -79,6 +79,16 @@ def residue_uptake_fast(log_pf, k_ints, timepoints, weights, tau: float = 0.0):
     return 1.0 - np.exp(-np.asarray(timepoints)[:, None] * mean_rate[None, :])
 
 
+def residue_uptake_frame(log_pf, k_ints, timepoints, weights, tau: float = 0.0):
+    """Transform every frame rate to uptake, then average the uptake curves."""
+    weights = _validate_weights(log_pf, weights)
+    rates = effective_rates(log_pf, k_ints, tau)
+    frame_uptake = 1.0 - np.exp(
+        -np.asarray(timepoints)[:, None, None] * rates[None, :, :]
+    )
+    return frame_uptake @ weights
+
+
 def residue_uptake_slow2(log_pf, k_ints, timepoints, weights, assignments, tau: float = 0.0):
     """Average rates within clusters, then mix cluster uptake curves."""
     weights = _validate_weights(log_pf, weights)

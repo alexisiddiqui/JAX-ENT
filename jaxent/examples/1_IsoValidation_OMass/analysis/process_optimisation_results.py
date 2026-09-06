@@ -34,6 +34,7 @@ base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
 from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_output_features
+from jaxent.src.models.HDX.forward import BV_uptake_ForwardPass
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
 from jaxent.src.models.config import BV_model_Config
@@ -91,6 +92,12 @@ def main():
         action="store_true",
         default=False,
         help="Interpret provided results/output/clustering/features directories as absolute paths",
+    )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=("log_pf", "rate", "uptake", "frame_uptake"),
+        default="log_pf",
+        help="Frame-averaging semantic used when the optimization was run.",
     )
     args = parser.parse_args()
 
@@ -193,10 +200,28 @@ def main():
         print(f"  Computing frame-wise predictions for {ensemble}...")
 
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
-        forward_pass_uptake = BV_uptake_ForwardPass_frames()
+        forward_pass_uptake = BV_uptake_ForwardPass(
+            frame_averaging_mode=args.frame_averaging_mode
+        )
+        if args.frame_averaging_mode == "uptake":
+            forward_pass_uptake.set_frame_groups(
+                clustering_results[ensemble]["cluster_assignments"]
+            )
 
         framewise_output_lnpf = forward_pass_lnpf(features, bv_model_lnpf.params)
-        framewise_output_uptake = forward_pass_uptake(features, bv_model_uptake.params)
+        framewise_output_uptake = BV_uptake_ForwardPass_frames()(
+            features, bv_model_uptake.params
+        )
+
+        def predict_uptake(frame_weights):
+            if args.frame_averaging_mode == "log_pf":
+                averaged_features = frame_average_features(features, frame_weights)
+                return forward_pass_uptake(
+                    averaged_features, bv_model_uptake.params
+                )
+            return forward_pass_uptake.average_frames(
+                features, bv_model_uptake.params, frame_weights
+            )
 
         # --- Compute Prior Predictions (from uniform weights) ---
         print(f"  Computing prior predictions for {ensemble}...")
@@ -204,7 +229,7 @@ def main():
         uniform_frame_weights = jnp.ones(n_frames) / n_frames
 
         prior_lnpf_output = frame_average_features(framewise_output_lnpf, uniform_frame_weights)
-        prior_uptake_output = frame_average_features(framewise_output_uptake, uniform_frame_weights)
+        prior_uptake_output = predict_uptake(uniform_frame_weights)
 
         prior_ln_pf = prior_lnpf_output.log_Pf
         prior_uptake = prior_uptake_output.uptake
@@ -293,7 +318,7 @@ def main():
                     frame_weights = validated_frame_weight_simplex(params.frame_weight_simplex)
 
                     pred_lnpf_output = frame_average_features(framewise_output_lnpf, frame_weights)
-                    pred_uptake_output = frame_average_features(framewise_output_uptake, frame_weights)
+                    pred_uptake_output = predict_uptake(frame_weights)
 
                     pred_ln_pf = pred_lnpf_output.log_Pf
                     pred_uptake = pred_uptake_output.uptake
