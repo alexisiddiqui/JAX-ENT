@@ -249,13 +249,33 @@ case "${1:-}" in
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.variance_graph_checkpoint29 "$@"
     ;;
+  geometry-laplacian-prior)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.laplacian_prior_validation "$@"
+    ;;
+  geometry-laplacian-metrics)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.laplacian_metric_comparison_checkpoint31 "$@"
+    ;;
+  geometry-laplacian-topology)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.laplacian_topology_checkpoint32 "$@"
+    ;;
+  geometry-laplacian-residue-scaling)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.laplacian_residue_scaling_checkpoint33 "$@"
+    ;;
+  geometry-basin-difficulty)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.basin_difficulty_reanalysis_checkpoint34 "$@"
+    ;;
   all-analysis)
     shift
     uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.basin_census "$@"
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.within_basin_stage1
     ;;
   *)
-    echo "usage: $0 {...|geometry-cluster-stratified|openmm-env|openmm-audit|openmm-score|openmm-score-parallel|geometry-openmm-energy|pyrosetta-audit|pyrosetta-score|pyrosetta-score-parallel|geometry-pyrosetta-energy|geometry-alpha-variance|geometry-pyrosetta-graph|all-analysis} [options]" >&2
+    echo "usage: $0 {...|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|all-analysis} [options]" >&2
     exit 2
     ;;
 esac

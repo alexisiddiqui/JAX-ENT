@@ -110,10 +110,12 @@ def run_maxent_sweep(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     datasplit_dir: str = None,
+    features_dir: str = None,
     initial_frame_weights=None,
     frame_averaging_mode: Literal[
         "log_pf", "rate", "uptake", "frame_uptake"
     ] = "log_pf",
+    kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -139,7 +141,8 @@ def run_maxent_sweep(
     # Setup directories
     if datasplit_dir is None:
         datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
-    features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
+    if features_dir is None:
+        features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
 
     # Use provided output directory or default to previous behavior (now with timestamp)
     if output_base_dir is None:
@@ -170,7 +173,7 @@ def run_maxent_sweep(
     primary_loss_str = loss_mapping[loss_name]
 
     # Setup BV model
-    bv_config = BV_model_Config(num_timepoints=5)
+    bv_config = BV_model_Config(num_timepoints=5, kint_unit=kint_unit)
     bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
     bv_model = BV_model(config=bv_config)
     uptake_forward = bv_model.forward[m_key("HDX_peptide")]
@@ -389,6 +392,7 @@ def run_all_combinations(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     datasplit_dir: str = None,
+    features_dir: str = None,
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["ISO_TRI", "ISO_BI"]
@@ -428,6 +432,7 @@ def run_all_combinations(
                 lr_adjustment=lr_adjustment,
                 frame_average_impl=frame_average_impl,
                 datasplit_dir=datasplit_dir,
+                features_dir=features_dir,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -551,6 +556,11 @@ def main():
         help="Directory containing split data (default: script-local _datasplits).",
     )
     parser.add_argument(
+        "--features-dir",
+        default=os.path.join(os.path.dirname(__file__), "_featurise"),
+        help="Directory containing features_<ensemble>.npz and topology JSON files.",
+    )
+    parser.add_argument(
         "--execution-mode",
         choices=["compiled", "python"],
         default="compiled",
@@ -565,6 +575,12 @@ def main():
         choices=("log_pf", "rate", "uptake", "frame_uptake"),
         default="log_pf",
         help="Where frame averaging occurs in the HDX forward calculation.",
+    )
+    parser.add_argument(
+        "--kint-unit",
+        choices=("s^-1", "min^-1"),
+        default="s^-1",
+        help="Unit of the stored intrinsic-rate features (legacy default: s^-1).",
     )
 
     args = parser.parse_args()
@@ -625,8 +641,10 @@ def main():
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
             datasplit_dir=args.datasplit_dir,
+            features_dir=args.features_dir,
             initial_frame_weights=initial_frame_weights,
             frame_averaging_mode=args.frame_averaging_mode,
+            kint_unit=args.kint_unit,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -645,6 +663,7 @@ def main():
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
             datasplit_dir=args.datasplit_dir,
+            features_dir=args.features_dir,
         )
 
     # Report where results were written

@@ -15,6 +15,9 @@ Output:
     - Features (.npz) and topology (.json) in fitting/jaxENT/_featurise/
 """
 
+import argparse
+import hashlib
+import json
 import os
 import time
 
@@ -23,9 +26,41 @@ import jax.numpy as jnp
 from jaxent.examples.common.loading import load_HDXer_kints, featurise_trajectory
 from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
+from jaxent.src.models.HDX.BV.features import BV_input_features
+import jaxent.src.interfaces.topology as pt
+
+
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--output-dir", default=os.path.join(os.path.dirname(__file__), "_featurise")
+    )
+    parser.add_argument(
+        "--kint-provider", choices=("hdxer", "jaxent"), default="hdxer"
+    )
+    parser.add_argument(
+        "--jaxent-kint-features",
+        default=os.path.join(
+            os.path.dirname(__file__),
+            "../../data/_self_consistent_target_features/features_open_closed.npz",
+        ),
+    )
+    parser.add_argument(
+        "--jaxent-kint-topology",
+        default=os.path.join(
+            os.path.dirname(__file__),
+            "../../data/_self_consistent_target_features/topology_open_closed.json",
+        ),
+    )
+    args = parser.parse_args()
     # Define trajectories and topology
     bi_modal_trajectory = "sliced_trajectories/TeaA_filtered_sliced.xtc"   # filtered = BI (874 frames)
     tri_modal_trajectory = "sliced_trajectories/TeaA_initial_sliced.xtc"    # initial = TRI (2225 frames)
@@ -36,17 +71,19 @@ def main():
     if not os.path.exists(hdxer_kint_path):
         raise FileNotFoundError(f"HDXer kint file could not be found: {hdxer_kint_path}")
 
-    # Load intrinsic rates from .dat file
-    hdxer_kint_data = load_HDXer_kints(hdxer_kint_path)
-    hdxer_kints = hdxer_kint_data[0]  # Extract kints from the tuple
-    hdxer_top = hdxer_kint_data[1]  # Extract topology from the tuple
+    if args.kint_provider == "hdxer":
+        kint_data = load_HDXer_kints(hdxer_kint_path)
+    else:
+        source_features = BV_input_features.load(args.jaxent_kint_features)
+        source_topology = pt.PTSerialiser.load_list_from_json(args.jaxent_kint_topology)
+        kint_data = (jnp.asarray(source_features.k_ints), source_topology)
 
-    print(f"Loaded intrinsic rates: {hdxer_kints.shape}")
-    print(f"Loaded topology length: {len(hdxer_top)}")
+    print(f"Loaded {args.kint_provider} intrinsic rates: {kint_data[0].shape}")
+    print(f"Loaded topology length: {len(kint_data[1])}")
 
     # Update traj_dir to correct relative path
     traj_dir = "../../data/_Bradshaw/Reproducibility_pack_v2/data/trajectories"
-    output_dir = os.path.join(os.path.dirname(__file__), "_featurise")
+    output_dir = args.output_dir
     traj_dir = os.path.join(os.path.dirname(__file__), traj_dir)
 
     if not os.path.exists(traj_dir):
@@ -78,8 +115,29 @@ def main():
             output_name=output_name,
             bv_config=bv_config,
             featuriser_settings=featuriser_settings,
-            kint_data=hdxer_kint_data,
+            kint_data=kint_data,
         )
+
+    manifest = {
+        "schema_version": 1,
+        "kint_provider": args.kint_provider,
+        "kint_unit": "min^-1" if args.kint_provider == "jaxent" else "s^-1",
+        "topology": {"path": os.path.realpath(top_path), "sha256": _sha256(top_path)},
+        "trajectories": {
+            output_name: {"path": os.path.realpath(path), "sha256": _sha256(path)}
+            for path, output_name in trajectories_to_process
+        },
+    }
+    if args.kint_provider == "jaxent":
+        manifest["intrinsic_rate_source"] = {
+            "features": os.path.realpath(args.jaxent_kint_features),
+            "features_sha256": _sha256(args.jaxent_kint_features),
+            "topology": os.path.realpath(args.jaxent_kint_topology),
+            "topology_sha256": _sha256(args.jaxent_kint_topology),
+        }
+    with open(os.path.join(output_dir, "manifest.json"), "w") as handle:
+        json.dump(manifest, handle, indent=2)
+        handle.write("\n")
 
 
 if __name__ == "__main__":

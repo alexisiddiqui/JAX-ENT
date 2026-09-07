@@ -308,6 +308,12 @@ class mda_TopologyAdapter:
             "GLU": "E",
             "GLY": "G",
             "HIS": "H",
+            "HID": "H",
+            "HIE": "H",
+            "HIP": "H",
+            "HSD": "H",
+            "HSE": "H",
+            "HSP": "H",
             "ILE": "I",
             "LEU": "L",
             "LYS": "K",
@@ -320,6 +326,8 @@ class mda_TopologyAdapter:
             "TYR": "Y",
             "VAL": "V",
             "MSE": "M",  # Selenomethionine
+            "ASH": "D",
+            "GLH": "E",
         }
 
         sequence = [aa_map.get(res.resname, "X") for res in residues]

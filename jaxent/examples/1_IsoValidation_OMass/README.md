@@ -159,6 +159,35 @@ This script:
 > [!NOTE]
 > The synthetic HDX uptake curves were originally computed using the **Persson-Halle model** with switch-function contacts, as described in the Bradshaw tutorial. This is intentionally different from the BV model used for fitting, creating a deliberate model mismatch to test robustness.
 
+### First-party self-consistent target
+
+For a model-matched recovery control, generate a noiseless target directly with
+JAX-ENT contacts and intrinsic rates from the complete, unsliced open and closed
+trajectories. The default is exact post-uptake frame averaging and a 40:60
+Open:Closed mixture:
+
+```bash
+python jaxent/examples/1_IsoValidation_OMass/data/generate_iso_targets.py \
+    --output-dir jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_self_consistent_iso/target_frame_uptake
+```
+
+Use `--averaging-mode log_pf|rate|uptake|frame_uptake` to select the target
+semantics. Both residue-level and fixed-width-10 layouts are written, together
+with exact source weights and a provenance manifest. Source features are cached
+with trajectory, topology, and semantic hashes.
+
+To create an isolated fitting feature bank with the identical JAX-ENT intrinsic
+rates, use:
+
+```bash
+python jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/featurise_ISO_TRI_BI.py \
+    --kint-provider jaxent \
+    --output-dir jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/_self_consistent_iso/fit_features
+```
+
+When fitting these features, pass `--kint-unit min^-1`. The legacy HDXer target
+and feature directories remain unchanged.
+
 ---
 
 ### Step 3: Featurise Ensembles

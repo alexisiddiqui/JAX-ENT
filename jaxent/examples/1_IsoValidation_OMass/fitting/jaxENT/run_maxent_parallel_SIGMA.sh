@@ -28,6 +28,9 @@ FRAME_AVERAGE_IMPL=tensordot
 STEP_CHUNK_SIZE=100
 EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
+KINT_UNIT="s^-1"
+FEATURES_DIR="${DIR_WD}/_featurise"
+DATASPLIT_DIR="${DIR_WD}/_datasplits"
 
 # --- Added defaults for ensembles, losses and split types ---
 DEFAULT_ENSEMBLES_STR="ISO_TRI,ISO_BI"
@@ -86,6 +89,10 @@ while [[ $# -gt 0 ]]; do
       FORWARD_MODEL_SCALING="$2"; shift 2;;
     --forward-model-scaling=*)
       FORWARD_MODEL_SCALING="${1#*=}"; shift;;
+    --kint-unit)
+      KINT_UNIT="$2"; shift 2;;
+    --kint-unit=*)
+      KINT_UNIT="${1#*=}"; shift;;
     --ensembles)
       ENSEMBLES_STR="$2"; shift 2;;
     --ensembles=*)
@@ -102,6 +109,14 @@ while [[ $# -gt 0 ]]; do
       SPLIT_TYPES_STR="$2"; shift 2;;
     --split-types=*)
       SPLIT_TYPES_STR="${1#*=}"; shift;;
+    --features-dir)
+      FEATURES_DIR="$2"; shift 2;;
+    --features-dir=*)
+      FEATURES_DIR="${1#*=}"; shift;;
+    --datasplit-dir)
+      DATASPLIT_DIR="$2"; shift 2;;
+    --datasplit-dir=*)
+      DATASPLIT_DIR="${1#*=}"; shift;;
     -h|--help)
       echo "Usage: $0 [--ensembles a,b] [--losses x,y] [--frame-averaging-modes log_pf,rate,uptake,frame_uptake] [--split-types s,t] [--maxent-values a,b,c] [--dir-name name] [--n-steps N] [--learning-rate Y] [--lr-adjustment on|off] [--frame-average-impl tensordot|legacy_sum] [--step-chunk-size N] [-j|--jobs N]"
       exit 0;;
@@ -169,6 +184,7 @@ mkdir -p logs
 # MAXENT_VALUES=(100000 1000000 10000000 100000000 1000000000)
 # MAXENT_VALUES=(1 2 5 10 50 100 500 1000 10000 1000000 1000000000)
 if [[ "$LR_ADJUSTMENT" != "on" && "$LR_ADJUSTMENT" != "off" ]]; then echo "Invalid --lr-adjustment" >&2; exit 2; fi
+if [[ "$KINT_UNIT" != "s^-1" && "$KINT_UNIT" != "min^-1" ]]; then echo "Invalid --kint-unit" >&2; exit 2; fi
 if [[ "$FRAME_AVERAGE_IMPL" != "tensordot" && "$FRAME_AVERAGE_IMPL" != "legacy_sum" ]]; then echo "Invalid --frame-average-impl" >&2; exit 2; fi
 if ! [[ "$STEP_CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then echo "--step-chunk-size must be >= 1" >&2; exit 2; fi
 for FRAME_AVERAGING_MODE in "${FRAME_AVERAGING_MODES[@]}"; do
@@ -216,13 +232,15 @@ run_campaign() {
           wait_for_slot
           python optimise_ISO_TRI_BI_splits_Sigma.py \
             --ensemble "$ENSEMBLE" --loss-function "$LOSS" \
-            --maxent-range "$MAXENT,$MAXENT" --split-types "$SPLIT" \
+            --maxent-values "$MAXENT" --split-types "$SPLIT" \
             --n-steps "$N_STEPS" --learning-rate "$LEARNING_RATE" \
             --lr-adjustment "$LR_ADJUSTMENT" \
             --frame-average-impl "$FRAME_AVERAGE_IMPL" \
             --frame-averaging-mode "$frame_averaging_mode" \
             --step-chunk-size "$STEP_CHUNK_SIZE" --ema-alpha "$EMA_ALPHA" \
             --forward-model-scaling "$FORWARD_MODEL_SCALING" \
+            --kint-unit "$KINT_UNIT" \
+            --features-dir "$FEATURES_DIR" --datasplit-dir "$DATASPLIT_DIR" \
             --output-dir "$opt_output_dir" \
             > "${opt_output_dir}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_split${SPLIT}.log" 2>&1 &
           batch_pids+=("$!")
@@ -240,17 +258,18 @@ run_campaign() {
   python "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/CV_validation.log" 2>&1
   python "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" --results-dir "$opt_output_dir" > "${opt_output_dir}/logs/Analyse_Loss.log" 2>&1
   python "${ANA_DIR}/process_optimisation_results.py" \
-    --results-dir "$opt_output_dir" --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "${DIR_WD}/_featurise" \
+    --results-dir "$opt_output_dir" --datasplit-dir "$DATASPLIT_DIR" \
+    --features-dir "$FEATURES_DIR" \
     --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
     --frame-averaging-mode "$frame_averaging_mode" \
+    --kint-unit "$KINT_UNIT" \
     > "${opt_output_dir}/logs/process_optimisation_results.log" 2>&1
 
   basename=$(basename "$opt_output_dir")
-  processed_dir="${DIR_WD}/_processed_${basename}"
+  processed_dir="$(dirname "$opt_output_dir")/_processed_${basename}"
   python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
-    --processed-data-dir "$processed_dir" --datasplit-dir "${DIR_WD}/_datasplits" \
-    --features-dir "${DIR_WD}/_featurise" \
+    --processed-data-dir "$processed_dir" --datasplit-dir "$DATASPLIT_DIR" \
+    --features-dir "$FEATURES_DIR" \
     --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
     > "${opt_output_dir}/logs/score_models.log" 2>&1
 

@@ -1,8 +1,16 @@
-# Boltzmann Frame-Weight Consistency Loss (MaxEnt Replacement) — Handoff
+# Boltzmann Frame-Weight Consistency Loss (MaxEnt Replacement) — Superseded
+
+> **Superseded on 2026-09-06.** The complete-graph penalty proposed here would force
+> `w ∝ exp(G)` and discard the equilibrium occupancy already encoded by uniformly
+> weighted MD frames. It has not been implemented. The replacement is a sparse,
+> prior-relative graph penalty on `log(w/p0)`: nearby fixed-BV profiles may receive
+> similar *corrections* to the input prior, while the prior itself is a zero-loss
+> solution. See `jaxent/src/opt/loss/graph_laplacian.py` and
+> `jaxent/examples/ATLAS_BV/CHECKPOINT30_LAPLACIAN_PRIOR.md`.
 
 ## Status
 
-Planning stage only. Nothing in this document has been implemented yet. This is the
+Historical planning document only. Nothing proposed below was implemented. This is the
 derivation and implementation plan for a new regularization loss that replaces
 `maxent_convex_kl` with a physically-motivated alternative.
 

@@ -99,6 +99,12 @@ def main():
         default="log_pf",
         help="Frame-averaging semantic used when the optimization was run.",
     )
+    parser.add_argument(
+        "--kint-unit",
+        choices=("s^-1", "min^-1"),
+        default="s^-1",
+        help="Unit of the intrinsic-rate features used for the fit.",
+    )
     args = parser.parse_args()
 
     # Define parameters (should match those used in optimization)
@@ -189,11 +195,15 @@ def main():
         print(f"  Inferred {num_timepoints} timepoints from data file: {timepoints_from_data}")
 
         # Setup BV model for ln_pf prediction (HDX_resPF)
-        bv_config_lnpf = BV_model_Config(num_timepoints=0)
+        bv_config_lnpf = BV_model_Config(num_timepoints=0, kint_unit=args.kint_unit)
         bv_model_lnpf = BV_model(config=bv_config_lnpf)
 
         # Setup BV model for uptake prediction (HDX_peptide)
-        bv_config_uptake = BV_model_Config(num_timepoints=num_timepoints, timepoints=jnp.array(timepoints_from_data))
+        bv_config_uptake = BV_model_Config(
+            num_timepoints=num_timepoints,
+            timepoints=jnp.array(timepoints_from_data),
+            kint_unit=args.kint_unit,
+        )
         bv_model_uptake = BV_model(config=bv_config_uptake)
 
         # --- Compute frame-wise predictions (once per ensemble) ---

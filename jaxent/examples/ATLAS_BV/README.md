@@ -952,3 +952,44 @@ them double-counts intermediate fluctuations and erases the checkpoint-28 endpoi
 111-system run and expensive shuffled/rewired controls were therefore not run. Results, the formal
 gate decision, fitted parameters and graph audit are under
 `outputs/analysis/pairwise_geometry/checkpoint29_variance_graph/pilot/`.
+
+## 10. Checkpoint 30 — prior-relative BV graph Laplacian (pilot stopped)
+
+Checkpoint 28 shows that local variance is informative as an endpoint descriptor, but it does not
+validate a graph regulariser. Checkpoint 30 therefore tests the regulariser directly. It penalises
+roughness in `log(w/p0)` on a fixed-BV kNN graph, preserving the input MD/Boltzmann population as
+the zero-loss prior instead of imposing a new `exp(G)` population law.
+
+The 24-system pilot selected the PF-L2 graph at k=5. Its graph audit passed strongly and smooth
+structural-bias recovery improved over MaxEnt, but basin-bias recovery did not: its weight-TV gain
+was 0.0062 with a 95% CI of -0.00075 to 0.0131. The rewired negative control behaved as expected.
+Because the basin gate failed, the preregistered stop rule applies: no full run and no ISO
+validation. Details are documented in `CHECKPOINT30_LAPLACIAN_PRIOR.md`.
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-laplacian-prior --phase all
+```
+
+## 11. Checkpoint 31 — legacy-Zq and PyRosetta Laplacian metrics
+
+The 24-system pilot evaluates legacy Work Density and cached PyRosetta `ref2015` total score as
+standalone graphs, with PF-L2 and Work Scale controls. Basin challenges use exact probability-mass
+transfer rather than ESS; ESS is diagnostic only. All candidates pass the formal pilot gates, but
+PF-L2 remains strongest. Legacy-Zq has a small topology-specific gain, while most of PyRosetta's
+median gain survives graph rewiring. A full comparison is authorized; ISO use and hybrid graphs are
+not. See `CHECKPOINT31_LAPLACIAN_METRICS.md`.
+
+```bash
+./jaxent/examples/ATLAS_BV/commands.sh geometry-laplacian-metrics --phase all --workers 6
+```
+
+## 12. Checkpoint 32 — sparse versus all-pairs Laplacian topology
+
+Checkpoint 32 compares self-tuned kNN, uniform kNN, weighted all-pairs RBF graphs, and a
+geometry-free uniform all-pairs control across the four checkpoint-31 metrics. The staged
+24-system development run selected a Work Scale weighted all-pairs graph with bandwidth at the 16%
+distance quantile. It passed held-out smooth and basin recovery, HDX non-inferiority, rewired, and
+uniform-complete controls. On the remaining 87 systems, the aggregate confirmation also passed,
+but basin improvement decayed with protein size and the largest-protein quartile CI crossed zero.
+The size-stability gate therefore failed and ISO integration remains unauthorized. See
+`CHECKPOINT32_LAPLACIAN_TOPOLOGY.md`.

@@ -112,7 +112,6 @@ def calculate_HDXrate(
     chain_univserse_residuegroup_indices = [
         idx for idx, residue in enumerate(chain_univserse_residue_list) if residue in residue_list
     ]
-    print(chain_univserse_residue_list)
     sequence = mda_TopologyAdapter._extract_sequence(chain_univserse_residue_list, return_list=True)
 
     if not sequence:

@@ -41,6 +41,9 @@ def main() -> None:
         default=os.path.join(default_hdx_dir, "mixed_60-40_artificial_expt_resfracs_TeaA_segs.txt"),
     )
     parser.add_argument("--output-dir", default=os.path.join(os.path.dirname(__file__), "_datasplits"))
+    parser.add_argument(
+        "--features-dir", default=os.path.join(os.path.dirname(__file__), "_featurise")
+    )
     parser.add_argument("--ensemble", choices=["iso_tri", "iso_bi"], default="iso_bi")
     parser.add_argument("--split-types", default="random,sequence,sequence_cluster,stratified,spatial")
     parser.add_argument("--num-splits", type=int, default=3)
@@ -57,7 +60,7 @@ def main() -> None:
     segs_file: str = args.segs_file
     output_dir: str = args.output_dir
     feature_topology_file: str = f"topology_{args.ensemble}.json"
-    features_dir: str = os.path.join(os.path.dirname(__file__), "_featurise")
+    features_dir: str = args.features_dir
 
     if not os.path.exists(features_dir):
         raise FileNotFoundError(f"Features directory does not exist: {features_dir}")

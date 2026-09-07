@@ -154,7 +154,10 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             )
             common_residue_group = cast(ResidueGroup, common_residue_group)
             k_ints_res_dict = calculate_HDXrate(
-                common_residue_group, self.config.temperature, self.config.ph
+                common_residue_group,
+                self.config.temperature,
+                self.config.ph,
+                unit=self.config.kint_unit,
             )
 
             # Map results back to Partial_Topology objects

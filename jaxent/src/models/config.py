@@ -18,6 +18,7 @@ class BV_model_Config(BaseConfig):
     bv_bc: Array = jnp.array([0.35])
     bv_bh: Array = jnp.array([2.0])
     ph: float = 7.0
+    kint_unit: Literal["s^-1", "min^-1"] = "s^-1"
     heavy_radius: float = 6.5
     o_radius: float = 2.4
     num_timepoints: int = 0
@@ -43,6 +44,7 @@ class BV_model_Config(BaseConfig):
         contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch"] | None = None,
         switch_scale_nc: float = 10.0,
         switch_scale_nh: float = 10.0,
+        kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
     ) -> None:
         super().__init__()
         if contact_mode is not None and switch is not None:
@@ -53,10 +55,13 @@ class BV_model_Config(BaseConfig):
             raise ValueError(f"unknown contact_mode: {contact_mode!r}")
         if switch_scale_nc <= 0 or switch_scale_nh <= 0:
             raise ValueError("Bradshaw switch scales must be positive")
+        if kint_unit not in {"s^-1", "min^-1"}:
+            raise ValueError("kint_unit must be 's^-1' or 'min^-1'")
         self.contact_mode = contact_mode
         self.switch = contact_mode == "legacy_switch"
         self.switch_scale_nc = float(switch_scale_nc)
         self.switch_scale_nh = float(switch_scale_nh)
+        self.kint_unit = kint_unit
         if timepoints is not None:
             self.timepoints = timepoints
             if num_timepoints is not None and num_timepoints != len(timepoints):
