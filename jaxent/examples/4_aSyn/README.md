@@ -1,5 +1,8 @@
 # Example 4 — aSyn condition-wise BV analysis
 
+Data from:
+
+https://doi.org/10.1021/acs.analchem.2c03183
 ## Overview
 
 This example runs cross-validation for **alpha-synuclein (aSyn)** using residue-level protection factors (PF) across four conditions:

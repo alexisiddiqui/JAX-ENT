@@ -34,7 +34,7 @@ DEFAULT_LOSSES_STR="MSE,Sigma_MSE"
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
 DEFAULT_SPLIT_TYPES_STR="random"
-DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
+DEFAULT_SPLIT_TYPES_STR="sequence_cluster"
 
 
 SPLIT_TYPES_STR="$DEFAULT_SPLIT_TYPES_STR"
