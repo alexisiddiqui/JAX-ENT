@@ -33,3 +33,11 @@ def test_bradshaw_switch_is_explicit_and_not_legacy():
 def test_explicit_contact_mode_cannot_be_combined_with_legacy_argument():
     with pytest.raises(ValueError, match="mutually exclusive"):
         BV_model_Config(contact_mode="bradshaw_switch", switch=False)
+
+
+def test_smooth_cutoff_is_explicit_with_half_angstrom_scales():
+    config = BV_model_Config(contact_mode='smooth_cutoff', switch_scale_nc=.5, switch_scale_nh=.5)
+    assert config.contact_mode == 'smooth_cutoff'
+    assert config.switch is False
+    assert config.switch_scale_nc == config.switch_scale_nh == .5
+    assert BV_model_Config().contact_mode == 'hard'

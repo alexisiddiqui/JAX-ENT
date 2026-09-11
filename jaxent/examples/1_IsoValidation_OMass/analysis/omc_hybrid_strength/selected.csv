@@ -1,0 +1,2 @@
+stage,ensemble,arm,family,strength,quantile,converged,objective,mse,objective_gap,steps,open,closed,intermediate,recovery,tv,ess_fraction,open_conditional_ess,closed_conditional_ess,intermediate_conditional_ess,initial_population_tv
+uptake,ISO_TRI,19,hybrid_logpf,0.1,0.02,True,0.013221565284131195,0.0020082659119684387,0.003755984913337011,3000,0.3560684756171571,0.3689494279411576,0.27498209644168553,60.190913938688475,0.2749820964416854,0.0034008101033767527,5.91236069761346,3.583418520591623,1.0397394042208383,0.0030846311764433643

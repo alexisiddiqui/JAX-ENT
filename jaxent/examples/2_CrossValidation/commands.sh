@@ -23,7 +23,9 @@ python jaxent/examples/2_CrossValidation/data/renumber_pdb.py \
     --resi_start 1
 
 # extract _ValDX.tar
-python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
+python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py \
+    --structure jaxent/examples/2_CrossValidation/data/MoPrP109_s20_r1_msa1-127_n12700_do1_20260904_191954_protonated_max_plddt_1627.pdb \
+    --sequence jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.seq
 
 
 

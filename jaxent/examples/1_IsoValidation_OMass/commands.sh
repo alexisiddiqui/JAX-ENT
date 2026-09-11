@@ -1,3 +1,59 @@
+#!/usr/bin/env bash
+if [[ "${1:-}" == "omc-hierarchical-matched-rate" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hierarchical_matched_rate "$@"
+fi
+if [[ "${1:-}" == "omc-hierarchical-reverse" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hierarchical_reverse "$@"
+fi
+if [[ "${1:-}" == "omc-hierarchical-rate" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hierarchical_rate "$@"
+fi
+if [[ "${1:-}" == "omc-hierarchical-strength" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hierarchical_strength "$@"
+fi
+if [[ "${1:-}" == "omc-hierarchical-control" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hierarchical_control "$@"
+fi
+if [[ "${1:-}" == "omc-hybrid-strength" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hybrid_strength "$@"
+fi
+if [[ "${1:-}" == "omc-hybrid-narrow" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hybrid_narrow "$@"
+fi
+if [[ "${1:-}" == "omc-hybrid-control" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_hybrid_control "$@"
+fi
+# Isolated OMC command exits before the legacy sequential workflow below.
+if [[ "${1:-}" == "omc-control" ]]; then
+    shift
+    ISO_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+    cd "$ISO_REPO_ROOT" || exit 1
+    exec "$ISO_REPO_ROOT/.venv/bin/python" -m jaxent.examples.1_IsoValidation_OMass.analysis.omc_control "$@"
+fi
 
 # download the quick testing data
 

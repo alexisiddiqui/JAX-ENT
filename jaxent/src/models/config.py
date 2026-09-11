@@ -27,7 +27,7 @@ class BV_model_Config(BaseConfig):
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
     peptide: bool = False
     switch: bool = False
-    contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch"] = "hard"
+    contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"] = "hard"
     switch_scale_nc: float = 10.0
     switch_scale_nh: float = 10.0
     # Protein N termini are handled chain-wise by BV_model's terminal policy.
@@ -41,7 +41,7 @@ class BV_model_Config(BaseConfig):
         num_timepoints: int | None = None,
         timepoints: Array | None = None,
         switch: bool | None = None,
-        contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch"] | None = None,
+        contact_mode: Literal["hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"] | None = None,
         switch_scale_nc: float = 10.0,
         switch_scale_nh: float = 10.0,
         kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
@@ -51,10 +51,10 @@ class BV_model_Config(BaseConfig):
             raise ValueError("contact_mode and the legacy switch argument are mutually exclusive")
         if contact_mode is None:
             contact_mode = "legacy_switch" if switch else "hard"
-        if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch"}:
+        if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"}:
             raise ValueError(f"unknown contact_mode: {contact_mode!r}")
         if switch_scale_nc <= 0 or switch_scale_nh <= 0:
-            raise ValueError("Bradshaw switch scales must be positive")
+            raise ValueError("Contact switch scales must be positive")
         if kint_unit not in {"s^-1", "min^-1"}:
             raise ValueError("kint_unit must be 's^-1' or 'min^-1'")
         self.contact_mode = contact_mode

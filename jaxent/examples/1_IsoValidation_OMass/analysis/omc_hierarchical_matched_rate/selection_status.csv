@@ -1,0 +1,8 @@
+family,selected
+unregularised,False
+maxent,True
+scalar_logpf,True
+profile_logpf,True
+hierarchical_rmsd,False
+hierarchical_w1,False
+hierarchical_logpf_profile,False

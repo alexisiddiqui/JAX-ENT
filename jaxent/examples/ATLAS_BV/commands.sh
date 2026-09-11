@@ -5,6 +5,10 @@ example_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${example_dir}/../../.."
 
 case "${1:-}" in
+  geometry-graph-representation)
+    shift
+    exec .venv/bin/python -m jaxent.examples.ATLAS_BV.analysis.graph_representation_audit "$@"
+    ;;
   benchmark)
     shift
     exec uv run --no-sync python "${example_dir}/benchmark_featurisation.py" "$@"
@@ -269,13 +273,45 @@ case "${1:-}" in
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.basin_difficulty_reanalysis_checkpoint34 "$@"
     ;;
+  geometry-original-omc)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.original_omc_iso_validation_checkpoint35 "$@"
+    ;;
+  geometry-cluster-filtering-omc)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.cluster_filtering_omc "$@"
+    ;;
+  geometry-omc-bandwidth-control)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_bandwidth_control "$@"
+    ;;
+  geometry-omc-bandwidth-diagnostics)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/omc-diagnostics-mpl uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_bandwidth_diagnostics "$@"
+    ;;
+  geometry-omc-coverage-control)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/omc-coverage-mpl uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_coverage_control "$@"
+    ;;
+  geometry-omc-coupling-control)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/omc-coupling-mpl uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_coupling_control "$@"
+    ;;
+  geometry-omc-decoy-control)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/omc-decoy-mpl uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_decoy_control "$@"
+    ;;
+  geometry-omc-graph-control)
+    shift
+    exec env OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/omc-graph-mpl uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.omc_graph_control "$@"
+    ;;
   all-analysis)
     shift
     uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.basin_census "$@"
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.within_basin_stage1
     ;;
   *)
-    echo "usage: $0 {...|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|all-analysis} [options]" >&2
+    echo "usage: $0 {...|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|geometry-original-omc|geometry-cluster-filtering-omc|geometry-omc-bandwidth-control|geometry-omc-bandwidth-diagnostics|geometry-omc-coverage-control|geometry-omc-coupling-control|geometry-omc-decoy-control|geometry-omc-graph-control|all-analysis} [options]" >&2
     exit 2
     ;;
 esac

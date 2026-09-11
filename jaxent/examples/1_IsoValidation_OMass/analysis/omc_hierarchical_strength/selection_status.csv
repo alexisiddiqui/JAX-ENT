@@ -1,0 +1,10 @@
+distance,strength,selected,reason
+rmsd,0.01,True,lowest converged MSE
+rmsd,0.03,True,lowest converged MSE
+rmsd,0.1,True,lowest converged MSE
+w1,0.01,True,lowest converged MSE
+w1,0.03,True,lowest converged MSE
+w1,0.1,True,lowest converged MSE
+logpf_profile,0.01,False,no converged fit
+logpf_profile,0.03,True,lowest converged MSE
+logpf_profile,0.1,True,lowest converged MSE

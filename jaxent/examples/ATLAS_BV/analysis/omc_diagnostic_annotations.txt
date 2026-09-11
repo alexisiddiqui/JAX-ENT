@@ -1,0 +1,56 @@
+{
+  "1tzw_A": {
+    "name": "NusB, Thermotoga maritima",
+    "context": "142-residue all-helical protein; deposited monomer. UniProt Q9X286. Do not assume an obligate missing dimer."
+  },
+  "2ad6_D": {
+    "name": "Methanol dehydrogenase small subunit",
+    "context": "69-residue small subunit from an A2B2 heterotetramer with much larger catalytic subunits; the simulation contains the small chain alone. UniProt P38540. Loss of assembly context is a plausible contributor to flexibility, not a demonstrated cause."
+  },
+  "1dd3_B": {
+    "name": "Ribosomal protein L7/L12, Thermotoga maritima",
+    "context": "128-residue full-length chain. The deposited structure and primary study describe N-terminal dimerisation and conformational variability; the simulation contains an isolated chain. UniProt P29396."
+  },
+  "1ef1_D": {
+    "name": "Moesin C-terminal tail fragment",
+    "context": "90-residue tail fragment from a FERM\u2013tail complex; it is not the globular FERM domain. The isolated-chain trajectory lacks the deposited binding context. UniProt P26038."
+  },
+  "1c1k_A": {
+    "name": "T4 gene 59 protein",
+    "context": "217-residue protein with an alpha-helical two-domain fold; deposited monomer. Functional identity alone does not explain its numerical recovery error."
+  },
+  "1cuo_A": {
+    "name": "Azurin, isomer 2",
+    "context": "129-residue copper-binding protein from Methylomonas. Metal coordination and simulation treatment have not been audited here."
+  },
+  "1pch_A": {
+    "name": "Histidine-containing phosphocarrier protein HPr",
+    "context": "Small alpha/beta phosphocarrier. Low trajectory RMSF is not a guarantee that scalar contact summaries distinguish structural populations."
+  },
+  "3kvd_D": {
+    "name": "Factor H binding protein",
+    "context": "242-residue mature uncomplexed protein; deposited monomer. UniProt Q6QCC2. This analysis concerns generic ensemble weighting, not biological activity."
+  },
+  "3fpu_A": {
+    "name": "Evasin-1",
+    "context": "100-residue chain from a deposited heterodimeric complex. The simulated isolated chain lacks that partner. UniProt P0C8E7. Biological activity is not evaluated."
+  },
+  "5noh_A": {
+    "name": "M2-1 core domain",
+    "context": "103-residue compact core domain; deposited monomeric assembly. The primary structural study describes a cooperative folding unit. UniProt P04545. A domain fragment need not behave like an unsupported extended tail."
+  },
+  "5x1u_B": {
+    "name": "DotM cytosolic domain",
+    "context": "208-residue simulated domain. Biological activity and assembly dependence are not evaluated in these diagnostics."
+  },
+  "4g6d_B": {
+    "name": "Phage G1 gp67 (ORF067)",
+    "context": "198-residue chain B from a complex containing a sigma-factor region on chain A. Chain B has N- and C-terminal gp67 domains; the winged-helix annotation belongs to the other chain. UniProt Q4Z9Y5.",
+    "url": "https://www.ebi.ac.uk/pdbe/entry/pdb/4g6d"
+  },
+  "1yoz_B": {
+    "name": "Hypothetical protein AF0941, Archaeoglobus fulgidus",
+    "context": "Structural-genomics protein of unassigned function. Two protein molecules appear in the deposited structure. Calibration reference; excluded from cohort counts.",
+    "url": "https://www.ncbi.nlm.nih.gov/Structure/pdb/1YOZ"
+  }
+}

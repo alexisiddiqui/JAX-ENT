@@ -139,7 +139,7 @@ def main():
     )
     bv_parser.add_argument(
         "--contact_mode",
-        choices=("hard", "legacy_switch", "bradshaw_switch"),
+        choices=("hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"),
         default=None,
         help="Explicit BV contact construction. Prefer this over the legacy --switch flag.",
     )
@@ -147,13 +147,13 @@ def main():
         "--switch_scale_nc",
         type=float,
         default=10.0,
-        help="Bradshaw heavy-contact switch scale in Angstroms.",
+        help="Heavy-contact switch scale in Angstroms.",
     )
     bv_parser.add_argument(
         "--switch_scale_nh",
         type=float,
         default=10.0,
-        help="Bradshaw acceptor-contact switch scale in Angstroms.",
+        help="Acceptor-contact switch scale in Angstroms.",
     )
     bv_parser.add_argument(
         "--mda_contact_environment",

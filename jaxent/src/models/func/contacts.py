@@ -10,7 +10,7 @@ from tqdm import tqdm
 from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
 
 
-ContactMode = Literal["hard", "legacy_switch", "bradshaw_switch"]
+ContactMode = Literal["hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"]
 
 
 def bradshaw_rational_6_12(
@@ -36,6 +36,25 @@ def bradshaw_rational_6_12(
         raise ValueError("scale must be positive")
     values = np.asarray(distance, dtype=float)
     return 1.0 / (1.0 + ((values - center) / scale) ** 6)
+
+
+def smooth_cutoff_rational_6_12(
+    distance: np.ndarray | float,
+    *,
+    radius: float,
+    scale: float,
+) -> np.ndarray:
+    """Full contacts inside radius, with a rational tail of half-height at radius+scale.
+
+    All distances are in Angstroms. Unlike the historical Bradshaw equation,
+    shortening the tail cannot suppress contacts inside the contact radius.
+    """
+    if not np.isfinite(radius) or radius <= 0:
+        raise ValueError("radius must be positive and finite")
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("switch_scale must be positive and finite")
+    excess = np.maximum(np.asarray(distance, dtype=float) - radius, 0.0)
+    return np.asarray(1.0 / (1.0 + (excess / scale) ** 6))
 
 
 # def calc_BV_contacts_universe(
@@ -184,8 +203,10 @@ def calc_BV_contacts_universe(
         contact_mode: Explicit contact construction. ``hard`` counts contacts
             within ``radius``; ``legacy_switch`` applies JAX-ENT's truncated
             rational switch; ``bradshaw_switch`` applies the Bradshaw/Radou
-            continuous rational 6--12 switch to every eligible pair.
-        switch_scale: Width of ``bradshaw_switch`` in Angstroms.
+            continuous rational 6--12 switch to every eligible pair; ``smooth_cutoff``
+            retains unit contacts inside radius and switches only beyond it.
+        switch_scale: Rational switch scale in Angstroms; for ``smooth_cutoff``
+            this is the distance beyond radius at which a contact contributes 0.5.
 
     Returns:
         List of contact counts per frame (N_targets, N_frames)
@@ -194,11 +215,13 @@ def calc_BV_contacts_universe(
         raise ValueError("radius must be positive")
     if contact_mode is None:
         contact_mode = "legacy_switch" if switch else "hard"
-    if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch"}:
+    if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"}:
         raise ValueError(f"unknown contact_mode: {contact_mode!r}")
     if switch and contact_mode != "legacy_switch":
         raise ValueError("switch=True cannot be combined with an explicit non-legacy contact_mode")
-    if contact_mode == "bradshaw_switch" and switch_scale <= 0:
+    if contact_mode in {"bradshaw_switch", "smooth_cutoff"} and (
+        not np.isfinite(switch_scale) or switch_scale <= 0
+    ):
         raise ValueError("switch_scale must be positive")
     if residue_ignore[0] > residue_ignore[1]:
         raise ValueError("residue_ignore must be ordered (lower, upper)")
@@ -295,6 +318,11 @@ def calc_BV_contacts_universe(
                 dists,
                 center=radius,
                 scale=switch_scale,
+            )
+            results[:, frame_index] = np.sum(switch_values, axis=1)
+        elif contact_mode == "smooth_cutoff":
+            switch_values = smooth_cutoff_rational_6_12(
+                dists, radius=radius, scale=switch_scale
             )
             results[:, frame_index] = np.sum(switch_values, axis=1)
         else:

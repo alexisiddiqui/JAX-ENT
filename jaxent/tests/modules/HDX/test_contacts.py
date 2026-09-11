@@ -424,3 +424,31 @@ class TestCalcBVContacts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_smooth_cutoff_plateau_monotonicity_and_tail():
+    from jaxent.src.models.func.contacts import smooth_cutoff_rational_6_12
+
+    distances = np.array([0., 3., 6., 6.5, 7., 7.5, np.inf])
+    weights = smooth_cutoff_rational_6_12(distances, radius=6.5, scale=.5)
+    np.testing.assert_allclose(weights, [1., 1., 1., 1., .5, 1/65, 0.])
+    assert np.all(np.diff(weights) <= 0)
+    # The zero-width limit recovers a hard cutoff away from its boundary.
+    sharp = smooth_cutoff_rational_6_12(distances, radius=6.5, scale=1e-3)
+    np.testing.assert_allclose(sharp, distances <= 6.5, atol=1e-12)
+
+
+def test_smooth_cutoff_atom_selection_and_sequence_exclusion():
+    import MDAnalysis as mda
+
+    universe = mda.Universe.empty(5, n_residues=4, atom_resindex=[0, 1, 2, 3, 3], trajectory=True)
+    universe.add_TopologyAttr('names', ['N', 'C', 'C', 'C', 'H'])
+    universe.add_TopologyAttr('types', ['N', 'C', 'C', 'C', 'H'])
+    universe.add_TopologyAttr('resnames', ['ALA']*4)
+    universe.add_TopologyAttr('resids', [1, 2, 3, 4])
+    universe.add_TopologyAttr('segids', ['A'])
+    universe.atoms.positions = [[0,0,0], [1,0,0], [1.5,0,0], [2.5,0,0], [1,0,0]]
+    actual = calc_BV_contacts_universe(universe, universe.atoms[:1], 'heavy', 2.,
+        residue_ignore=(-1, 1), n_jobs=1, contact_mode='smooth_cutoff', switch_scale=.5)
+    # Self and sequence neighbour excluded; hydrogen excluded; full + half contact.
+    np.testing.assert_allclose(actual, [[1.5]])
