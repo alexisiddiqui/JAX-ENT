@@ -312,7 +312,9 @@ class Simulation:
                     feat, params.frame_weight_simplex, frame_average_impl
                 )
                 output = single_pass(fp, avg_feat, param)
-            elif mode in {"rate", "uptake", "frame_uptake"}:
+            elif mode in {
+                "rate", "uptake", "frame_uptake", "linear_uptake", "rate_distribution"
+            }:
                 output = fp.average_frames(
                     feat,
                     param,

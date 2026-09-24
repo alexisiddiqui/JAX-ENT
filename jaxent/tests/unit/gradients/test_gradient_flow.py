@@ -43,9 +43,14 @@ def bv_uptake_loss(bc, bh, heavy, acceptor, k_ints, timepoints, target):
 
 
 def linear_bv_loss(bc, bh, heavy, acceptor, target):
-    """Wrapper for linear BV loss: MSE between linear uptake and target."""
-    params = linear_BV_Model_Parameters(bv_bc=bc, bv_bh=bh)
-    features = BV_input_features(heavy_contacts=heavy, acceptor_contacts=acceptor)
+    """Wrapper for additive interval-hazard BV uptake loss."""
+    params = linear_BV_Model_Parameters(
+        bv_bc=bc, bv_bh=bh, timepoints=(1.0,),
+        kint_unit="min^-1", time_unit="min",
+    )
+    features = BV_input_features(
+        heavy_contacts=heavy, acceptor_contacts=acceptor, k_ints=jnp.ones_like(heavy)
+    )
     result = linear_BV_ForwardPass()(features, params)
     return jnp.mean((result.uptake - target) ** 2)
 
@@ -108,7 +113,7 @@ class TestBVForwardPassGradients:
         acceptor = jnp.array([0.5, 1.0, 1.5])
         target = jnp.array([1.5, 2.5, 3.5])
 
-        h = 1e-5
+        h = 1e-3
         f_plus = bv_log_pf_loss(bc + h, bh, heavy, acceptor, target)
         f_minus = bv_log_pf_loss(bc - h, bh, heavy, acceptor, target)
         fd_grad = (f_plus - f_minus) / (2 * h)
@@ -408,7 +413,7 @@ class TestLinearBVGradients:
         acceptor = jnp.array([0.5, 1.0])
         target = jnp.array([1.5, 2.5])
 
-        h = 1e-5
+        h = 1e-3
         f_plus = linear_bv_loss(bc + h, bh, heavy, acceptor, target)
         f_minus = linear_bv_loss(bc - h, bh, heavy, acceptor, target)
         fd_grad = (f_plus - f_minus) / (2 * h)

@@ -10,13 +10,21 @@ from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology, mda_TopologyAdapter, rank_and_index
 from jaxent.src.interfaces.topology.mda_adapter import TerminalExclusion
-from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
+from jaxent.src.models.config import (
+    BV_model_Config,
+    BVRateDistributionConfig,
+    linear_BV_model_Config,
+)
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_HDXrate
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import (
+    BV_Model_Parameters,
+    BVRateDistributionParameters,
+)
 from jaxent.src.models.HDX.forward import (
     BV_ForwardPass,
+    BVRateDistributionForwardPass,
     BV_uptake_ForwardPass,
     linear_BV_ForwardPass,
 )
@@ -370,13 +378,46 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
 class linear_BV_model(BV_model):
     """
-    Linear BV model that uses a linear combination of bc and bh to predict protection factors.
-    Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
+    Additive interval-hazard BV uptake model using standard BV contacts.
     """
 
     def __init__(self, config: linear_BV_model_Config):
         super().__init__(config=config)
         self.forward: dict[m_key, ForwardPass] = {
-            m_key("HDX_resPF"): linear_BV_ForwardPass(),
+            m_key("HDX_peptide"): linear_BV_ForwardPass(),
         }
         self.compatability: dict[m_key, ExpD_Datapoint]
+
+
+class BVRateDistributionModel(BV_model):
+    """BV uptake model with an explicit soft-mixture or Gamma backend."""
+
+    def __init__(self, config: BVRateDistributionConfig):
+        super().__init__(config=config)
+        self.forward = {m_key("HDX_peptide"): BVRateDistributionForwardPass()}
+        self.compatability: dict[m_key, ExpD_Datapoint]
+
+    def initialise_parameters_from_features(
+        self, input_features: BV_input_features
+    ) -> BVRateDistributionParameters:
+        """Replace default mixture anchors with empirical BV log-PF quantiles."""
+        if self.config.backend != "soft_mixture":
+            return self.params
+        self.params = BVRateDistributionParameters.from_features(
+            input_features.heavy_contacts,
+            input_features.acceptor_contacts,
+            n_components=self.config.n_components,
+            bv_bc=float(self.config.bv_bc),
+            bv_bh=float(self.config.bv_bh),
+            bandwidth_floor=self.config.bandwidth_floor,
+            temperature=self.config.temperature,
+            timepoints=self.config.timepoints,
+            kint_unit=self.config.kint_unit,
+            time_unit=self.config.time_unit,
+        )
+        return self.params
+
+    def featurise(self, ensemble):
+        features, topology = super().featurise(ensemble)
+        self.initialise_parameters_from_features(features)
+        return features, topology

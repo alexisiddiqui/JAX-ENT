@@ -8,9 +8,15 @@ from jaxent.src.custom_types.base import ForwardModel
 from jaxent.src.custom_types.features import Input_Features, Output_Features
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
+from jaxent.src.models.config import (
+    BV_model_Config, BVRateDistributionConfig, NetHDXConfig, linear_BV_model_Config,
+)
+from jaxent.src.models.HDX.BV.forwardmodel import (
+    BV_model, BVRateDistributionModel, linear_BV_model,
+)
+from jaxent.src.models.HDX.BV.parameters import (
+    BV_Model_Parameters, BVRateDistributionParameters, linear_BV_Model_Parameters,
+)
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 from jaxent.src.predict_forward import run_forward
@@ -139,6 +145,25 @@ def main():
         default=None,
         help="List of timepoints for uptake calculation. Required if num_timepoints > 0.",
     )
+    linear_bv_parser.add_argument("--kint_unit", choices=("s^-1", "min^-1"), default="s^-1")
+    linear_bv_parser.add_argument("--time_unit", choices=("s", "min"), default="min")
+    linear_bv_parser.add_argument(
+        "--interval_offsets", type=float, nargs="+", default=None,
+        help="Condition-level log-hazard offsets, one per time interval.",
+    )
+
+    rate_parser = subparsers.add_parser(
+        "bv_rate_distribution", help="Frame-coupled BV rate-distribution uptake."
+    )
+    rate_parser.add_argument("--backend", choices=("soft_mixture", "gamma_moments"), required=True)
+    rate_parser.add_argument("--n_components", type=int, choices=(2, 4, 8), default=4)
+    rate_parser.add_argument("--support_points", type=float, nargs="+", default=None)
+    rate_parser.add_argument("--bv_bc", type=float, nargs="+", default=[0.35])
+    rate_parser.add_argument("--bv_bh", type=float, nargs="+", default=[2.0])
+    rate_parser.add_argument("--temperature", type=float, nargs="+", default=[300.0])
+    rate_parser.add_argument("--timepoints", type=float, nargs="+", default=[0.167, 1.0, 10.0])
+    rate_parser.add_argument("--kint_unit", choices=("s^-1", "min^-1"), default="s^-1")
+    rate_parser.add_argument("--time_unit", choices=("s", "min"), default="min")
 
     # NetHDX Model Subparser
     nethdx_parser = subparsers.add_parser(
@@ -160,7 +185,7 @@ def main():
     )
 
     # Arguments for Simulation_Parameters (common to all models)
-    for sub_parser in [bv_parser, linear_bv_parser, nethdx_parser]:
+    for sub_parser in [bv_parser, linear_bv_parser, rate_parser, nethdx_parser]:
         sub_parser.add_argument(
             "--frame_weights",
             type=float,
@@ -270,27 +295,53 @@ def main():
             )
             forward_models_list.append(BV_model(config=config))
         elif args.model_type == "linear_bv":
+            timepoints_processed = _process_arg_list(
+                args.timepoints, args.num_simulations, "timepoints"
+            ) or [0.167, 1.0, 10.0]
             current_model_parameters = linear_BV_Model_Parameters(
                 bv_bc=jnp.array(_process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]),
                 bv_bh=jnp.array(_process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]),
                 temperature=_process_arg_list(
                     args.temperature, args.num_simulations, "temperature"
                 )[i],
-                timepoints=(
-                    jnp.asarray(
-                        _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
-                    )
-                    if _process_arg_list(args.timepoints, args.num_simulations, "timepoints")
-                    is not None
-                    else None
-                ),
+                timepoints=timepoints_processed,
+                interval_offsets=args.interval_offsets,
+                kint_unit=args.kint_unit,
+                time_unit=args.time_unit,
             )
             config = linear_BV_model_Config(
-                num_timepoints=_process_arg_list(
-                    args.num_timepoints, args.num_simulations, "num_timepoints", dtype=int
-                )[i],
+                timepoints=jnp.asarray(timepoints_processed),
+                kint_unit=args.kint_unit,
+                time_unit=args.time_unit,
+                interval_offsets=args.interval_offsets,
             )
             forward_models_list.append(linear_BV_model(config=config))
+        elif args.model_type == "bv_rate_distribution":
+            timepoints_processed = _process_arg_list(
+                args.timepoints, args.num_simulations, "timepoints"
+            )
+            bc = _process_arg_list(args.bv_bc, args.num_simulations, "bv_bc")[i]
+            bh = _process_arg_list(args.bv_bh, args.num_simulations, "bv_bh")[i]
+            common = dict(
+                bv_bc=bc, bv_bh=bh,
+                temperature=_process_arg_list(args.temperature, args.num_simulations, "temperature")[i],
+                timepoints=timepoints_processed, kint_unit=args.kint_unit, time_unit=args.time_unit,
+            )
+            if args.backend == "soft_mixture" and args.support_points is None:
+                current_model_parameters = BVRateDistributionParameters.from_features(
+                    input_features.heavy_contacts, input_features.acceptor_contacts,
+                    n_components=args.n_components, **common,
+                )
+            else:
+                current_model_parameters = BVRateDistributionParameters(
+                    backend=args.backend, support_points=args.support_points, **common,
+                )
+            config = BVRateDistributionConfig(
+                backend=args.backend, n_components=args.n_components,
+                timepoints=jnp.asarray(timepoints_processed), kint_unit=args.kint_unit,
+                time_unit=args.time_unit, support_points=args.support_points,
+            )
+            forward_models_list.append(BVRateDistributionModel(config=config))
         elif args.model_type == "nethdx":
             current_model_parameters = NetHDX_Model_Parameters(
                 shell_energy_scaling=jnp.array(

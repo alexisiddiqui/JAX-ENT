@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, base_dir)
 import importlib
+import json
 from typing import Optional, TypeVar
 
 import h5py
@@ -95,7 +96,18 @@ def save_model_parameters_to_hdf5(
         value = getattr(model_params, slot)
         save_array_to_hdf5(group, slot, value, **kwargs)
 
-    # Save static parameters (just the key for now)
+    # Preserve JSON-compatible static metadata needed to reconstruct models
+    # with explicit backends, time grids, and units.
+    static_payload = {}
+    for slot in static_slots:
+        value = getattr(model_params, slot)
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        elif hasattr(value, "tolist"):
+            value = value.tolist()
+        static_payload[slot] = value
+    group.attrs["static_params_json"] = json.dumps(static_payload)
+
     key_list = list(model_params.key)
     group.attrs["key"] = str(key_list)
 
@@ -130,6 +142,10 @@ def load_model_parameters_from_hdf5(
     param_dict = {}
     for slot in dynamic_slots:
         param_dict[slot] = load_array_from_hdf5(group, slot)
+
+    if "static_params_json" in group.attrs:
+        static_payload = json.loads(group.attrs["static_params_json"])
+        param_dict.update(static_payload)
 
     # Load static parameters TODO: check if this is needed.
     # key_str = group.attrs["key"]

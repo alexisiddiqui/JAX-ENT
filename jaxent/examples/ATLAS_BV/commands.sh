@@ -249,6 +249,10 @@ case "${1:-}" in
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.local_variance_checkpoint28 "$@"
     ;;
+  geometry-corrected-variance-recovery)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.corrected_variance_recovery_checkpoint36 "$@"
+    ;;
   geometry-variance-graph)
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.variance_graph_checkpoint29 "$@"
@@ -311,7 +315,7 @@ case "${1:-}" in
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.within_basin_stage1
     ;;
   *)
-    echo "usage: $0 {...|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|geometry-original-omc|geometry-cluster-filtering-omc|geometry-omc-bandwidth-control|geometry-omc-bandwidth-diagnostics|geometry-omc-coverage-control|geometry-omc-coupling-control|geometry-omc-decoy-control|geometry-omc-graph-control|all-analysis} [options]" >&2
+    echo "usage: $0 {...|geometry-local-variance|geometry-corrected-variance-recovery|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|geometry-original-omc|geometry-cluster-filtering-omc|geometry-omc-bandwidth-control|geometry-omc-bandwidth-diagnostics|geometry-omc-coverage-control|geometry-omc-coupling-control|geometry-omc-decoy-control|geometry-omc-graph-control|all-analysis} [options]" >&2
     exit 2
     ;;
 esac

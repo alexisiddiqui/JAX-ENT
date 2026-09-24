@@ -10,8 +10,12 @@ from jaxent.src.custom_types.config import FeaturiserSettings
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
-from jaxent.src.models.config import BV_model_Config, NetHDXConfig, linear_BV_model_Config
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model, linear_BV_model
+from jaxent.src.models.config import (
+    BV_model_Config, BVRateDistributionConfig, NetHDXConfig, linear_BV_model_Config,
+)
+from jaxent.src.models.HDX.BV.forwardmodel import (
+    BV_model, BVRateDistributionModel, linear_BV_model,
+)
 from jaxent.src.models.HDX.netHDX.forwardmodel import netHDX_model
 
 
@@ -81,6 +85,12 @@ def main():
     )
     bv_parser.add_argument(
         "--ph", type=float, default=7.0, help="pH for intrinsic rate calculation."
+    )
+    bv_parser.add_argument(
+        "--kint_unit",
+        choices=("s^-1", "min^-1"),
+        default="s^-1",
+        help="Unit used when materialising intrinsic rates (default: s^-1).",
     )
     bv_parser.add_argument(
         "--heavy_radius",
@@ -175,20 +185,22 @@ def main():
     linear_bv_parser.add_argument(
         "--bv_bc",
         type=float,
-        nargs="+",
-        default=[0.35, 0.35, 0.35],
-        help="Linear BV model parameter bc (heavy atom contact scaling). Can be single float or list.",
+        default=0.35,
+        help="Linear BV heavy-contact slope shared by all timepoints.",
     )
     linear_bv_parser.add_argument(
         "--bv_bh",
         type=float,
-        nargs="+",
-        default=[2.0, 2.0, 2.0],
-        help="Linear BV model parameter bh (H-bond acceptor contact scaling). Can be single float or list.",
+        default=2.0,
+        help="Linear BV acceptor-contact slope shared by all timepoints.",
     )
     linear_bv_parser.add_argument(
         "--ph", type=float, default=7.0, help="pH for intrinsic rate calculation."
     )
+    linear_bv_parser.add_argument(
+        "--kint_unit", choices=("s^-1", "min^-1"), default="s^-1"
+    )
+    linear_bv_parser.add_argument("--time_unit", choices=("s", "min"), default="min")
     linear_bv_parser.add_argument(
         "--heavy_radius",
         type=float,
@@ -238,6 +250,32 @@ def main():
         default="resname PRO",
         help="MDAnalysis selection string for atoms to exclude.",
     )
+
+    rate_parser = subparsers.add_parser(
+        "bv_rate_distribution", help="BV features for a rate-distribution uptake model."
+    )
+    rate_parser.add_argument("--backend", choices=("soft_mixture", "gamma_moments"), required=True)
+    rate_parser.add_argument("--n_components", type=int, choices=(2, 4, 8), default=4)
+    rate_parser.add_argument("--temperature", type=float, default=300.0)
+    rate_parser.add_argument("--bv_bc", type=float, default=0.35)
+    rate_parser.add_argument("--bv_bh", type=float, default=2.0)
+    rate_parser.add_argument("--ph", type=float, default=7.0)
+    rate_parser.add_argument("--kint_unit", choices=("s^-1", "min^-1"), default="s^-1")
+    rate_parser.add_argument("--time_unit", choices=("s", "min"), default="min")
+    rate_parser.add_argument("--heavy_radius", type=float, default=6.5)
+    rate_parser.add_argument("--o_radius", type=float, default=2.4)
+    rate_parser.add_argument("--timepoints", type=float, nargs="+", default=[0.167, 1.0, 10.0])
+    rate_parser.add_argument("--residue_ignore", type=int, nargs=2, default=[-2, 2])
+    rate_parser.add_argument("--peptide_trim", type=int, default=1)
+    rate_parser.add_argument("--peptide", action="store_true")
+    rate_parser.add_argument("--mda_selection_exclusion", type=str, default="resname PRO")
+    rate_parser.add_argument(
+        "--contact_mode", choices=("hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"),
+        default="hard",
+    )
+    rate_parser.add_argument("--switch_scale_nc", type=float, default=10.0)
+    rate_parser.add_argument("--switch_scale_nh", type=float, default=10.0)
+    rate_parser.add_argument("--mda_contact_environment", type=str, default="all")
 
     # NetHDX Model Subparser
     nethdx_parser = subparsers.add_parser(
@@ -337,6 +375,7 @@ def main():
             contact_mode=args.contact_mode,
             switch_scale_nc=args.switch_scale_nc,
             switch_scale_nh=args.switch_scale_nh,
+            kint_unit=args.kint_unit,
         )
         config.temperature = args.temperature
         config.bv_bc = jnp.array(args.bv_bc)
@@ -352,10 +391,15 @@ def main():
         config.mda_contact_environment = args.mda_contact_environment
         forward_model = BV_model(config=config)
     elif args.model_type == "linear_bv":
-        config = linear_BV_model_Config(num_timepoints=args.num_timepoints)
+        config = linear_BV_model_Config(
+            num_timepoints=args.num_timepoints,
+            timepoints=jnp.array(args.timepoints),
+            kint_unit=args.kint_unit,
+            time_unit=args.time_unit,
+        )
         config.temperature = args.temperature
-        config.bv_bc = jnp.array(args.bv_bc)
-        config.bv_bh = jnp.array(args.bv_bh)
+        config.bv_bc = args.bv_bc
+        config.bv_bh = args.bv_bh
         config.ph = args.ph
         config.heavy_radius = args.heavy_radius
         config.o_radius = args.o_radius
@@ -365,6 +409,30 @@ def main():
         config.peptide = args.peptide
         config.mda_selection_exclusion = args.mda_selection_exclusion
         forward_model = linear_BV_model(config=config)
+    elif args.model_type == "bv_rate_distribution":
+        config = BVRateDistributionConfig(
+            backend=args.backend,
+            n_components=args.n_components,
+            timepoints=jnp.array(args.timepoints),
+            kint_unit=args.kint_unit,
+            time_unit=args.time_unit,
+        )
+        config.temperature = args.temperature
+        config.bv_bc = args.bv_bc
+        config.bv_bh = args.bv_bh
+        config.ph = args.ph
+        config.heavy_radius = args.heavy_radius
+        config.o_radius = args.o_radius
+        config.residue_ignore = tuple(args.residue_ignore)
+        config.peptide_trim = args.peptide_trim
+        config.peptide = args.peptide
+        config.mda_selection_exclusion = args.mda_selection_exclusion
+        config.contact_mode = args.contact_mode
+        config.switch = args.contact_mode == "legacy_switch"
+        config.switch_scale_nc = args.switch_scale_nc
+        config.switch_scale_nh = args.switch_scale_nh
+        config.mda_contact_environment = args.mda_contact_environment
+        forward_model = BVRateDistributionModel(config=config)
     elif args.model_type == "nethdx":
         config = NetHDXConfig(
             temperature=args.temperature,

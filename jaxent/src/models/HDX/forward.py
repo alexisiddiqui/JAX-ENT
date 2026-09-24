@@ -9,7 +9,26 @@ from jaxent.src.models.HDX.BV.features import (
     BV_output_features,
     uptake_BV_output_features,
 )
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import (
+    BV_Model_Parameters,
+    BVRateDistributionParameters,
+    linear_BV_Model_Parameters,
+)
+
+
+def _time_scale(kint_unit: str, time_unit: str) -> float:
+    """Scale configured times into the reciprocal unit used by k_ints."""
+    if (kint_unit, time_unit) in {("s^-1", "s"), ("min^-1", "min")}:
+        return 1.0
+    if (kint_unit, time_unit) == ("s^-1", "min"):
+        return 60.0
+    if (kint_unit, time_unit) == ("min^-1", "s"):
+        return 1.0 / 60.0
+    raise ValueError(f"incompatible rate/time units: {kint_unit!r}, {time_unit!r}")
+
+
+def _stable_uptake(exposure):
+    return -jnp.expm1(-jnp.maximum(exposure, 0.0))
 
 
 # fix the typing to use jax arrays
@@ -144,23 +163,122 @@ class BV_uptake_ForwardPass(
 class linear_BV_ForwardPass(
     ForwardPass[BV_input_features, uptake_BV_output_features, linear_BV_Model_Parameters]
 ):
+    """Additive conditional uptake with one global pair of BV slopes.
+
+    Contacts are averaged once across frames during optimisation. Each interval
+    then adds a positive conditional hazard, which makes uptake monotone, smooth,
+    and bounded without fitting a separate contact coefficient per timepoint.
     """
-    Calculate uptake using a linear BV model with bc and bh as parameters at each timepoint.
-    """
-    frame_averaging_mode: FrameAveragingMode = "log_pf"
-    key = m_key("HDX_resPF")
+    frame_averaging_mode: FrameAveragingMode = "linear_uptake"
+    key = m_key("HDX_peptide")
+
+    def average_frames(
+        self, input_features, parameters, frame_weights, implementation="tensordot"
+    ) -> uptake_BV_output_features:
+        del implementation
+        averaged = BV_input_features(
+            heavy_contacts=jnp.asarray(input_features.heavy_contacts) @ frame_weights,
+            acceptor_contacts=jnp.asarray(input_features.acceptor_contacts) @ frame_weights,
+            k_ints=input_features.k_ints,
+        )
+        return self(averaged, parameters)
 
     def __call__(
         self, input_features: BV_input_features, parameters: linear_BV_Model_Parameters
     ) -> uptake_BV_output_features:
-        bc, bh = parameters.bv_bc, parameters.bv_bh
+        heavy = jnp.asarray(input_features.heavy_contacts)
+        acceptor = jnp.asarray(input_features.acceptor_contacts)
+        if input_features.k_ints is None:
+            raise ValueError("linear BV uptake requires intrinsic rates")
+        k_ints = jnp.asarray(input_features.k_ints)
+        if k_ints.ndim != 1:
+            raise ValueError("k_ints must be a one-dimensional residue array")
 
-        # Convert lists to numpy arrays for computation
-        heavy_contacts = jnp.array(input_features.heavy_contacts)
-        acceptor_contacts = jnp.array(input_features.acceptor_contacts)
-
-        # compute uptake
-        uptake = (bc * heavy_contacts) + (bh * acceptor_contacts)
-        # print("uptake")
-        # print(uptake)
+        z = parameters.bv_bc * heavy + parameters.bv_bh * acceptor
+        times = jnp.asarray(parameters.timepoints) * _time_scale(
+            parameters.kint_unit, parameters.time_unit
+        )
+        intervals = jnp.diff(jnp.concatenate((jnp.zeros(1, dtype=times.dtype), times)))
+        kint_shape = (k_ints.shape[0],) + (1,) * (z.ndim - 1)
+        base_hazard = k_ints.reshape(kint_shape) * jnp.exp(-z)
+        # Leading time axis, followed by residue and optional frame axes.
+        interval_shape = (len(parameters.timepoints),) + (1,) * base_hazard.ndim
+        multiplier = intervals * jnp.exp(parameters.interval_offsets)
+        interval_hazard = multiplier.reshape(interval_shape) * base_hazard[None, ...]
+        uptake = _stable_uptake(jnp.cumsum(interval_hazard, axis=0))
         return uptake_BV_output_features(uptake=uptake)
+
+
+class BVRateDistributionForwardPass(
+    ForwardPass[BV_input_features, uptake_BV_output_features, BVRateDistributionParameters]
+):
+    """Frame-coupled soft-mixture or Gamma moment closure for BV rates."""
+
+    frame_averaging_mode: FrameAveragingMode = "rate_distribution"
+    key = m_key("HDX_peptide")
+
+    @staticmethod
+    def _rates(input_features, parameters):
+        heavy = jnp.asarray(input_features.heavy_contacts)
+        acceptor = jnp.asarray(input_features.acceptor_contacts)
+        if input_features.k_ints is None:
+            raise ValueError("BV rate-distribution uptake requires intrinsic rates")
+        z = parameters.bv_bc * heavy + parameters.bv_bh * acceptor
+        k_ints = jnp.asarray(input_features.k_ints)
+        kint_shape = (k_ints.shape[0],) + (1,) * (z.ndim - 1)
+        rates = k_ints.reshape(kint_shape) * jnp.exp(-z)
+        return z, rates
+
+    def __call__(self, input_features, parameters) -> uptake_BV_output_features:
+        """Return exact per-frame uptake for diagnostic prediction."""
+        _, rates = self._rates(input_features, parameters)
+        times = jnp.asarray(parameters.timepoints) * _time_scale(
+            parameters.kint_unit, parameters.time_unit
+        )
+        uptake = _stable_uptake(
+            times.reshape((-1,) + (1,) * rates.ndim) * rates[None, ...]
+        )
+        return uptake_BV_output_features(uptake)
+
+    def average_frames(
+        self, input_features, parameters, frame_weights, implementation="tensordot"
+    ) -> uptake_BV_output_features:
+        del implementation
+        z, rates = self._rates(input_features, parameters)
+        weights = jnp.asarray(frame_weights)
+        times = jnp.asarray(parameters.timepoints) * _time_scale(
+            parameters.kint_unit, parameters.time_unit
+        )
+
+        if parameters.backend == "soft_mixture":
+            support = parameters.support_points
+            tau = parameters.assignment_bandwidth
+            logits = -0.5 * jnp.square((z[..., None] - support) / tau)
+            assignments = jax.nn.softmax(logits, axis=-1)
+            masses = jnp.einsum("rfq,f->rq", assignments, weights)
+            component_rates = jnp.asarray(input_features.k_ints)[:, None] * jnp.exp(-support)
+            component_uptake = _stable_uptake(
+                times[:, None, None] * component_rates[None, :, :]
+            )
+            uptake = jnp.einsum("rq,trq->tr", masses, component_uptake)
+            return uptake_BV_output_features(uptake)
+
+        mean_rate = rates @ weights
+        centered = rates - mean_rate[:, None]
+        variance = jnp.sum(weights[None, :] * jnp.square(centered), axis=1)
+        mean_safe = jnp.maximum(mean_rate, jnp.finfo(mean_rate.dtype).tiny)
+        relative_variance = variance / jnp.square(mean_safe)
+        variance_safe = jnp.maximum(
+            variance, jnp.finfo(variance.dtype).eps * jnp.square(mean_safe)
+        )
+        gamma_survival = jnp.exp(
+            -(jnp.square(mean_safe) / variance_safe)[None, :]
+            * jnp.log1p(times[:, None] * variance_safe[None, :] / mean_safe[None, :])
+        )
+        exponential_survival = jnp.exp(-times[:, None] * mean_safe[None, :])
+        survival = jnp.where(
+            relative_variance[None, :] <= jnp.sqrt(jnp.finfo(variance.dtype).eps),
+            exponential_survival,
+            gamma_survival,
+        )
+        return uptake_BV_output_features(1.0 - survival)

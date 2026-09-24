@@ -9,7 +9,11 @@ from jax import Array
 from jaxent.src.custom_types.config import BaseConfig
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.interfaces.model import Model_Parameters
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters, linear_BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import (
+    BV_Model_Parameters,
+    BVRateDistributionParameters,
+    linear_BV_Model_Parameters,
+)
 from jaxent.src.models.HDX.netHDX.parameters import NetHDX_Model_Parameters
 
 
@@ -97,29 +101,119 @@ class BV_model_Config(BaseConfig):
 
 
 class linear_BV_model_Config(BV_model_Config):
-    bv_bc: Array = field(default_factory=lambda: jnp.array([0.35, 0.35, 0.35]))
-    bv_bh: Array = field(default_factory=lambda: jnp.array([2.0, 2.0, 2.0]))
-    num_timepoints: int = 3
+    """Configuration for the additive interval-hazard uptake model."""
 
-    def __init__(self, num_timepoints: int = 3):
-        super().__init__(num_timepoints)
+    bv_bc: float = 0.35
+    bv_bh: float = 2.0
+    interval_offsets: Array = jnp.zeros(3)
+    time_unit: Literal["s", "min"] = "min"
+    prior_strength: float = 1e-3
 
-    def __post_init__(self):
-        if (self.num_timepoints > 1) and ((len(self.bv_bh) or len(self.bv_bc)) == 1):
-            object.__setattr__(self, "bv_bc", self.bv_bc * self.num_timepoints)
-            object.__setattr__(self, "bv_bh", self.bv_bh * self.num_timepoints)
-
-        chex.assert_equal(self.num_timepoints, len(self.bv_bc))
-        chex.assert_equal(self.num_timepoints, len(self.bv_bh))
+    def __init__(
+        self,
+        num_timepoints: int | None = None,
+        timepoints: Array | None = None,
+        *,
+        kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
+        time_unit: Literal["s", "min"] = "min",
+        interval_offsets: Array | None = None,
+    ):
+        if timepoints is None:
+            timepoints = jnp.array([0.167, 1.0, 10.0])
+        if num_timepoints in {None, 0}:
+            num_timepoints = len(timepoints)
+        super().__init__(
+            num_timepoints=num_timepoints, timepoints=timepoints, kint_unit=kint_unit
+        )
+        if time_unit not in {"s", "min"}:
+            raise ValueError("time_unit must be 's' or 'min'")
+        self.time_unit = time_unit
+        self.key = m_key("HDX_peptide")
+        self.interval_offsets = (
+            jnp.zeros(num_timepoints) if interval_offsets is None else jnp.asarray(interval_offsets)
+        )
+        if self.interval_offsets.shape != (num_timepoints,):
+            raise ValueError("interval_offsets must contain one value per timepoint")
 
     @property
     def forward_parameters(self) -> linear_BV_Model_Parameters:
         return linear_BV_Model_Parameters(
-            bv_bc=self.bv_bc,
-            bv_bh=self.bv_bh,
+            bv_bc=jnp.asarray(self.bv_bc),
+            bv_bh=jnp.asarray(self.bv_bh),
+            interval_offsets=self.interval_offsets,
             temperature=self.temperature,
-            num_timepoints=self.num_timepoints,
+            timepoints=self.timepoints,
+            kint_unit=self.kint_unit,
+            time_unit=self.time_unit,
         )
+
+    def regularization_loss(self, parameters: linear_BV_Model_Parameters) -> Array:
+        return self.prior_strength * parameters.regularization_loss()
+
+
+class BVRateDistributionConfig(BV_model_Config):
+    """Configuration for an explicitly selected experimental rate backend."""
+
+    time_unit: Literal["s", "min"] = "min"
+    n_components: int = 4
+    bandwidth_floor: float = 0.05
+    prior_strength: float = 1e-3
+    bv_bc: float = 0.35
+    bv_bh: float = 2.0
+
+    def __init__(
+        self,
+        *,
+        backend: Literal["soft_mixture", "gamma_moments"],
+        n_components: int = 4,
+        timepoints: Array | None = None,
+        kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
+        time_unit: Literal["s", "min"] = "min",
+        support_points: Array | None = None,
+        bandwidth_floor: float = 0.05,
+    ) -> None:
+        if backend not in {"soft_mixture", "gamma_moments"}:
+            raise ValueError("backend must be 'soft_mixture' or 'gamma_moments'")
+        if timepoints is None:
+            timepoints = jnp.array([0.167, 1.0, 10.0])
+        if backend == "soft_mixture" and n_components not in {2, 4, 8}:
+            raise ValueError("soft_mixture n_components must be 2, 4, or 8")
+        if backend == "gamma_moments" and support_points is not None:
+            raise ValueError("gamma_moments does not use support points")
+        super().__init__(
+            num_timepoints=len(timepoints), timepoints=timepoints, kint_unit=kint_unit
+        )
+        if time_unit not in {"s", "min"}:
+            raise ValueError("time_unit must be 's' or 'min'")
+        self.backend = backend
+        self.n_components = n_components
+        self.time_unit = time_unit
+        self.bandwidth_floor = float(bandwidth_floor)
+        self.support_points = (
+            jnp.linspace(0.0, 8.0, n_components)
+            if support_points is None and backend == "soft_mixture"
+            else support_points
+        )
+        if self.support_points is not None and len(self.support_points) != n_components:
+            raise ValueError("support_points length must equal n_components")
+        self.key = m_key("HDX_peptide")
+
+    @property
+    def forward_parameters(self) -> BVRateDistributionParameters:
+        return BVRateDistributionParameters(
+            backend=self.backend,
+            bv_bc=jnp.asarray(self.bv_bc),
+            bv_bh=jnp.asarray(self.bv_bh),
+            support_points=self.support_points,
+            bandwidth_floor=self.bandwidth_floor,
+            temperature=self.temperature,
+            timepoints=self.timepoints,
+            kint_unit=self.kint_unit,
+            time_unit=self.time_unit,
+        )
+
+    def regularization_loss(self, parameters: BVRateDistributionParameters) -> Array:
+        return self.prior_strength * parameters.regularization_loss()
 
 
 class NetHDXConfig(BaseConfig):
