@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
+import math
 import subprocess
 import time
 from typing import List, Literal, Sequence, Tuple, cast
@@ -39,11 +40,21 @@ from .config import ExperimentConfig, LossConfig, OptimizationConfig
 from .losses import get_loss_function_by_name, maxent_convexKL_loss
 
 
+def maxent_loss_weight(maxent_scaling: float) -> float:
+    """Convert a positive user-facing MaxEnt scale to its KL loss weight."""
+    scaling = float(maxent_scaling)
+    if not math.isfinite(scaling) or scaling <= 0.0:
+        raise ValueError("maxent_scaling must be finite and greater than zero")
+    return 1.0 / scaling
+
+
 def _build_loss_slot_weights(
     maxent_scaling: float, n_regularization_losses: int, bv_reg_scaling: float
 ) -> list[float]:
     """Return weights in loss-list order: data, MaxEnt, then BV regularizers."""
-    return [1.0, maxent_scaling] + [bv_reg_scaling] * n_regularization_losses
+    return [1.0, maxent_loss_weight(maxent_scaling)] + [
+        bv_reg_scaling
+    ] * n_regularization_losses
 
 
 # ---------------------------------------------------------------------------

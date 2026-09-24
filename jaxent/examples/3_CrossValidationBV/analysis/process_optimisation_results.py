@@ -24,7 +24,6 @@ from typing import Dict, List
 import numpy as np
 from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
-import jax
 import jax.numpy as jnp
 
 # Add the base directory to the path to import JAX-ENT modules
@@ -32,9 +31,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
-from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_output_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.forward import BV_uptake_ForwardPass
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.utils.jax_fn import frame_average_features
@@ -42,34 +41,11 @@ from jaxent.src.utils.jax_fn import frame_average_features
 # common modules
 from jaxent.examples.common import analysis, loading, paths
 from jaxent.examples.common.paths import derive_processed_output_dir, resolve_script_paths
-from jaxent.examples.common.optimization import BV_uptake_ForwardPass_frames
 from jaxent.examples.common.analysis.convergence_labels import (
     convergence_rows_from_history,
     write_convergence_thresholds_sidecar,
 )
 from jaxent.examples.common.manifest import write_processing_manifest
-
-
-class BV_uptake_ForwardPass_averaged(BV_uptake_ForwardPass_frames):
-    """Variant for averaged (non-per-frame) input features — adds pf reshape."""
-    def __call__(self, input_features, parameters):
-        bc, bh = parameters.bv_bc, parameters.bv_bh
-        heavy_contacts = jnp.asarray(input_features.heavy_contacts)
-        acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
-        kints = jnp.asarray(input_features.k_ints)
-        time_points = jnp.asarray(parameters.timepoints).reshape(-1)
-        log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
-        pf = jnp.exp(log_pf)
-        if pf.ndim == 1:
-            pf = pf.reshape(-1, 1)
-
-        def compute_uptake_for_timepoint(timepoint):
-            kints_reshaped = kints.reshape(-1, 1)
-            uptake = 1 - jnp.exp(-kints_reshaped * timepoint / pf)
-            return uptake
-
-        uptake_per_timepoint = jax.vmap(compute_uptake_for_timepoint)(time_points)
-        return uptake_BV_output_features(uptake_per_timepoint)
 
 
 def main():
@@ -113,6 +89,12 @@ def main():
         default=False,
         help="Interpret provided results/output/clustering/features directories as absolute paths",
     )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=("log_pf", "rate", "uptake", "frame_uptake"),
+        default="log_pf",
+        help="Frame-averaging semantic to use when reconstructing predictions.",
+    )
     args = parser.parse_args()
 
     # Define parameters (should match those used in optimization)
@@ -139,6 +121,7 @@ def main():
     print(f"Resolved datasplit_dir: {datasplit_dir}")
     print(f"Resolved output_base_dir: {output_base_dir}")
     print(f"EMA flag: {args.ema}")
+    print(f"Frame averaging mode: {args.frame_averaging_mode}")
     print("-" * 60)
 
     # Load cluster assignments
@@ -222,16 +205,30 @@ def main():
         n_frames = features.features_shape[1]
         uniform_frame_weights = jnp.ones(n_frames) / n_frames
 
-        # Average features using uniform weights
-        prior_averaged_features = frame_average_features(features, uniform_frame_weights)
-
         # Forward pass functions
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
-        forward_pass_uptake = BV_uptake_ForwardPass_averaged()
+        forward_pass_uptake = BV_uptake_ForwardPass(
+            frame_averaging_mode=args.frame_averaging_mode
+        )
+        if args.frame_averaging_mode == "uptake":
+            forward_pass_uptake.set_frame_groups(
+                clustering_results[ensemble]["cluster_assignments"]
+            )
 
-        # Run forward pass with averaged features and initial parameters
+        def predict_uptake(model_params, frame_weights):
+            if args.frame_averaging_mode == "log_pf":
+                averaged_features = frame_average_features(features, frame_weights)
+                return forward_pass_uptake(averaged_features, model_params)
+            return forward_pass_uptake.average_frames(
+                features, model_params, frame_weights
+            )
+
+        # Run the prior through the selected averaging semantic.
+        prior_averaged_features = frame_average_features(features, uniform_frame_weights)
         prior_lnpf_output = forward_pass_lnpf(prior_averaged_features, bv_model_lnpf.params)
-        prior_uptake_output = forward_pass_uptake(prior_averaged_features, bv_model_uptake.params)
+        prior_uptake_output = predict_uptake(
+            bv_model_uptake.params, uniform_frame_weights
+        )
 
         prior_ln_pf = prior_lnpf_output.log_Pf
         prior_uptake = prior_uptake_output.uptake
@@ -337,9 +334,12 @@ def main():
                     all_bv_bc.append(float(bc_scalar))
                     all_bv_bh.append(float(bh_scalar))
 
-                    # Run forward pass with averaged features and optimized parameters
+                    # Run forward pass with the requested averaging semantic and
+                    # the already-optimized weights/BV parameters (no refitting).
                     pred_lnpf_output = forward_pass_lnpf(averaged_features, optimized_bv_params)
-                    pred_uptake_output = forward_pass_uptake(averaged_features, optimized_bv_params)
+                    pred_uptake_output = predict_uptake(
+                        optimized_bv_params, frame_weights
+                    )
 
                     pred_ln_pf = pred_lnpf_output.log_Pf
                     pred_uptake = pred_uptake_output.uptake

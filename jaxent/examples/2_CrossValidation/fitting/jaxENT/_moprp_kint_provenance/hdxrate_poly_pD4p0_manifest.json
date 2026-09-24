@@ -1,0 +1,15 @@
+{
+  "provider": "HDXrate",
+  "reference": "poly",
+  "temperature_k": 298.0,
+  "pD": 4.0,
+  "ph_correction": false,
+  "units": "min^-1",
+  "construct_sequence": "GGLGGYMLGSAMSRPMIHFGNDWEDRYYRENMYRYPNQVYYRPVDQYSNQNNFVHDCVNITIKQHTVTTTTKGENFTETDVKMMERVVEQMCVTQYQKESQAYYDGRRS",
+  "numbering": "moprp.seq one-based (MoPrP109 resid - 1)",
+  "output": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/hdxrate_poly_pD4p0_298K_min.dat",
+    "sha256": "e3ec8d9253b7b9934b759d6ef6d6276b6a807e11a058b3f82c9a8145c964c2dd"
+  },
+  "median_rate_min^-1": 0.37145503266565566
+}

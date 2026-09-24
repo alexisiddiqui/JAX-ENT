@@ -15,7 +15,11 @@ STRUCTURE_PATH = (
     DATA_DIR
     / "MoPrP109_s20_r1_msa1-127_n12700_do1_20260904_191954_protonated_max_plddt_1627.pdb"
 )
-EXPECTED_SEGMENTS = np.asarray(
+STRUCTURE_101_PATH = DATA_DIR / "MoPrP_max_plddt_4334.pdb"
+# One-based moprp.seq positions of each moprp.list peptide string (list starts are
+# zero-based offsets; YMLGSA is positions 5-10).  MoPrP101 PDB IDs equal these;
+# MoPrP109 IDs are one higher (extra N-terminal Gly).
+EXPECTED_SEQUENCE_SEGMENTS = np.asarray(
     [
         [5, 10],
         [11, 24],
@@ -28,11 +32,12 @@ EXPECTED_SEGMENTS = np.asarray(
         [75, 79],
         [75, 82],
         [75, 84],
-        [82, 102],
+        [82, 101],
         [83, 90],
         [95, 101],
     ]
 )
+EXPECTED_SEGMENTS = EXPECTED_SEQUENCE_SEGMENTS + 1
 
 
 @pytest.fixture(scope="module")
@@ -99,6 +104,29 @@ def test_full_extraction_maps_segments_and_positive_pfactors(extractor, tmp_path
     assert (data_dir / "_output/MoPrP_dfrac.dat").read_bytes() == (
         MOPRP_DIR / "_output/MoPrP_dfrac.dat"
     ).read_bytes()
+
+
+def test_segments_reproduce_listed_peptide_strings(extractor, tmp_path):
+    data_dir = tmp_path / "_MoPrP"
+    data_dir.mkdir()
+    for filename in ("moprp.dexp", "moprp.list", "median.pfact"):
+        shutil.copy2(MOPRP_DIR / filename, data_dir / filename)
+
+    extractor.extract_data(STRUCTURE_101_PATH, MOPRP_DIR / "moprp.seq", data_dir=data_dir)
+
+    sequence = (MOPRP_DIR / "moprp.seq").read_text().strip()
+    segments = np.loadtxt(data_dir / "_output/MoPrP_segments.txt", dtype=int)
+    np.testing.assert_array_equal(segments, EXPECTED_SEQUENCE_SEGMENTS)
+    peptides = [line.split()[3] for line in (MOPRP_DIR / "moprp.list").read_text().splitlines()]
+    assert [sequence[start - 1 : end] for start, end in segments] == peptides
+
+
+def test_locate_peptide_rejects_inconsistent_listed_start(extractor):
+    assert extractor.locate_peptide("GLGGYMLGSA", "YMLGSA", 4) == (5, 10)
+    with pytest.raises(ValueError, match="listed at"):
+        extractor.locate_peptide("GLGGYMLGSA", "YMLGSA", 3)
+    with pytest.raises(ValueError, match="not found"):
+        extractor.locate_peptide("GLGGYMLGSA", "WWW", 0)
 
 
 def test_mapping_uses_actual_nonconsecutive_pdb_residue_ids(extractor, tmp_path):

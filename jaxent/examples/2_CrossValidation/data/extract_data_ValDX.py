@@ -1,9 +1,16 @@
 """Extract and structure-number the MoPrP ValDX data.
 
-The residue indices in ``moprp.list`` and ``median.pfact`` are one-based
-positions in ``moprp.seq``. This script locates that complete HDX sequence in
-a PDB chain and writes the corresponding PDB residue IDs to the generated
-segments and protection-factor files.
+``median.pfact`` indices are one-based positions in ``moprp.seq`` (exPfact
+writes ``P[i]`` as residue ``i + 1``). The start/end numbers in ``moprp.list``
+are NOT reliable one-based positions: every peptide string in the file sits one
+residue later in ``moprp.seq`` than its listed numbers (e.g. ``4 9 YMLGSA`` is
+positions 5-10), and ``81 101`` spans 21 positions for a 20-residue peptide.
+Peptides are therefore located by their sequence strings, using the listed
+start only to confirm the expected zero-based offset.
+
+This script locates the complete HDX sequence in a PDB chain and writes the
+corresponding PDB residue IDs to the generated segments and protection-factor
+files.
 """
 
 from __future__ import annotations
@@ -52,6 +59,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--sequence", type=Path, default=DEFAULT_DATA_DIR / "moprp.seq",
         help="File containing the one-letter HDX sequence.",
+    )
+    parser.add_argument(
+        "--output-dir", type=Path, default=None,
+        help="Directory for generated files (default: <data_dir>/_output).",
     )
     parser.add_argument(
         "--chain",
@@ -168,16 +179,38 @@ def map_hdx_position(position: object, mapping: dict[int, int], source: str) -> 
     return mapping[position_id]
 
 
+def locate_peptide(hdx_sequence: str, peptide: str, listed_start: object) -> tuple[int, int]:
+    """Return one-based ``(start, end)`` positions of ``peptide`` in ``hdx_sequence``.
+
+    The peptide string is authoritative. ``moprp.list`` starts are zero-based
+    offsets of the string, which is checked so a wrong or ambiguous match fails.
+    """
+    sequence = "".join(hdx_sequence.split()).upper()
+    peptide = peptide.strip().upper()
+    starts = _all_occurrences(sequence, peptide)
+    if not starts:
+        raise ValueError(f"peptide {peptide!r} not found in the HDX sequence")
+    listed = float(listed_start)
+    if not listed.is_integer() or int(listed) not in starts:
+        raise ValueError(
+            f"peptide {peptide!r} listed at {listed_start!r} but found at zero-based "
+            f"offsets {starts}"
+        )
+    start = int(listed) + 1
+    return start, start + len(peptide) - 1
+
+
 def extract_data(
     structure_path: Path,
     sequence_path: Path,
     chain: str | None = None,
     data_dir: Path = DEFAULT_DATA_DIR,
+    output_dir: Path | None = None,
 ) -> None:
     raw_dfrac_path = data_dir / "moprp.dexp"
     raw_segs_path = data_dir / "moprp.list"
     pf_path = data_dir / "median.pfact"
-    output_dir = data_dir / "_output"
+    output_dir = data_dir / "_output" if output_dir is None else output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_dfrac_path = output_dir / "MoPrP_dfrac.dat"
@@ -222,8 +255,9 @@ def extract_data(
     print("Creating structure-numbered segments file...")
     with output_segs_path.open("w") as handle:
         for _, row in segs_df.iterrows():
-            res_start = map_hdx_position(row.iloc[1], mapping, "moprp.list start")
-            res_end = map_hdx_position(row.iloc[2], mapping, "moprp.list end")
+            start, end = locate_peptide(hdx_sequence, row.iloc[3], row.iloc[1])
+            res_start = map_hdx_position(start, mapping, "moprp.list peptide start")
+            res_end = map_hdx_position(end, mapping, "moprp.list peptide end")
             handle.write(f"{res_start} {res_end}\n")
 
     print("Creating structure-numbered protection factors file...")
@@ -241,7 +275,7 @@ def extract_data(
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    extract_data(args.structure, args.sequence, args.chain)
+    extract_data(args.structure, args.sequence, args.chain, output_dir=args.output_dir)
 
 
 if __name__ == "__main__":

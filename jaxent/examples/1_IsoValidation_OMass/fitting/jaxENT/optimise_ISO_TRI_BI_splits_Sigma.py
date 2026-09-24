@@ -495,11 +495,11 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--maxent-values",
-        help="Comma-separated floating-point MaxEnt strengths; overrides --maxent-range.",
+        help="Positive floating-point MaxEnt scales; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--n-steps",
@@ -596,8 +596,8 @@ def main():
             maxent_values = [float(value) for value in args.maxent_values.split(",")]
         except ValueError as exc:
             raise ValueError("maxent-values must be comma-separated numbers") from exc
-        if not maxent_values or any(value < 0 for value in maxent_values):
-            parser.error("--maxent-values must contain non-negative strengths")
+        if not maxent_values or any(value <= 0 for value in maxent_values):
+            parser.error("--maxent-values must contain positive scales")
     else:
         try:
             start_val, end_val = map(int, args.maxent_range.split(","))
@@ -606,6 +606,8 @@ def main():
             raise ValueError(
                 "maxent-range must be in format 'start,end' (e.g., '1,10')"
             ) from exc
+        if not maxent_values or any(value <= 0 for value in maxent_values):
+            parser.error("--maxent-range must contain positive scales")
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")

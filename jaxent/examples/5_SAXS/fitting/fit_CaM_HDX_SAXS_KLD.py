@@ -35,6 +35,7 @@ import numpy as np
 # Register MaxEnt and HDX losses
 import jaxent.src.opt.loss.weights  # noqa: F401
 from jaxent.examples.common.losses import get_loss_function_by_name
+from jaxent.examples.common.optimization import maxent_loss_weight
 
 from jaxent.src.models.SAXS.forwardmodel import SAXS_direct_model
 from jaxent.src.models.SAXS.config import SAXS_direct_Config
@@ -117,7 +118,12 @@ def main():
     parser.add_argument("--split-index", type=int, default=None)
     parser.add_argument("--saxs-weight", type=float, default=1.0)
     parser.add_argument("--hdx-weight", type=float, default=1.0)
-    parser.add_argument("--maxent-strength", type=float, required=True)
+    parser.add_argument(
+        "--maxent-strength",
+        type=float,
+        required=True,
+        help="Positive MaxEnt scale; the KL loss weight is 1 / this value.",
+    )
     parser.add_argument("--n-steps", type=int, default=50000)
     parser.add_argument("--learning-rate", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True)
@@ -190,7 +196,9 @@ def main():
     # --- Parameters Setup ---
     uniform_weights = jnp.ones(n_frames) / n_frames
     
-    model_weights = jnp.array([args.saxs_weight, args.hdx_weight, args.maxent_strength])
+    model_weights = jnp.array(
+        [args.saxs_weight, args.hdx_weight, maxent_loss_weight(args.maxent_strength)]
+    )
     model_scaling = jnp.ones(3) 
     
     init_params = Simulation_Parameters.from_frame_weights(

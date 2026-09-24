@@ -477,7 +477,7 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive integers). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--bvreg-range",
@@ -560,6 +560,8 @@ def main():
         maxent_values = list(range(start_val, end_val + 1))
     except ValueError:
         raise ValueError("maxent-range must be 'start,end' integers (e.g. '1,10')")
+    if not maxent_values or any(value <= 0 for value in maxent_values):
+        parser.error("--maxent-range must contain positive scales")
 
     try:
         start_val, end_val = map(float, args.bvreg_range.split(","))

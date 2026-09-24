@@ -52,6 +52,7 @@ from jaxent.examples.common.loading import (
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
@@ -115,6 +116,7 @@ def run_maxent_sweep(
     reset_threshold_cooldown_on_oscillation: bool = True,
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
+    frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -178,6 +180,7 @@ def run_maxent_sweep(
         num_timepoints=len(timepoints), timepoints=jnp.asarray(timepoints)
     )
     bv_model = BV_model(config=bv_config)
+    bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
     model_parameters = bv_model.params
 
     # Discover split types
@@ -384,6 +387,7 @@ def run_all_combinations(
     step_chunk_size: int = 100,
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
+    frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
@@ -422,6 +426,7 @@ def run_all_combinations(
                 step_chunk_size=step_chunk_size,
                 lr_adjustment=lr_adjustment,
                 frame_average_impl=frame_average_impl,
+                frame_averaging_mode=frame_averaging_mode,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -484,7 +489,7 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--n-steps",
@@ -511,6 +516,12 @@ def main():
         "--frame-average-impl",
         choices=["tensordot", "legacy_sum"],
         default="tensordot",
+    )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=["log_pf", "rate", "frame_uptake"],
+        default="log_pf",
+        help="Physical quantity averaged across frames (default: log_pf).",
     )
     parser.add_argument("--step-chunk-size", type=int, default=100)
     # ema_alpha=ema_alpha,
@@ -552,6 +563,8 @@ def main():
         maxent_values = list(range(start_val, end_val + 1))
     except ValueError:
         raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if not maxent_values or any(value <= 0 for value in maxent_values):
+        parser.error("--maxent-range must contain positive scales")
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
@@ -560,6 +573,7 @@ def main():
     print(f"  Learning rate: {args.learning_rate}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
+    print(f"  Frame averaging mode: {args.frame_averaging_mode}")
     print(f"  Execution mode: {args.execution_mode}")
     # Check if specific combination is requested
     if args.ensemble is not None and args.loss_function is not None:
@@ -586,6 +600,7 @@ def main():
             step_chunk_size=args.step_chunk_size,
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
+            frame_averaging_mode=args.frame_averaging_mode,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -603,6 +618,7 @@ def main():
             step_chunk_size=args.step_chunk_size,
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
+            frame_averaging_mode=args.frame_averaging_mode,
         )
 
     # Report where results were written

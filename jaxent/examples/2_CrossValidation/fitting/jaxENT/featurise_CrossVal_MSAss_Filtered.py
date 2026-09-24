@@ -2,7 +2,7 @@
 """Generate physics-versioned BV features for the two MoPrP ensembles.
 
 The canonical construction uses binary Best--Vendruscolo contacts and the
-official exPfact intrinsic rates at 298 K and pH 4.4.  The historical JAX-ENT
+HDXrate poly (PDLA) intrinsic rates at 298 K and pD 4.0.  The historical JAX-ENT
 rational switch can be emitted as an explicitly labelled sensitivity.  Legacy
 ``_featurise`` artifacts are never overwritten.
 """
@@ -50,7 +50,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     topology_path = DATA / "MoPrP_max_plddt_4334.pdb"
-    rate_path = DATA / "_MoPrP/expfact_kint_pH4p4_298K_min.dat"
+    rate_path = DATA / "_MoPrP/hdxrate_poly_pD4p0_298K_min.dat"
     time_path = DATA / "_MoPrP/moprp.times"
     trajectories = {
         "AF2_MSAss": DATA / "_cluster_MoPrP/clusters/all_clusters.xtc",
@@ -69,7 +69,7 @@ def main() -> None:
         switched = mode == "switched"
         config = BV_model_Config(timepoints=jnp.asarray(exact_times_min), switch=switched)
         config.temperature = 298.0
-        config.ph = 4.4
+        config.ph = 4.0
         config.heavy_radius = 6.5
         config.o_radius = 2.4
         config.residue_ignore = (-2, 2)
@@ -146,9 +146,9 @@ def main() -> None:
         "sequence_neighbor_exclusion": [-2, 2],
         "coefficients": {"beta_c": 0.35, "beta_h": 2.0, "log_base": "natural"},
         "intrinsic_rates": {
-            "provider": "exPfact-3Ala",
+            "provider": "HDXrate-poly",
             "temperature_k": 298.0,
-            "ph": 4.4,
+            "pD": 4.0,
             "units": "min^-1",
             "path": str(rate_path.resolve()),
             "sha256": _sha256(rate_path),

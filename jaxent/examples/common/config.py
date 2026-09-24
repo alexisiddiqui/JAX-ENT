@@ -68,7 +68,7 @@ class LossConfig:
     primary_loss: str  # e.g. "hdx_uptake_mean_centred_MSE_loss"
     regularization_losses: list[dict] = field(default_factory=list)
     optimize_bv_params: bool = False
-    maxent_scaling: float = 1.0
+    maxent_scaling: float = 1.0  # Positive scale; KL loss weight is 1 / this value.
     bv_reg_scaling: float = 1.0      # Weight for BV regularization loss term (Exp3 sweep)
     normalize_bv_reg: bool = True     # Set False → normalise_loss_functions[-1] = 0.0
 

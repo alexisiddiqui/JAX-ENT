@@ -31,6 +31,7 @@ import numpy as np
 
 # Register MaxEnt loss
 import jaxent.src.opt.loss.weights  # noqa: F401
+from jaxent.examples.common.optimization import maxent_loss_weight
 
 from jaxent.src.models.SAXS.forwardmodel import SAXS_direct_model
 from jaxent.src.models.SAXS.config import SAXS_direct_Config
@@ -81,7 +82,12 @@ def main():
     parser.add_argument("--target", choices=["CaM+CDZ", "CaM-CDZ"], required=True)
     parser.add_argument("--split-type", choices=["random", "stratified", "random-stratified"], required=True)
     parser.add_argument("--split-index", type=int, required=True)
-    parser.add_argument("--maxent-strength", type=float, required=True)
+    parser.add_argument(
+        "--maxent-strength",
+        type=float,
+        required=True,
+        help="Positive MaxEnt scale; the KL loss weight is 1 / this value.",
+    )
     parser.add_argument("--n-steps", type=int, default=50000)
     parser.add_argument("--learning-rate", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True)
@@ -126,14 +132,14 @@ def main():
     init_params = Simulation_Parameters.from_frame_weights(
         uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(),),
-        forward_model_weights=jnp.array([1.0, args.maxent_strength]),
+        forward_model_weights=jnp.array([1.0, maxent_loss_weight(args.maxent_strength)]),
         normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2) * 1000.0,
     )
     prior_params = Simulation_Parameters.from_frame_weights(
         uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(),),
-        forward_model_weights=jnp.array([1.0, args.maxent_strength]),
+        forward_model_weights=jnp.array([1.0, maxent_loss_weight(args.maxent_strength)]),
         normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2) * 1000.0,
     )

@@ -236,6 +236,7 @@ python "${ANA_DIR}/process_optimisation_results.py" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
   --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --frame-averaging-mode log_pf \
   > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
 
 # Determine the processed data directory name

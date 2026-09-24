@@ -33,7 +33,7 @@ def plot_metric_vs_regularization_strength(
         conv_normalized = (conv_normalized - conv_normalized.min()) / (
             conv_normalized.max() - conv_normalized.min()
         )
-        maxent_normalized = df_copy.loc[valid_mask, "maxent_value"]
+        maxent_normalized = 1.0 / df_copy.loc[valid_mask, "maxent_value"]
         maxent_normalized = (maxent_normalized - maxent_normalized.min()) / (
             maxent_normalized.max() - maxent_normalized.min()
         )
@@ -88,7 +88,8 @@ def plot_metric_vs_regularization_strength(
                         )
 
             ax.set_xlabel(
-                "Combined Regularization Strength\n(Higher = More MaxEnt + Looser Convergence)"
+                "Combined Regularization Strength\n"
+                "(Higher = Stronger KL Penalty + Looser Convergence)"
             )
             ax.set_ylabel(metric_label)
             ax.set_title(f"{metric_label} vs Regularization Strength - {split_type} splits")
@@ -238,7 +239,7 @@ def plot_recovery_vs_regularization_strength(recovery_df, convergence_rates, out
             conv_normalized.max() - conv_normalized.min()
         )
 
-        maxent_normalized = recovery_df_copy.loc[valid_mask, "maxent_value"]
+        maxent_normalized = 1.0 / recovery_df_copy.loc[valid_mask, "maxent_value"]
         maxent_normalized = (maxent_normalized - maxent_normalized.min()) / (
             maxent_normalized.max() - maxent_normalized.min()
         )
@@ -303,7 +304,8 @@ def plot_recovery_vs_regularization_strength(recovery_df, convergence_rates, out
             ax.axhline(y=100, color="red", linestyle="--", alpha=0.7, label="Perfect Recovery")
             ax.set_ylim(0, 100)
             ax.set_xlabel(
-                "Combined Regularization Strength\n(Higher = More MaxEnt + Looser Convergence)"
+                "Combined Regularization Strength\n"
+                "(Higher = Stronger KL Penalty + Looser Convergence)"
             )
             ax.set_ylabel("Open State Recovery (%)")
             ax.set_title(f"Recovery vs Regularization Strength - {split_type} splits")

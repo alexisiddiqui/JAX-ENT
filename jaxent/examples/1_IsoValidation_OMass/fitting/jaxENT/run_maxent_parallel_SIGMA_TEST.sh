@@ -36,6 +36,7 @@ DEFAULT_LOSSES_STR="MSE"
 
 LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_FRAME_AVERAGING_MODES_STR="log_pf,uptake"
+DEFAULT_FRAME_AVERAGING_MODES_STR="rate"
 FRAME_AVERAGING_MODES_STR="$DEFAULT_FRAME_AVERAGING_MODES_STR"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
 DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
@@ -219,28 +220,13 @@ run_campaign() {
   echo "All $frame_averaging_mode optimisation tasks completed."
   echo "Starting $frame_averaging_mode analysis scripts..."
 
-  echo "Running recovery analysis..."
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/recovery_analysis_ISO_TRI_BI_precluster.py" \
-    --results-dir "$opt_output_dir" \
-    > "${opt_output_dir}/logs/recovery_analysis.log" 2>&1
-  echo "Running weights validation..."
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/weights_validation_ISO_TRI_BI_precluster.py" \
-    --results-dir "$opt_output_dir" \
-    > "${opt_output_dir}/logs/weights_validation.log" 2>&1
-  echo "Running CV validation..."
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/CV_validation_ISO_TRI_BI_precluster.py" \
-    --results-dir "$opt_output_dir" \
-    > "${opt_output_dir}/logs/CV_validation.log" 2>&1
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/analyse_loss_ISO_TRI_BI.py" \
-    --results-dir "$opt_output_dir" \
-    > "${opt_output_dir}/logs/Analyse_Loss.log" 2>&1
-
   echo "Processing optimization results..."
   "${PYTHON_RUNNER[@]}" "${ANA_DIR}/process_optimisation_results.py" \
     --results-dir "$opt_output_dir" \
     --datasplit-dir "${DIR_WD}/_datasplits" \
     --features-dir "${DIR_WD}/_featurise" \
     --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
+    --frame-averaging-mode "$frame_averaging_mode" \
     > "${opt_output_dir}/logs/process_optimisation_results.log" 2>&1
 
   basename=$(basename "$opt_output_dir")
@@ -257,33 +243,14 @@ run_campaign() {
   scores_basename=$(basename "$processed_dir")
   scores_dir="${processed_dir}/_scores_${scores_basename}"
 
-  echo "Analyzing scores with mixed linear model..."
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
-    --scores-csv-path "${scores_dir}/model_scores.csv" \
-    --target-metric "recovery_percent" \
-    --filter-mode "both" \
-    --analyze-subsets \
-    > "${opt_output_dir}/logs/analyse_scores_mixed_linear_model.log" 2>&1
-
-  analysis_dir="${processed_dir}/_analysis__scores_${scores_basename}"
-
-  echo "Plotting selected models (unfiltered)..."
-  cluster_pop_csv="${ana_output_dir}/conformational_recovery_maxent_data.csv"
-  if [ -f "$cluster_pop_csv" ]; then
-    plot_extra_args+=(--cluster-populations-csv "$cluster_pop_csv")
-  fi
-  "${PYTHON_RUNNER[@]}" "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
-    --before-csv "${analysis_dir}/whole_dataset/model_selection_performance_summary.csv" \
-    --after-csv "${analysis_dir}_filtered/whole_dataset/model_selection_performance_summary.csv" \
-    --output-dir "${analysis_dir}/plots_selection" \
-    "${plot_extra_args[@]}" \
-    > "${opt_output_dir}/logs/plot_selected_models.log" 2>&1
+  selection_csv="${scores_dir}/selection_criteria.csv"
+  printf 'score_metric,direction\nval_mse,min\n' > "$selection_csv"
 
   echo "Extracting selected models..."
   "${PYTHON_RUNNER[@]}" "${ANA_DIR}/extract_selected_models.py" \
     --processed-data-dir "$processed_dir" \
     --scores-csv "${scores_dir}/model_scores.csv" \
-    --selection-csv "${analysis_dir}/whole_dataset/model_selection_performance_summary.csv" \
+    --selection-csv "$selection_csv" \
     > "${opt_output_dir}/logs/extract_selected_models.log" 2>&1
 
   echo "All $frame_averaging_mode analysis tasks completed."

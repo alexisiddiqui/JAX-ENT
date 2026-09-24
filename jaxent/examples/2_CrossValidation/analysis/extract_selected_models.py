@@ -28,9 +28,6 @@ base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
 from jaxent.examples.common import loading
-from jaxent.examples.common.analysis import (
-    filter_best_convergence_by_validation_mse,
-)
 from jaxent.examples.common.config import ExperimentConfig
 
 ENSEMBLE_PATTERN = r"(AF2_MSAss|AF2_filtered)_(mcMSE|MSE|Sigma_MSE)_(.+?)_split(\d+)_maxent([\d.]+)"
@@ -170,10 +167,6 @@ def main():
     # Determine grouping cols for selection
     possible_group_cols = ["ensemble", "split_type", "loss_function", "bv_reg_function"]
     group_cols = [c for c in possible_group_cols if c in scores_df.columns]
-
-    # Convergence candidates are selected by validation MSE, matching the
-    # score-model analysis rather than the optimizer's composite validation loss.
-    scores_df = filter_best_convergence_by_validation_mse(scores_df)
 
     print("Extracting optimal slices based on selection criteria...")
     # Loop over all requested metrics and directions
