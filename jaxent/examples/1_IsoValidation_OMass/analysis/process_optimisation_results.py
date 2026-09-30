@@ -45,6 +45,7 @@ from jaxent.src.utils.jax_fn import frame_average_features
 from jaxent.examples.common import analysis, loading, paths
 from jaxent.examples.common.paths import derive_processed_output_dir, resolve_script_paths
 from jaxent.examples.common.optimization import BV_uptake_ForwardPass_frames
+from jaxent.examples.common.uptake_models import build_uptake_model
 from jaxent.examples.common.analysis.convergence_labels import (
     convergence_rows_from_history,
     write_convergence_thresholds_sidecar,
@@ -104,6 +105,12 @@ def main():
         choices=("s^-1", "min^-1"),
         default="s^-1",
         help="Unit of the intrinsic-rate features used for the fit.",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family used during optimization.",
     )
     args = parser.parse_args()
 
@@ -190,41 +197,40 @@ def main():
             continue
 
         exp_split_type = first_split_type if first_split_type != '_flat' else "random"
-        _, _, _, timepoints_from_data = loading.load_experimental_data(results_dir, datasplit_dir, exp_split_type, first_split_idx)
+        # The CSV columns are positional and load_experimental_data reports
+        # their indices, not physical exposure times. Keep prediction on the
+        # same explicit minute grid used by the fitter.
+        timepoints_from_data = np.asarray([0.167, 1.0, 10.0, 60.0, 120.0])
         num_timepoints = len(timepoints_from_data)
-        print(f"  Inferred {num_timepoints} timepoints from data file: {timepoints_from_data}")
+        print(f"  Using fitted protocol timepoints: {timepoints_from_data}")
 
         # Setup BV model for ln_pf prediction (HDX_resPF)
         bv_config_lnpf = BV_model_Config(num_timepoints=0, kint_unit=args.kint_unit)
         bv_model_lnpf = BV_model(config=bv_config_lnpf)
 
         # Setup BV model for uptake prediction (HDX_peptide)
-        bv_config_uptake = BV_model_Config(
-            num_timepoints=num_timepoints,
-            timepoints=jnp.array(timepoints_from_data),
+        bv_model_uptake = build_uptake_model(
+            args.uptake_model,
+            timepoints_from_data,
             kint_unit=args.kint_unit,
+            time_unit="min",
         )
-        bv_model_uptake = BV_model(config=bv_config_uptake)
 
         # --- Compute frame-wise predictions (once per ensemble) ---
         print(f"  Computing frame-wise predictions for {ensemble}...")
 
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
-        forward_pass_uptake = BV_uptake_ForwardPass(
-            frame_averaging_mode=args.frame_averaging_mode
-        )
-        if args.frame_averaging_mode == "uptake":
+        forward_pass_uptake = bv_model_uptake.forward[m_key("HDX_peptide")]
+        if args.uptake_model == "standard":
+            forward_pass_uptake.frame_averaging_mode = args.frame_averaging_mode
+        if args.uptake_model == "standard" and args.frame_averaging_mode == "uptake":
             forward_pass_uptake.set_frame_groups(
                 clustering_results[ensemble]["cluster_assignments"]
             )
 
         framewise_output_lnpf = forward_pass_lnpf(features, bv_model_lnpf.params)
-        framewise_output_uptake = BV_uptake_ForwardPass_frames()(
-            features, bv_model_uptake.params
-        )
-
         def predict_uptake(frame_weights):
-            if args.frame_averaging_mode == "log_pf":
+            if args.uptake_model == "standard" and args.frame_averaging_mode == "log_pf":
                 averaged_features = frame_average_features(features, frame_weights)
                 return forward_pass_uptake(
                     averaged_features, bv_model_uptake.params

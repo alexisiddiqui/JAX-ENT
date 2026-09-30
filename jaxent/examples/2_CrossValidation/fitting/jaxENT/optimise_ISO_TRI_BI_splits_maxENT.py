@@ -38,13 +38,14 @@ import jax.numpy as jnp
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 # Import model components
 from jax import Array
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.uptake_models import build_uptake_model
 from jaxent.examples.common.loading import (
     load_hdx_timepoints_minutes,
     validate_hdx_timepoint_count,
@@ -56,10 +57,8 @@ from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 
@@ -117,6 +116,7 @@ def run_maxent_sweep(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -176,11 +176,11 @@ def run_maxent_sweep(
         os.path.dirname(__file__), "../../data/_MoPrP/moprp.times"
     )
     timepoints = load_hdx_timepoints_minutes(timepoints_path)
-    bv_config = BV_model_Config(
-        num_timepoints=len(timepoints), timepoints=jnp.asarray(timepoints)
+    bv_model = build_uptake_model(
+        uptake_model, timepoints, kint_unit="s^-1", time_unit="min"
     )
-    bv_model = BV_model(config=bv_config)
-    bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
+    if uptake_model == "standard":
+        bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
     model_parameters = bv_model.params
 
     # Discover split types
@@ -388,6 +388,7 @@ def run_all_combinations(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
@@ -427,6 +428,7 @@ def run_all_combinations(
                 lr_adjustment=lr_adjustment,
                 frame_average_impl=frame_average_impl,
                 frame_averaging_mode=frame_averaging_mode,
+                uptake_model=uptake_model,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -492,6 +494,10 @@ def main():
         help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
+        "--maxent-values",
+        help="Positive comma-separated MaxEnt scales; KL weight is reciprocal.",
+    )
+    parser.add_argument(
         "--n-steps",
         type=int,
         default=500,
@@ -522,6 +528,12 @@ def main():
         choices=["log_pf", "rate", "frame_uptake"],
         default="log_pf",
         help="Physical quantity averaged across frames (default: log_pf).",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family (default: standard).",
     )
     parser.add_argument("--step-chunk-size", type=int, default=100)
     # ema_alpha=ema_alpha,
@@ -557,12 +569,19 @@ def main():
     if args.step_chunk_size < 1:
         parser.error("--step-chunk-size must be >= 1")
 
-    # Parse maxent range
-    try:
-        start_val, end_val = map(int, args.maxent_range.split(","))
-        maxent_values = list(range(start_val, end_val + 1))
-    except ValueError:
-        raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if args.maxent_values:
+        try:
+            maxent_values = [float(value) for value in args.maxent_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("maxent-values must be comma-separated numbers") from exc
+    else:
+        try:
+            start_val, end_val = map(int, args.maxent_range.split(","))
+            maxent_values = list(range(start_val, end_val + 1))
+        except ValueError as exc:
+            raise ValueError(
+                "maxent-range must be in format 'start,end' (e.g., '1,10')"
+            ) from exc
     if not maxent_values or any(value <= 0 for value in maxent_values):
         parser.error("--maxent-range must contain positive scales")
 
@@ -601,6 +620,7 @@ def main():
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
             frame_averaging_mode=args.frame_averaging_mode,
+            uptake_model=args.uptake_model,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -619,6 +639,7 @@ def main():
             lr_adjustment=args.lr_adjustment == "on",
             frame_average_impl=args.frame_average_impl,
             frame_averaging_mode=args.frame_averaging_mode,
+            uptake_model=args.uptake_model,
         )
 
     # Report where results were written

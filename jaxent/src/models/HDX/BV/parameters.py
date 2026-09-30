@@ -45,6 +45,7 @@ class BV_Model_Parameters(Model_Parameters):
         default_factory=lambda: (0.167, 1.0, 10.0)
     )
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
+    nonnegative_params: ClassVar[frozenset[str]] = frozenset({"bv_bc", "bv_bh"})
 
     def __post_init__(self):
         if self.timepoints is not None and not isinstance(self.timepoints, tuple):

@@ -38,6 +38,7 @@ LOSSES_STR="$DEFAULT_LOSSES_STR"
 DEFAULT_FRAME_AVERAGING_MODES_STR="log_pf,uptake"
 DEFAULT_FRAME_AVERAGING_MODES_STR="rate"
 FRAME_AVERAGING_MODES_STR="$DEFAULT_FRAME_AVERAGING_MODES_STR"
+UPTAKE_MODEL="standard"
 DEFAULT_SPLIT_TYPES_STR="random,sequence,sequence_cluster,stratified,spatial"
 DEFAULT_SPLIT_TYPES_STR="sequence_cluster,spatial"
 
@@ -87,6 +88,10 @@ while [[ $# -gt 0 ]]; do
       FRAME_AVERAGING_MODES_STR="$2"; shift 2;;
     --frame-averaging-modes=*)
       FRAME_AVERAGING_MODES_STR="${1#*=}"; shift;;
+    --uptake-model)
+      UPTAKE_MODEL="$2"; shift 2;;
+    --uptake-model=*)
+      UPTAKE_MODEL="${1#*=}"; shift;;
     --split-types)
       SPLIT_TYPES_STR="$2"; shift 2;;
     --split-types=*)
@@ -106,6 +111,7 @@ echo "n-steps: $N_STEPS, learning-rate: $LEARNING_RATE, ema-alpha: $EMA_ALPHA, f
 echo "Ensembles (raw): $ENSEMBLES_STR"
 echo "Losses (raw): $LOSSES_STR"
 echo "Frame averaging modes (raw): $FRAME_AVERAGING_MODES_STR"
+echo "Uptake model: $UPTAKE_MODEL"
 echo "Split types (raw): $SPLIT_TYPES_STR"
 
 # Convert comma-separated strings into arrays
@@ -205,6 +211,7 @@ run_campaign() {
             --ema-alpha "$EMA_ALPHA" \
             --forward-model-scaling "$FORWARD_MODEL_SCALING" \
             --frame-averaging-mode "$frame_averaging_mode" \
+            --uptake-model "$UPTAKE_MODEL" \
             --output-dir "$opt_output_dir" \
             > "${opt_output_dir}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_split${SPLIT}.log" 2>&1 &
           batch_pids+=("$!")
@@ -227,6 +234,7 @@ run_campaign() {
     --features-dir "${DIR_WD}/_featurise" \
     --clustering-dir "${DIR_WD}/../../data/_clustering_results" \
     --frame-averaging-mode "$frame_averaging_mode" \
+    --uptake-model "$UPTAKE_MODEL" \
     > "${opt_output_dir}/logs/process_optimisation_results.log" 2>&1
 
   basename=$(basename "$opt_output_dir")

@@ -575,7 +575,15 @@ def normalized_scale(alpha: float, feature: np.ndarray, target: np.ndarray) -> f
     )
 
 
-def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output: Path):
+def evaluate_system(
+    row: dict[str, str],
+    config: dict,
+    edges: np.ndarray,
+    output: Path,
+    alpha_overrides: dict[tuple[str, str], float] | None = None,
+    local_parameter_overrides: dict[tuple[str, str, str], tuple[int, float]]
+    | None = None,
+):
     started = time.perf_counter()
     data = corrected_system_data(row, config, output)
     system = data["system"]
@@ -630,7 +638,12 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
     predictions = []
     fits = []
     for metric in DIRECT_METRICS:
-        alpha = fitted_scale(direct[metric][FIT], target[FIT])
+        system_alpha = fitted_scale(direct[metric][FIT], target[FIT])
+        alpha = (
+            alpha_overrides[(metric, "direct")]
+            if alpha_overrides is not None
+            else system_alpha
+        )
         prediction = alpha * direct[metric][TEST]
         predictions.append((metric, "direct", prediction))
         fits.append(
@@ -639,6 +652,8 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
                 "metric": metric,
                 "model": "direct",
                 "alpha": alpha,
+                "system_alpha": system_alpha,
+                "fit_pairs": len(target[FIT]),
                 "normalized_alpha": normalized_scale(
                     alpha, direct[metric][FIT], target[FIT]
                 ),
@@ -656,8 +671,15 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
     for metric in VARIANCE_METRICS:
         values, kind = representations[metric]
         candidates = []
-        for k in K_VALUES:
-            for shrinkage in SHRINKAGES:
+        fixed_local = (
+            local_parameter_overrides[(system, metric, "variance_magnitude")]
+            if local_parameter_overrides is not None
+            else None
+        )
+        k_values = (fixed_local[0],) if fixed_local is not None else K_VALUES
+        shrinkages = (fixed_local[1],) if fixed_local is not None else SHRINKAGES
+        for k in k_values:
+            for shrinkage in shrinkages:
                 features = {}
                 reference = None
                 for replica, (global_indices, matrix) in data["matrices"].items():
@@ -679,13 +701,18 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
                         *local_endpoints[replica],
                         kind,
                     )["variance_magnitude"]
-                alpha = fitted_scale(features[FIT], target[FIT])
+                alpha = (
+                    alpha_overrides[(metric, "variance_magnitude")]
+                    if alpha_overrides is not None
+                    else fitted_scale(features[FIT], target[FIT])
+                )
                 tune_mae = float(np.mean(np.abs(target[TUNE] - alpha * features[TUNE])))
                 candidates.append((tune_mae, k, shrinkage, alpha, features))
         tune_mae, k, shrinkage, alpha, features = min(
             candidates, key=lambda item: (item[0], item[1], item[2])
         )
         prediction = alpha * features[TEST]
+        system_alpha = fitted_scale(features[FIT], target[FIT])
         predictions.append((metric, "variance_magnitude", prediction))
         fits.append(
             {
@@ -693,6 +720,8 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
                 "metric": metric,
                 "model": "variance_magnitude",
                 "alpha": alpha,
+                "system_alpha": system_alpha,
+                "fit_pairs": len(target[FIT]),
                 "normalized_alpha": normalized_scale(alpha, features[FIT], target[FIT]),
                 "feature_rms": float(np.sqrt(np.mean(np.square(features[FIT])))),
                 "target_rms": float(np.sqrt(np.mean(np.square(target[FIT])))),
@@ -717,12 +746,19 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
         )
     for metric in COORDINATES:
         candidates = []
-        for k in K_VALUES:
+        fixed_local = (
+            local_parameter_overrides[(system, metric, "local_dispersion")]
+            if local_parameter_overrides is not None
+            else None
+        )
+        k_values = (fixed_local[0],) if fixed_local is not None else K_VALUES
+        shrinkages = (fixed_local[1],) if fixed_local is not None else SHRINKAGES
+        for k in k_values:
             neighbours = {
                 replica: nearest(data["matrices"][replica][1], k)
                 for replica in (1, 2, 3)
             }
-            for shrinkage in SHRINKAGES:
+            for shrinkage in shrinkages:
                 features = {}
                 reference = None
                 for replica in (FIT, TUNE, TEST):
@@ -733,13 +769,18 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
                         shrinkage,
                         reference if replica != FIT else None,
                     )
-                alpha = fitted_scale(features[FIT], target[FIT])
+                alpha = (
+                    alpha_overrides[(metric, "local_dispersion")]
+                    if alpha_overrides is not None
+                    else fitted_scale(features[FIT], target[FIT])
+                )
                 tune_mae = float(np.mean(np.abs(target[TUNE] - alpha * features[TUNE])))
                 candidates.append((tune_mae, k, shrinkage, alpha, features))
         tune_mae, k, shrinkage, alpha, features = min(
             candidates, key=lambda item: (item[0], item[1], item[2])
         )
         prediction = alpha * features[TEST]
+        system_alpha = fitted_scale(features[FIT], target[FIT])
         predictions.append((metric, "local_dispersion", prediction))
         fits.append(
             {
@@ -747,6 +788,8 @@ def evaluate_system(row: dict[str, str], config: dict, edges: np.ndarray, output
                 "metric": metric,
                 "model": "local_dispersion",
                 "alpha": alpha,
+                "system_alpha": system_alpha,
+                "fit_pairs": len(target[FIT]),
                 "normalized_alpha": normalized_scale(alpha, features[FIT], target[FIT]),
                 "feature_rms": float(np.sqrt(np.mean(np.square(features[FIT])))),
                 "target_rms": float(np.sqrt(np.mean(np.square(target[FIT])))),

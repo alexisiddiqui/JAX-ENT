@@ -18,6 +18,9 @@ class Model_Parameters:
 
     key: frozenset[m_key]
     static_params: ClassVar[set[str]] = {"key"}
+    # Dynamic slots that the optimizer projects onto [0, inf) after each step.
+    # Raw (softplus/log) parameterisations are already safe and should leave this empty.
+    nonnegative_params: ClassVar[frozenset[str]] = frozenset()
     # dynamic_params: ClassVar[set[str]] | None
 
     @classmethod
@@ -115,6 +118,18 @@ class Model_Parameters:
         for key, value in params.items():
             object.__setattr__(instance, key, value)
         return instance
+
+    def project(self: T_mp) -> T_mp:
+        """Return a copy with ``nonnegative_params`` slots clipped to be non-negative."""
+        if not self.nonnegative_params:
+            return self
+        dynamic_slots, _ = self._get_grouped_slots()
+        arrays, static_data = Model_Parameters.tree_flatten(self)
+        arrays = tuple(
+            jnp.maximum(value, 0) if slot in self.nonnegative_params else value
+            for slot, value in zip(dynamic_slots, arrays)
+        )
+        return type(self).tree_unflatten(static_data, arrays)
 
     # these are currently used during the optimisation process - we suggest that you implement these methods to speed up these operations
     # @abstractmethod

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Runs:
 # optimise_ISO_TRI_BI_splits_maxENT.py
 # ../analysis/recovery_analysis_ISO_TRI_BI_precluster.py
@@ -10,6 +11,7 @@
 cd "$(dirname "$0")" || exit
 DIR_WD=$(pwd)
 ANA_DIR="../../analysis"
+PYTHON_RUNNER=(env UV_CACHE_DIR=/tmp/jaxent-uv-cache uv run --no-sync python)
 echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
@@ -32,6 +34,8 @@ LEARNING_RATE=1.0
 EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
 MODEL_PARAMETERS_LR_SCALE=1.0
+UPTAKE_MODEL="standard"
+FRAME_AVERAGING_MODE="rate"
 # --- Added defaults for ensembles, losses and split types ---
 DEFAULT_ENSEMBLES_STR="AF2_filtered,AF2_MSAss"
 ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
@@ -97,6 +101,14 @@ while [[ $# -gt 0 ]]; do
       FORWARD_MODEL_SCALING="$2"; shift 2;;
     --forward-model-scaling=*)
       FORWARD_MODEL_SCALING="${1#*=}"; shift;;
+    --uptake-model)
+      UPTAKE_MODEL="$2"; shift 2;;
+    --uptake-model=*)
+      UPTAKE_MODEL="${1#*=}"; shift;;
+    --frame-averaging-mode)
+      FRAME_AVERAGING_MODE="$2"; shift 2;;
+    --frame-averaging-mode=*)
+      FRAME_AVERAGING_MODE="${1#*=}"; shift;;
     --model-parameters-lr-scale)
       MODEL_PARAMETERS_LR_SCALE="$2"; shift 2;;
     --model-parameters-lr-scale=*)
@@ -131,6 +143,7 @@ echo "Model params LR scale: $MODEL_PARAMETERS_LR_SCALE"
 echo "Ensembles (raw): $ENSEMBLES_STR"
 echo "Losses (raw): $LOSSES_STR"
 echo "Split types (raw): $SPLIT_TYPES_STR"
+echo "Frame averaging mode: $FRAME_AVERAGING_MODE"
 
 # Convert comma-separated strings into arrays
 IFS=',' read -r -a MAXENT_VALUES <<< "$MAXENT_VALUES_STR"
@@ -182,7 +195,7 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
             echo "    Maxent: $MAXENT, BV reg: $BV_REG ($BV_REG_LOSS)"
             # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
             wait_for_slot
-            python optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py \
+            "${PYTHON_RUNNER[@]}" optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py \
               --ensemble "$ENSEMBLE" \
               --loss-function "$LOSS" \
               --maxent-range "$MAXENT,$MAXENT" \
@@ -193,7 +206,8 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
               --learning-rate "$LEARNING_RATE" \
               --ema-alpha "$EMA_ALPHA" \
               --forward-model-scaling "$FORWARD_MODEL_SCALING" \
-              --frame-averaging-mode rate \
+              --frame-averaging-mode "$FRAME_AVERAGING_MODE" \
+              --uptake-model "$UPTAKE_MODEL" \
               --model-parameters-lr-scale "$MODEL_PARAMETERS_LR_SCALE" \
               --output-dir "$OPT_OUTPUT_DIR" \
               > "${OPT_OUTPUT_DIR}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_bvreg${BV_REG}_${BV_REG_LOSS}_split${SPLIT}.log" 2>&1 &
@@ -211,12 +225,13 @@ echo "Starting analysis scripts..."
 # Run analysis scripts sequentially
 # New comprehensive analysis pipeline
 echo "Processing optimization results..."
-python "${ANA_DIR}/process_optimisation_results.py" \
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/process_optimisation_results.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
   --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
-  --frame-averaging-mode rate \
+  --frame-averaging-mode "$FRAME_AVERAGING_MODE" \
+  --uptake-model "$UPTAKE_MODEL" \
   > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
 
 # Determine the processed data directory name
@@ -225,7 +240,7 @@ BASENAME=$(basename "$OPT_OUTPUT_DIR")
 PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
 
 echo "Scoring models..."
-python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
   --processed-data-dir "$PROCESSED_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
@@ -242,7 +257,7 @@ SELECTION_CSV="${SCORES_DIR}/selection_criteria.csv"
 printf 'score_metric,direction\nval_mse,min\n' > "$SELECTION_CSV"
 
 echo "Extracting selected models..."
-python "${ANA_DIR}/extract_selected_models.py" \
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/extract_selected_models.py" \
   --processed-data-dir "$PROCESSED_DIR" \
   --scores-csv "${SCORES_DIR}/model_scores.csv" \
   --selection-csv "$SELECTION_CSV" \

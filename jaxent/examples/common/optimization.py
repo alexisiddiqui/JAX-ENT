@@ -249,6 +249,8 @@ def run_optimization(
             parameter_partition_masks=partition_masks,
             clip_value=None,
             optimizer=optimizer_type,
+            model_parameters_lr_scale=model_parameters_lr_scale,
+            trainable_model_parameters=loss_config.trainable_model_parameters,
             lr_adjustment=lr_adjustment,
         )
         opt_state = optimizer.initialise(model=sim)

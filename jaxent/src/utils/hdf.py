@@ -3,8 +3,8 @@ import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import jax
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))

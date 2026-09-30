@@ -42,8 +42,8 @@ import jax.numpy as jnp
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 # Import model components
 import jaxent.src.interfaces.topology as pt
@@ -51,13 +51,12 @@ from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.uptake_models import build_uptake_model
 from jaxent.examples.common.loading import (
     load_hdx_timepoints_minutes,
     validate_hdx_timepoint_count,
@@ -127,6 +126,7 @@ def run_maxent_sweep(
     frame_average_impl: str = "tensordot",
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
     convergence_values: List[float] | None = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -183,11 +183,11 @@ def run_maxent_sweep(
         os.path.dirname(__file__), "../../../2_CrossValidation/data/_MoPrP/moprp.times"
     )
     timepoints = load_hdx_timepoints_minutes(timepoints_path)
-    bv_config = BV_model_Config(
-        num_timepoints=len(timepoints), timepoints=jnp.asarray(timepoints)
+    bv_model = build_uptake_model(
+        uptake_model, timepoints, kint_unit="s^-1", time_unit="min"
     )
-    bv_model = BV_model(config=bv_config)
-    bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
+    if uptake_model == "standard":
+        bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
     model_parameters = bv_model.params
 
     # Discover split types
@@ -286,6 +286,11 @@ def run_maxent_sweep(
                     try:
                         loss_config = LossConfig(
                             optimize_bv_params=True,
+                            trainable_model_parameters=(
+                                frozenset({"raw_bv_bc", "raw_bv_bh"})
+                                if uptake_model == "linear"
+                                else None
+                            ),
                             primary_loss=LOSS_NAME_MAP[loss_name],
                             regularization_losses=[{"name": f"model_params_{bv_reg_name}_loss"}],
                             maxent_scaling=maxent_value,
@@ -416,7 +421,9 @@ def run_all_combinations(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
-    convergence_values: List[float] | None = None) -> List[dict]:  # now returns list of result dicts
+    convergence_values: List[float] | None = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
+) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
 
@@ -460,6 +467,7 @@ def run_all_combinations(
                 frame_average_impl=frame_average_impl,
                 frame_averaging_mode=frame_averaging_mode,
                 convergence_values=convergence_values,
+                uptake_model=uptake_model,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -532,10 +540,18 @@ def main():
         help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
+        "--maxent-values",
+        help="Positive comma-separated MaxEnt scales; KL weight is reciprocal.",
+    )
+    parser.add_argument(
         "--bvreg-range",
         type=str,
         default="1,10",
         help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+    )
+    parser.add_argument(
+        "--bvreg-values",
+        help="Comma-separated BV regularization weights.",
     )
     parser.add_argument(
         "--n-steps",
@@ -568,6 +584,12 @@ def main():
         choices=["log_pf", "rate", "frame_uptake"],
         default="log_pf",
         help="Physical quantity averaged across frames (default: log_pf).",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family (default: standard).",
     )
     parser.add_argument("--step-chunk-size", type=int, default=100)
     parser.add_argument(
@@ -621,22 +643,35 @@ def main():
     if convergence_values is not None and not convergence_values:
         parser.error("--convergence-values must contain at least one value")
 
-    # Parse maxent range
-    try:
-        start_val, end_val = map(int, args.maxent_range.split(","))
-        maxent_values = list(range(start_val, end_val + 1))
-    except ValueError:
-        raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if args.maxent_values:
+        try:
+            maxent_values = [float(value) for value in args.maxent_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("maxent-values must be comma-separated numbers") from exc
+    else:
+        try:
+            start_val, end_val = map(int, args.maxent_range.split(","))
+            maxent_values = list(range(start_val, end_val + 1))
+        except ValueError as exc:
+            raise ValueError(
+                "maxent-range must be in format 'start,end' (e.g., '1,10')"
+            ) from exc
     if not maxent_values or any(value <= 0 for value in maxent_values):
         parser.error("--maxent-range must contain positive scales")
 
-    # Parse bvreg range
-    try:
-        start_val, end_val = map(float, args.bvreg_range.split(","))
-        # For float ranges, just use the two endpoints (no auto-range generation)
-        bvreg_values = [start_val, end_val] if start_val != end_val else [start_val]
-    except ValueError:
-        raise ValueError("bvreg-range must be in format 'start,end' (e.g., '0.0,1.0')")
+    if args.bvreg_values:
+        try:
+            bvreg_values = [float(value) for value in args.bvreg_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("bvreg-values must be comma-separated numbers") from exc
+    else:
+        try:
+            start_val, end_val = map(float, args.bvreg_range.split(","))
+            bvreg_values = [start_val, end_val] if start_val != end_val else [start_val]
+        except ValueError as exc:
+            raise ValueError(
+                "bvreg-range must be in format 'start,end' (e.g., '0.0,1.0')"
+            ) from exc
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
@@ -683,6 +718,7 @@ def main():
             frame_average_impl=args.frame_average_impl,
             frame_averaging_mode=args.frame_averaging_mode,
             convergence_values=convergence_values,
+            uptake_model=args.uptake_model,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -705,6 +741,7 @@ def main():
             frame_average_impl=args.frame_average_impl,
             frame_averaging_mode=args.frame_averaging_mode,
             convergence_values=convergence_values,
+            uptake_model=args.uptake_model,
         )
 
     # Report where results were written

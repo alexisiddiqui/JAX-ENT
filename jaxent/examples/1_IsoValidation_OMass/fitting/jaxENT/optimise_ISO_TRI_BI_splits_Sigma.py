@@ -36,22 +36,21 @@ import numpy as np
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 # Import model components
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.uptake_models import build_uptake_model
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 from jax import Array
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
@@ -116,6 +115,7 @@ def run_maxent_sweep(
         "log_pf", "rate", "uptake", "frame_uptake"
     ] = "log_pf",
     kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -173,12 +173,14 @@ def run_maxent_sweep(
     primary_loss_str = loss_mapping[loss_name]
 
     # Setup BV model
-    bv_config = BV_model_Config(num_timepoints=5, kint_unit=kint_unit)
-    bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
-    bv_model = BV_model(config=bv_config)
+    timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
+    bv_model = build_uptake_model(
+        uptake_model, timepoints, kint_unit=kint_unit, time_unit="min"
+    )
     uptake_forward = bv_model.forward[m_key("HDX_peptide")]
-    uptake_forward.frame_averaging_mode = frame_averaging_mode
-    if frame_averaging_mode == "uptake":
+    if uptake_model == "standard":
+        uptake_forward.frame_averaging_mode = frame_averaging_mode
+    if uptake_model == "standard" and frame_averaging_mode == "uptake":
         clustering_dir = os.path.join(
             os.path.dirname(__file__), "../../data/_clustering_results"
         )
@@ -393,6 +395,7 @@ def run_all_combinations(
     frame_average_impl: str = "tensordot",
     datasplit_dir: str = None,
     features_dir: str = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["ISO_TRI", "ISO_BI"]
@@ -433,6 +436,7 @@ def run_all_combinations(
                 frame_average_impl=frame_average_impl,
                 datasplit_dir=datasplit_dir,
                 features_dir=features_dir,
+                uptake_model=uptake_model,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -582,6 +586,12 @@ def main():
         default="s^-1",
         help="Unit of the stored intrinsic-rate features (legacy default: s^-1).",
     )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family (default: standard).",
+    )
 
     args = parser.parse_args()
     if args.step_chunk_size < 1:
@@ -647,6 +657,7 @@ def main():
             initial_frame_weights=initial_frame_weights,
             frame_averaging_mode=args.frame_averaging_mode,
             kint_unit=args.kint_unit,
+            uptake_model=args.uptake_model,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -666,6 +677,7 @@ def main():
             frame_average_impl=args.frame_average_impl,
             datasplit_dir=args.datasplit_dir,
             features_dir=args.features_dir,
+            uptake_model=args.uptake_model,
         )
 
     # Report where results were written

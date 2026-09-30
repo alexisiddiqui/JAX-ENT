@@ -37,6 +37,33 @@ def _clone_optimization_state(state: OptimizationState) -> OptimizationState:
     return jax.tree_util.tree_map(_clone_leaf, state)
 
 
+def project_model_parameters() -> optax.GradientTransformation:
+    """Rewrite updates so each ``Model_Parameters`` lands on its ``project()`` domain.
+
+    Only slots a parameter class lists in ``nonnegative_params`` are constrained;
+    raw (softplus) parameterisations and signed slots are left untouched.
+    """
+
+    def _is_model_parameters(x) -> bool:
+        return isinstance(x, Model_Parameters)
+
+    def _project_update(update, param):
+        if not _is_model_parameters(param):
+            return update
+        projected = jax.tree_util.tree_map(jnp.add, param, update).project()
+        return jax.tree_util.tree_map(jnp.subtract, projected, param)
+
+    def update_fn(updates, state, params=None):
+        if params is None:
+            raise ValueError("project_model_parameters requires params")
+        updates = jax.tree_util.tree_map(
+            _project_update, updates, params, is_leaf=_is_model_parameters
+        )
+        return updates, state
+
+    return optax.GradientTransformation(lambda params: optax.EmptyState(), update_fn)
+
+
 @register_pytree_node_class
 class OptaxOptimizer:
     learning_rate: float
@@ -64,12 +91,14 @@ class OptaxOptimizer:
         force_simplex: Optional[bool] = None,
         plateau_denominator: float = 1.005,
         model_parameters_lr_scale: float = 1.0,
+        trainable_model_parameters: frozenset[str] | None = None,
         lr_adjustment: bool = True,
     ):
         self.parameter_partition_masks = parameter_partition_masks
         self.clip_value = clip_value
         self.history = OptimizationHistory()
         self.model_parameters_lr_scale = model_parameters_lr_scale
+        self.trainable_model_parameters = trainable_model_parameters
         if not isinstance(lr_adjustment, bool):
             raise ValueError("lr_adjustment must be a boolean")
         self.lr_adjustment = lr_adjustment
@@ -105,7 +134,7 @@ class OptaxOptimizer:
         if clip_value is not None:
             model_chain.append(optax.clip(clip_value))
         model_chain.append(optax.inject_hyperparams(base_optimizer_fn)(learning_rate=1.0))
-        model_chain.append(optax.keep_params_nonnegative())
+        model_chain.append(project_model_parameters())
 
         other_chain = []
         if clip_value is not None:
@@ -153,6 +182,7 @@ class OptaxOptimizer:
             "plateau_denominator": self.plateau_denominator,
             "step": self.step,
             "model_parameters_lr_scale": self.model_parameters_lr_scale,
+            "trainable_model_parameters": self.trainable_model_parameters,
             "lr_adjustment": self.lr_adjustment,
             "update_all_models": self.update_all_models,
             "_current_lr": self._current_lr,
@@ -173,6 +203,7 @@ class OptaxOptimizer:
         self.plateau_denominator = aux_data["plateau_denominator"]
         self.step = aux_data.get("step", self._step)
         self.model_parameters_lr_scale = aux_data.get("model_parameters_lr_scale", 1.0)
+        self.trainable_model_parameters = aux_data.get("trainable_model_parameters")
         self.lr_adjustment = aux_data.get("lr_adjustment", True)
         self.update_all_models = aux_data.get("update_all_models", False)
         self._current_lr = aux_data.get("_current_lr", self.learning_rate)
@@ -210,6 +241,7 @@ class OptaxOptimizer:
             self.parameter_partition_masks,
             params,
             optimisable_funcs,
+            self.trainable_model_parameters,
         )
 
         opt_state = self.optimizer.init(params)  # type: ignore[arg-type]

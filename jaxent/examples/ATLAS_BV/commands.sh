@@ -253,6 +253,26 @@ case "${1:-}" in
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.corrected_variance_recovery_checkpoint36 "$@"
     ;;
+  geometry-global-alpha)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.global_alpha_checkpoint37 "$@"
+    ;;
+  geometry-transfer-gap)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.transferability_gap_checkpoint38 "$@"
+    ;;
+  geometry-sparse-population-extrapolation)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.sparse_population_extrapolation_checkpoint39 "$@"
+    ;;
+  geometry-replica-sampling-mechanism)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.replica_sampling_mechanism_checkpoint40 "$@"
+    ;;
+  geometry-fixed-reference-transport)
+    shift
+    exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.fixed_reference_transport_checkpoint41 "$@"
+    ;;
   geometry-variance-graph)
     shift
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.variance_graph_checkpoint29 "$@"
@@ -315,7 +335,7 @@ case "${1:-}" in
     exec uv run --no-sync python -m jaxent.examples.ATLAS_BV.analysis.within_basin_stage1
     ;;
   *)
-    echo "usage: $0 {...|geometry-local-variance|geometry-corrected-variance-recovery|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|geometry-original-omc|geometry-cluster-filtering-omc|geometry-omc-bandwidth-control|geometry-omc-bandwidth-diagnostics|geometry-omc-coverage-control|geometry-omc-coupling-control|geometry-omc-decoy-control|geometry-omc-graph-control|all-analysis} [options]" >&2
+    echo "usage: $0 {...|geometry-local-variance|geometry-corrected-variance-recovery|geometry-global-alpha|geometry-transfer-gap|geometry-sparse-population-extrapolation|geometry-replica-sampling-mechanism|geometry-fixed-reference-transport|geometry-laplacian-prior|geometry-laplacian-metrics|geometry-laplacian-topology|geometry-laplacian-residue-scaling|geometry-basin-difficulty|geometry-original-omc|geometry-cluster-filtering-omc|geometry-omc-bandwidth-control|geometry-omc-bandwidth-diagnostics|geometry-omc-coverage-control|geometry-omc-coupling-control|geometry-omc-decoy-control|geometry-omc-graph-control|all-analysis} [options]" >&2
     exit 2
     ;;
 esac

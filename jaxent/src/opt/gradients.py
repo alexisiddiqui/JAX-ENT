@@ -29,6 +29,7 @@ def create_gradient_masks(
     parameter_partition_masks: set[Optimisable_Parameters],
     params: Simulation_Parameters,
     optimisable_funcs: Array | None,
+    trainable_model_parameters: frozenset[str] | None = None,
 ) -> Simulation_Parameters:
     """Creates gradient masks as a Simulation_Parameters instance with integer values.
 
@@ -57,9 +58,16 @@ def create_gradient_masks(
     # Create model parameters mask - handle each Model_Parameters instance separately
     model_parameters_mask = []
     for model_param in params.model_parameters:
-        # For each Model_Parameters instance, create a mask of the same structure
-        masked_model_param = jax.tree_util.tree_map(
-            lambda x: jnp.full_like(x, model_mask, dtype=jnp.float32), model_param
+        masked_model_param = model_param._create_modified_instance(
+            lambda slot, value: jnp.full_like(
+                value,
+                model_mask
+                * float(
+                    trainable_model_parameters is None
+                    or slot in trainable_model_parameters
+                ),
+                dtype=jnp.float32,
+            )
         )
         model_parameters_mask.append(masked_model_param)
 

@@ -46,6 +46,7 @@ from jaxent.examples.common.analysis.convergence_labels import (
     write_convergence_thresholds_sidecar,
 )
 from jaxent.examples.common.manifest import write_processing_manifest
+from jaxent.examples.common.uptake_models import build_uptake_model
 
 
 def main():
@@ -94,6 +95,12 @@ def main():
         choices=("log_pf", "rate", "uptake", "frame_uptake"),
         default="log_pf",
         help="Frame-averaging semantic to use when reconstructing predictions.",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family used during optimization.",
     )
     args = parser.parse_args()
 
@@ -197,8 +204,12 @@ def main():
         bv_model_lnpf = BV_model(config=bv_config_lnpf)
 
         # Setup BV model for uptake prediction (HDX_peptide)
-        bv_config_uptake = BV_model_Config(num_timepoints=num_timepoints, timepoints=jnp.array(timepoints_from_data))
-        bv_model_uptake = BV_model(config=bv_config_uptake)
+        bv_model_uptake = build_uptake_model(
+            args.uptake_model,
+            timepoints_from_data,
+            kint_unit="s^-1",
+            time_unit="min",
+        )
 
         # --- Compute Prior Predictions (from uniform weights and initial params) ---
         print(f"  Computing prior predictions for {ensemble}...")
@@ -207,16 +218,16 @@ def main():
 
         # Forward pass functions
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
-        forward_pass_uptake = BV_uptake_ForwardPass(
-            frame_averaging_mode=args.frame_averaging_mode
-        )
-        if args.frame_averaging_mode == "uptake":
+        forward_pass_uptake = bv_model_uptake.forward[m_key("HDX_peptide")]
+        if args.uptake_model == "standard":
+            forward_pass_uptake.frame_averaging_mode = args.frame_averaging_mode
+        if args.uptake_model == "standard" and args.frame_averaging_mode == "uptake":
             forward_pass_uptake.set_frame_groups(
                 clustering_results[ensemble]["cluster_assignments"]
             )
 
         def predict_uptake(model_params, frame_weights):
-            if args.frame_averaging_mode == "log_pf":
+            if args.uptake_model == "standard" and args.frame_averaging_mode == "log_pf":
                 averaged_features = frame_average_features(features, frame_weights)
                 return forward_pass_uptake(averaged_features, model_params)
             return forward_pass_uptake.average_frames(
@@ -323,11 +334,14 @@ def main():
 
                     # Extract optimized BV parameters from first model
                     model_params = params.model_parameters[0]
-                    optimized_bv_params = BV_Model_Parameters(
-                        bv_bc=model_params.bv_bc,
-                        bv_bh=model_params.bv_bh,
-                        timepoints=jnp.array(timepoints_from_data)
-                    )
+                    if args.uptake_model == "linear":
+                        optimized_bv_params = model_params
+                    else:
+                        optimized_bv_params = BV_Model_Parameters(
+                            bv_bc=model_params.bv_bc,
+                            bv_bh=model_params.bv_bh,
+                            timepoints=jnp.array(timepoints_from_data)
+                        )
 
                     bc_scalar = np.array(model_params.bv_bc).ravel()[0]
                     bh_scalar = np.array(model_params.bv_bh).ravel()[0]
