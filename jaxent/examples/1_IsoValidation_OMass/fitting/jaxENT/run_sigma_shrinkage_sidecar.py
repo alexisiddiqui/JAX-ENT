@@ -66,8 +66,12 @@ from compute_sigma_synthetic import (
 
 HERE = Path(__file__).resolve().parent
 EXPERIMENT_DIR = HERE.parent.parent
-DEFAULT_FEATURES_DIR = HERE / "_featurise"
-DEFAULT_DATASPLIT_DIR = HERE / "_datasplits"
+SELF_CONSISTENT_DIR = HERE / "_self_consistent_iso"
+DEFAULT_FEATURES_DIR = SELF_CONSISTENT_DIR / "fit_features"
+DEFAULT_DATASPLIT_DIR = SELF_CONSISTENT_DIR / "datasplits"
+DEFAULT_RATE_SOURCE_MANIFEST = (
+    EXPERIMENT_DIR / "data" / "_self_consistent_target_features" / "manifest.json"
+)
 DEFAULT_CLUSTERING_DIR = EXPERIMENT_DIR / "data" / "_clustering_results"
 TIMEPOINTS = np.asarray([0.167, 1.0, 10.0, 60.0, 120.0], dtype=float)
 DEFAULT_ALPHAS = (0.0, 1e-6, 1e-4, 0.001, 0.01, 0.05, 0.1, 0.5, 1.0)
@@ -79,6 +83,7 @@ GROUND_TRUTH = {"intermediate": 0.0, "open": 0.4, "closed": 0.6}
 STATE_MAPPING = {-1: "intermediate", 0: "open", 1: "closed"}
 MODE_LABELS = {"rate": "Rate", "linear": "Linear BV", "uptake": "Uptake"}
 MODE_COLORS = {"rate": "#0072B2", "linear": "#D55E00", "uptake": "#009E73"}
+FORWARD_CONSTRUCTION_VERSION = "jaxent_rates_framewise_v3"
 WEIGHT_LABELS = {
     "unweighted": "Unweighted",
     "oracle_weighted": "Oracle weighted (40:60)",
@@ -107,7 +112,8 @@ class RunSpec:
     def run_id(self) -> str:
         return (
             f"{self.ensemble}_Sigma_MSE_{self.mode}_{self.split_type}_"
-            f"split{self.split_idx:03d}_alpha{alpha_token(self.alpha)}_maxent1000"
+            f"split{self.split_idx:03d}_alpha{alpha_token(self.alpha)}_maxent1000_"
+            f"{FORWARD_CONSTRUCTION_VERSION}"
         )
 
     @property
@@ -170,15 +176,13 @@ def configure_model(mode: str, assignments: np.ndarray):
     """Build the exact native model used for one of the three comparisons."""
     if mode == "linear":
         return build_uptake_model(
-            "linear", TIMEPOINTS, kint_unit="s^-1", time_unit="min"
+            "linear", TIMEPOINTS, kint_unit="min^-1", time_unit="min"
         )
     if mode not in {"rate", "uptake"}:
         raise ValueError(f"Unknown uptake mode: {mode}")
-    model = build_uptake_model("standard", TIMEPOINTS, kint_unit="s^-1")
+    model = build_uptake_model("standard", TIMEPOINTS, kint_unit="min^-1")
     forward = model.forward[m_key("HDX_peptide")]
-    forward.frame_averaging_mode = mode
-    if mode == "uptake":
-        forward.set_frame_groups(assignments)
+    forward.frame_averaging_mode = "frame_uptake" if mode == "uptake" else mode
     return model
 
 
@@ -516,12 +520,16 @@ def run_forward_uptake_diagnostics(
         )
     metadata = {
         "reduction": "mean_and_sample_sd_across_flattened_residue_coordinates",
-        "baseline": "uptake_mode_within_the_same_weighting_and_ensemble",
+        "baseline": "framewise_uptake_mode_within_the_same_weighting_and_ensemble",
         "test": "two_sided_paired_t_test_across_residues_at_each_timepoint",
         "effect_size": "paired_cohen_dz_mean_difference_over_sd_difference",
         "multiple_testing_correction": "none",
         "unweighted": "uniform_over_all_ensemble_frames",
         "oracle_weighted": "0.4_open_0.6_closed_0_intermediate",
+        "intrinsic_rate_unit": "min^-1",
+        "intrinsic_rate_provider": "jaxent_calculate_HDXrate",
+        "intrinsic_rate_source_manifest": str(DEFAULT_RATE_SOURCE_MANIFEST.resolve()),
+        "forward_construction_version": FORWARD_CONSTRUCTION_VERSION,
     }
     (diagnostic_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True)
@@ -715,12 +723,18 @@ def run_fit(spec: RunSpec) -> None:
         execution_mode=spec.execution_mode,
     )
     config = json.loads(spec.config_path.read_text())
-    config["effective_settings"]["frame_averaging_mode"] = (
-        "linear_uptake" if spec.mode == "linear" else spec.mode
-    )
+    config["effective_settings"]["frame_averaging_mode"] = {
+        "linear": "linear_uptake",
+        "rate": "rate",
+        "uptake": "frame_uptake",
+    }[spec.mode]
     config["sidecar_settings"] = {
         "mode": spec.mode,
         "uptake_model": "linear" if spec.mode == "linear" else "standard",
+        "intrinsic_rate_unit": "min^-1",
+        "intrinsic_rate_provider": "jaxent_calculate_HDXrate",
+        "intrinsic_rate_source_manifest": str(DEFAULT_RATE_SOURCE_MANIFEST.resolve()),
+        "forward_construction_version": FORWARD_CONSTRUCTION_VERSION,
         "shrinkage_alpha": spec.alpha,
         "sigma_path": spec.sigma_path,
         "split_type": spec.split_type,
@@ -784,11 +798,14 @@ def execute_specs(specs: list[RunSpec], output_dir: Path, jobs: int) -> None:
         raise RuntimeError(f"{len(failures)} fit(s) failed:\n{details}")
 
 
+from sidecar_selection import closed_validation_mse, select_best_rows, SELECTION_POLICY
+
+
 def score_history(
     spec: RunSpec,
     context_cache: dict[tuple[str, str, str, int], tuple] | None = None,
 ) -> tuple[list[dict[str, Any]], np.ndarray]:
-    """Score only native convergence states and select by ordinary val MSE."""
+    """Score native convergence states for fixed closed-coordinate selection."""
     history = load_optimization_history_from_file(str(spec.history_path))
     labeled = iter_labeled_convergence_states(history)
     if not labeled:
@@ -849,6 +866,7 @@ def score_history(
                 "step": int(np.asarray(state.step)),
                 "native_sigma_val_loss": native_val_loss,
                 "val_mse": analysis.calculate_mse(mapped, y_true_val),
+                "val_closed_sigma_mse": closed_validation_mse(spec, mapped, y_true_val),
                 "recovery_percent": calculate_recovery_percentage(
                     assignments, weights, GROUND_TRUTH, STATE_MAPPING
                 ),
@@ -859,21 +877,6 @@ def score_history(
         )
         weights_stack.append(weights)
     return rows, np.stack(weights_stack)
-
-
-def select_best_rows(scores: pd.DataFrame) -> pd.DataFrame:
-    """Select minimum finite ordinary val MSE, preserving native order on ties."""
-    if scores.empty:
-        return scores.copy()
-    selected = []
-    for _, group in scores.groupby("run_id", sort=False):
-        valid = group[np.isfinite(group["val_mse"])].sort_values(
-            ["val_mse", "convergence_rank"], kind="stable"
-        )
-        if valid.empty:
-            continue
-        selected.append(valid.iloc[0])
-    return pd.DataFrame(selected).reset_index(drop=True)
 
 
 def summarize_selected(selected: pd.DataFrame) -> pd.DataFrame:
@@ -1051,7 +1054,12 @@ def write_manifest(args, specs: list[RunSpec], sigma_metrics: pd.DataFrame) -> N
         "jax_backend": jax.default_backend(),
         "maxent": MAXENT,
         "primary_loss": "hdx_uptake_sigma_MSE_loss",
-        "selection_metric": "ordinary_val_mse_over_native_convergence_states",
+        "forward_construction_version": FORWARD_CONSTRUCTION_VERSION,
+        "intrinsic_rate_unit": "min^-1",
+        "intrinsic_rate_provider": "jaxent_calculate_HDXrate",
+        "intrinsic_rate_source_manifest": str(DEFAULT_RATE_SOURCE_MANIFEST.resolve()),
+        "uptake_reduction": "frame_uptake",
+        "selection_metric": SELECTION_POLICY,
         "sample_size_correction": "population",
         "shrinkage_target": "identity",
         "condition_limit": args.condition_limit,

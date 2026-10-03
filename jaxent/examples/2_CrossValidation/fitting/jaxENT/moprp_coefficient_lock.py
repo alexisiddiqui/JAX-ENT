@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 from itertools import combinations
 from pathlib import Path
 
@@ -203,7 +204,7 @@ def run(args: argparse.Namespace) -> None:
         exclude_peptide1=False,
     )
     expected_litmus_mse = 0.3701202**2
-    if args.rate_source == common.DEFAULT_RATE_SOURCE and not np.isclose(
+    if common.STRUCTURE == "101" and not os.environ.get("MOPRP_FEATURES_SUFFIX") and args.rate_source == common.DEFAULT_RATE_SOURCE and not np.isclose(
         litmus_mse, expected_litmus_mse, rtol=2e-6, atol=1e-10
     ):
         raise AssertionError(f"litmus cross-check failed: {litmus_mse} != {expected_litmus_mse}")

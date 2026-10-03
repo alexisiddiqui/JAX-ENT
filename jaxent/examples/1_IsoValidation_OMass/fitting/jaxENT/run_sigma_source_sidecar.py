@@ -47,6 +47,7 @@ from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
 from jaxent.src.utils.hdf import load_optimization_history_from_file
 
 import run_sigma_shrinkage_sidecar as shrinkage
+from sidecar_selection import closed_validation_mse, select_best_rows, SELECTION_POLICY
 from compute_sigma_synthetic import (
     compute_cluster_weights,
     compute_weighted_covariance,
@@ -111,7 +112,8 @@ class RunSpec:
     def run_id(self) -> str:
         return (
             f"{self.ensemble}_Sigma_MSE_uptake_{self.sigma_source}_{self.split_type}_"
-            f"split{self.split_idx:03d}_alpha{shrinkage.alpha_token(self.alpha)}_maxent1000"
+            f"split{self.split_idx:03d}_alpha{shrinkage.alpha_token(self.alpha)}_maxent1000_"
+            f"{shrinkage.FORWARD_CONSTRUCTION_VERSION}"
         )
 
     @property
@@ -382,10 +384,14 @@ def run_fit(spec: RunSpec) -> None:
         execution_mode=spec.execution_mode,
     )
     config = json.loads(spec.config_path.read_text())
-    config["effective_settings"]["frame_averaging_mode"] = "uptake"
+    config["effective_settings"]["frame_averaging_mode"] = "frame_uptake"
     config["sidecar_settings"] = {
         "mode": "uptake",
         "uptake_model": "standard",
+        "intrinsic_rate_unit": "min^-1",
+        "intrinsic_rate_provider": "jaxent_calculate_HDXrate",
+        "uptake_reduction": "frame_uptake",
+        "forward_construction_version": shrinkage.FORWARD_CONSTRUCTION_VERSION,
         "sigma_source": spec.sigma_source,
         "shrinkage_alpha": spec.alpha,
         "sigma_path": spec.sigma_path,
@@ -514,6 +520,7 @@ def score_state(
             "step": int(np.asarray(state.step)),
             "native_sigma_val_loss": native_val_loss,
             "val_mse": analysis.calculate_mse(mapped, y_true_val),
+            "val_closed_sigma_mse": closed_validation_mse(spec, mapped, y_true_val),
             "recovery_percent": calculate_recovery_percentage(
                 assignments,
                 weights,
@@ -526,17 +533,6 @@ def score_state(
         },
         weights,
     )
-
-
-def select_best_rows(scores: pd.DataFrame) -> pd.DataFrame:
-    selected = []
-    for _, group in scores.groupby("run_id", sort=False):
-        valid = group[np.isfinite(group["val_mse"])].sort_values(
-            ["val_mse", "convergence_rank"], kind="stable"
-        )
-        if not valid.empty:
-            selected.append(valid.iloc[0])
-    return pd.DataFrame(selected).reset_index(drop=True)
 
 
 def summarize(results: pd.DataFrame) -> pd.DataFrame:
@@ -746,9 +742,12 @@ def write_manifest(args, specs: list[RunSpec], sigma_metrics: pd.DataFrame) -> N
         "jax_backend": jax.default_backend(),
         "maxent": shrinkage.MAXENT,
         "primary_loss": "hdx_uptake_sigma_MSE_loss",
-        "frame_averaging_mode": "uptake",
+        "frame_averaging_mode": "frame_uptake",
+        "forward_construction_version": shrinkage.FORWARD_CONSTRUCTION_VERSION,
+        "intrinsic_rate_unit": "min^-1",
+        "intrinsic_rate_provider": "jaxent_calculate_HDXrate",
         "checkpoint_policies": [
-            "ordinary_val_mse_over_native_convergence_states",
+            SELECTION_POLICY,
             "final_optimization_state",
         ],
         "coordinate_definition": "aligned_ca_displacement_dot_product_covariance_divided_by_3",
@@ -764,6 +763,7 @@ def write_manifest(args, specs: list[RunSpec], sigma_metrics: pd.DataFrame) -> N
         "completed_fit_files": sum(run_is_complete(spec) for spec in specs),
         "sigma_rows": len(sigma_metrics),
         "settings": {
+            "trajectory_dir": str(args.trajectory_dir.resolve()),
             "n_steps": args.n_steps,
             "learning_rate": args.learning_rate,
             "ema_alpha": args.ema_alpha,

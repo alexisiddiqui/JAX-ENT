@@ -20,7 +20,7 @@ import numpy as np
 
 from jaxent.examples.common.loading import featurise_trajectory, load_HDXer_kints
 from jaxent.src.custom_types.config import FeaturiserSettings
-from jaxent.src.interfaces.topology import PTSerialiser
+from jaxent.src.interfaces.topology import PTSerialiser, TopologyFactory
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
 
 
@@ -35,7 +35,12 @@ def _sha256(path: Path) -> str:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--structure", choices=("101", "109"), default="101")
+    parser.add_argument(
+        "--hbond-ignore", type=int, nargs=2, default=None, metavar=("LO", "HI"),
+        help="exclusion window for H-bond (amide H -> O) contacts only; default = residue_ignore (-2 2)",
+    )
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
         "--modes",
         nargs="+",
@@ -47,14 +52,26 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    if args.output_dir is None:
+        name = "_featurise_physics_v2" + ("" if args.structure == "101" else "_109")
+        args.output_dir = HERE / name
+        if args.hbond_ignore is not None:
+            lo, hi = args.hbond_ignore
+            args.output_dir = args.output_dir.with_name(args.output_dir.name + f"_hb{lo}_{hi}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    topology_path = DATA / "MoPrP_max_plddt_4334.pdb"
+    # 101: archived ensembles/PDB; 109: current clusters with the 109 construct (resid == seq + 1)
+    topology_path = DATA / (
+        "MoPrP_max_plddt_4334.pdb"
+        if args.structure == "101"
+        else "MoPrP109_s20_r1_msa1-127_n12700_do1_20260904_191954_protonated_max_plddt_1627.pdb"
+    )
+    traj_root = DATA / ("_archived_MoPrP101" if args.structure == "101" else "")
     rate_path = DATA / "_MoPrP/hdxrate_poly_pD4p0_298K_min.dat"
     time_path = DATA / "_MoPrP/moprp.times"
     trajectories = {
-        "AF2_MSAss": DATA / "_cluster_MoPrP/clusters/all_clusters.xtc",
-        "AF2_filtered": DATA / "_cluster_MoPrP_filtered/clusters/all_clusters.xtc",
+        "AF2_MSAss": traj_root / "_cluster_MoPrP/clusters/all_clusters.xtc",
+        "AF2_filtered": traj_root / "_cluster_MoPrP_filtered/clusters/all_clusters.xtc",
     }
     for path in (topology_path, rate_path, time_path, *trajectories.values()):
         if not path.exists():
@@ -62,6 +79,20 @@ def main() -> None:
 
     exact_times_min = np.loadtxt(time_path, dtype=float)[1:] * 60.0
     rate_data = load_HDXer_kints(str(rate_path))
+    if args.structure == "109":
+        # rate file is numbered as moprp.seq; the 109 PDB resid is seq + 1
+        rates, rate_topology = rate_data
+        shifted = [
+            TopologyFactory.from_single(chain="A", residue=int(t._get_active_residues(check_trim=False)[0]) + 1)
+            for t in rate_topology
+        ]
+        # C-terminal residues beyond the rate file are never HDX-mapped; pad with a dummy rate
+        last = max(int(t._get_active_residues(check_trim=False)[0]) for t in shifted)
+        extra = list(range(last + 1, 110))
+        rate_data = (
+            jnp.concatenate([jnp.asarray(rates), jnp.ones(len(extra))]),
+            shifted + [TopologyFactory.from_single(chain="A", residue=r) for r in extra],
+        )
     featuriser_settings = FeaturiserSettings(name="MoPrP_BV_physics_v2", batch_size=None)
 
     generated = []
@@ -73,6 +104,8 @@ def main() -> None:
         config.heavy_radius = 6.5
         config.o_radius = 2.4
         config.residue_ignore = (-2, 2)
+        if args.hbond_ignore is not None:
+            config.residue_ignore_hbond = tuple(args.hbond_ignore)
         config.mda_selection_exclusion = "resname PRO"
         config.mda_contact_environment = "protein"
 
@@ -114,7 +147,7 @@ def main() -> None:
                 )
             if len(set(residue_keys)) != len(residue_keys):
                 raise RuntimeError(f"duplicate feature residue keys for {output_name}")
-            if ("A", 101) not in residue_keys:
+            if args.structure == "101" and ("A", 101) not in residue_keys:
                 raise RuntimeError(f"C-terminal amide A:101 missing from {output_name}")
             if mode == "hard" and not hard_contacts_are_integer:
                 raise RuntimeError(f"hard contacts are not binary counts for {output_name}")

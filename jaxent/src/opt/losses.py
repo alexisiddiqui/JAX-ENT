@@ -312,6 +312,23 @@ def max_entropy_loss(
     return loss, loss
 
 
+def stable_positive_convex_kl(prior: Array, prediction: Array) -> Array:
+    """Generalized KL(prior || prediction) for strictly positive weights.
+
+    Equivalent to sum(p*log(p/q) + q-p). Near equality evaluate
+    p * (r-log1p(r)), r=(q-p)/p, with its Taylor series to avoid
+    cancellation. No clipping of values or gradients, or exp(log(q)) roundtrip.
+    The existing MaxEnt caller smooths and normalizes both distributions.
+    """
+    relative = (prediction - prior) / prior
+    near = jnp.abs(relative) < 0.01
+    # Mask before arithmetic so unused polynomial branches cannot overflow.
+    r = jnp.where(near, relative, 0.0)
+    series = r * r * (0.5 + r * (-1/3 + r * (1/4 + r * (-1/5 + r/6))))
+    far = prior * (jnp.log(prior) - jnp.log(prediction)) + (prediction - prior)
+    return jnp.sum(jnp.where(near, prior * series, far))
+
+
 def maxent_convexKL_loss(
     model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: int | str | None
 ) -> tuple[Array, Array]:
@@ -325,11 +342,7 @@ def maxent_convexKL_loss(
 
     prior_frame_weights = prior_frame_weights / jnp.sum(prior_frame_weights)
 
-    loss = optax.losses.convex_kl_divergence(
-        log_predictions=jnp.log(simulation_weights),
-        targets=prior_frame_weights,
-    ) 
-    # loss = loss - jnp.log(num_frames)
+    loss = stable_positive_convex_kl(prior_frame_weights, simulation_weights)
     return loss, loss
 
 

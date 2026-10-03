@@ -311,7 +311,8 @@ def optimisation_step(
         )
 
         finite = jnp.isfinite(loss_value)
-        eligible = finite & (loss_value >= inputs.tolerance)
+        # A negative objective is not evidence of a near-zero positive loss.
+        eligible = finite & ((loss_value < 0) | (loss_value >= inputs.tolerance))
         if reset_threshold_cooldown_on_oscillation:
             updated_convergence = reset_threshold_cooldown(
                 updated_convergence,

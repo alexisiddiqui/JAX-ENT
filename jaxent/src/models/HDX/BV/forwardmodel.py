@@ -287,7 +287,11 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=h_atoms,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
-                residue_ignore=self.config.residue_ignore,
+                residue_ignore=(
+                    self.config.residue_ignore_hbond
+                    if self.config.residue_ignore_hbond is not None
+                    else self.config.residue_ignore
+                ),
                 switch=self.config.switch,
                 environment_selection=self.config.mda_contact_environment,
                 contact_mode=self.config.contact_mode,

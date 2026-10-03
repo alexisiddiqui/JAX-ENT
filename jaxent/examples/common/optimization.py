@@ -130,6 +130,7 @@ def run_optimization(
     lr_adjustment: bool = True,
     frame_average_impl: str = "tensordot",
     initial_frame_weights: Array | None = None,
+    frame_regularizer: tuple[str, JaxEnt_Loss, object, float] | None = None,
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -141,6 +142,10 @@ def run_optimization(
 
     When ``opt_config`` is provided, its fields override the corresponding
     keyword arguments.
+
+    ``frame_regularizer=(name, loss, target, strength)`` replaces the MaxEnt
+    slot, including its target and coefficient. The default retains MaxEnt.
+    The native slot-weight normalization and optimizer are unchanged.
     """
     run_start = time.time()
     # Apply OptimizationConfig overrides
@@ -170,6 +175,11 @@ def run_optimization(
     # Build loss function list from config
     primary_loss = get_loss_function_by_name(loss_config.primary_loss)
     loss_fn_list: list[JaxEnt_Loss] = [primary_loss, maxent_convexKL_loss]
+    if frame_regularizer is not None:
+        _, frame_loss, _, frame_strength = frame_regularizer
+        if not math.isfinite(frame_strength) or frame_strength < 0:
+            raise ValueError("frame regularizer strength must be finite and nonnegative")
+        loss_fn_list[1] = frame_loss
     data_targets_list: list = []
     indexes_list: list[int] = [0, 0]
 
@@ -198,6 +208,8 @@ def run_optimization(
     _fwd_weights = _build_loss_slot_weights(
         maxent_scaling, n_reg, loss_config.bv_reg_scaling
     )
+    if frame_regularizer is not None:
+        _fwd_weights[1] = frame_regularizer[3]
 
     _norm_fns = jnp.ones(n_loss_slots)
     if not loss_config.normalize_bv_reg and n_reg > 0:
@@ -225,6 +237,8 @@ def run_optimization(
 
     # Build data_to_fit tuple
     data_targets_list = [loader, parameters]
+    if frame_regularizer is not None:
+        data_targets_list[1] = frame_regularizer[2]
     if loss_config.regularization_losses:
         data_targets_list.append(parameters)
 
@@ -300,6 +314,10 @@ def run_optimization(
             "loss_config": loss_config.__dict__,
             "opt_config": opt_config.__dict__ if opt_config is not None else {},
             "effective_settings": {
+                "frame_regularizer": (
+                    frame_regularizer[0] if frame_regularizer is not None else "maxent_convexKL_loss"
+                ),
+                "frame_regularizer_weight": _fwd_weights[1],
                 "execution_mode": execution_mode,
                 "frame_average_impl": frame_average_impl,
                 "frame_averaging_mode": next(

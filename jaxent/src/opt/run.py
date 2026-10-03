@@ -167,7 +167,8 @@ def _build_chunk_state(
         executed_steps=jnp.array(0, dtype=jnp.int32),
         active=(
             jnp.isfinite(dense_state.losses.total_train_loss)
-            & (dense_state.losses.total_train_loss >= jnp.asarray(tolerance, dtype=jnp.float32))
+            & ((dense_state.losses.total_train_loss < 0)
+               | (dense_state.losses.total_train_loss >= jnp.asarray(tolerance, dtype=jnp.float32)))
         ),
         best=StateSnapshot(
             params=dense_state.params,
@@ -309,6 +310,18 @@ def result_to_history(
         state = state_from_record(int(index)) if save_states else None
         if save_states:
             history.states.append(state)
+
+    # A valid zero-step termination must still have an inspectable terminal
+    # state. Never substitute the running-best state for the terminal state.
+    if save_states and not history.states:
+        terminal_record = _make_record(
+            result.carry, jnp.asarray(False), jnp.asarray(0.), jnp.asarray(True),
+            parameter_partitions=state_parameter_partitions,
+        )
+        history.states.append(OptimizationState(
+            params=terminal_record.params, opt_state=final_state.opt_state,
+            step=final_state.step, losses=final_state.losses, gradients=final_state.gradients,
+        ))
 
     if save_convergence:
         snapshots = result.carry.convergence_snapshots

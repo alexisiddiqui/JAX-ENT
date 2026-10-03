@@ -16,6 +16,7 @@ Nothing here fits anything; it only assembles inputs and validates their alignme
 
 from __future__ import annotations
 
+import os
 import hashlib
 import csv
 import json
@@ -36,7 +37,16 @@ from jaxent.src.analysis.state_population import (
 PACKAGE_ROOT = Path(__file__).resolve().parents[4]
 BASE = PACKAGE_ROOT / "examples/2_CrossValidation"
 MOPRP = BASE / "data/_MoPrP"
-FEATURES_V2 = BASE / "fitting/jaxENT/_featurise_physics_v2"
+# MOPRP_STRUCTURE=109 selects features built on the MoPrP109 construct (resid == seq + 1)
+STRUCTURE = os.environ.get("MOPRP_STRUCTURE", "101")
+if STRUCTURE not in ("101", "109"):
+    raise ValueError(f"MOPRP_STRUCTURE must be 101 or 109, got {STRUCTURE!r}")
+# MOPRP_FEATURES_SUFFIX (e.g. "_hb-1_1") selects features built with a different H-bond exclusion window
+FEATURES_V2 = BASE / (
+    "fitting/jaxENT/_featurise_physics_v2"
+    + ("" if STRUCTURE == "101" else "_109")
+    + os.environ.get("MOPRP_FEATURES_SUFFIX", "")
+)
 STATE_RATIOS_JSON = BASE / "analysis/state_ratios.json"
 CLUSTER_CSV = (
     BASE
@@ -145,9 +155,19 @@ class EnsembleInputs(BlindedEnsembleInputs):
 def _feature_bundle(stem: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     topology = json.loads((FEATURES_V2 / f"topology_{stem}_hard.json").read_text())["topologies"]
     residue_ids = np.asarray([item["residues"][0] for item in topology], dtype=int)
+    keep = np.ones(residue_ids.size, dtype=bool)
+    if STRUCTURE == "109":
+        residue_ids = residue_ids - 1  # renumber to moprp.seq
+        # restrict to the residues present in the 101 features so fits are like-for-like
+        ref = json.loads(
+            (BASE / "fitting/jaxENT/_featurise_physics_v2" / f"topology_{stem}_hard.json").read_text()
+        )["topologies"]
+        keep = np.isin(residue_ids, [item["residues"][0] for item in ref])
+        residue_ids = residue_ids[keep]
     with np.load(FEATURES_V2 / f"features_{stem}_hard.npz") as data:
         heavy = np.asarray(data["heavy_contacts"], dtype=np.float64)
         acceptor = np.asarray(data["acceptor_contacts"], dtype=np.float64)
+    heavy, acceptor = heavy[keep], acceptor[keep]
     if heavy.shape[0] != residue_ids.size or acceptor.shape != heavy.shape:
         raise ValueError(f"{stem}: features not aligned to residue ids")
     return residue_ids, heavy, acceptor

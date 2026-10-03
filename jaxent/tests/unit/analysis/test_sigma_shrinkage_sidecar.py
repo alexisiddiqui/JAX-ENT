@@ -65,13 +65,14 @@ def test_oracle_weights_exclude_intermediates():
     assert np.isclose(weights[assignments == -1].sum(), 0.0)
 
 
-def test_select_best_rows_uses_val_mse_and_first_native_state_on_tie():
+def test_select_best_rows_uses_closed_sigma_and_first_native_state_on_tie():
     frame = pd.DataFrame(
         {
             "run_id": ["a", "a", "a", "b"],
             "convergence_rank": [0, 1, 2, 0],
             "native_sigma_val_loss": [0.01, 9.0, 0.001, 1.0],
-            "val_mse": [0.4, 0.2, 0.2, np.nan],
+            "val_mse": [0.001, 0.2, 0.3, 0.1],
+            "val_closed_sigma_mse": [0.4, 0.2, 0.2, np.nan],
         }
     )
     selected = sidecar.select_best_rows(frame)
@@ -190,6 +191,18 @@ def test_configure_model_modes_are_native_implementations():
     uptake_forward = uptake.forward[sidecar.m_key("HDX_peptide")]
     linear_forward = linear.forward[sidecar.m_key("HDX_peptide")]
     assert rate_forward.frame_averaging_mode == "rate"
-    assert uptake_forward.frame_averaging_mode == "uptake"
-    assert len(uptake_forward.frame_group_masks) == 3
+    assert uptake_forward.frame_averaging_mode == "frame_uptake"
+    assert uptake_forward.frame_group_masks is None
     assert linear_forward.frame_averaging_mode == "linear_uptake"
+    assert linear.params.kint_unit == "min^-1"
+    assert linear.params.time_unit == "min"
+
+
+def test_defaults_use_repository_native_intrinsic_rates_and_matching_target():
+    assert sidecar.DEFAULT_FEATURES_DIR.name == "fit_features"
+    assert sidecar.DEFAULT_FEATURES_DIR.parent.name == "_self_consistent_iso"
+    assert sidecar.DEFAULT_DATASPLIT_DIR.name == "datasplits"
+    manifest = sidecar.json.loads(sidecar.DEFAULT_RATE_SOURCE_MANIFEST.read_text())
+    assert manifest["kint_unit"] == "min^-1"
+    features, topology = sidecar.load_features(sidecar.DEFAULT_FEATURES_DIR, "ISO_BI")
+    assert features.features_shape[0] == len(topology) == 294

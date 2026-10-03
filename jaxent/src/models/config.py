@@ -28,6 +28,8 @@ class BV_model_Config(BaseConfig):
     num_timepoints: int = 0
     timepoints: Array = jnp.array([0.167, 1.0, 10.0])
     residue_ignore: tuple[int, int] = (-2, 2)  # Range of residues to ignore relative to donor
+    # Optional separate exclusion window for the H-bond (amide H -> O) contacts; None reuses residue_ignore
+    residue_ignore_hbond: tuple[int, int] | None = None
     peptide_trim: int = 1  # HDXer by defualt uses 1 residue trim but this should be 2
     peptide: bool = False
     switch: bool = False

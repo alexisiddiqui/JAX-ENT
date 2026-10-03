@@ -77,6 +77,32 @@ def test_tolerance_termination_stops_before_n_steps() -> None:
     assert not bool(result.carry.active)
 
 
+def test_zero_step_termination_retains_initial_terminal_state() -> None:
+    result, optimizer, _ = _run_chunk(3, n_steps=10, tolerance=1e9)
+    assert int(result.carry.executed_steps) == 0
+    history = result_to_history(result, optimizer)
+    assert len(history.states) == 1
+    assert int(history.states[0].step) == 0
+    assert not result_to_history(result, optimizer, save_states=False).states
+
+
+def test_negative_loss_does_not_trigger_absolute_tolerance_stop() -> None:
+    simulation, _ = _create_synthetic_simulation()
+    optimizer = OptaxOptimizer(learning_rate=.1)
+    initial = optimizer.initialise(simulation)
+
+    def negative_loss(model, target, index):
+        train, val = synthetic_output_l2_loss(model, target, index)
+        return train-1000., val-1000.
+
+    carry, inputs, losses, indexes = _build_chunk_state(
+        simulation, (jnp.asarray([10.], dtype=jnp.float32),), 1e-10,
+        [-jnp.inf], [0], [negative_loss], initial, optimizer)
+    assert bool(carry.active)
+    result = run_sequential(carry, inputs, 3, 3, optimizer, losses, indexes, 2)
+    assert int(result.carry.executed_steps) == 3
+
+
 def test_convergence_carry_contains_only_scalar_leaves() -> None:
     result, _, _ = _run_chunk(3, n_steps=1)
     leaves = jax.tree_util.tree_leaves(result.carry.convergence)

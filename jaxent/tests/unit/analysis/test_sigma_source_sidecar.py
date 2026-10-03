@@ -107,13 +107,14 @@ def test_default_grid_contains_216_fits(tmp_path):
     assert {spec.sigma_source for spec in specs} == set(sidecar.DEFAULT_SOURCES)
 
 
-def test_selection_uses_val_mse_and_first_native_state_on_tie():
+def test_selection_uses_closed_sigma_and_first_native_state_on_tie():
     frame = pd.DataFrame(
         {
             "run_id": ["a", "a", "a", "b"],
             "convergence_rank": [0, 1, 2, 0],
             "native_sigma_val_loss": [0.01, 9.0, 0.001, 1.0],
-            "val_mse": [0.4, 0.2, 0.2, np.nan],
+            "val_mse": [0.001, 0.2, 0.3, 0.1],
+            "val_closed_sigma_mse": [0.4, 0.2, 0.2, np.nan],
         }
     )
 
