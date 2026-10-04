@@ -273,8 +273,10 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             self.train,
             self.val,
             self.test,
-            jnp.asarray(self.y_true),
-            None if self.covariance_matrix is None else jnp.asarray(self.covariance_matrix),
+            # Pass leaves through unconverted: JAX re-flattens with placeholder leaves
+            # (e.g. ArgInfo during AOT compile), which jnp.asarray cannot handle.
+            self.y_true,
+            self.covariance_matrix,
         )
 
         # Everything else is metadata that doesn't need transformation
