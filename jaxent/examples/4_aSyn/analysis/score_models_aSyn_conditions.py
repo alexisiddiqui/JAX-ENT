@@ -12,6 +12,7 @@ import pandas as pd
 
 from jaxent.examples.common import analysis, plotting
 from jaxent.examples.common.config import ExperimentConfig
+from jaxent.examples.common.manifest import load_processing_manifest, atomic_to_csv
 from jaxent.examples.common.paths import derive_processed_output_dir, find_most_recent_dir
 from jaxent.src.custom_types.HDX import HDX_protection_factor
 from jaxent.src.custom_types.datapoint import ExpD_Datapoint
@@ -127,6 +128,7 @@ def main() -> None:
     else:
         output_scores_dir = processed_dir / f"_scores_{processed_dir.name}"
     output_scores_dir.mkdir(parents=True, exist_ok=True)
+    load_processing_manifest(processed_dir)
 
     print(f"processed_data_dir: {processed_dir}")
     print(f"datasplit_dir:      {datasplit_dir}")
@@ -168,13 +170,16 @@ def main() -> None:
                 else np.full(len(pred_ln_pf_stack), np.nan)
             )
 
-            convergence_vals = np.arange(1, len(pred_ln_pf_stack) + 1, dtype=float)
             conv_file = run_dir / "convergence_thresholds.txt"
-            if conv_file.exists():
-                with open(conv_file, encoding="utf-8") as f:
-                    loaded = [float(line.strip()) for line in f if line.strip()]
-                if len(loaded) == len(pred_ln_pf_stack):
-                    convergence_vals = np.asarray(loaded, dtype=float)
+            if not conv_file.exists():
+                raise FileNotFoundError(f"Missing convergence_thresholds.txt for {run_dir}")
+            loaded = np.atleast_1d(np.loadtxt(conv_file))
+            if len(loaded) != len(pred_ln_pf_stack):
+                raise ValueError(
+                    f"convergence_thresholds.txt for {run_dir} has {len(loaded)} entries, "
+                    f"expected {len(pred_ln_pf_stack)}"
+                )
+            convergence_vals = loaded
 
             cache_key = (
                 meta["ensemble"],
@@ -270,7 +275,7 @@ def main() -> None:
     scores_df = pd.DataFrame(all_scores)
     scores_df.replace([np.inf, -np.inf], np.nan, inplace=True)
     output_csv = output_scores_dir / "model_scores.csv"
-    scores_df.to_csv(output_csv, index=False)
+    atomic_to_csv(scores_df, output_csv)
     print(f"Saved {len(scores_df)} rows to: {output_csv}")
 
     plotting_df = scores_df.copy()

@@ -146,12 +146,20 @@ Extracts the MoPrP data including NMR PDB crops, reference structures, HDX segme
 **Script**: [extract_data_ValDX.py](data/extract_data_ValDX.py)
 
 ```bash
-python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py
+python jaxent/examples/2_CrossValidation/data/extract_data_ValDX.py \
+    --structure jaxent/examples/2_CrossValidation/data/MoPrP109_s20_r1_msa1-127_n12700_do1_20260904_191954_protonated_max_plddt_1627.pdb \
+    --sequence jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.seq
 ```
 
 Extracts and formats the ValDX (Validated Dynamics by HDX) experimental data into the standard JAX-ENT format:
 - **Deuterium fraction file** (`MoPrP_dfrac.dat`) with measured HDX uptake values across timepoints.
-- **Segments file** (`MoPrP_segments.txt`) with peptide start/end residue indices.
+- **Segments file** (`MoPrP_segments.txt`) with peptide start/end IDs mapped to the supplied PDB.
+- **Protection-factor file** (`MoPrP_pfactors.dat`) with positive fitted values mapped to the supplied PDB.
+
+The segment and protection-factor source IDs are interpreted as one-based positions in
+`moprp.seq`. The full HDX sequence must occur exactly and contiguously in a unique PDB chain;
+use `--chain` when the same sequence occurs in more than one chain. The bundled MoPrP sequence
+maps to chain A residues 2–102 of the structure shown above.
 
 #### 1c. Calculate State Ratios
 

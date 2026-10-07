@@ -67,15 +67,13 @@ class Model_Parameters:
 class Simulation_Parameters:
     def __init__(
         self,
-        frame_weights,
-        frame_mask,
+        frame_weight_logits,
         model_parameters,
         forward_model_weights,
         forward_model_scaling,
         normalise_loss_functions,
     ):
-        self.frame_weights = frame_weights
-        self.frame_mask = frame_mask
+        self.frame_weight_logits = frame_weight_logits
         self.model_parameters = model_parameters
         self.forward_model_weights = forward_model_weights
         self.forward_model_scaling = forward_model_scaling
@@ -83,8 +81,7 @@ class Simulation_Parameters:
 
     def tree_flatten(self):
         children = (
-            self.frame_weights,
-            self.frame_mask,
+            self.frame_weight_logits,
             self.model_parameters,
             self.forward_model_weights,
             self.forward_model_scaling,
@@ -100,6 +97,10 @@ class Simulation_Parameters:
     @staticmethod
     def normalize_weights(params):
         return params
+
+    @property
+    def frame_weight_simplex(self):
+        return jax.nn.softmax(self.frame_weight_logits)
 
 # Register all classes as PyTrees
 for cls in [Input_Features, ForwardPass, ForwardModel, Model_Parameters, Simulation_Parameters]:
@@ -129,10 +130,8 @@ class Simulation:
     def forward(self, params):
         """The method that is not JIT-compatible."""
         self.params = Simulation_Parameters.normalize_weights(params)
-        masked_frame_weights = jnp.where(self.params.frame_mask < 0.5, 0, self.params.frame_weights)
-        masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
         average_features = [
-            frame_average_features(feature.features, self.params.frame_weights)
+            frame_average_features(feature.features, self.params.frame_weight_simplex)
             for feature in self.input_features
         ]
         output_features = [
@@ -147,10 +146,8 @@ class Simulation:
 def forward_jit(params, input_features, forwardpass, model_parameters):
     """JIT-friendly version of forward without class attributes."""
     params = Simulation_Parameters.normalize_weights(params)
-    masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-    masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
     average_features = [
-        frame_average_features(feature.features, params.frame_weights)
+        frame_average_features(feature.features, params.frame_weight_simplex)
         for feature in input_features
     ]
     output_features = [
@@ -175,12 +172,10 @@ def test_data():
     forward_models = [ForwardModel() for _ in range(num_models)]
 
     frame_weights = jnp.ones(num_frames) / num_frames
-    frame_mask = jnp.ones(num_frames)
     model_parameters = [Model_Parameters(jnp.ones(feature_dim)) for _ in range(num_models)]
     
     params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=frame_mask,
+        frame_weight_logits=jnp.log(frame_weights),
         model_parameters=model_parameters,
         forward_model_weights=jnp.ones(num_models),
         forward_model_scaling=jnp.ones(num_models),

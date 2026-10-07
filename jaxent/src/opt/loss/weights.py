@@ -179,77 +179,6 @@ def minent_ess_builder():
     )
 
 
-# Sparse Weight Handling Factory
-def create_sparse_parameter_loss(
-    loss_fn: Callable,
-    normalise: bool = True,
-    eps: float = 1e-8,
-    scale_eps: bool = False,
-) -> JaxEnt_Loss:
-    """Create a sparse parameter loss using factory approach"""
-
-    def sparse_parameter_loss(
-        model: InitialisedSimulation, dataset: Simulation_Parameters, prediction_index: None
-    ) -> tuple[Array, Array]:
-        # Apply mask to weights
-        active_mask = model.params.frame_mask > 0.5
-
-        # Get masked weights
-        model_weights = jnp.abs(model.params.frame_weights) * active_mask
-        prior_weights = jnp.abs(dataset.frame_weights) * active_mask
-
-        # Normalize with epsilon
-        current_eps = jnp.where(scale_eps, eps * jnp.sum(active_mask), eps)
-
-        def _normalise_weights_sparse(weights: jnp.ndarray) -> jnp.ndarray:
-            weights = jnp.abs(weights) + current_eps
-            normalized = weights / jnp.sum(weights)
-            return jnp.where(jnp.asarray(normalise), normalized, weights)
-
-        model_weights = _normalise_weights_sparse(model_weights)
-        prior_weights = _normalise_weights_sparse(prior_weights)
-
-        # Apply loss function
-        loss = loss_fn(model_weights, prior_weights)
-        return loss, loss
-
-    return sparse_parameter_loss
-
-
-@register_loss("sparse_max_entropy")
-def sparse_max_entropy_builder():
-    """Sparse maximum entropy loss using masked weights"""
-    return create_sparse_parameter_loss(
-        loss_fn=_softmax_cross_entropy_loss,
-        normalise=True,
-        eps=1e-8,
-        scale_eps=False,
-    )
-
-
-# Mask Regularization Loss Factory
-def create_mask_l0_loss() -> JaxEnt_Loss:
-    """Create mask L0 loss function using factory approach"""
-
-    def mask_l0_loss(
-        model: InitialisedSimulation,
-        dataset: Simulation_Parameters,
-        prediction_index: None,
-    ) -> tuple[Array, Array]:
-        # L0 penalty - sum of mask values (encourages sparsity)
-        frame_masks = model.params.frame_mask
-        loss = jnp.sum(frame_masks)
-        return loss, loss
-
-    return mask_l0_loss
-
-
-@register_loss("mask_l0")
-def create_mask_l0_loss_factory():
-    """Mask L0 regularization loss factory"""
-    return create_mask_l0_loss()
-
-
 # Custom Normalization Factory
 def create_custom_normalized_loss(
     loss_fn: Callable,
@@ -286,8 +215,8 @@ def create_custom_normalized_loss(
                 weights = jnp.abs(weights) + eps
                 return weights / jnp.sum(weights)
 
-        model_weights = _normalise_weights_custom(model.params.frame_weights)
-        prior_weights = _normalise_weights_custom(dataset.frame_weights)
+        model_weights = _normalise_weights_custom(model.params.frame_weight_simplex)
+        prior_weights = _normalise_weights_custom(dataset.frame_weight_simplex)
 
         loss = loss_fn(model_weights, prior_weights)
         return loss, loss

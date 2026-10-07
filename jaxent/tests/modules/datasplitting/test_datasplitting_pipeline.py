@@ -301,7 +301,9 @@ END
         featuriser_settings = FeaturiserSettings(name="test_features", batch_size=None)
 
         # Mock the run_featurise function to return expected structure
-        with patch("jaxent.src.featurise.run_featurise") as mock_featurise:
+        with patch(
+            "jaxent.tests.modules.datasplitting.test_datasplitting_pipeline.run_featurise"
+        ) as mock_featurise:
             # Create mock features and topology - match the actual output structure
             mock_features = BV_input_features(
                 heavy_contacts=jnp.ones((3, 10)),  # 1 residue (common), 10 frames

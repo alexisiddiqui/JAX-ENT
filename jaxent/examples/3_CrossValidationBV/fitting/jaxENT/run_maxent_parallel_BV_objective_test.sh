@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Runs:
 # optimise_ISO_TRI_BI_splits_maxENT.py
 # ../analysis/recovery_analysis_ISO_TRI_BI_precluster.py
@@ -10,13 +11,14 @@
 cd "$(dirname "$0")" || exit
 DIR_WD=$(pwd)
 ANA_DIR="../../analysis"
+PYTHON_RUNNER=(env UV_CACHE_DIR=/tmp/jaxent-uv-cache uv run --no-sync python)
 echo "Working directory: $DIR_WD"
 
 # --- Changed: add configurable defaults and extended argument parsing ---
 # Defaults (can be overridden via CLI)
-PARALLEL_JOBS=6
+PARALLEL_JOBS=10
 DEFAULT_MAXENT_VALUES_STR="1,10,100,1000,10000,100000,1000000"
-DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000,5000,10000,100000"
+DEFAULT_MAXENT_VALUES_STR="1,5,10,50,100,500,1000"
 
 # DEFAULT_MAXENT_VALUES_STR="100,1000"
 
@@ -32,10 +34,12 @@ LEARNING_RATE=1.0
 EMA_ALPHA=0.5
 FORWARD_MODEL_SCALING=1000.0
 MODEL_PARAMETERS_LR_SCALE=1.0
+UPTAKE_MODEL="standard"
+FRAME_AVERAGING_MODE="rate"
 # --- Added defaults for ensembles, losses and split types ---
 DEFAULT_ENSEMBLES_STR="AF2_filtered,AF2_MSAss"
 ENSEMBLES_STR="$DEFAULT_ENSEMBLES_STR"
-DEFAULT_LOSSES_STR="mcMSE,MSE,Sigma_MSE"
+DEFAULT_LOSSES_STR="MSE"
 # DEFAULT_LOSSES_STR="Sigma_MSE,mcMSE"
 
 BV_REG_LOSSES_STR="L1"
@@ -97,6 +101,14 @@ while [[ $# -gt 0 ]]; do
       FORWARD_MODEL_SCALING="$2"; shift 2;;
     --forward-model-scaling=*)
       FORWARD_MODEL_SCALING="${1#*=}"; shift;;
+    --uptake-model)
+      UPTAKE_MODEL="$2"; shift 2;;
+    --uptake-model=*)
+      UPTAKE_MODEL="${1#*=}"; shift;;
+    --frame-averaging-mode)
+      FRAME_AVERAGING_MODE="$2"; shift 2;;
+    --frame-averaging-mode=*)
+      FRAME_AVERAGING_MODE="${1#*=}"; shift;;
     --model-parameters-lr-scale)
       MODEL_PARAMETERS_LR_SCALE="$2"; shift 2;;
     --model-parameters-lr-scale=*)
@@ -131,6 +143,7 @@ echo "Model params LR scale: $MODEL_PARAMETERS_LR_SCALE"
 echo "Ensembles (raw): $ENSEMBLES_STR"
 echo "Losses (raw): $LOSSES_STR"
 echo "Split types (raw): $SPLIT_TYPES_STR"
+echo "Frame averaging mode: $FRAME_AVERAGING_MODE"
 
 # Convert comma-separated strings into arrays
 IFS=',' read -r -a MAXENT_VALUES <<< "$MAXENT_VALUES_STR"
@@ -182,7 +195,7 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
             echo "    Maxent: $MAXENT, BV reg: $BV_REG ($BV_REG_LOSS)"
             # --- Changed: ensure no more than PARALLEL_JOBS are running concurrently ---
             wait_for_slot
-            python optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py \
+            "${PYTHON_RUNNER[@]}" optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py \
               --ensemble "$ENSEMBLE" \
               --loss-function "$LOSS" \
               --maxent-range "$MAXENT,$MAXENT" \
@@ -190,11 +203,11 @@ for ENSEMBLE in "${ENSEMBLES[@]}"; do
               --bv-reg-function "$BV_REG_LOSS" \
               --split-types "$SPLIT" \
               --n-steps "$N_STEPS" \
-              --initial-steps "$INITIAL_STEPS" \
-              --initial-learning-rate "$INITIAL_LR" \
               --learning-rate "$LEARNING_RATE" \
               --ema-alpha "$EMA_ALPHA" \
               --forward-model-scaling "$FORWARD_MODEL_SCALING" \
+              --frame-averaging-mode "$FRAME_AVERAGING_MODE" \
+              --uptake-model "$UPTAKE_MODEL" \
               --model-parameters-lr-scale "$MODEL_PARAMETERS_LR_SCALE" \
               --output-dir "$OPT_OUTPUT_DIR" \
               > "${OPT_OUTPUT_DIR}/logs/${ENSEMBLE}_${LOSS}_maxent${MAXENT}_bvreg${BV_REG}_${BV_REG_LOSS}_split${SPLIT}.log" 2>&1 &
@@ -210,25 +223,15 @@ wait  # Wait for all background jobs to finish
 echo "All optimisation tasks completed."
 echo "Starting analysis scripts..."
 # Run analysis scripts sequentially
-echo "Running recovery analysis..."
-python "${ANA_DIR}/recovery_analysis_ISO_TRI_BI_2D_BV.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/recovery_analysis.log" 2>&1
-echo "Running weights validation..."
-python "${ANA_DIR}/weights_validation_ISO_TRI_2D_BV.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/weights_validation.log" 2>&1
-echo "Running Loss Analysis..."
-python "${ANA_DIR}/analyse_loss_ISO_TRI_BI_2D_BV.py" \
-  --results-dir "$OPT_OUTPUT_DIR" \
-  > "${OPT_OUTPUT_DIR}/logs/Analyse_Loss.log" 2>&1
 # New comprehensive analysis pipeline
 echo "Processing optimization results..."
-python "${ANA_DIR}/process_optimisation_results.py" \
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/process_optimisation_results.py" \
   --results-dir "$OPT_OUTPUT_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
   --clustering-dir "${DIR_WD}/../../../2_CrossValidation/analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters" \
+  --frame-averaging-mode "$FRAME_AVERAGING_MODE" \
+  --uptake-model "$UPTAKE_MODEL" \
   > "${OPT_OUTPUT_DIR}/logs/process_optimisation_results.log" 2>&1
 
 # Determine the processed data directory name
@@ -237,7 +240,7 @@ BASENAME=$(basename "$OPT_OUTPUT_DIR")
 PROCESSED_DIR="${DIR_WD}/_processed_${BASENAME}"
 
 echo "Scoring models..."
-python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
   --processed-data-dir "$PROCESSED_DIR" \
   --datasplit-dir "${DIR_WD}/_datasplits" \
   --features-dir "${DIR_WD}/_featurise" \
@@ -250,33 +253,15 @@ python "${ANA_DIR}/score_models_ISO_TRI_BI.py" \
 SCORES_BASENAME=$(basename "$PROCESSED_DIR")
 SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
 
-echo "Analyzing scores with mixed linear model..."
-python "${ANA_DIR}/analyse_scores_mixed_linear_model.py" \
-  --scores-csv-path "${SCORES_DIR}/model_scores.csv" \
-  --target-metric "recovery_percent" \
-  --filter-mode "both" \
-  --analyze-subsets \
-  > "${OPT_OUTPUT_DIR}/logs/analyse_scores_mixed_linear_model.log" 2>&1
+SELECTION_CSV="${SCORES_DIR}/selection_criteria.csv"
+printf 'score_metric,direction\nval_mse,min\n' > "$SELECTION_CSV"
 
-# Determine the analysis directory name
-# analyse_scores_mixed_linear_model.py creates _analysis_<scores_parent_basename> as a SIBLING of SCORES_DIR
-# For unfiltered: _analysis__scores_<SCORES_BASENAME>
-# For filtered:   _analysis__scores_<SCORES_BASENAME>_filtered
-ANALYSIS_DIR="${PROCESSED_DIR}/_analysis__scores_${SCORES_BASENAME}"
-
-# Plot model selection results for both filtered and unfiltered
-echo "Plotting selected models (unfiltered)..."
-CLUSTER_POP_CSV="${ANA_OUTPUT_DIR}/conformational_recovery_maxent_data.csv"
-PLOT_EXTRA_ARGS=()
-if [ -f "$CLUSTER_POP_CSV" ]; then
-  PLOT_EXTRA_ARGS+=(--cluster-populations-csv "$CLUSTER_POP_CSV")
-fi
-python "${ANA_DIR}/plot_selected_models_ISO_TRI_BI.py" \
-  --before-csv "${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv" \
-  --after-csv "${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv" \
-  --output-dir "${ANALYSIS_DIR}/plots_selection" \
-  "${PLOT_EXTRA_ARGS[@]}" \
-  > "${OPT_OUTPUT_DIR}/logs/plot_selected_models.log" 2>&1
+echo "Extracting selected models..."
+"${PYTHON_RUNNER[@]}" "${ANA_DIR}/extract_selected_models.py" \
+  --processed-data-dir "$PROCESSED_DIR" \
+  --scores-csv "${SCORES_DIR}/model_scores.csv" \
+  --selection-csv "$SELECTION_CSV" \
+  > "${OPT_OUTPUT_DIR}/logs/extract_selected_models.log" 2>&1
 
 echo "All analysis tasks completed."
 echo "Results are saved in $OPT_OUTPUT_DIR"

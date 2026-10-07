@@ -12,6 +12,7 @@ import dataclasses
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 
 
@@ -29,15 +30,27 @@ class OptimizationConfig:
         default_factory=lambda: [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10]
     )
     learning_rate: float = 1e-3
-    initial_learning_rate: float = 1e0
-    initial_steps: int = 2
     optimizer: str = "adamw"
     ema_alpha: float = 0.5
+    step_chunk_size: int = 100
+    lr_adjustment: bool = True
+    frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot"
+    reset_threshold_cooldown_on_oscillation: bool = True
     forward_model_scaling: float = 100.0
     clip_value: float | None = None
     covariance_matrix_path: str | None = None
     # Exp 3 adds this; Exp 1/2 leave at default 1.0 (backward compatible)
     model_parameters_lr_scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.lr_adjustment, bool):
+            raise ValueError("lr_adjustment must be a boolean")
+        if self.frame_average_impl not in ("tensordot", "legacy_sum"):
+            raise ValueError(
+                "frame_average_impl must be 'tensordot' or 'legacy_sum'"
+            )
+        if self.step_chunk_size < 1:
+            raise ValueError("step_chunk_size must be >= 1")
 
 
 @dataclass
@@ -55,7 +68,10 @@ class LossConfig:
     primary_loss: str  # e.g. "hdx_uptake_mean_centred_MSE_loss"
     regularization_losses: list[dict] = field(default_factory=list)
     optimize_bv_params: bool = False
-    maxent_scaling: float = 1.0
+    # Optional dynamic-slot allow-list. None means all model parameters when
+    # optimize_bv_params is enabled.
+    trainable_model_parameters: frozenset[str] | None = None
+    maxent_scaling: float = 1.0  # Positive scale; KL loss weight is 1 / this value.
     bv_reg_scaling: float = 1.0      # Weight for BV regularization loss term (Exp3 sweep)
     normalize_bv_reg: bool = True     # Set False → normalise_loss_functions[-1] = 0.0
 

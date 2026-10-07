@@ -1,0 +1,7 @@
+ensemble,weights,prediction,mse
+reference,40:60 reference,frame_uptake,0.0141089631107748
+ISO_TRI,"true masses, uniform within state",frame_uptake,0.014079382783712242
+reference,40:60 reference,uptake,0.00279509460375176
+ISO_TRI,"true masses, uniform within state",uptake,0.002954446459713615
+reference,40:60 reference,rate,0.0
+ISO_TRI,"true masses, uniform within state",rate,0.00013718425928792123

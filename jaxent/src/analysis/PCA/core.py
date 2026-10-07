@@ -103,16 +103,20 @@ def perform_pca_on_distances(
     pca = IncrementalPCA(n_components=n_components, batch_size=ipca_batch_size)
 
     n_frames = distances.shape[0]
-    pca_coords = np.zeros((n_frames, n_components), dtype=np.float32)
+    batch_starts = range(0, n_frames, chunk_size)
 
-    for start in tqdm(range(0, n_frames, chunk_size), desc="IncrementalPCA"):
+    # Fit the complete dataset before projecting any frames.  Transforming in
+    # the fitting loop would leave each batch expressed in a different,
+    # partially fitted PCA basis.
+    for start in tqdm(batch_starts, desc="IncrementalPCA fit"):
         end = min(start + chunk_size, n_frames)
         batch = distances[start:end]
-        if start == 0:
-            pca_coords[start:end] = pca.fit_transform(batch)
-        else:
-            pca.partial_fit(batch)
-            pca_coords[start:end] = pca.transform(batch)
+        pca.partial_fit(batch)
+
+    pca_coords = np.zeros((n_frames, n_components), dtype=np.float32)
+    for start in tqdm(batch_starts, desc="IncrementalPCA transform"):
+        end = min(start + chunk_size, n_frames)
+        pca_coords[start:end] = pca.transform(distances[start:end])
 
     logger.info(
         "perform_pca_on_distances: total variance explained = %.2f%%",

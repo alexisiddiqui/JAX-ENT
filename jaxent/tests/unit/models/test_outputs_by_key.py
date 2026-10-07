@@ -54,7 +54,7 @@ def base_components():
     """Provides common base components for the tests."""
     input_features = [MockInputFeatures(data=jnp.ones((10, 5)))]
     params = create_default_simulation_params(num_models=1)
-    params = params.normalize_weights(params)  # Keep parameter counts matching default structure
+    params = params  # Keep parameter counts matching default structure
     return input_features, params
 
 
@@ -80,7 +80,7 @@ def test_multiple_outputs_by_key():
     ]
     # Needs 2 models, so create params for 2 models
     params = create_default_simulation_params(num_models=2)
-    params = params.normalize_weights(params)
+    params = params
     
     forward_models = [
         MockForwardModel(MockForwardModelConfig()),
@@ -107,7 +107,7 @@ def test_duplicate_key_raises_error():
         MockInputFeatures(data=jnp.ones((10, 5))),
     ]
     params = create_default_simulation_params(num_models=2)
-    params = params.normalize_weights(params)
+    params = params
     
     # Use the same model twice, so it produces outputs with the exact same m_key
     forward_models = [

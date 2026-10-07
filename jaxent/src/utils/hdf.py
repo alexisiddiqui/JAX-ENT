@@ -3,8 +3,8 @@ import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 import jax
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, base_dir)
 import importlib
+import json
 from typing import Optional, TypeVar
 
 import h5py
@@ -21,7 +22,14 @@ import numpy as np
 
 from jaxent.src.interfaces.model import Model_Parameters
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.opt.base import LossComponents, OptimizationHistory, OptimizationState
+from jaxent.src.opt.base import (
+    LossComponents,
+    OptimizationHistory,
+    OptimizationState,
+    validate_convergence_labels,
+)
+from jaxent.src.custom_types.config import Optimisable_Parameters
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 T_mp = TypeVar("T_mp", bound=Model_Parameters)
 
@@ -88,7 +96,18 @@ def save_model_parameters_to_hdf5(
         value = getattr(model_params, slot)
         save_array_to_hdf5(group, slot, value, **kwargs)
 
-    # Save static parameters (just the key for now)
+    # Preserve JSON-compatible static metadata needed to reconstruct models
+    # with explicit backends, time grids, and units.
+    static_payload = {}
+    for slot in static_slots:
+        value = getattr(model_params, slot)
+        if isinstance(value, np.ndarray):
+            value = value.tolist()
+        elif hasattr(value, "tolist"):
+            value = value.tolist()
+        static_payload[slot] = value
+    group.attrs["static_params_json"] = json.dumps(static_payload)
+
     key_list = list(model_params.key)
     group.attrs["key"] = str(key_list)
 
@@ -124,6 +143,10 @@ def load_model_parameters_from_hdf5(
     for slot in dynamic_slots:
         param_dict[slot] = load_array_from_hdf5(group, slot)
 
+    if "static_params_json" in group.attrs:
+        static_payload = json.loads(group.attrs["static_params_json"])
+        param_dict.update(static_payload)
+
     # Load static parameters TODO: check if this is needed.
     # key_str = group.attrs["key"]
     # key_list = literal_eval(key_str)
@@ -147,8 +170,12 @@ def save_simulation_parameters_to_hdf5(
     group = h5file.create_group(path)
 
     # Save arrays
-    save_array_to_hdf5(group, "frame_weights", sim_params.frame_weights, **kwargs)
-    save_array_to_hdf5(group, "frame_mask", sim_params.frame_mask, **kwargs)
+    save_array_to_hdf5(
+        group, "frame_weight_logits", sim_params.frame_weight_logits, **kwargs
+    )
+    save_array_to_hdf5(
+        group, "frame_weight_simplex", sim_params.frame_weight_simplex, **kwargs
+    )
     save_array_to_hdf5(group, "forward_model_weights", sim_params.forward_model_weights, **kwargs)
     save_array_to_hdf5(
         group, "normalise_loss_functions", sim_params.normalise_loss_functions, **kwargs
@@ -162,7 +189,11 @@ def save_simulation_parameters_to_hdf5(
 
 
 def load_simulation_parameters_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_role: str | None = None,
 ) -> Simulation_Parameters:
     """
     Load Simulation_Parameters from HDF5.
@@ -178,8 +209,35 @@ def load_simulation_parameters_from_hdf5(
     group = h5file[path]
 
     # Load arrays
-    frame_weights = load_array_from_hdf5(group, "frame_weights")
-    frame_mask = load_array_from_hdf5(group, "frame_mask")
+    if "frame_weight_simplex" in group:
+        weights = validated_frame_weight_simplex(
+            load_array_from_hdf5(group, "frame_weight_simplex"),
+            context=path,
+        )
+        frame_weight_logits = jnp.log(jnp.clip(jnp.asarray(weights), 1e-30, None))
+    elif "frame_weight_logits" in group:
+        frame_weight_logits = load_array_from_hdf5(group, "frame_weight_logits")
+    elif "frame_weights" in group:
+        legacy_values = load_array_from_hdf5(group, "frame_weights")
+        looks_like_simplex = bool(
+            np.all(np.isfinite(np.asarray(legacy_values)))
+            and np.all(np.asarray(legacy_values) >= -1e-5)
+            and np.isclose(np.asarray(legacy_values).sum(), 1.0, atol=1e-5)
+        )
+        # Versionless simplex-looking logits are irreducibly ambiguous. The role
+        # hint wins when available; otherwise this is a best-effort heuristic.
+        is_simplex = legacy_role == "simplex" or (
+            legacy_role is None and looks_like_simplex
+        )
+        if is_simplex:
+            weights = validated_frame_weight_simplex(legacy_values, context=path)
+            frame_weight_logits = jnp.log(
+                jnp.clip(jnp.asarray(weights), 1e-30, None)
+            )
+        else:
+            frame_weight_logits = legacy_values
+    else:
+        raise KeyError(f"{path!r} contains no frame-weight datasets")
     forward_model_weights = load_array_from_hdf5(group, "forward_model_weights")
     normalise_loss_functions = load_array_from_hdf5(group, "normalise_loss_functions")
     forward_model_scaling = load_array_from_hdf5(group, "forward_model_scaling")
@@ -194,8 +252,7 @@ def load_simulation_parameters_from_hdf5(
         model_params.append(model_param)
 
     return Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=frame_mask,
+        frame_weight_logits=frame_weight_logits,
         model_parameters=model_params,
         forward_model_weights=forward_model_weights,
         normalise_loss_functions=normalise_loss_functions,
@@ -291,7 +348,11 @@ def save_optimization_state_to_hdf5(h5file, path: str, state: OptimizationState,
 
 
 def load_optimization_state_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_role: str | None = None,
 ) -> OptimizationState:
     """
     Load OptimizationState from HDF5.
@@ -307,7 +368,9 @@ def load_optimization_state_from_hdf5(
     group = h5file[path]
 
     # Load params
-    params = load_simulation_parameters_from_hdf5(group, "params", default_model_params_cls)
+    params = load_simulation_parameters_from_hdf5(
+        group, "params", default_model_params_cls, legacy_role=legacy_role
+    )
 
     # Load step
     step = int(group.attrs["step"])
@@ -344,6 +407,25 @@ def save_optimization_history_to_hdf5(
     for i, state in enumerate(history.states):
         save_optimization_state_to_hdf5(states_group, f"{i}", state, **kwargs)
 
+    convergence_group = group.create_group("convergence_states")
+    for i, state in enumerate(history.convergence_states):
+        save_optimization_state_to_hdf5(convergence_group, f"{i}", state, **kwargs)
+
+    save_array_to_hdf5(
+        group,
+        "convergence_thresholds",
+        np.asarray(history.convergence_thresholds, dtype=np.float64),
+        **kwargs,
+    )
+    group.attrs["history_format_version"] = 2
+
+    if history.state_parameter_partitions is None:
+        group.attrs["state_parameter_partitions"] = "all"
+    else:
+        group.attrs["state_parameter_partitions"] = ",".join(
+            sorted(partition.name for partition in history.state_parameter_partitions)
+        )
+
     # Save best_state if present
     if history.best_state is not None:
         save_optimization_state_to_hdf5(group, "best_state", history.best_state, **kwargs)
@@ -353,7 +435,11 @@ def save_optimization_history_to_hdf5(
 
 
 def load_optimization_history_from_hdf5(
-    h5file, path: str, default_model_params_cls: Optional[type[T_mp]] = None
+    h5file,
+    path: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_convergence_recovery=None,
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from HDF5.
@@ -372,17 +458,85 @@ def load_optimization_history_from_hdf5(
     states_group = group["states"]
     states = []
     for i in range(len(states_group)):
-        state = load_optimization_state_from_hdf5(states_group, f"{i}", default_model_params_cls)
+        state = load_optimization_state_from_hdf5(
+            states_group, f"{i}", default_model_params_cls
+        )
         states.append(state)
 
-    # Load best_state if present
+    convergence_states = []
+    if "convergence_states" in group:
+        convergence_group = group["convergence_states"]
+        for i in range(len(convergence_group)):
+            state = load_optimization_state_from_hdf5(
+                convergence_group, f"{i}", default_model_params_cls
+            )
+            convergence_states.append(state)
+
+    partition_attr = group.attrs.get("state_parameter_partitions", "all")
+    if isinstance(partition_attr, bytes):
+        partition_attr = partition_attr.decode()
+    if partition_attr == "all":
+        state_parameter_partitions = None
+    elif partition_attr:
+        state_parameter_partitions = frozenset(
+            Optimisable_Parameters[name]
+            for name in str(partition_attr).split(",")
+            if name != "frame_mask"
+        )
+    else:
+        state_parameter_partitions = frozenset()
+
+    # Load best_state if present. HDF round-trips values, not Python object identity.
     best_state = None
-    if group.attrs["has_best_state"]:
+    if group.attrs.get("has_best_state", False):
         best_state = load_optimization_state_from_hdf5(
             group, "best_state", default_model_params_cls
         )
 
-    return OptimizationHistory(states=states, best_state=best_state)
+    format_version = int(group.attrs.get("history_format_version", 1))
+    if (
+        format_version < 2
+        and not convergence_states
+        and legacy_convergence_recovery is not None
+        and len(states) > 1
+        and int(states[0].step) == 1
+    ):
+        # The original Python-loop format stored an unconditional step-one
+        # diagnostic followed by threshold checkpoints in ``states``. Migrate
+        # only when the caller explicitly supplies legacy label recovery;
+        # format-v1 histories can otherwise contain arbitrary state records.
+        convergence_states = states[1:]
+
+    if format_version >= 2 and "convergence_thresholds" in group:
+        convergence_thresholds = tuple(
+            float(value) for value in load_array_from_hdf5(group, "convergence_thresholds")
+        )
+    elif convergence_states:
+        history_stub = OptimizationHistory(
+            states=states,
+            convergence_states=convergence_states,
+            best_state=best_state,
+            state_parameter_partitions=state_parameter_partitions,
+        )
+        if legacy_convergence_recovery is None:
+            raise ValueError(
+                f"{path!r} is a legacy history (format_version={format_version}) with "
+                f"{len(convergence_states)} convergence_states but no persisted "
+                "convergence_thresholds. Pass legacy_convergence_recovery=... to recover labels."
+            )
+        convergence_thresholds = tuple(legacy_convergence_recovery(history_stub))
+    else:
+        convergence_thresholds = ()
+
+    history = OptimizationHistory(
+        states=states,
+        convergence_states=convergence_states,
+        best_state=best_state,
+        state_parameter_partitions=state_parameter_partitions,
+        convergence_thresholds=convergence_thresholds,
+    )
+    validate_convergence_labels(history)
+    return history
 
 
 def save_optimization_history_to_file(
@@ -409,7 +563,10 @@ def save_optimization_history_to_file(
 
 
 def load_optimization_history_from_file(
-    filename: str, default_model_params_cls: Optional[type[T_mp]] = None
+    filename: str,
+    default_model_params_cls: Optional[type[T_mp]] = None,
+    *,
+    legacy_convergence_recovery=None,
 ) -> OptimizationHistory:
     """
     Load OptimizationHistory from an HDF5 file.
@@ -423,5 +580,8 @@ def load_optimization_history_from_file(
     """
     with h5py.File(filename, "r") as f:
         return load_optimization_history_from_hdf5(
-            f, "optimization_history", default_model_params_cls
+            f,
+            "optimization_history",
+            default_model_params_cls,
+            legacy_convergence_recovery=legacy_convergence_recovery,
         )

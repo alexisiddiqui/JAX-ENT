@@ -5,7 +5,7 @@
 from beartype.typing import NamedTuple, Protocol, TypeVar, runtime_checkable, Any, Union
 from dataclasses import dataclass, field
 from functools import partial
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 import chex
 import jax
@@ -73,7 +73,7 @@ class ConvergenceCarry(NamedTuple):
     """Pure JAX carry for convergence tracking."""
 
     ema_loss_delta: Any
-    ema_params: Simulation_Parameters
+    ema_initialized: Any
     steps_since_threshold_start: Any
     current_threshold_idx: Any
     converged: Any
@@ -161,15 +161,31 @@ class OptimizationState(NamedTuple):
 
 @partial(
     jax.tree_util.register_dataclass,
-    data_fields=["states", "best_state"],
-    meta_fields=[],
+    data_fields=["states", "convergence_states", "best_state"],
+    meta_fields=["state_parameter_partitions", "convergence_thresholds"],
 )
 @dataclass
 class OptimizationHistory:
-    """Tracks the history of optimization states and metrics"""
+    """Tracks optimization states and metrics.
+
+    ``state_parameter_partitions`` describes ``states`` and
+    ``convergence_states``: ``None`` means all selectable partitions, while a
+    frozenset records the configured selection. ``best_state`` is always
+    complete regardless of this value. The scalar
+    ``forward_model_scaling`` and ``normalise_loss_functions`` fields are
+    always retained because they have no enum partition. When both state lists
+    are empty, this field records policy rather than populated entries.
+    """
 
     states: list[OptimizationState] = field(default_factory=list)
+    convergence_states: list[OptimizationState] = field(default_factory=list)
     best_state: OptimizationState | None = None
+    state_parameter_partitions: frozenset | None = field(default=None, repr=True)
+    convergence_thresholds: tuple[float, ...] = field(default_factory=tuple)
+
+    def iter_labeled_convergence_states(self) -> Iterator[tuple[float, OptimizationState]]:
+        validate_convergence_labels(self)
+        return zip(self.convergence_thresholds, self.convergence_states)
 
     def add_state(self, state: OptimizationState):
         """Add a new state to history and update best state if needed"""
@@ -190,24 +206,34 @@ class OptimizationHistory:
 
     def get_best_state(self) -> OptimizationState:
         """Get the best state based on unscaled validation loss"""
-
-        self.best_state = self._pick_best_state(self.states)
+        if self.best_state is None:
+            if not self.states:
+                raise ValueError(
+                    "No best state is available: save_best=False and save_states=False "
+                    "produced an empty optimization history."
+                )
+            self.best_state = self._pick_best_state(self.states)
 
         return self.best_state
 
 
-class OptimisationCarry(NamedTuple):
-    """Per-step carry for pure optimisation loops."""
-
-    opt_state: OptimizationState
-    sim: InitialisedSimulation
-    convergence: ConvergenceCarry
-    lr: Any
-    model_lr: Any
-    gradient_mask_idx: Any
-    history_params: Simulation_Parameters
-    history_losses: LossComponents
-    write_idx: Any
+def validate_convergence_labels(history: OptimizationHistory) -> None:
+    """Validate the one-to-one, descending convergence label contract."""
+    n_labels = len(history.convergence_thresholds)
+    n_states = len(history.convergence_states)
+    if n_labels != n_states:
+        raise ValueError(
+            f"convergence_thresholds length ({n_labels}) must equal "
+            f"convergence_states length ({n_states})"
+        )
+    for previous, current in zip(
+        history.convergence_thresholds, history.convergence_thresholds[1:]
+    ):
+        if current > previous:
+            raise ValueError(
+                "convergence_thresholds must be non-increasing in append order: "
+                f"got {previous} followed by {current}"
+            )
 
 
 class HParamBatch(NamedTuple):

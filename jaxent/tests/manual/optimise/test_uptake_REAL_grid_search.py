@@ -265,9 +265,8 @@ def setup_model_and_data():
     )
 
     # Set up simulation initially to get prior_data
-    initial_params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
+    initial_params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(4),
         forward_model_scaling=jnp.array([1.0, 10.0, 10.0, 10.0]),
@@ -336,9 +335,8 @@ def run_optimization_with_scaling(setup_data, scaling, n_steps):
     exp_data = setup_data["exp_data"]
 
     # Create parameters with the specified scaling
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(4),
         forward_model_scaling=scaling,

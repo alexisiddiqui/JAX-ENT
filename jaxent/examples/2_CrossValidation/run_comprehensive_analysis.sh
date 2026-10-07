@@ -1,5 +1,6 @@
 #!/bin/bash
 # Comprehensive Analysis Pipeline for MoPrP Cross-Validation
+set -euo pipefail
 
 # Set working directory to the script's location
 cd "$(dirname "$0")" || exit

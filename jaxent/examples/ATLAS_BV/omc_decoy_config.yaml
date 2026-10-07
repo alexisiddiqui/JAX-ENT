@@ -1,0 +1,7 @@
+# Current decoy experiment only. Historical ATLAS features are unchanged.
+protocol:
+  contact_mode: smooth_cutoff
+  switch_function: plateau_rational_6_12
+  switch_scale_nc_angstrom: 0.5
+  switch_scale_nh_angstrom: 0.5
+  reference_implementation: ../../src/models/func/contacts.py:smooth_cutoff_rational_6_12

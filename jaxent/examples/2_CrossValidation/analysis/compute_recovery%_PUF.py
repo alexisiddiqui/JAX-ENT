@@ -28,7 +28,44 @@ import numpy as np
 import os
 
 
-def calculate_recovery_percentage(cluster_assignments, weights, target_ratios, state_mapping):
+def _support_states(target_ratios, state_mapping, legacy_target_support):
+    """Return the ordered population support.
+
+    ``legacy_target_support=True`` reproduces the historical behavior: the support is only
+    the target states, so decoy mass (PUF3/unfolded/PUF2-like) is silently discarded before
+    normalization.  ``legacy_target_support=False`` uses the *complete* support — every state
+    named in ``state_mapping`` plus every target state — so zero-target decoy mass is retained
+    and contributes to the divergence.
+    """
+
+    if legacy_target_support:
+        return list(target_ratios.keys())
+    support = list(target_ratios.keys())
+    for state_name in state_mapping.values():
+        if state_name not in support:
+            support.append(state_name)
+    return support
+
+
+def _current_proportions(cluster_assignments, weights, state_mapping, support):
+    """Weighted mass per support state (states with no clusters get 0.0)."""
+
+    state_to_clusters = {}
+    for cluster_id, state_name in state_mapping.items():
+        state_to_clusters.setdefault(state_name, []).append(cluster_id)
+    weights = np.asarray(weights)
+    proportions = {state: 0.0 for state in support}
+    for state_name, cluster_ids in state_to_clusters.items():
+        if state_name not in proportions:
+            continue
+        state_mask = cluster_assignments.isin(cluster_ids).to_numpy()
+        proportions[state_name] = float(np.sum(weights[state_mask]))
+    return proportions
+
+
+def calculate_recovery_percentage(
+    cluster_assignments, weights, target_ratios, state_mapping, legacy_target_support=True
+):
     """
     Calculates the current proportions and recovery percentages for conformational states.
 
@@ -37,6 +74,9 @@ def calculate_recovery_percentage(cluster_assignments, weights, target_ratios, s
         weights (np.ndarray): An array of weights, one for each frame. The sum of weights should be 1.0.
         target_ratios (dict): A dictionary mapping state names to their target fractional populations.
         state_mapping (dict): A dictionary mapping cluster labels (int) to state names (str).
+        legacy_target_support (bool): When True (default) only the target states form the
+            support and decoy mass is discarded before normalization.  Set False to retain
+            zero-target decoy mass over the complete state support.
 
     Returns:
         dict: A dictionary containing the results, with current proportions and recovery percentages for each state.
@@ -46,24 +86,15 @@ def calculate_recovery_percentage(cluster_assignments, weights, target_ratios, s
     if total_frames == 0:
         return {"error": "No frames found in cluster assignments."}
 
-    # Invert the state_mapping to group clusters by state
-    state_to_clusters = {}
-    for cluster_id, state_name in state_mapping.items():
-        if state_name not in state_to_clusters:
-            state_to_clusters[state_name] = []
-        state_to_clusters[state_name].append(cluster_id)
+    support = _support_states(target_ratios, state_mapping, legacy_target_support)
+    current_proportions = _current_proportions(
+        cluster_assignments, weights, state_mapping, support
+    )
 
-    # Calculate current proportions
-    current_proportions = {state: 0.0 for state in target_ratios}
-    for state_name, cluster_ids in state_to_clusters.items():
-        # Create a boolean mask for frames belonging to any of the clusters for the current state
-        state_mask = cluster_assignments.isin(cluster_ids)
-        # Sum the weights of these frames (use numpy boolean indexing)
-        current_proportions[state_name] = float(np.sum(weights[state_mask.to_numpy()]))
-
-    # Calculate recovery percentages
+    # Calculate recovery percentages over the full support (decoys have target 0).
     recovery_percentages = {}
-    for state_name, target in target_ratios.items():
+    for state_name in support:
+        target = target_ratios.get(state_name, 0.0)
         current = current_proportions.get(state_name, 0.0)
         if target > 0:
             recovery = (current / target) * 100
@@ -72,32 +103,32 @@ def calculate_recovery_percentage(cluster_assignments, weights, target_ratios, s
         recovery_percentages[state_name] = recovery
 
     results = {
-        "target_proportions": target_ratios,
+        "target_proportions": {state: target_ratios.get(state, 0.0) for state in support},
         "current_proportions": current_proportions,
         "recovery_percentages": recovery_percentages,
     }
     return results
 
-def calculate_recovery_JSD(cluster_assignments, weights, target_ratios, state_mapping):
+def calculate_recovery_JSD(
+    cluster_assignments, weights, target_ratios, state_mapping, legacy_target_support=True
+):
     """
     Compute a single Jensen-Shannon divergence between the observed current proportions
-    (over the provided states) and the target_ratios. Uses log base 2 so JS is in [0,1].
+    and the target_ratios. Uses log base 2 so JS is in [0,1].
     Returns the JS divergence (float). If the current distribution is all zeros, returns np.nan.
     JSD Recovery% can be computed as (1 - sqrt(JS)) * 100.
+
+    When ``legacy_target_support`` is False the divergence is taken over the complete state
+    support, so zero-target decoy mass (PUF3/unfolded/PUF2-like) contributes and cannot be
+    renormalized away.
     """
-    # Invert mapping: state -> cluster ids
-    state_to_clusters = {}
-    for cluster_id, state_name in state_mapping.items():
-        state_to_clusters.setdefault(state_name, []).append(cluster_id)
+    support = _support_states(target_ratios, state_mapping, legacy_target_support)
+    current_proportions = _current_proportions(
+        cluster_assignments, weights, state_mapping, support
+    )
 
-    # Compute current proportions (weighted)
-    current_proportions = {state: 0.0 for state in target_ratios}
-    for state_name, cluster_ids in state_to_clusters.items():
-        state_mask = cluster_assignments.isin(cluster_ids)
-        current_proportions[state_name] = float(np.sum(weights[state_mask.to_numpy()]))
-
-    # Order states consistently with target_ratios
-    states = list(target_ratios.keys())
+    # Order states consistently with the support
+    states = list(support)
     P = np.array([current_proportions.get(s, 0.0) for s in states], dtype=float)
     Q = np.array([target_ratios.get(s, 0.0) for s in states], dtype=float)
 

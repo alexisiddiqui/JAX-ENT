@@ -1,0 +1,14 @@
+{
+  "source_repository": "https://github.com/pacilab/exPfact",
+  "source_revision": "master",
+  "source_directory": "validation",
+  "download_date": "2026-07-23",
+  "format": "original two-column mass/intensity text files; downloaded without conversion",
+  "files": {
+    "pep1.1.txt": {"source_path": "validation/pep1.1.txt", "source_url": "https://raw.githubusercontent.com/pacilab/exPfact/master/validation/pep1.1.txt", "size_bytes": 2705, "sha256": "697e37713a436be7e9b6634f1ac568616cfd94dcc89bcee26fb0d453a6e35b10"},
+    "pep1.2.txt": {"source_path": "validation/pep1.2.txt", "source_url": "https://raw.githubusercontent.com/pacilab/exPfact/master/validation/pep1.2.txt", "size_bytes": 2263, "sha256": "77189d1dd7c14e792d3a35fd2987cf9130318289f03760971df0b70ad7d934d9"},
+    "pep1.3.txt": {"source_path": "validation/pep1.3.txt", "source_url": "https://raw.githubusercontent.com/pacilab/exPfact/master/validation/pep1.3.txt", "size_bytes": 2792, "sha256": "825a8a52f20c0d5c4d63ead9420287daad9b3f0051453b45ca6f19851bd3ef3c"},
+    "pep1.4.txt": {"source_path": "validation/pep1.4.txt", "source_url": "https://raw.githubusercontent.com/pacilab/exPfact/master/validation/pep1.4.txt", "size_bytes": 3905, "sha256": "01033a41cf1956cd18b326111e0c7b8ce92f4e1d64d3a17d1a7b5a9795d156d1"},
+    "pep1.5.txt": {"source_path": "validation/pep1.5.txt", "source_url": "https://raw.githubusercontent.com/pacilab/exPfact/master/validation/pep1.5.txt", "size_bytes": 4238, "sha256": "e35f2b1275cd52405809cef7bc552737c2ebd0944ca697f8a7f6a6579267d4b1"}
+  }
+}

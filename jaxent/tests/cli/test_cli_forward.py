@@ -144,7 +144,7 @@ def test_cli_forward_bv_model(featurised_data):
             print(f"Max: {np.max(predictions):.4f}")
 
             # Basic assertions on the output
-            num_residues = 52  # From featurisation step
+            num_residues = 53  # From featurisation step
             assert predictions.shape == (num_residues,)
             assert np.all(predictions >= 0), "Predictions should be non-negative"
             assert np.all(predictions <= 100), (
@@ -228,7 +228,7 @@ def test_cli_forward_bv_model_uptake(featurised_data):
             print(f"Max: {np.max(predictions):.4f}")
 
             # Basic assertions on the output
-            num_residues = 52  # From featurisation step
+            num_residues = 53  # From featurisation step
             num_timepoints = 2
             assert predictions.shape == (num_timepoints, num_residues)
             assert np.all(predictions >= 0), "Predictions should be non-negative"
@@ -327,7 +327,7 @@ def test_cli_forward_multiple_simulations(featurised_data):
             print(f"Min: {np.min(predictions):.4f}")
             print(f"Max: {np.max(predictions):.4f}")
 
-            num_residues = 52
+            num_residues = 53
             expected_shape = (
                 (num_residues,)
                 if num_timepoints_list[i] == 0

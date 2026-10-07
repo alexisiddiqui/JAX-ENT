@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
-import jax
 import jax.numpy as jnp
 
 # Add the base directory to the path to import JAX-ENT modules
@@ -31,9 +31,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 base_dir = os.path.abspath(os.path.join(current_dir, "../../../"))
 sys.path.insert(0, base_dir)
 
-from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_output_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.forward import BV_uptake_ForwardPass
 from jaxent.src.models.config import BV_model_Config
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.utils.jax_fn import frame_average_features
@@ -41,29 +41,12 @@ from jaxent.src.utils.jax_fn import frame_average_features
 # common modules
 from jaxent.examples.common import analysis, loading, paths
 from jaxent.examples.common.paths import derive_processed_output_dir, resolve_script_paths
-from jaxent.examples.common.optimization import BV_uptake_ForwardPass_frames
-
-
-class BV_uptake_ForwardPass_averaged(BV_uptake_ForwardPass_frames):
-    """Variant for averaged (non-per-frame) input features — adds pf reshape."""
-    def __call__(self, input_features, parameters):
-        bc, bh = parameters.bv_bc, parameters.bv_bh
-        heavy_contacts = jnp.asarray(input_features.heavy_contacts)
-        acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
-        kints = jnp.asarray(input_features.k_ints)
-        time_points = parameters.timepoints.reshape(-1)
-        log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
-        pf = jnp.exp(log_pf)
-        if pf.ndim == 1:
-            pf = pf.reshape(-1, 1)
-
-        def compute_uptake_for_timepoint(timepoint):
-            kints_reshaped = kints.reshape(-1, 1)
-            uptake = 1 - jnp.exp(-kints_reshaped * timepoint / pf)
-            return uptake
-
-        uptake_per_timepoint = jax.vmap(compute_uptake_for_timepoint)(time_points)
-        return uptake_BV_output_features(uptake_per_timepoint)
+from jaxent.examples.common.analysis.convergence_labels import (
+    convergence_rows_from_history,
+    write_convergence_thresholds_sidecar,
+)
+from jaxent.examples.common.manifest import write_processing_manifest
+from jaxent.examples.common.uptake_models import build_uptake_model
 
 
 def main():
@@ -107,6 +90,18 @@ def main():
         default=False,
         help="Interpret provided results/output/clustering/features directories as absolute paths",
     )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=("log_pf", "rate", "uptake", "frame_uptake"),
+        default="log_pf",
+        help="Frame-averaging semantic to use when reconstructing predictions.",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family used during optimization.",
+    )
     args = parser.parse_args()
 
     # Define parameters (should match those used in optimization)
@@ -116,7 +111,6 @@ def main():
     loss_functions = ["mcMSE", "MSE", "Sigma_MSE"]
     bv_reg_functions = ["L1", "L2"]
     num_splits = 3
-    convergence_rates = [1, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
 
     # Resolve paths
     resolved = resolve_script_paths(args, Path(__file__).parent)
@@ -126,6 +120,7 @@ def main():
     datasplit_dir  = resolved["datasplit_dir"]
     output_base_dir = resolved.get("output_dir") or str(derive_processed_output_dir(results_dir))
     os.makedirs(output_base_dir, exist_ok=True)
+    run_entries = []
 
     print(f"Resolved results_dir: {results_dir}")
     print(f"Resolved clustering_dir: {clustering_dir}")
@@ -133,6 +128,7 @@ def main():
     print(f"Resolved datasplit_dir: {datasplit_dir}")
     print(f"Resolved output_base_dir: {output_base_dir}")
     print(f"EMA flag: {args.ema}")
+    print(f"Frame averaging mode: {args.frame_averaging_mode}")
     print("-" * 60)
 
     # Load cluster assignments
@@ -195,34 +191,55 @@ def main():
             print(f"  No run data found for ensemble {ensemble}. Skipping.")
             continue
 
-        exp_split_type = first_split_type if first_split_type != '_flat' else "random"
-        _, _, _, timepoints_from_data = loading.load_experimental_data(results_dir, datasplit_dir, exp_split_type, first_split_idx)
+        timepoints_path = (
+            Path(__file__).resolve().parents[2]
+            / "2_CrossValidation/data/_MoPrP/moprp.times"
+        )
+        timepoints_from_data = loading.load_hdx_timepoints_minutes(timepoints_path)
         num_timepoints = len(timepoints_from_data)
-        print(f"  Inferred {num_timepoints} timepoints from data file: {timepoints_from_data}")
+        print(f"  Loaded {num_timepoints} protocol timepoints from {timepoints_path}: {timepoints_from_data}")
 
         # Setup BV model for ln_pf prediction (HDX_resPF)
         bv_config_lnpf = BV_model_Config(num_timepoints=0)
         bv_model_lnpf = BV_model(config=bv_config_lnpf)
 
         # Setup BV model for uptake prediction (HDX_peptide)
-        bv_config_uptake = BV_model_Config(num_timepoints=num_timepoints, timepoints=jnp.array(timepoints_from_data))
-        bv_model_uptake = BV_model(config=bv_config_uptake)
+        bv_model_uptake = build_uptake_model(
+            args.uptake_model,
+            timepoints_from_data,
+            kint_unit="s^-1",
+            time_unit="min",
+        )
 
         # --- Compute Prior Predictions (from uniform weights and initial params) ---
         print(f"  Computing prior predictions for {ensemble}...")
         n_frames = features.features_shape[1]
         uniform_frame_weights = jnp.ones(n_frames) / n_frames
 
-        # Average features using uniform weights
-        prior_averaged_features = frame_average_features(features, uniform_frame_weights)
-
         # Forward pass functions
         forward_pass_lnpf = bv_model_lnpf.forward[m_key("HDX_resPF")]
-        forward_pass_uptake = BV_uptake_ForwardPass_averaged()
+        forward_pass_uptake = bv_model_uptake.forward[m_key("HDX_peptide")]
+        if args.uptake_model == "standard":
+            forward_pass_uptake.frame_averaging_mode = args.frame_averaging_mode
+        if args.uptake_model == "standard" and args.frame_averaging_mode == "uptake":
+            forward_pass_uptake.set_frame_groups(
+                clustering_results[ensemble]["cluster_assignments"]
+            )
 
-        # Run forward pass with averaged features and initial parameters
+        def predict_uptake(model_params, frame_weights):
+            if args.uptake_model == "standard" and args.frame_averaging_mode == "log_pf":
+                averaged_features = frame_average_features(features, frame_weights)
+                return forward_pass_uptake(averaged_features, model_params)
+            return forward_pass_uptake.average_frames(
+                features, model_params, frame_weights
+            )
+
+        # Run the prior through the selected averaging semantic.
+        prior_averaged_features = frame_average_features(features, uniform_frame_weights)
         prior_lnpf_output = forward_pass_lnpf(prior_averaged_features, bv_model_lnpf.params)
-        prior_uptake_output = forward_pass_uptake(prior_averaged_features, bv_model_uptake.params)
+        prior_uptake_output = predict_uptake(
+            bv_model_uptake.params, uniform_frame_weights
+        )
 
         prior_ln_pf = prior_lnpf_output.log_Pf
         prior_uptake = prior_uptake_output.uptake
@@ -246,26 +263,17 @@ def main():
                             for split_idx, history in splits_data.items():
                                 run_id = f"{ensemble}_{loss_name}_{split_type if split_type != '_flat' else 'flat'}_split{split_idx:03d}_maxent{maxent_val:.1f}_bvreg{bvreg_val:.2f}_bvregfn{bv_reg_fn}"
 
-                                if history is None or not history.states:
+                                if history is None or not history.convergence_states:
                                     continue
 
-                                valid_states = history.states[1:] if len(history.states) > 1 else history.states
-
-                                met_convergence_rates = []
-                                for i in range(len(valid_states)):
-                                    if i < len(convergence_rates):
-                                        met_convergence_rates.append(convergence_rates[i])
-
                                 run_output_dir_for_run = os.path.join(current_output_dir, run_id)
-                                os.makedirs(run_output_dir_for_run, exist_ok=True)
-                                with open(os.path.join(run_output_dir_for_run, "convergence_thresholds.txt"), "w") as f:
-                                    for rate in met_convergence_rates:
-                                        f.write(f"{rate}\n")
+                                write_convergence_thresholds_sidecar(run_output_dir_for_run, history)
 
-                                for i, state in enumerate(valid_states):                                    if i < len(convergence_rates):
-                                        convergence_val = convergence_rates[i]
-                                    else:
-                                        convergence_val = f"state_{i}"
+                                for row in convergence_rows_from_history(
+                                    history, {"run_id": run_id, "split_idx": split_idx}
+                                ):
+                                    state = history.convergence_states[row["convergence_rank"]]
+                                    convergence_val = row["convergence_threshold"]
 
                                     if not hasattr(state, "params") or state.params is None:
                                         continue
@@ -285,7 +293,7 @@ def main():
             valid_run_infos = [
                 info for info in run_infos
                 if (info["params"] is not None and
-                    info["params"].frame_weights is not None and
+                    info["params"].frame_weight_simplex is not None and
                     info["params"].model_parameters is not None)
             ]
 
@@ -319,27 +327,33 @@ def main():
                     losses = info["losses"]
                     convergence = info["convergence"]
 
-                    frame_weights = jnp.array(params.frame_weights)
+                    frame_weights = validated_frame_weight_simplex(params.frame_weight_simplex)
 
                     # Average features using frame_weights
                     averaged_features = frame_average_features(features, frame_weights)
 
                     # Extract optimized BV parameters from first model
                     model_params = params.model_parameters[0]
-                    optimized_bv_params = BV_Model_Parameters(
-                        bv_bc=model_params.bv_bc,
-                        bv_bh=model_params.bv_bh,
-                        timepoints=jnp.array(timepoints_from_data)
-                    )
+                    if args.uptake_model == "linear":
+                        optimized_bv_params = model_params
+                    else:
+                        optimized_bv_params = BV_Model_Parameters(
+                            bv_bc=model_params.bv_bc,
+                            bv_bh=model_params.bv_bh,
+                            timepoints=jnp.array(timepoints_from_data)
+                        )
 
                     bc_scalar = np.array(model_params.bv_bc).ravel()[0]
                     bh_scalar = np.array(model_params.bv_bh).ravel()[0]
                     all_bv_bc.append(float(bc_scalar))
                     all_bv_bh.append(float(bh_scalar))
 
-                    # Run forward pass with averaged features and optimized parameters
+                    # Run forward pass with the requested averaging semantic and
+                    # the already-optimized weights/BV parameters (no refitting).
                     pred_lnpf_output = forward_pass_lnpf(averaged_features, optimized_bv_params)
-                    pred_uptake_output = forward_pass_uptake(averaged_features, optimized_bv_params)
+                    pred_uptake_output = predict_uptake(
+                        optimized_bv_params, frame_weights
+                    )
 
                     pred_ln_pf = pred_lnpf_output.log_Pf
                     pred_uptake = pred_uptake_output.uptake
@@ -400,8 +414,10 @@ def main():
                     cols = ['convergence'] + [col for col in cluster_df.columns if col != 'convergence']
                     cluster_df = cluster_df[cols]
                     cluster_df.to_csv(os.path.join(run_output_dir, "cluster_ratios.csv"), index=False)
+                run_entries.append({"run_id": run_id, "n_convergence_states": len(history.convergence_states), "n_ladder_thresholds": len(history.convergence_thresholds)})
 
 
+    write_processing_manifest(output_base_dir, source_results_dir=results_dir, run_entries=run_entries)
     print("\nAll optimization results processed successfully!")
     print(f"Outputs saved to: {output_base_dir}")
 

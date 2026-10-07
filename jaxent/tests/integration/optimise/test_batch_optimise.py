@@ -47,9 +47,8 @@ def _build_quick_hdx_fixture() -> tuple[Simulation, list[BV_model], ExpD_Dataloa
     features, feature_topology = run_featurise(ensemble, featuriser_settings)
 
     trajectory_length = features[0].features_shape[1]
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length) / 2.0,
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -105,13 +104,14 @@ def _clone_simulation_with_params(
 
 def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:
     simulation, models, dataset = _build_quick_hdx_fixture()
-    learning_rate = 0.3
+    learning_rates = jnp.asarray([0.2, 0.3, 0.4], dtype=jnp.float32)
+    learning_rate = float(learning_rates[0])
     config = _make_config("integration_batch", learning_rate=learning_rate)
 
     hparam_batch = HParamBatch(
         forward_model_weights=jnp.ones((3, 1), dtype=jnp.float32),
         forward_model_scaling=jnp.asarray([[1.0], [0.8], [1.2]], dtype=jnp.float32),
-        learning_rate=jnp.asarray([learning_rate, learning_rate, learning_rate], dtype=jnp.float32),
+        learning_rate=learning_rates,
     )
     batch_result = batch_optimise(
         simulation=simulation,
@@ -140,14 +140,16 @@ def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:
         _, history = run_optimise(
             run_simulation,
             data_to_fit=(dataset,),
-            config=_make_config(f"integration_seq_{run_idx}", learning_rate),
+            config=_make_config(
+                f"integration_seq_{run_idx}", float(learning_rates[run_idx])
+            ),
             forward_models=models,
             indexes=[0],
             loss_functions=[hdx_pf_l2_loss],
             jit_update_step=False,
         )
         sequential_losses.append(history.best_state.losses.total_train_loss)
-        sequential_weights.append(history.best_state.params.frame_weights)
+        sequential_weights.append(history.best_state.params.frame_weight_simplex)
 
     for batch_best, seq_loss, seq_weights in zip(
         batch_result.best_states,
@@ -155,4 +157,4 @@ def test_batch_optimise_real_fixture_matches_sequential_final_states() -> None:
         sequential_weights,
     ):
         assert jnp.allclose(batch_best.losses.total_train_loss, seq_loss, rtol=1e-4)
-        assert jnp.allclose(batch_best.params.frame_weights, seq_weights, atol=1e-4)
+        assert jnp.allclose(batch_best.params.frame_weight_simplex, seq_weights, atol=1e-4)

@@ -2,6 +2,7 @@ import importlib
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from functools import cache
 from pathlib import Path
 from beartype.typing import Any, ClassVar, Generic, TypeVar
 
@@ -22,8 +23,10 @@ class AbstractFeatures(ABC):
     __features__: ClassVar[set[str]]
 
     @classmethod
+    @cache
     def _get_ordered_slots(cls) -> tuple[str, ...]:
         """Get slots in a deterministic order, including child classes"""
+        # Safe while class slot declarations remain immutable after definition.
         all_slots = []
         for c in cls.__mro__:
             if hasattr(c, "__slots__"):
@@ -31,6 +34,7 @@ class AbstractFeatures(ABC):
         return tuple(dict.fromkeys(all_slots))
 
     @classmethod
+    @cache
     def _get_grouped_slots(cls) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Get Array and static slots.
@@ -40,6 +44,7 @@ class AbstractFeatures(ABC):
         Returns:
             tuple: (dynamic_slots, static_slots)
         """
+        # Safe while class slot/__features__ declarations remain immutable after definition.
         dynamic_slots = []
         static_slots = []
         for slot in cls._get_ordered_slots():
@@ -77,7 +82,11 @@ class AbstractFeatures(ABC):
         # Static parameters from aux data
         params.update(zip(static_slots, static_data))
 
-        return cls(**params)
+        # Bypass validation: JAX intermediate values may be tracers or other non-Array types.
+        instance = object.__new__(cls)
+        for key, value in params.items():
+            object.__setattr__(instance, key, value)
+        return instance
 
     def cast_to_jax(self: T_Features) -> T_Features:
         """Casts __features__ to JAX arrays, returning a new instance."""

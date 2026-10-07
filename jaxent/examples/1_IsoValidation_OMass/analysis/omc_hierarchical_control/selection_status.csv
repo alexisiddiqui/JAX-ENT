@@ -1,0 +1,9 @@
+family,selected,reason
+unregularised,True,lowest converged all-residue MSE
+maxent,True,lowest converged all-residue MSE
+scalar_logpf,True,lowest converged all-residue MSE
+profile_logpf,True,lowest converged all-residue MSE
+hybrid_logpf,True,lowest converged all-residue MSE
+hierarchical_rmsd,True,lowest converged all-residue MSE
+hierarchical_w1,True,lowest converged all-residue MSE
+hierarchical_logpf_profile,True,lowest converged all-residue MSE

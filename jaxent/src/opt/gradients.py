@@ -29,6 +29,7 @@ def create_gradient_masks(
     parameter_partition_masks: set[Optimisable_Parameters],
     params: Simulation_Parameters,
     optimisable_funcs: Array | None,
+    trainable_model_parameters: frozenset[str] | None = None,
 ) -> Simulation_Parameters:
     """Creates gradient masks as a Simulation_Parameters instance with integer values.
 
@@ -42,44 +43,37 @@ def create_gradient_masks(
         optimisable_funcs = jnp.zeros_like(params.forward_model_weights, dtype=jnp.float32)
 
     # Create masks based on which parameters are enabled for optimization
-    frame_mask = (
+    frame_mask_gate = (
         1.0 if Optimisable_Parameters.frame_weights in parameter_partition_masks else 0.0
     )
     model_mask = (
         1.0 if Optimisable_Parameters.model_parameters in parameter_partition_masks else 0.0
     )
 
-    mask_mask = 1.0 if Optimisable_Parameters.frame_mask in parameter_partition_masks else 0.0
-
-    if mask_mask == 1.0:
-        raise NotImplementedError(
-            "Frame mask optimization not fully implemented - while gradients can flow, "
-            "frame masking is not applied during weights normalisation before the forward step"
-        )
-
-    # Create frame weights mask
-    frame_weights_mask = jax.tree_util.tree_map(
-        lambda x: jnp.full_like(x, frame_mask, dtype=jnp.float32), params.frame_weights
-    )
-
-    # Create frame mask mask
-    frame_mask_mask = jax.tree_util.tree_map(
-        lambda x: jnp.full_like(x, mask_mask, dtype=jnp.float32), params.frame_mask
+    frame_weight_logits_mask = jax.tree_util.tree_map(
+        lambda x: jnp.full_like(x, frame_mask_gate, dtype=jnp.float32),
+        params.frame_weight_logits,
     )
 
     # Create model parameters mask - handle each Model_Parameters instance separately
     model_parameters_mask = []
     for model_param in params.model_parameters:
-        # For each Model_Parameters instance, create a mask of the same structure
-        masked_model_param = jax.tree_util.tree_map(
-            lambda x: jnp.full_like(x, model_mask, dtype=jnp.float32), model_param
+        masked_model_param = model_param._create_modified_instance(
+            lambda slot, value: jnp.full_like(
+                value,
+                model_mask
+                * float(
+                    trainable_model_parameters is None
+                    or slot in trainable_model_parameters
+                ),
+                dtype=jnp.float32,
+            )
         )
         model_parameters_mask.append(masked_model_param)
 
     # In create_parameter_partition_masks
     param_mask = Simulation_Parameters(
-        frame_weights=frame_weights_mask,
-        frame_mask=frame_mask_mask,
+        frame_weight_logits=frame_weight_logits_mask,
         model_parameters=model_parameters_mask,
         normalise_loss_functions=jnp.zeros_like(
             params.normalise_loss_functions, dtype=jnp.float32
@@ -103,13 +97,8 @@ def mask_gradients(
         A new Simulation_Parameters instance with masked gradients
     """
     # Mask frame weights - directly multiply by the integer mask
-    masked_frame_weights = jax.tree_util.tree_map(
-        lambda g, m: g * m, grads.frame_weights, masks.frame_weights
-    )
-
-    # Mask frame mask
-    masked_frame_mask = jax.tree_util.tree_map(
-        lambda g, m: g * m, grads.frame_mask, masks.frame_mask
+    masked_frame_weight_logits = jax.tree_util.tree_map(
+        lambda g, m: g * m, grads.frame_weight_logits, masks.frame_weight_logits
     )
 
     # Mask model parameters - handle each Model_Parameters instance separately
@@ -120,8 +109,7 @@ def mask_gradients(
         masked_model_parameters.append(masked_param)
 
     masked_grads = Simulation_Parameters(
-        frame_weights=masked_frame_weights,
-        frame_mask=masked_frame_mask,
+        frame_weight_logits=masked_frame_weight_logits,
         model_parameters=masked_model_parameters,
         normalise_loss_functions=masks.normalise_loss_functions,
         forward_model_weights=masks.forward_model_weights,

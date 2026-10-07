@@ -15,4 +15,5 @@ class NetHDX_Model_Parameters(Model_Parameters):
     temperature: float = 300.0
     timepoints: Float[Array, " n_timepoints"] = field(default_factory=lambda: jnp.array([0.167, 1.0, 10.0]))
     static_params: ClassVar[set[str]] = {"temperature", "key", "timepoints"}
+    nonnegative_params: ClassVar[frozenset[str]] = frozenset({"shell_energy_scaling"})
     key = frozenset({m_key("HDX_resPF"), m_key("HDX_peptide")})

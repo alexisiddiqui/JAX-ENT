@@ -43,9 +43,8 @@ def real_inputs_random_data():
     frame_weights = jax.random.uniform(subkey, (num_frames,))
     frame_weights /= jnp.sum(frame_weights)  # Normalize
 
-    params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=jnp.ones(num_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[model.config.forward_parameters for model in forward_models],
         forward_model_weights=jnp.array([1.0]),
         forward_model_scaling=jnp.array([1.0]),
@@ -93,13 +92,10 @@ def create_parameter_variants(
         key, *subkeys = jax.random.split(key, 6)  # Split into 6 total: key + 5 subkeys
 
         # Vary frame weights
-        frame_weights = jax.random.uniform(subkeys[0], base_params.frame_weights.shape)
-        frame_weights = frame_weights / jnp.sum(frame_weights)
-
-        # Vary frame mask (some framesz on/off)
-        frame_mask = jax.random.choice(
-            subkeys[1], 2, base_params.frame_mask.shape, p=jnp.array([0.2, 0.8])
+        frame_weights = jax.random.uniform(
+            subkeys[0], base_params.frame_weight_simplex.shape
         )
+        frame_weights = frame_weights / jnp.sum(frame_weights)
 
         # Vary model parameters by scaling
         scale_factor = 0.5 + jax.random.uniform(subkeys[2]) * 1.5  # Scale between 0.5-2.0
@@ -119,9 +115,8 @@ def create_parameter_variants(
             0.1 + jax.random.uniform(subkeys[4], base_params.forward_model_scaling.shape) * 2.0
         )
 
-        variant = Simulation_Parameters(
-            frame_weights=frame_weights,
-            frame_mask=frame_mask,
+        variant = Simulation_Parameters.from_frame_weights(
+            frame_weights,
             model_parameters=scaled_model_params,
             forward_model_weights=fw_weights,
             forward_model_scaling=fw_scaling,
@@ -194,14 +189,30 @@ def test_jit_permutations_comprehensive(real_inputs_random_data, raise_jit_failu
                 )
 
         except Exception as e:
-            scenario_results = [{"error": str(e), "scenario": scenario}]
+            scenario_results = [
+                {"operation": scenario, "error": str(e), "scenario": scenario}
+            ]
 
         results[scenario] = scenario_results
 
     # Analyze results
     _analyze_results(results)
 
-    return results
+    failures = [
+        (scenario, result)
+        for scenario, scenario_results in results.items()
+        for result in scenario_results
+        if not result.get("success", False)
+    ]
+    if failures:
+        summary = "; ".join(
+            f"{scenario}/{result.get('operation', '<unknown>')}: "
+            f"{result.get('error', 'operation reported failure')}"
+            for scenario, result in failures
+        )
+        pytest.fail(f"JIT permutation test failures ({len(failures)}): {summary}")
+
+    return None
 
 
 def _test_init_once_multiple_params(
@@ -231,7 +242,7 @@ def _test_init_once_multiple_params(
     for i, params in enumerate(param_variants):
         try:
             with timeout_context(15):
-                simulation.forward(params)
+                Simulation.forward(simulation, params)
             results.append({"operation": f"forward_{i}", "success": True, "param_variant": i})
         except TimeoutError:
             results.append(
@@ -264,7 +275,7 @@ def _test_reinit_each_param(input_features, forward_models, param_variants, rais
                 simulation.initialise()
 
             with timeout_context(15):
-                simulation.forward(params)
+                Simulation.forward(simulation, params)
 
             results.append(
                 {"operation": f"reinit_forward_{i}", "success": True, "param_variant": i}
@@ -312,7 +323,7 @@ def _test_init_forward_reinit_forward(
                 simulation.initialise()
 
             with timeout_context(15):
-                simulation.forward(param_variants[i])
+                Simulation.forward(simulation, param_variants[i])
 
             results.append({"operation": f"init_forward_{i}", "success": True, "param_variant": i})
 
@@ -323,7 +334,7 @@ def _test_init_forward_reinit_forward(
                 simulation.initialise()
 
             with timeout_context(15):
-                simulation.forward(param_variants[i + 1])
+                Simulation.forward(simulation, param_variants[i + 1])
 
             results.append(
                 {"operation": f"reinit_forward_{i + 1}", "success": True, "param_variant": i + 1}
@@ -355,7 +366,7 @@ def _test_multiple_forwards_same_param(
         for call_num in range(5):
             try:
                 with timeout_context(10):
-                    simulation.forward(param_variants[0])
+                    Simulation.forward(simulation, param_variants[0])
                 results.append({"operation": f"repeat_forward_{call_num}", "success": True})
             except TimeoutError:
                 results.append(
@@ -393,7 +404,7 @@ def _test_param_cycling(input_features, forward_models, param_variants, raise_ji
             for i, params in enumerate(param_variants[:3]):  # Use first 3 variants
                 try:
                     with timeout_context(10):
-                        simulation.forward(params)
+                        Simulation.forward(simulation, params)
                     results.append(
                         {
                             "operation": f"cycle_{cycle}_param_{i}",
@@ -441,7 +452,7 @@ def _test_jit_cache_invalidation(input_features, forward_models, param_variants,
 
         # Forward with first params
         with timeout_context(15):
-            simulation.forward(param_variants[0])
+            Simulation.forward(simulation, param_variants[0])
         results.append({"operation": "initial_forward", "success": True})
 
         # Manually clear JIT function and force recompilation
@@ -449,7 +460,7 @@ def _test_jit_cache_invalidation(input_features, forward_models, param_variants,
 
         # Forward with different params (should trigger recompilation)
         with timeout_context(30):
-            simulation.forward(param_variants[1])
+            Simulation.forward(simulation, param_variants[1])
         results.append({"operation": "post_clear_forward", "success": True})
 
         # Re-JIT and test again
@@ -460,7 +471,7 @@ def _test_jit_cache_invalidation(input_features, forward_models, param_variants,
         )
 
         with timeout_context(30):
-            simulation.forward(param_variants[2])
+            Simulation.forward(simulation, param_variants[2])
         results.append({"operation": "post_rejit_forward", "success": True})
 
     except TimeoutError:
@@ -541,17 +552,28 @@ def test_extreme_jit_edge_cases(real_inputs_random_data, raise_jit_failure):
     param_variants = create_parameter_variants(base_params, 10)
 
     # Rapid switching test
+    failures = []
     key = jax.random.PRNGKey(int(time.time() * 1000) % 2**32)  # Use current time as seed
     for i in range(20):
+        param_idx = None
         try:
             key, subkey = jax.random.split(key)
             idx = jax.random.randint(subkey, (), 0, len(param_variants))
-            random_params = param_variants[int(idx)]
+            param_idx = int(idx)
+            random_params = param_variants[param_idx]
             with timeout_context(5):
-                simulation.forward(random_params)
+                Simulation.forward(simulation, random_params)
         except Exception as e:
-            print(f"Rapid switching failed at iteration {i}: {e}")
+            failures.append({"iteration": i, "param_idx": param_idx, "error": str(e)})
             break
+
+    if failures:
+        failure = failures[0]
+        pytest.fail(
+            "Rapid parameter switching failed at "
+            f"iteration {failure['iteration']} (parameter {failure['param_idx']}): "
+            f"{failure['error']}"
+        )
 
     print("Rapid switching test completed")
 
@@ -584,9 +606,8 @@ if __name__ == "__main__":
     frame_weights = jax.random.uniform(subkey, (num_frames,))
     frame_weights /= jnp.sum(frame_weights)  # Normalize
 
-    params = Simulation_Parameters(
-        frame_weights=frame_weights,
-        frame_mask=jnp.ones(num_frames),
+    params = Simulation_Parameters.from_frame_weights(
+        frame_weights,
         model_parameters=[model.config.forward_parameters for model in forward_models],
         forward_model_weights=jnp.array([1.0]),
         forward_model_scaling=jnp.array([1.0]),

@@ -72,7 +72,7 @@ def test_cli_predict_bv_model():
         assert features.k_ints is not None
         assert features.heavy_contacts is not None
         assert features.acceptor_contacts is not None
-        num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
+        num_residues = 53  # 58 residues in BPTI - 4 prolines and the N-terminus
         num_frames = 500
         assert features.k_ints.shape == (num_residues,)
         assert features.heavy_contacts.shape == (num_residues, num_frames)
@@ -126,7 +126,7 @@ def test_cli_predict_bv_model():
         print(f"Max: {np.max(predictions):.4f}")
 
         # Basic assertions on the output
-        num_residues = 52  # From featurisation step
+        num_residues = 53  # From featurisation step
         num_frames = 500
         assert predictions.shape == (num_residues, num_frames)
         assert np.all(predictions >= 0), "Predictions should be non-negative"
@@ -198,7 +198,7 @@ def test_cli_predict_bv_model_uptake():
         assert features.k_ints is not None
         assert features.heavy_contacts is not None
         assert features.acceptor_contacts is not None
-        num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
+        num_residues = 53  # 58 residues in BPTI - 4 prolines and the N-terminus
         num_frames = 500
         assert features.k_ints.shape == (num_residues,)
         assert features.heavy_contacts.shape == (num_residues, num_frames)
@@ -256,7 +256,7 @@ def test_cli_predict_bv_model_uptake():
         print(f"Max: {np.max(predictions):.4f}")
 
         # Basic assertions on the output
-        num_residues = 52  # From featurisation step
+        num_residues = 53  # From featurisation step
         num_timepoints = 3
         num_frames = 500
         assert predictions.shape == (num_timepoints, num_residues, num_frames)

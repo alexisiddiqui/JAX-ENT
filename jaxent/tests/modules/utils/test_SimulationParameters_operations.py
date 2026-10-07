@@ -36,9 +36,8 @@ def mock_model_params2():
 
 @pytest.fixture
 def params1(mock_model_params1):
-    return Simulation_Parameters(
-        frame_weights=jnp.array([0.1, 0.9]),
-        frame_mask=jnp.array([1, 1]),
+    return Simulation_Parameters.from_frame_weights(
+        jnp.array([0.1, 0.9]),
         model_parameters=[mock_model_params1],
         forward_model_weights=jnp.array([1.0]),
         normalise_loss_functions=jnp.array([0]),
@@ -48,9 +47,8 @@ def params1(mock_model_params1):
 
 @pytest.fixture
 def params2(mock_model_params2):
-    return Simulation_Parameters(
-        frame_weights=jnp.array([0.2, 0.8]),
-        frame_mask=jnp.array([0, 1]),
+    return Simulation_Parameters.from_frame_weights(
+        jnp.array([0.2, 0.8]),
         model_parameters=[mock_model_params2],
         forward_model_weights=jnp.array([0.5]),
         normalise_loss_functions=jnp.array([1]),

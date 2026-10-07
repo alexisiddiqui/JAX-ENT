@@ -35,28 +35,32 @@ import argparse
 import os
 import time
 from datetime import datetime  # NEW: used to append timestamp when no output dir provided
-from typing import List
+from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 # Import model components
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.uptake_models import build_uptake_model
+from jaxent.examples.common.loading import (
+    load_hdx_timepoints_minutes,
+    validate_hdx_timepoint_count,
+)
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
 
 
@@ -112,11 +116,18 @@ def run_maxent_sweep(
     n_steps: int = 10000,
     num_splits: int = 3,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
-    output_base_dir: str = None, model_parameters_lr_scale: float = 1.0) -> dict:
+    output_base_dir: str = None, model_parameters_lr_scale: float = 1.0,
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
+    convergence_values: List[float] | None = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
+) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
 
@@ -137,7 +148,11 @@ def run_maxent_sweep(
     print(f"BV reg values: {bv_reg_values}")
 
     # Define convergence criteria
-    convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    convergence_rates = (
+        convergence_values
+        if convergence_values is not None
+        else [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8]
+    )
 
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
@@ -164,9 +179,15 @@ def run_maxent_sweep(
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
 
     # Setup BV model
-    bv_config = BV_model_Config(num_timepoints=5)
-    bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
-    bv_model = BV_model(config=bv_config)
+    timepoints_path = os.path.join(
+        os.path.dirname(__file__), "../../../2_CrossValidation/data/_MoPrP/moprp.times"
+    )
+    timepoints = load_hdx_timepoints_minutes(timepoints_path)
+    bv_model = build_uptake_model(
+        uptake_model, timepoints, kint_unit="s^-1", time_unit="min"
+    )
+    if uptake_model == "standard":
+        bv_model.forward[m_key("HDX_peptide")].frame_averaging_mode = frame_averaging_mode
     model_parameters = bv_model.params
 
     # Discover split types
@@ -202,9 +223,8 @@ def run_maxent_sweep(
     print(f"Total runs: {results['total_runs']}")
     n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.ones(2),
         normalise_loss_functions=jnp.ones(2),
@@ -247,6 +267,12 @@ def run_maxent_sweep(
         os.makedirs(output_dir, exist_ok=True)
 
         for split_idx, (train_data, val_data) in enumerate(splits):
+            validate_hdx_timepoint_count(
+                train_data, timepoints, label=f"{split_type} split {split_idx} train"
+            )
+            validate_hdx_timepoint_count(
+                val_data, timepoints, label=f"{split_type} split {split_idx} validation"
+            )
             print(f"  Processing split {split_idx:03d}")
             print(f"    Train samples: {len(train_data)}, Val samples: {len(val_data)}")
 
@@ -260,6 +286,11 @@ def run_maxent_sweep(
                     try:
                         loss_config = LossConfig(
                             optimize_bv_params=True,
+                            trainable_model_parameters=(
+                                frozenset({"raw_bv_bc", "raw_bv_bh"})
+                                if uptake_model == "linear"
+                                else None
+                            ),
                             primary_loss=LOSS_NAME_MAP[loss_name],
                             regularization_losses=[{"name": f"model_params_{bv_reg_name}_loss"}],
                             maxent_scaling=maxent_value,
@@ -269,13 +300,17 @@ def run_maxent_sweep(
                         opt_config = OptimizationConfig(
                             n_steps=n_steps,
                             learning_rate=learning_rate,
-                            initial_learning_rate=initial_learning_rate,
-                            initial_steps=initial_steps,
                             ema_alpha=ema_alpha,
                             forward_model_scaling=forward_model_scaling,
                             convergence_rates=convergence_rates,
                             model_parameters_lr_scale=model_parameters_lr_scale,
                             optimizer="adam",
+                            step_chunk_size=step_chunk_size,
+                            lr_adjustment=lr_adjustment,
+                            frame_average_impl=frame_average_impl,
+                            reset_threshold_cooldown_on_oscillation=(
+                                reset_threshold_cooldown_on_oscillation
+                            ),
                         )
                         
                         run_optimization(
@@ -292,6 +327,7 @@ def run_maxent_sweep(
                             name=run_name,
                             output_dir=output_dir,
                             cov_matrix=cov_matrix_data,
+                            execution_mode=execution_mode,
                         )
 
                         run_elapsed = time.time() - run_start_time
@@ -377,15 +413,21 @@ def run_all_combinations(
     n_steps: int,
     num_splits: int,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
-    output_base_dir: str = None, model_parameters_lr_scale: float = 1.0) -> List[dict]:  # now returns list of result dicts
+    output_base_dir: str = None, model_parameters_lr_scale: float = 1.0,
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
+    convergence_values: List[float] | None = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
+) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
 
-    loss_names = ["mcMSE", "MSE"]
+    loss_names = ["MSE", "Sigma_MSE"]
 
     combinations = [(ensemble, loss_name) for ensemble in ensembles for loss_name in loss_names]
 
@@ -415,12 +457,17 @@ def run_all_combinations(
                 n_steps=n_steps,
                 num_splits=num_splits,
                 learning_rate=learning_rate,
-                initial_learning_rate=initial_learning_rate,
-                initial_steps=initial_steps,
                 ema_alpha=ema_alpha,
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,
                 model_parameters_lr_scale=model_parameters_lr_scale,
+                execution_mode=execution_mode,
+                step_chunk_size=step_chunk_size,
+                lr_adjustment=lr_adjustment,
+                frame_average_impl=frame_average_impl,
+                frame_averaging_mode=frame_averaging_mode,
+                convergence_values=convergence_values,
+                uptake_model=uptake_model,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -490,13 +537,21 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
+    )
+    parser.add_argument(
+        "--maxent-values",
+        help="Positive comma-separated MaxEnt scales; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--bvreg-range",
         type=str,
         default="1,10",
         help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+    )
+    parser.add_argument(
+        "--bvreg-values",
+        help="Comma-separated BV regularization weights.",
     )
     parser.add_argument(
         "--n-steps",
@@ -518,20 +573,29 @@ def main():
         help="Learning rate for optimizer (default: 1e-1).",
     )
 
-    # initial_learning_rate=initial_learning_rate,
+    parser.add_argument("--lr-adjustment", choices=["on", "off"], default="on")
     parser.add_argument(
-        "--initial-learning-rate",
-        type=float,
-        default=1e0,
-        help="Initial learning rate for optimizer (default: 1e0).",
+        "--frame-average-impl",
+        choices=["tensordot", "legacy_sum"],
+        default="tensordot",
     )
-
-    # initial_steps=initial_steps,
     parser.add_argument(
-        "--initial-steps",
-        type=int,
-        default=2,
-        help="Number of initial steps with higher learning rate (default: 2).",
+        "--frame-averaging-mode",
+        choices=["log_pf", "rate", "frame_uptake"],
+        default="log_pf",
+        help="Physical quantity averaged across frames (default: log_pf).",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family (default: standard).",
+    )
+    parser.add_argument("--step-chunk-size", type=int, default=100)
+    parser.add_argument(
+        "--convergence-values",
+        default=None,
+        help="Comma-separated convergence ladder override for diagnostics.",
     )
     # ema_alpha=ema_alpha,
     parser.add_argument(
@@ -546,6 +610,12 @@ def main():
         type=float,
         default=100.0,
         help="Forward model scaling factor (default: 100.0).",
+    )
+    parser.add_argument(
+        "--execution-mode",
+        choices=["compiled", "python"],
+        default="compiled",
+        help="Optimizer execution mode (default: compiled).",
     )
 
     # NEW: add output directory option (default None -> will trigger timestamping)
@@ -563,21 +633,45 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.step_chunk_size < 1:
+        parser.error("--step-chunk-size must be >= 1")
+    convergence_values = (
+        None
+        if args.convergence_values is None
+        else [float(value) for value in args.convergence_values.split(",") if value]
+    )
+    if convergence_values is not None and not convergence_values:
+        parser.error("--convergence-values must contain at least one value")
 
-    # Parse maxent range
-    try:
-        start_val, end_val = map(int, args.maxent_range.split(","))
-        maxent_values = list(range(start_val, end_val + 1))
-    except ValueError:
-        raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if args.maxent_values:
+        try:
+            maxent_values = [float(value) for value in args.maxent_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("maxent-values must be comma-separated numbers") from exc
+    else:
+        try:
+            start_val, end_val = map(int, args.maxent_range.split(","))
+            maxent_values = list(range(start_val, end_val + 1))
+        except ValueError as exc:
+            raise ValueError(
+                "maxent-range must be in format 'start,end' (e.g., '1,10')"
+            ) from exc
+    if not maxent_values or any(value <= 0 for value in maxent_values):
+        parser.error("--maxent-range must contain positive scales")
 
-    # Parse bvreg range
-    try:
-        start_val, end_val = map(float, args.bvreg_range.split(","))
-        # For float ranges, just use the two endpoints (no auto-range generation)
-        bvreg_values = [start_val, end_val] if start_val != end_val else [start_val]
-    except ValueError:
-        raise ValueError("bvreg-range must be in format 'start,end' (e.g., '0.0,1.0')")
+    if args.bvreg_values:
+        try:
+            bvreg_values = [float(value) for value in args.bvreg_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("bvreg-values must be comma-separated numbers") from exc
+    else:
+        try:
+            start_val, end_val = map(float, args.bvreg_range.split(","))
+            bvreg_values = [start_val, end_val] if start_val != end_val else [start_val]
+        except ValueError as exc:
+            raise ValueError(
+                "bvreg-range must be in format 'start,end' (e.g., '0.0,1.0')"
+            ) from exc
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
@@ -585,11 +679,14 @@ def main():
     print(f"  Steps per run: {args.n_steps}")
     print(f"  Replicates per split: {args.n_replicates}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Initial learning rate: {args.initial_learning_rate}")
-    print(f"  Initial steps: {args.initial_steps}")
+    print(f"  LR adjustment: {args.lr_adjustment}")
+    print(f"  Frame averaging: {args.frame_average_impl}")
+    print(f"  Frame averaging mode: {args.frame_averaging_mode}")
+    print(f"  Step chunk size: {args.step_chunk_size}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
     print(f"  Model parameter LR scale: {args.model_parameters_lr_scale}")
+    print(f"  Execution mode: {args.execution_mode}")
     # Check if specific combination is requested
     if args.ensemble is not None and args.loss_function is not None:
         # Single combination mode
@@ -611,12 +708,17 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
+            execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            frame_averaging_mode=args.frame_averaging_mode,
+            convergence_values=convergence_values,
+            uptake_model=args.uptake_model,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -629,12 +731,17 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
+            execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            frame_averaging_mode=args.frame_averaging_mode,
+            convergence_values=convergence_values,
+            uptake_model=args.uptake_model,
         )
 
     # Report where results were written

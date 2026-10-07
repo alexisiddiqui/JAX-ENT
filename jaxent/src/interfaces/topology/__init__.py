@@ -1,6 +1,6 @@
 from jaxent.src.interfaces.topology.core import Partial_Topology
 from jaxent.src.interfaces.topology.factory import TopologyFactory
-from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
+from jaxent.src.interfaces.topology.mda_adapter import TerminalExclusion, mda_TopologyAdapter
 from jaxent.src.interfaces.topology.pairwise import PairwiseTopologyComparisons
 from jaxent.src.interfaces.topology.serialise import PTSerialiser
 from jaxent.src.interfaces.topology.utils import (
@@ -17,5 +17,6 @@ __all__ = [
     "PairwiseTopologyComparisons",
     "calculate_fragment_redundancy",
     "mda_TopologyAdapter",
+    "TerminalExclusion",
     "group_set_by_chain",
 ]

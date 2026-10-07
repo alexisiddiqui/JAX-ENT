@@ -67,13 +67,13 @@ def test_featurise_cli_bv_model():
             topology = json.load(f)
 
         # Summary statistics and assertions
-        num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
+        num_residues = 53  # 58 residues in BPTI - 4 prolines and the N-terminus
         num_frames = 500
 
         assert features.k_ints is not None
         assert features.heavy_contacts is not None
         assert features.acceptor_contacts is not None
-        num_residues = 52  # 58 residues in BPTI - 5 prolines and resid 1
+        num_residues = 53  # 58 residues in BPTI - 4 prolines and the N-terminus
         num_frames = 500
         assert features.k_ints.shape == (num_residues,)
         assert features.heavy_contacts.shape == (num_residues, num_frames)

@@ -1,5 +1,5 @@
 import jax.numpy as jnp
-from jaxent.src.custom_types.base import ForwardPass
+from jaxent.src.custom_types.base import FrameAveragingMode, ForwardPass
 from jaxent.src.models.SAXS.features import (
     SAXS_curve_input_features, SAXS_basis_input_features, SAXS_output_features,
 )
@@ -10,7 +10,7 @@ class SAXS_direct_ForwardPass(
     ForwardPass[SAXS_curve_input_features, SAXS_output_features, SAXS_direct_Model_Parameters]
 ):
     """Identity forward pass: returns frame-averaged I(q) directly."""
-    average_first: bool = True  # operate per-frame then average outputs
+    frame_averaging_mode: FrameAveragingMode = "log_pf"
 
     def __call__(
         self,
@@ -31,7 +31,7 @@ class SAXS_DebyeForwardPass(
         I_ens = Ivv - 2*c1*Ive + 2*c2*Ivh + c1^2*Iee - 2*c1*c2*Ieh + c2^2*Ihh
         I_calc = c * I_ens + b
     """
-    average_first: bool = True  # operate per-frame then average outputs
+    frame_averaging_mode: FrameAveragingMode = "log_pf"
 
     def __call__(
         self,

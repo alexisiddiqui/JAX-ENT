@@ -1,0 +1,199 @@
+{
+  "description": "fit-free full-ensemble MoPrP pivot litmus at fixed w_NMR",
+  "rate_provenance": {
+    "rate_source": "hdxrate_pdla_validated",
+    "rate_file": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/validated_hdxrate_pdla/moprp_hdxrate_pdla_pD4p4_298K_min.dat",
+    "rate_file_sha256": "43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c",
+    "provider": "HDXrate-0.2.2-poly/PDLA-via-JAX-ENT",
+    "temperature_k": 298.0,
+    "ph": 4.4,
+    "units": "min^-1",
+    "ph_correction": false,
+    "ph_convention": "effective pD 4.4 supplied unchanged; no automatic +0.4 correction"
+  },
+  "ensemble": "AF2_MSAss",
+  "n_frames": 500,
+  "overlap": {
+    "count": 49,
+    "residue_ids": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      11,
+      15,
+      16,
+      19,
+      22,
+      23,
+      24,
+      25,
+      27,
+      28,
+      29,
+      30,
+      32,
+      33,
+      34,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      43,
+      44,
+      61,
+      66,
+      76,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      95,
+      96,
+      97,
+      98,
+      99,
+      101
+    ],
+    "covered_peptide_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14
+    ]
+  },
+  "published_coefficients": {
+    "bc": 0.35,
+    "bh": 2.0
+  },
+  "frozen_results": {
+    "legacy": {
+      "versus_observed_rmse": 0.385619316758409,
+      "versus_expfact_reconstruction_rmse": 0.4771380196436316,
+      "versus_expfact_pf": {
+        "mean_signed_difference": 4.852455746577887,
+        "rmse": 6.079298559272847,
+        "spearman": 0.24918367346938775
+      }
+    },
+    "fast": {
+      "versus_observed_rmse": 0.3526935070858093,
+      "versus_expfact_reconstruction_rmse": 0.4435412283636114,
+      "versus_expfact_pf": {
+        "mean_signed_difference": 3.8553740150230147,
+        "rmse": 5.0565617169538335,
+        "spearman": 0.4253061224489796
+      }
+    },
+    "slow-N": {
+      "versus_observed_rmse": 0.3820330286934696,
+      "versus_expfact_reconstruction_rmse": 0.47346012505922147
+    }
+  },
+  "second_order_gap_check": {
+    "mean_signed_difference": -0.654822556058536,
+    "rmse": 1.7357325613370573,
+    "spearman": 0.9560204081632652
+  },
+  "scan": {
+    "bc_range": [
+      0.0,
+      1.0
+    ],
+    "bh_range": [
+      0.0,
+      4.0
+    ],
+    "grid_size_per_axis": 41,
+    "best": {
+      "legacy": {
+        "expfact_pf": {
+          "rmse": 2.1769189962890763,
+          "bc": 0.15000000000000002,
+          "bh": 0.7000000000000001
+        },
+        "expfact_reconstruction": {
+          "rmse": 0.23101954509371278,
+          "bc": 0.15000000000000002,
+          "bh": 0.1
+        },
+        "observed": {
+          "rmse": 0.20984280004818295,
+          "bc": 0.2,
+          "bh": 0.0
+        }
+      },
+      "fast": {
+        "expfact_pf": {
+          "rmse": 2.096418822191089,
+          "bc": 0.17500000000000002,
+          "bh": 0.30000000000000004
+        },
+        "expfact_reconstruction": {
+          "rmse": 0.22852582025847115,
+          "bc": 0.17500000000000002,
+          "bh": 0.0
+        },
+        "observed": {
+          "rmse": 0.20583985164763388,
+          "bc": 0.2,
+          "bh": 0.2
+        }
+      },
+      "slow-N": {
+        "expfact_reconstruction": {
+          "rmse": 0.23073317882232577,
+          "bc": 0.15000000000000002,
+          "bh": 0.1
+        },
+        "observed": {
+          "rmse": 0.20920507484452616,
+          "bc": 0.2,
+          "bh": 0.0
+        }
+      }
+    }
+  },
+  "resolvability_gate": {
+    "starts_requested": 20,
+    "finite_solutions": 20,
+    "criterion": "legacy-fast gap exceeds solution range on >50% of overlap residues",
+    "fraction_exceeding": 0.0,
+    "count_exceeding": 0,
+    "count_tested": 48,
+    "passed": false,
+    "verdict": "inconclusive (underpowered)"
+  },
+  "verification": {
+    "rate_convention_max_abs": 0.0,
+    "jensen_violations": 0,
+    "degenerate_weight_curve_max_abs": 0.0,
+    "legacy_baseline_max_abs": 0.0
+  },
+  "caveats": [
+    "exPfact PFs are fitted from the same uptake data, but independently of ensemble and pivot",
+    "exPfact assumes EX2 and one PF per residue; slow-N therefore has no Panel-A scalar",
+    "the overlap is a peptide-map-constrained, non-random subset",
+    "w_NMR is pseudo-truth spread uniformly within state"
+  ]
+}

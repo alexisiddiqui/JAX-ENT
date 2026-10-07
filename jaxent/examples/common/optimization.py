@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import json
 import os
-from typing import List, Sequence, Tuple, cast
+import hashlib
+import math
+import subprocess
+import time
+from typing import List, Literal, Sequence, Tuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -28,12 +32,29 @@ from jaxent.src.models.HDX.BV.features import BV_input_features, uptake_BV_outpu
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model, BV_Model_Parameters
 from jaxent.src.opt.base import InitialisedSimulation, JaxEnt_Loss, OptimizationHistory
 from jaxent.src.opt.optimiser import OptaxOptimizer, OptimizationState
-from jaxent.src.opt.run import _optimise
+from jaxent.src.opt.run import _optimise, _optimise_pure
 from jaxent.src.utils.hdf import save_optimization_history_to_file
 from jaxent.src.utils.jit_fn import jit_Guard
 
 from .config import ExperimentConfig, LossConfig, OptimizationConfig
 from .losses import get_loss_function_by_name, maxent_convexKL_loss
+
+
+def maxent_loss_weight(maxent_scaling: float) -> float:
+    """Convert a positive user-facing MaxEnt scale to its KL loss weight."""
+    scaling = float(maxent_scaling)
+    if not math.isfinite(scaling) or scaling <= 0.0:
+        raise ValueError("maxent_scaling must be finite and greater than zero")
+    return 1.0 / scaling
+
+
+def _build_loss_slot_weights(
+    maxent_scaling: float, n_regularization_losses: int, bv_reg_scaling: float
+) -> list[float]:
+    """Return weights in loss-list order: data, MaxEnt, then BV regularizers."""
+    return [1.0, maxent_loss_weight(maxent_scaling)] + [
+        bv_reg_scaling
+    ] * n_regularization_losses
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +120,17 @@ def run_optimization(
     name: str = "optimization_run",
     output_dir: str = "_optimise",
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     cov_matrix: Array | None = None,
     model_parameters_lr_scale: float = 1.0,
+    execution_mode: Literal["compiled", "python"] = "python",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    initial_frame_weights: Array | None = None,
+    frame_regularizer: tuple[str, JaxEnt_Loss, object, float] | None = None,
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -116,14 +142,23 @@ def run_optimization(
 
     When ``opt_config`` is provided, its fields override the corresponding
     keyword arguments.
+
+    ``frame_regularizer=(name, loss, target, strength)`` replaces the MaxEnt
+    slot, including its target and coefficient. The default retains MaxEnt.
+    The native slot-weight normalization and optimizer are unchanged.
     """
+    run_start = time.time()
     # Apply OptimizationConfig overrides
     if opt_config is not None:
         n_steps = opt_config.n_steps
         learning_rate = opt_config.learning_rate
-        initial_learning_rate = opt_config.initial_learning_rate
-        initial_steps = opt_config.initial_steps
         ema_alpha = opt_config.ema_alpha
+        step_chunk_size = opt_config.step_chunk_size
+        reset_threshold_cooldown_on_oscillation = (
+            opt_config.reset_threshold_cooldown_on_oscillation
+        )
+        lr_adjustment = opt_config.lr_adjustment
+        frame_average_impl = opt_config.frame_average_impl
         forward_model_scaling = opt_config.forward_model_scaling
         model_parameters_lr_scale = opt_config.model_parameters_lr_scale
         if opt_config.convergence_rates is not None:
@@ -140,6 +175,11 @@ def run_optimization(
     # Build loss function list from config
     primary_loss = get_loss_function_by_name(loss_config.primary_loss)
     loss_fn_list: list[JaxEnt_Loss] = [primary_loss, maxent_convexKL_loss]
+    if frame_regularizer is not None:
+        _, frame_loss, _, frame_strength = frame_regularizer
+        if not math.isfinite(frame_strength) or frame_strength < 0:
+            raise ValueError("frame regularizer strength must be finite and nonnegative")
+        loss_fn_list[1] = frame_loss
     data_targets_list: list = []
     indexes_list: list[int] = [0, 0]
 
@@ -165,22 +205,30 @@ def run_optimization(
 
     # Build Simulation_Parameters
     n_reg = len(loss_config.regularization_losses)
-    if n_reg > 0:
-        _fwd_weights = (
-            [maxent_scaling]
-            + [1.0] * (n_loss_slots - 1 - n_reg)
-            + [loss_config.bv_reg_scaling] * n_reg
-        )
-    else:
-        _fwd_weights = [maxent_scaling] + [1.0] * (n_loss_slots - 1)
+    _fwd_weights = _build_loss_slot_weights(
+        maxent_scaling, n_reg, loss_config.bv_reg_scaling
+    )
+    if frame_regularizer is not None:
+        _fwd_weights[1] = frame_regularizer[3]
 
     _norm_fns = jnp.ones(n_loss_slots)
     if not loss_config.normalize_bv_reg and n_reg > 0:
         _norm_fns = _norm_fns.at[-1].set(0.0)
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    if initial_frame_weights is None:
+        initial_weights = jnp.ones(n_frames) / n_frames
+    else:
+        initial_weights = jnp.asarray(initial_frame_weights)
+        if initial_weights.shape != (n_frames,):
+            raise ValueError(
+                f"initial_frame_weights has shape {initial_weights.shape}; expected {(n_frames,)}"
+            )
+        if bool(jnp.any(initial_weights < 0)) or not bool(
+            jnp.isclose(initial_weights.sum(), 1.0)
+        ):
+            raise ValueError("initial_frame_weights must be non-negative and sum to one")
+    parameters = Simulation_Parameters.from_frame_weights(
+        initial_weights,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.array(_fwd_weights),
         normalise_loss_functions=_norm_fns,
@@ -189,11 +237,18 @@ def run_optimization(
 
     # Build data_to_fit tuple
     data_targets_list = [loader, parameters]
+    if frame_regularizer is not None:
+        data_targets_list[1] = frame_regularizer[2]
     if loss_config.regularization_losses:
         data_targets_list.append(parameters)
 
     # Create simulation
-    sim = Simulation(input_features=(features,), forward_models=(forward_model,), params=parameters)
+    sim = Simulation(
+        input_features=(features,),
+        forward_models=(forward_model,),
+        params=parameters,
+        frame_average_impl=frame_average_impl,
+    )
     with jit_Guard(sim, cleanup_on_exit=True) as sim:
         sim.initialise()
 
@@ -208,20 +263,15 @@ def run_optimization(
             parameter_partition_masks=partition_masks,
             clip_value=None,
             optimizer=optimizer_type,
-            initial_learning_rate=initial_learning_rate,
-            initial_steps=initial_steps,
+            model_parameters_lr_scale=model_parameters_lr_scale,
+            trainable_model_parameters=loss_config.trainable_model_parameters,
+            lr_adjustment=lr_adjustment,
         )
-        opt_state = optimizer.initialise(
-            model=sim,
-            _jit_test_args=(
-                tuple(data_targets_list),
-                tuple(loss_fn_list),
-                tuple(indexes_list),
-            ),
-        )
+        opt_state = optimizer.initialise(model=sim)
 
         # Run optimisation sweep
-        sim, optimizer = _optimise(
+        optimise_fn = _optimise_pure if execution_mode == "compiled" else _optimise
+        sim, optimizer = optimise_fn(
             _simulation=sim,
             data_to_fit=tuple(data_targets_list),
             n_steps=n_steps,
@@ -232,17 +282,79 @@ def run_optimization(
             opt_state=opt_state,
             optimizer=optimizer,
             ema_alpha=ema_alpha,
+            chunk_size=step_chunk_size,
+            reset_threshold_cooldown_on_oscillation=(
+                reset_threshold_cooldown_on_oscillation
+            ),
         )
 
         # Save results
         os.makedirs(output_dir, exist_ok=True)
-        
-        # 1. Save config as JSON
+        try:
+            commit = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except (OSError, subprocess.CalledProcessError):
+            commit = "unknown"
+        lockfile = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "../../../uv.lock")
+        )
+        try:
+            with open(lockfile, "rb") as lockfile_handle:
+                lockfile_hash = hashlib.sha256(lockfile_handle.read()).hexdigest()
+        except OSError:
+            lockfile_hash = "unknown"
+
+        # Save the effective configuration, including provenance, alongside
+        # every history.  This is deliberately resolved after the run so wall
+        # time and backend/device information describe the actual execution.
         config_dict = {
             "loss_config": loss_config.__dict__,
+            "opt_config": opt_config.__dict__ if opt_config is not None else {},
+            "effective_settings": {
+                "frame_regularizer": (
+                    frame_regularizer[0] if frame_regularizer is not None else "maxent_convexKL_loss"
+                ),
+                "frame_regularizer_weight": _fwd_weights[1],
+                "execution_mode": execution_mode,
+                "frame_average_impl": frame_average_impl,
+                "frame_averaging_mode": next(
+                    (
+                        getattr(forward_pass, "frame_averaging_mode")
+                        for forward_pass in forward_model.forward.values()
+                        if hasattr(forward_pass, "frame_averaging_mode")
+                    ),
+                    "log_pf",
+                ),
+                "lr_adjustment": lr_adjustment,
+                "step_chunk_size": step_chunk_size,
+                "reset_threshold_cooldown_on_oscillation": (
+                    reset_threshold_cooldown_on_oscillation
+                ),
+                "learning_rate": learning_rate,
+                "optimizer": optimizer_type,
+                "initial_frame_weights": (
+                    "uniform" if initial_frame_weights is None else "user_supplied"
+                ),
+                "timepoints": (
+                    jnp.asarray(model_parameters.timepoints).reshape(-1).tolist()
+                    if hasattr(model_parameters, "timepoints")
+                    else None
+                ),
+            },
+            "runtime": {
+                "commit": commit,
+                "lockfile_sha256": lockfile_hash,
+                "jax_version": jax.__version__,
+                "jaxlib_version": getattr(jax.lib, "__version__", "unknown"),
+                "backend": jax.default_backend(),
+                "device_count": jax.device_count(),
+                "devices": [str(device) for device in jax.devices()],
+                "wall_time_seconds": time.time() - run_start,
+            },
         }
-        if opt_config is not None:
-            config_dict["opt_config"] = opt_config.__dict__
         
         config_path = os.path.join(output_dir, f"{name}_config.json")
         with open(config_path, "w") as f:
@@ -257,8 +369,6 @@ def run_optimization(
         # 2. Save HDF5 Histories
         output_path = os.path.join(output_dir, f"{name}_results.hdf5")
         save_optimization_history_to_file(filename=output_path, history=optimizer.history)
-        output_path_ema = os.path.join(output_dir, f"{name}_results_EMA.hdf5")
-        save_optimization_history_to_file(filename=output_path_ema, history=optimizer.ema_history)
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +392,7 @@ class BV_uptake_ForwardPass_frames(
         heavy_contacts = jnp.asarray(input_features.heavy_contacts)
         acceptor_contacts = jnp.asarray(input_features.acceptor_contacts)
         kints = jnp.asarray(input_features.k_ints)
-        time_points = parameters.timepoints.reshape(-1)
+        time_points = jnp.asarray(parameters.timepoints).reshape(-1)
 
         log_pf = (bc * heavy_contacts) + (bh * acceptor_contacts)
         pf = jnp.exp(log_pf)

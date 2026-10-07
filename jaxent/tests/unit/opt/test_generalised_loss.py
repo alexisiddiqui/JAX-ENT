@@ -99,9 +99,8 @@ jax.tree_util.register_pytree_node(
 
 def _make_sim_pf(log_pf: Array) -> Simulation:
     num_residues = log_pf.shape[0]
-    params = Simulation_Parameters(
-        frame_weights=jnp.array([1.0]),
-        frame_mask=jnp.array([1.0]),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.array([1.0]),
         model_parameters=[BV_Model_Parameters()],
         forward_model_weights=jnp.ones(1),
         normalise_loss_functions=jnp.ones(1),
@@ -121,9 +120,8 @@ def _make_sim_pf(log_pf: Array) -> Simulation:
 
 def _make_sim_uptake(uptake: Array) -> Simulation:
     num_residues = uptake.shape[1]
-    params = Simulation_Parameters(
-        frame_weights=jnp.array([1.0]),
-        frame_mask=jnp.array([1.0]),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.array([1.0]),
         model_parameters=[BV_Model_Parameters(timepoints=jnp.array([0.1, 1.0]))],
         forward_model_weights=jnp.ones(1),
         normalise_loss_functions=jnp.ones(1),
@@ -202,9 +200,8 @@ class TestIdentityMappingFlattenTrue:
         values = jnp.array([1.0, 2.0, 3.0])
         output = _DummyOutput(values=values)
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.array([1.0]),
-            frame_mask=jnp.array([1.0]),
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.array([1.0]),
             model_parameters=[BV_Model_Parameters()],
             forward_model_weights=jnp.ones(1),
             normalise_loss_functions=jnp.ones(1),
@@ -242,9 +239,8 @@ class TestIdentityMappingKnownLossValue:
         values = jnp.array([1.0, 2.0, 3.0])
         output = _DummyOutput(values=values)
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.array([1.0]),
-            frame_mask=jnp.array([1.0]),
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.array([1.0]),
             model_parameters=[BV_Model_Parameters()],
             forward_model_weights=jnp.ones(1),
             normalise_loss_functions=jnp.ones(1),
@@ -309,9 +305,8 @@ class TestMkeyDispatchesCorrectOutput:
         log_pf = jnp.array([1.0, 2.0, 3.0])
         dummy_values = jnp.array([10.0, 20.0, 30.0])
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.array([1.0]),
-            frame_mask=jnp.array([1.0]),
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.array([1.0]),
             model_parameters=[BV_Model_Parameters()],
             forward_model_weights=jnp.ones(1),
             normalise_loss_functions=jnp.ones(1),

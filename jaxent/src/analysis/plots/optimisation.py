@@ -6,6 +6,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 
 
 def plot_total_losses(opt_history):
@@ -104,11 +105,12 @@ def plot_frame_weights_heatmap(opt_history):
     Create a heatmap showing the evolution of frame weights during optimization.
     """
     # Extract frame weights from each state
-    frame_weights = [state.params.frame_weights for state in opt_history.states]
-    frame_mask = [state.params.frame_mask for state in opt_history.states]
-
-    # Apply frame mask
-    frame_weights = [weights * mask for weights, mask in zip(frame_weights, frame_mask)]
+    frame_weights = [
+        validated_frame_weight_simplex(
+            state.params.frame_weight_simplex, context=f"history state {index}"
+        )
+        for index, state in enumerate(opt_history.states)
+    ]
 
     # Convert to 2D array (steps × frames)
     weights_array = jnp.vstack(frame_weights)

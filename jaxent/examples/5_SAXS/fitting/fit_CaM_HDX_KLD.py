@@ -32,6 +32,7 @@ import numpy as np
 # Register MaxEnt and HDX losses
 import jaxent.src.opt.loss.weights  # noqa: F401
 from jaxent.examples.common.losses import get_loss_function_by_name
+from jaxent.examples.common.optimization import maxent_loss_weight
 
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.models.config import BV_model_Config
@@ -78,7 +79,12 @@ def main():
     parser.add_argument("--target", choices=["CaM+CDZ", "CaM-CDZ"], required=True)
     parser.add_argument("--split-type", required=True)
     parser.add_argument("--split-index", type=int, required=True)
-    parser.add_argument("--maxent-strength", type=float, required=True)
+    parser.add_argument(
+        "--maxent-strength",
+        type=float,
+        required=True,
+        help="Positive MaxEnt scale; the KL loss weight is 1 / this value.",
+    )
     parser.add_argument("--n-steps", type=int, default=50000)
     parser.add_argument("--learning-rate", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True)
@@ -115,19 +121,17 @@ def main():
     
     # --- Parameters Setup ---
     uniform_weights = jnp.ones(n_frames) / n_frames
-    init_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    init_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, args.maxent_strength]),
+        forward_model_weights=jnp.array([1.0, maxent_loss_weight(args.maxent_strength)]),
         normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2) * 1000.0,  # Based on other HDX optimise scales
     )
-    prior_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    prior_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(model_parameters,),
-        forward_model_weights=jnp.array([1.0, args.maxent_strength]),
+        forward_model_weights=jnp.array([1.0, maxent_loss_weight(args.maxent_strength)]),
         normalise_loss_functions=jnp.ones(2),
         forward_model_scaling=jnp.ones(2) * 100.0,
     )
@@ -156,8 +160,6 @@ def main():
     optimizer = OptaxOptimizer(
         learning_rate=args.learning_rate,
         parameter_partition_masks={Optimisable_Parameters.frame_weights},
-        initial_learning_rate=1.0,
-        initial_steps=2,
     )
     
     # --- Run Optimization ---
@@ -194,11 +196,6 @@ def main():
         str(output_path / f"{run_name}_results.hdf5"),
         history,
     )
-    if optimizer.ema_history is not None:
-        save_optimization_history_to_file(
-            str(output_path / f"{run_name}_results_EMA.hdf5"),
-            optimizer.ema_history,
-        )
 
     print(f"Saved results to {output_path}")
 

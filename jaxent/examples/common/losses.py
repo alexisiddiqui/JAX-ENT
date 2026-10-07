@@ -12,6 +12,11 @@ actual loss callables.
 from __future__ import annotations
 
 from jaxent.src.opt.base import JaxEnt_Loss
+from .moprp_weighted_loss import (
+    hdx_uptake_inv_sd_MSE_loss,
+    hdx_uptake_inv_variance_MSE_loss,
+    hdx_uptake_moprp_raw_weighted_MSE_loss,
+)
 
 # Core library losses (re-exported for stability)
 from jaxent.src.opt.losses import (
@@ -36,6 +41,9 @@ hdx_uptake_MSE_loss = hdx_uptake_eye_MSE_loss
 # ---------------------------------------------------------------------------
 
 LOSS_REGISTRY: dict[str, JaxEnt_Loss] = {
+    "hdx_uptake_inv_sd_MSE_loss": hdx_uptake_inv_sd_MSE_loss,
+    "hdx_uptake_inv_variance_MSE_loss": hdx_uptake_inv_variance_MSE_loss,
+    "hdx_uptake_moprp_raw_weighted_MSE_loss": hdx_uptake_moprp_raw_weighted_MSE_loss,
     # Primary data-fit losses
     "hdx_pf_l2_loss": hdx_pf_l2_loss,
     "hdx_uptake_mean_centred_MSE_loss": hdx_uptake_mean_centred_MSE_loss,

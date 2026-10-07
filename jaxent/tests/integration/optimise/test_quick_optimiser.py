@@ -22,7 +22,6 @@ from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.forwardmodel import BV_input_features, BV_model
 from jaxent.src.opt.losses import (
     hdx_pf_l2_loss,
-    mask_L0_loss,
 )
 from jaxent.src.opt.run import run_optimise
 from jaxent.tests.plots.datasplitting import plot_split_visualization
@@ -94,9 +93,8 @@ def test_quick_optimiser():
     # features_length = BV_features.features_shape[0]
     trajectory_length = BV_features.features_shape[1]
     print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length) / 2,
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(trajectory_length) / trajectory_length,
         model_parameters=[bv_config.forward_parameters],
         forward_model_weights=jnp.ones(1),
         forward_model_scaling=jnp.ones(1),
@@ -182,117 +180,6 @@ def test_quick_optimiser():
         forward_models=models,
         indexes=[0],
         loss_functions=[hdx_pf_l2_loss],
-    )
-
-    visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)
-
-
-def test_quick_sparse_optimiser():
-    bv_config = BV_model_Config()
-
-    featuriser_settings = FeaturiserSettings(name="BV", batch_size=None)
-
-    base_dir = Path(__file__).parents[4]
-    inst_path = get_inst_path(base_dir)
-
-    topology_path = inst_path / "clean" / "BPTI" / "BPTI_overall_combined_stripped.pdb"
-    trajectory_path = inst_path / "clean" / "BPTI" / "BPTI_sampled_500.xtc"
-    test_universe = Universe(str(topology_path), str(trajectory_path))
-
-    universes = [test_universe]
-
-    models = [BV_model(bv_config), BV_model(bv_config)]
-
-    ensemble = Experiment_Builder(universes, models)
-
-    features, feature_topology = run_featurise(ensemble, featuriser_settings)
-
-    assert len(features) == len(models)
-
-    BV_features: BV_input_features = features[0]
-    print("BV Features length", BV_features.features_shape)
-
-    # features_length = BV_features.features_shape[0]
-    trajectory_length = BV_features.features_shape[1]
-    print(trajectory_length)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(trajectory_length) / trajectory_length,
-        frame_mask=jnp.ones(trajectory_length) / 2,
-        model_parameters=[bv_config.forward_parameters, bv_config.forward_parameters],
-        forward_model_weights=jnp.ones(2),
-        forward_model_scaling=jnp.ones(2),
-        normalise_loss_functions=jnp.ones(2),
-    )
-
-    simulation = Simulation(forward_models=models, input_features=features, params=params)
-
-    simulation.initialise()
-    simulation.forward(simulation,params)
-    test_prediction = simulation.outputs
-    print("test prediction", test_prediction[0].log_Pf)
-    print(test_prediction[0].log_Pf.shape)
-
-    opt_settings = OptimiserSettings(name="test", n_steps=25)
-
-    # create fake experimental dataset
-
-    # Get common residues
-    pt.mda_TopologyAdapter.find_common_residues(
-        universes, exclude_selection="(resname PRO or resid 1) "
-    )[0]
-
-    # Create fake dataset with varying protection factors for better stratification testing
-    exp_data = [
-        HDX_protection_factor(protection_factor=10.0, top=top)
-        for i, top in enumerate(feature_topology[0], start=1)
-    ]
-    dataset = ExpD_Dataloader(data=exp_data)
-
-    # create random split
-    splitter = DataSplitter(
-        dataset, random_seed=42, ensemble=universes, common_residues=set(feature_topology[0])
-    )
-    train_data, val_data = splitter.random_split()
-
-    # now sparse maps
-    train_sparse_map = create_sparse_map(features[0], feature_topology[0], train_data)
-
-    val_sparse_map = create_sparse_map(features[0], feature_topology[0], val_data)
-
-    test_sparse_map = create_sparse_map(features[0], feature_topology[0], exp_data)
-
-    print(train_sparse_map)
-    print(val_sparse_map)
-    print(test_sparse_map)
-
-    print(dataset.y_true)
-    print(dataset.y_true.shape)
-
-    dataset.train = Dataset(
-        data=train_data,
-        y_true=jnp.array([data.extract_features() for data in train_data]),
-        data_mapping=SparseFragmentMapping(sparse_map=train_sparse_map),
-    )
-
-    dataset.val = Dataset(
-        data=val_data,
-        y_true=jnp.array([data.extract_features() for data in val_data]),
-        data_mapping=SparseFragmentMapping(sparse_map=val_sparse_map),
-    )
-
-    dataset.test = Dataset(
-        data=exp_data,
-        y_true=jnp.array([data.extract_features() for data in exp_data]),
-        data_mapping=SparseFragmentMapping(sparse_map=test_sparse_map),
-    )
-
-    opt_simulation = run_optimise(
-        simulation,
-        data_to_fit=(dataset, dataset),
-        config=opt_settings,
-        forward_models=models,
-        indexes=[0, 0],
-        loss_functions=[hdx_pf_l2_loss, mask_L0_loss],
     )
 
     visualize_optimization_results(train_data, val_data, exp_data, opt_simulation)

@@ -36,7 +36,7 @@ def test_run_featurise():
     assert features[0].acceptor_contacts is not None
     assert features[0].k_ints is not None
 
-    num_residues = 52
+    num_residues = 53
     num_frames = 500
 
     assert features[0].heavy_contacts.shape == (num_residues, num_frames)

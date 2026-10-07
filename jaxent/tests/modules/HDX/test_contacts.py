@@ -4,7 +4,10 @@ import MDAnalysis as mda
 import numpy as np
 import beartype.roar
 
-from jaxent.src.models.func.contacts import calc_BV_contacts_universe
+from jaxent.src.models.func.contacts import (
+    bradshaw_rational_6_12,
+    calc_BV_contacts_universe,
+)
 
 
 def create_test_universe(n_frames=2):
@@ -63,6 +66,43 @@ def create_test_universe(n_frames=2):
     )
 
     return u
+
+
+def create_chain_aware_universe():
+    """Create protein chains with non-contiguous and repeated residue IDs."""
+    coordinates = np.array(
+        [
+            [
+                [0.5, 0.0, 0.0],  # A:10, ordinal neighbour of target
+                [0.0, 0.0, 0.0],  # A:20, target
+                [0.7, 0.0, 0.0],  # B:10, same resid but another chain
+                [0.8, 0.0, 0.0],  # B:20, another chain
+                [0.4, 0.0, 0.0],  # solvent oxygen
+            ]
+        ],
+        dtype=np.float32,
+    )
+    universe = mda.Universe.empty(
+        5,
+        n_residues=5,
+        n_segments=3,
+        atom_resindex=np.arange(5),
+        residue_segindex=[0, 0, 1, 1, 2],
+        trajectory=False,
+    )
+    universe.add_TopologyAttr("names", ["N", "N", "N", "N", "O"])
+    universe.add_TopologyAttr("types", ["N", "N", "N", "N", "O"])
+    universe.add_TopologyAttr("resids", [10, 20, 10, 20, 1])
+    universe.add_TopologyAttr("resnames", ["ALA", "GLY", "ALA", "GLY", "HOH"])
+    universe.add_TopologyAttr("segids", ["A", "B", "W"])
+
+    from MDAnalysis.coordinates.memory import MemoryReader
+
+    universe.trajectory = MemoryReader(
+        coordinates,
+        dimensions=np.array([[50, 50, 50, 90, 90, 90]], dtype=np.float32),
+    )
+    return universe
 
 
 class TestCalcBVContacts(unittest.TestCase):
@@ -205,6 +245,59 @@ class TestCalcBVContacts(unittest.TestCase):
         # Only frame 0 is changed
         np.testing.assert_allclose(contacts[0][0], expected_val, atol=1e-5)
 
+    def test_bradshaw_switch_matches_reference_rational_6_12(self):
+        distances = np.array([0.0, 1.2, 2.4, 6.5, 9.0, 12.0, 20.0])
+        center = 2.4
+        scale = 10.0
+        y = (distances - center) / scale
+        reference = (1.0 - y**6) / (1.0 - y**12)
+
+        actual = bradshaw_rational_6_12(distances, center=center, scale=scale)
+
+        np.testing.assert_allclose(actual, reference, rtol=1e-13, atol=1e-13)
+        np.testing.assert_allclose(
+            bradshaw_rational_6_12(
+                np.array([center, center - scale, center + scale]),
+                center=center,
+                scale=scale,
+            ),
+            [1.0, 0.5, 0.5],
+        )
+
+    def test_bradshaw_switch_includes_pairs_beyond_midpoint(self):
+        target = self.universe.select_atoms("resid 1 and name N")
+        radius = 2.0
+
+        hard = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="hard",
+        )
+        legacy = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="legacy_switch",
+        )
+        bradshaw = calc_BV_contacts_universe(
+            self.universe,
+            target,
+            "heavy",
+            radius,
+            residue_ignore=(-1, 1),
+            contact_mode="bradshaw_switch",
+            switch_scale=10.0,
+        )
+
+        np.testing.assert_allclose(hard, [[0.0, 0.0]])
+        np.testing.assert_allclose(legacy, [[0.0, 0.0]])
+        self.assertTrue(np.all(np.asarray(bradshaw) > 0.0))
+
     def test_no_contacts_found(self):
         """Test case where no contacts should be found."""
         target_atoms = self.universe.select_atoms("resid 1 and name N")
@@ -284,6 +377,78 @@ class TestCalcBVContacts(unittest.TestCase):
         expected = np.array([[0.0, 1.0], [0.0, 1.0]])
         np.testing.assert_allclose(contacts, expected, atol=1e-5)
 
+    def test_sequence_mask_uses_chain_ordinal_not_numeric_resid(self):
+        universe = create_chain_aware_universe()
+        target = universe.select_atoms("segid A and resid 20")
+
+        contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="protein",
+        )
+
+        # A:10 is the preceding sequence residue despite the numeric gap and is
+        # masked. Both nearby B-chain residues remain valid protecting atoms.
+        np.testing.assert_allclose(contacts, [[2.0]])
+
+    def test_protein_environment_excludes_nearby_solvent(self):
+        universe = create_chain_aware_universe()
+        target = universe.select_atoms("segid A and resid 20")
+
+        protein_contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="protein",
+        )
+        all_contacts = calc_BV_contacts_universe(
+            universe,
+            target,
+            "heavy",
+            1.0,
+            residue_ignore=(-1, 1),
+            n_jobs=1,
+            environment_selection="all",
+        )
+
+        np.testing.assert_allclose(protein_contacts, [[2.0]])
+        np.testing.assert_allclose(all_contacts, [[3.0]])
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_smooth_cutoff_plateau_monotonicity_and_tail():
+    from jaxent.src.models.func.contacts import smooth_cutoff_rational_6_12
+
+    distances = np.array([0., 3., 6., 6.5, 7., 7.5, np.inf])
+    weights = smooth_cutoff_rational_6_12(distances, radius=6.5, scale=.5)
+    np.testing.assert_allclose(weights, [1., 1., 1., 1., .5, 1/65, 0.])
+    assert np.all(np.diff(weights) <= 0)
+    # The zero-width limit recovers a hard cutoff away from its boundary.
+    sharp = smooth_cutoff_rational_6_12(distances, radius=6.5, scale=1e-3)
+    np.testing.assert_allclose(sharp, distances <= 6.5, atol=1e-12)
+
+
+def test_smooth_cutoff_atom_selection_and_sequence_exclusion():
+    import MDAnalysis as mda
+
+    universe = mda.Universe.empty(5, n_residues=4, atom_resindex=[0, 1, 2, 3, 3], trajectory=True)
+    universe.add_TopologyAttr('names', ['N', 'C', 'C', 'C', 'H'])
+    universe.add_TopologyAttr('types', ['N', 'C', 'C', 'C', 'H'])
+    universe.add_TopologyAttr('resnames', ['ALA']*4)
+    universe.add_TopologyAttr('resids', [1, 2, 3, 4])
+    universe.add_TopologyAttr('segids', ['A'])
+    universe.atoms.positions = [[0,0,0], [1,0,0], [1.5,0,0], [2.5,0,0], [1,0,0]]
+    actual = calc_BV_contacts_universe(universe, universe.atoms[:1], 'heavy', 2.,
+        residue_ignore=(-1, 1), n_jobs=1, contact_mode='smooth_cutoff', switch_scale=.5)
+    # Self and sequence neighbour excluded; hydrogen excluded; full + half contact.
+    np.testing.assert_allclose(actual, [[1.5]])

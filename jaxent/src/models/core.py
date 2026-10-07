@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import logging
-from typing import Any, Optional, Union, cast
+from typing import Any, Literal, Optional, Union, cast
 
 import chex
 from jax import jit
@@ -31,7 +31,8 @@ class Simulation:
         input_features: Sequence[Input_Features],
         forward_models: Sequence[ForwardModel],
         params: Optional[Simulation_Parameters],
-        raise_jit_failure: bool = False,
+        raise_jit_failure: bool = True,
+        frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot",
         # model_name_index: list[tuple[m_key, int, m_id]],
     ) -> None:
         self.input_features: Sequence[Input_Features[Any]] = input_features
@@ -47,6 +48,12 @@ class Simulation:
         self.outputs = tuple()
         self._jit_forward_pure: Callable | None = None
         self.raise_jit_failure: bool = raise_jit_failure
+        if frame_average_impl not in ("tensordot", "legacy_sum"):
+            raise ValueError(
+                "frame_average_impl must be 'tensordot' or 'legacy_sum', "
+                f"got {frame_average_impl!r}"
+            )
+        self.frame_average_impl = frame_average_impl
 
     def __repr__(self) -> str:
         return f"Simulation(raise_jit_failure={self.raise_jit_failure})"
@@ -66,10 +73,13 @@ class Simulation:
             raise ValueError("No simulation parameters were provided. Exiting.")
         
         # Validate parameter ranks
-        chex.assert_rank(self.params.frame_weights, 1)
-        chex.assert_equal_shape([self.params.frame_weights, self.params.frame_mask])
+        chex.assert_rank(self.params.frame_weight_logits, 1)
+        chex.assert_equal(
+            self.params.frame_weight_logits.shape[0],
+            self.length,
+            custom_message="Frame-weight count must match the input-feature frame count",
+        )
         
-        self.params = Simulation_Parameters.normalize_weights(self.params)
         self.params = Simulation_Parameters.normalize_masked_loss_scalingweights(self.params)
         
         # Assert that the number of forward models matches model parameters
@@ -105,7 +115,7 @@ class Simulation:
             Callable,
             jit(
                 self.forward_pure,
-                static_argnames=("forwardpass"),  # "input_features",
+                static_argnames=("forwardpass", "frame_average_impl"),
                 # donate_argnames=("params", "input_features"),
             ),
         )
@@ -114,6 +124,7 @@ class Simulation:
                 self.params,
                 self._input_features,
                 self.forwardpass,
+                self.frame_average_impl,
             )
             LOGGER.info("Simulation forward JIT compilation successful.")
 
@@ -142,17 +153,16 @@ class Simulation:
             params: Simulation parameters
             mutate: Backward-compatible behavior. When True, update ``sim`` in place.
         """
-        params = Simulation_Parameters.normalize_weights(params)
         outputs = tuple(
             sim._jit_forward_pure(
                 params,
                 sim._input_features,
                 sim.forwardpass,
+                sim.frame_average_impl,
             )
         )
 
         _, aux_data = sim.tree_flatten()
-        new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
         new_sim = Simulation.tree_unflatten(aux_data, (params, outputs, sim._input_features))
 
         if mutate:
@@ -228,6 +238,7 @@ class Simulation:
             self.length,
             self._jit_forward_pure,
             self.raise_jit_failure,
+            self.frame_average_impl,
         )
 
         return dynamic_values, aux_data
@@ -251,19 +262,24 @@ class Simulation:
             length,
             _jit_forward_pure,
             raise_jit_failure,
+            frame_average_impl,
         ) = aux_data
 
         # Unpack dynamic values
-        (params, outputs, _input_features) = dynamic_values
-        (params, outputs, _input_features) = dynamic_values
+        params, outputs, _input_features = dynamic_values
 
-        # Create a new instance
-        instance = cls(_input_features, forward_models, params)
+        # Bypass the constructor: all constructor-derived fields are present in the schema.
+        instance = object.__new__(cls)
+        instance.input_features = _input_features
+        instance.forward_models = forward_models
+        instance.params = params
         instance.forwardpass = forwardpass
         instance.length = length
         instance.outputs = tuple(outputs)
         instance._input_features = _input_features
         instance._jit_forward_pure = _jit_forward_pure
+        instance.raise_jit_failure = raise_jit_failure
+        instance.frame_average_impl = frame_average_impl
 
         return instance
 
@@ -272,6 +288,7 @@ class Simulation:
         params: Simulation_Parameters,
         input_features: Sequence[Input_Features],
         forwardpass: Sequence[ForwardPass],
+        frame_average_impl: Literal["tensordot", "legacy_sum"] = "tensordot",
     ) -> Sequence[Output_Features]:
         """
         Pure function for forward computation that is jittable.
@@ -284,24 +301,28 @@ class Simulation:
         Returns:
             Output features from each forward model
         """
-        # Validate frame_weights rank
-        chex.assert_rank(params.frame_weights, 1)
+        chex.assert_rank(params.frame_weight_simplex, 1)
 
-        # Mask the frame weights
-        # masked_frame_weights = jnp.where(params.frame_mask < 0.5, 0, params.frame_weights)
-        # masked_frame_weights = optax.projections.projection_simplex(masked_frame_weights)
-
-        # Branch per forward pass: linear models average features first (average_first=True),
-        # non-linear models run on frame-wise features and average outputs (average_first=False).
-        # Since forwardpass is a static JIT arg, this branch compiles away.
+        # Since forwardpass is a static JIT arg, this typed branch compiles away.
         output_features = []
         for fp, feat, param in zip(forwardpass, input_features, params.model_parameters):
-            if getattr(fp, "average_first", True):
-                avg_feat = frame_average_features(feat, params.frame_weights)
+            mode = getattr(fp, "frame_averaging_mode", "log_pf")
+            if mode == "log_pf":
+                avg_feat = frame_average_features(
+                    feat, params.frame_weight_simplex, frame_average_impl
+                )
                 output = single_pass(fp, avg_feat, param)
+            elif mode in {
+                "rate", "uptake", "frame_uptake", "linear_uptake", "rate_distribution"
+            }:
+                output = fp.average_frames(
+                    feat,
+                    param,
+                    params.frame_weight_simplex,
+                    frame_average_impl,
+                )
             else:
-                output = single_pass(fp, feat, param)
-                output = frame_average_features(output, params.frame_weights)
+                raise ValueError(f"unknown frame-averaging mode: {mode!r}")
             output_features.append(output)
 
         return output_features

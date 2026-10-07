@@ -22,9 +22,8 @@ class TestSAXSReweightedSimulation:
             intensities=jnp.ones((n_q, n_frames))
         )]
         model = SAXS_direct_model(SAXS_direct_Config())
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[SAXS_direct_Config().forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -42,9 +41,8 @@ class TestSAXSReweightedSimulation:
         n_q, n_frames = 20, 5
         features = [SAXS_curve_input_features(intensities=jnp.ones((n_q, n_frames)))]
         model = SAXS_direct_model(SAXS_direct_Config())
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[SAXS_direct_Config().forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -65,9 +63,8 @@ class TestSAXSReweightedSimulation:
         features = [SAXS_curve_input_features(intensities=curves)]
         model = SAXS_direct_model(SAXS_direct_Config())
         # equal weights: expected average = mean along frames axis
-        params = Simulation_Parameters(
-            frame_weights=jnp.array([0.5, 0.5]),
-            frame_mask=jnp.ones(2) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.array([0.5, 0.5]),
             model_parameters=[SAXS_direct_Config().forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -89,9 +86,8 @@ class TestSAXSDebyeSimulation:
         bp = bp.at[0].set(jnp.full((n_q, n_frames), 2.0))  # Ivv = 2
         features = [SAXS_basis_input_features(basis_profiles=bp)]
         model = SAXS_direct_model(SAXS_Config(mode="debye_6term"))
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[SAXS_Config(mode="debye_6term").forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -109,9 +105,8 @@ class TestSAXSDebyeSimulation:
         bp = jnp.ones((6, n_q, n_frames))
         features = [SAXS_basis_input_features(basis_profiles=bp)]
         model = SAXS_direct_model(SAXS_Config(mode="debye_6term"))
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[SAXS_Config(mode="debye_6term").forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -129,9 +124,8 @@ class TestXLMSSimulation:
         dist_data = jnp.ones((n_res, n_res, n_frames))
         features = [XLMS_input_features(distances=dist_data)]
         model = XLMS_distance_model(XLMS_Config())
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[XLMS_Config().forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -149,9 +143,8 @@ class TestXLMSSimulation:
         n_res, n_frames = 4, 5
         features = [XLMS_input_features(distances=jnp.ones((n_res, n_res, n_frames)))]
         model = XLMS_distance_model(XLMS_Config())
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[XLMS_Config().forward_parameters],
             forward_model_weights=jnp.ones(1),
             forward_model_scaling=jnp.ones(1),
@@ -186,9 +179,8 @@ class TestMixedModelSimulation:
         models = [BV_model(bv_config), SAXS_direct_model(saxs_config)]
         features = [bv_feats, saxs_feats]
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[bv_config.forward_parameters, saxs_config.forward_parameters],
             forward_model_weights=jnp.ones(2),
             forward_model_scaling=jnp.ones(2),
@@ -224,9 +216,8 @@ class TestMixedModelSimulation:
         models = [BV_model(bv_config), XLMS_distance_model(xlms_config)]
         features = [bv_feats, xlms_feats]
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[bv_config.forward_parameters, xlms_config.forward_parameters],
             forward_model_weights=jnp.ones(2),
             forward_model_scaling=jnp.ones(2),
@@ -264,9 +255,8 @@ class TestMixedModelSimulation:
         models = [BV_model(bv_config), SAXS_direct_model(saxs_config), XLMS_distance_model(xlms_config)]
         features_list = [bv_feats, saxs_feats, xlms_feats]
 
-        params = Simulation_Parameters(
-            frame_weights=jnp.ones(n_frames) / n_frames,
-            frame_mask=jnp.ones(n_frames) * 0.5,
+        params = Simulation_Parameters.from_frame_weights(
+            jnp.ones(n_frames) / n_frames,
             model_parameters=[bv_config.forward_parameters, saxs_config.forward_parameters, xlms_config.forward_parameters],
             forward_model_weights=jnp.ones(3),
             forward_model_scaling=jnp.ones(3),

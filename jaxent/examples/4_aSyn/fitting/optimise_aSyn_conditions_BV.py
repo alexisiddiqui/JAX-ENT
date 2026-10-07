@@ -39,7 +39,7 @@ import argparse
 import os
 import time
 from datetime import datetime
-from typing import List
+from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
@@ -115,13 +115,12 @@ def run_conditions_sweep(
     n_steps: int = 10000,
     num_splits: int = 3,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> dict:
     """
     Run optimization sweep across maxent and BV regularization values for one condition.
@@ -214,9 +213,8 @@ def run_conditions_sweep(
     print(f"Total runs: {results['total_runs']}")
 
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.ones(3),
         normalise_loss_functions=jnp.ones(3),
@@ -276,8 +274,6 @@ def run_conditions_sweep(
                         opt_config = OptimizationConfig(
                             n_steps=n_steps,
                             learning_rate=learning_rate,
-                            initial_learning_rate=initial_learning_rate,
-                            initial_steps=initial_steps,
                             ema_alpha=ema_alpha,
                             forward_model_scaling=forward_model_scaling,
                             convergence_rates=convergence_rates,
@@ -299,6 +295,7 @@ def run_conditions_sweep(
                             name=run_name,
                             output_dir=output_dir,
                             cov_matrix=None,
+                            execution_mode=execution_mode,
                         )
 
                         run_elapsed = time.time() - run_start_time
@@ -363,13 +360,12 @@ def run_all_conditions(
     n_steps: int,
     num_splits: int,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
+    execution_mode: Literal["compiled", "python"] = "compiled",
 ) -> List[dict]:
     """Run sweep for all conditions with MSE loss."""
     loss_names = ["MSE"]
@@ -401,13 +397,12 @@ def run_all_conditions(
                 n_steps=n_steps,
                 num_splits=num_splits,
                 learning_rate=learning_rate,
-                initial_learning_rate=initial_learning_rate,
-                initial_steps=initial_steps,
                 ema_alpha=ema_alpha,
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,
                 model_parameters_lr_scale=model_parameters_lr_scale,
                 features_dir=features_dir,
+                execution_mode=execution_mode,
             )
             all_results.append(result)
             print(f"Completed: {condition}-{loss_name}")
@@ -482,7 +477,7 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive integers). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--bvreg-range",
@@ -533,6 +528,12 @@ def main():
         help="Forward model scaling factor (default: 100.0).",
     )
     parser.add_argument(
+        "--execution-mode",
+        choices=["compiled", "python"],
+        default="compiled",
+        help="Optimizer execution mode (default: compiled).",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
@@ -559,6 +560,8 @@ def main():
         maxent_values = list(range(start_val, end_val + 1))
     except ValueError:
         raise ValueError("maxent-range must be 'start,end' integers (e.g. '1,10')")
+    if not maxent_values or any(value <= 0 for value in maxent_values):
+        parser.error("--maxent-range must contain positive scales")
 
     try:
         start_val, end_val = map(float, args.bvreg_range.split(","))
@@ -572,11 +575,10 @@ def main():
     print(f"  Steps per run: {args.n_steps}")
     print(f"  Replicates per split: {args.n_replicates}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Initial learning rate: {args.initial_learning_rate}")
-    print(f"  Initial steps: {args.initial_steps}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
     print(f"  Model parameter LR scale: {args.model_parameters_lr_scale}")
+    print(f"  Execution mode: {args.execution_mode}")
 
     if args.condition is not None:
         print(f"Running sweep for condition: {args.condition}")
@@ -594,13 +596,12 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
+            execution_mode=args.execution_mode,
         )
 
     else:
@@ -612,13 +613,12 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
+            execution_mode=args.execution_mode,
         )
 
     if args.output_dir:

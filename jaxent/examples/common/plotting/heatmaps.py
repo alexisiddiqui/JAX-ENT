@@ -63,18 +63,14 @@ def plot_convergence_maxent_heatmaps(
                     ]
 
                     if len(combo_df) > 0:
+                        convergence_col = "convergence_threshold" if "convergence_threshold" in combo_df else "convergence_rank"
                         pivot_data = combo_df.pivot_table(
-                            values=error_type, index="maxent_value", columns="convergence_step", aggfunc="mean",
+                            values=error_type, index="maxent_value", columns=convergence_col, aggfunc="mean",
                         )
-                        valid_steps = [s for s in pivot_data.columns if s <= len(convergence_rates)]
-                        pivot_data = pivot_data[valid_steps]
 
                         if not pivot_data.empty:
                             pivot_data = pivot_data.sort_index(ascending=False)
-                            col_labels = [
-                                f"{convergence_rates[int(s) - 1]:.0e}" if s - 1 < len(convergence_rates) else f"Step {s}"
-                                for s in pivot_data.columns
-                            ]
+                            col_labels = [f"{s:.0e}" if convergence_col == "convergence_threshold" else str(s) for s in pivot_data.columns]
                             sns.heatmap(
                                 np.log10(pivot_data), annot=False, cmap="viridis",
                                 cbar_kws={"label": f"log10({error_label})"}, ax=ax,
@@ -109,7 +105,7 @@ def plot_metric_heatmap(
     vmax: float | None = None,
     title_prefix: str = "",
     index_col: str = "maxent_value",
-    columns_col: str = "convergence_step",
+    columns_col: str = "convergence_threshold",
     style: PlotStyle | None = None,
 ) -> None:
     """Plot per-ensemble/loss heatmap of *metric* vs convergence step × maxent value.
@@ -195,10 +191,7 @@ def plot_metric_heatmap(
                         pivot_data = pivot_data.sort_index(ascending=False)
                         col_labels = []
                         for s in pivot_data.columns:
-                            try:
-                                col_labels.append(f"{convergence_rates[int(s) - 1]:.0e}")
-                            except (IndexError, ValueError, TypeError):
-                                col_labels.append(str(s))
+                            col_labels.append(f"{s:.0e}" if columns_col == "convergence_threshold" else str(s))
 
                         _vmin = vmin if vmin is not None else pivot_data.min().min()
                         _vmax = vmax if vmax is not None else pivot_data.max().max()
@@ -210,13 +203,15 @@ def plot_metric_heatmap(
                             vmin=_vmin,
                             vmax=_vmax,
                             cbar_kws={"label": metric},
+                            xticklabels=col_labels,
                             ax=ax,
                         )
                         label_parts = [p for p in [ensemble, loss_func] if p]
                         ax.set_title(" — ".join(label_parts), fontweight="bold")
                         ax.set_xlabel(columns_col.replace("_", " ").title(), fontweight="bold")
                         ax.set_ylabel(index_col.replace("_", " ").title(), fontweight="bold")
-                        ax.set_xticklabels(col_labels, rotation=45, ha="right")
+                        ax.tick_params(axis="x", labelrotation=45)
+                        plt.setp(ax.get_xticklabels(), ha="right")
                         sns.despine(ax=ax)
                     else:
                         ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes)

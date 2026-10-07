@@ -1,5 +1,5 @@
 # jaxENT
-### Version: Alpha 0.5.1
+### Version: Alpha 0.5.2
 This project is in active development, however the core API is now in place and thoroughly tested, and we are working on improving the usability and performance of the package.
 
 Initial release expected in the next few months. Want to stay up to date? Questions/Comments/Suggestions? Use our google form below to help drive the development of this tool.

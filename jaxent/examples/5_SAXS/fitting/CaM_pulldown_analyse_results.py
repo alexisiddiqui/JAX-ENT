@@ -22,6 +22,7 @@ import argparse
 from pathlib import Path
 
 import numpy as np
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
@@ -102,7 +103,7 @@ def load_results(results_dir: Path) -> pd.DataFrame:
             continue
 
         best = history.get_best_state()
-        weights = np.abs(np.array(best.params.frame_weights))
+        weights = np.abs(validated_frame_weight_simplex(best.params.frame_weight_simplex))
         weights /= weights.sum()
 
         records.append({

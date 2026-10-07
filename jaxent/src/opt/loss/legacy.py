@@ -30,7 +30,6 @@ from jaxent.src.opt.losses import (
     hdx_uptake_MSE_loss,
     hdxer_mcMSE_loss,
     hdxer_MSE_loss,
-    mask_L0_loss,
     # Parameter losses (MaxEnt)
     max_entropy_loss,
     maxent_convexKL_loss,
@@ -41,7 +40,6 @@ from jaxent.src.opt.losses import (
     maxent_W1_loss,
     minent_ESS_loss,
     normalised_frame_weight_consistency_loss,
-    sparse_max_entropy_loss,
 )
 
 # Register functional losses (HDX protection factors)
@@ -237,18 +235,6 @@ LossRegistry.register(
     LegacyLossAdapter.wrap_existing_function(
         maxent_L2_loss, "parameter", name="legacy_maxent_L2_loss"
     ),
-)
-
-LossRegistry.register(
-    "legacy_sparse_max_entropy_loss",
-    LegacyLossAdapter.wrap_existing_function(
-        sparse_max_entropy_loss, "parameter", name="legacy_sparse_max_entropy_loss"
-    ),
-)
-
-LossRegistry.register(
-    "legacy_mask_L0_loss",
-    LegacyLossAdapter.wrap_existing_function(mask_L0_loss, "parameter", name="legacy_mask_L0_loss"),
 )
 
 # Register consistency losses

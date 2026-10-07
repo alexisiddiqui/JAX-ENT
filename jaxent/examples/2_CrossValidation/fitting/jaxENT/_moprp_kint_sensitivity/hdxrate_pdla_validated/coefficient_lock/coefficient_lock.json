@@ -1,0 +1,300 @@
+{
+  "description": "per-pivot shared non-negative BV coefficient lock at w_NMR, peptide 1 excluded",
+  "rate_provenance": {
+    "rate_source": "hdxrate_pdla_validated",
+    "rate_file": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/validated_hdxrate_pdla/moprp_hdxrate_pdla_pD4p4_298K_min.dat",
+    "rate_file_sha256": "43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c",
+    "provider": "HDXrate-0.2.2-poly/PDLA-via-JAX-ENT",
+    "temperature_k": 298.0,
+    "ph": 4.4,
+    "units": "min^-1",
+    "ph_correction": false,
+    "ph_convention": "effective pD 4.4 supplied unchanged; no automatic +0.4 correction"
+  },
+  "semantics": "per_pivot: legacy=average_first, fast=rate_average, slow-N=frame_mixture",
+  "frozen_settings": {
+    "published": {
+      "bc": 0.35,
+      "bh": 2.0
+    },
+    "constrained_optimum": {
+      "bc": 0.21232404619598627,
+      "bh": 0.0
+    },
+    "scaled_published": {
+      "bc": 0.17307882363488677,
+      "bh": 0.9890218493422102
+    }
+  },
+  "frozen_settings_by_pivot": {
+    "legacy": {
+      "published": {
+        "bc": 0.35,
+        "bh": 2.0
+      },
+      "constrained_optimum": {
+        "bc": 0.21232404619598627,
+        "bh": 0.0
+      },
+      "scaled_published": {
+        "bc": 0.17307882363488677,
+        "bh": 0.9890218493422102
+      }
+    },
+    "fast": {
+      "published": {
+        "bc": 0.35,
+        "bh": 2.0
+      },
+      "constrained_optimum": {
+        "bc": 0.21522229540537818,
+        "bh": 0.0
+      },
+      "scaled_published": {
+        "bc": 0.17551399495824707,
+        "bh": 1.0029371140471262
+      }
+    },
+    "slow-N": {
+      "published": {
+        "bc": 0.35,
+        "bh": 2.0
+      },
+      "constrained_optimum": {
+        "bc": 0.21233798843694446,
+        "bh": 0.0
+      },
+      "scaled_published": {
+        "bc": 0.1730072427652882,
+        "bh": 0.988612815801647
+      }
+    }
+  },
+  "constrained_optimum_fit": {
+    "bc": 0.21232404619598627,
+    "bh": 0.0,
+    "mse": 0.04267392748506234,
+    "success": true,
+    "start": [
+      0.5,
+      0.5
+    ]
+  },
+  "scaled_published_fit": {
+    "scale": 0.4945109246711051,
+    "bc": 0.17307882363488677,
+    "bh": 0.9890218493422102,
+    "mse": 0.04609704682883821
+  },
+  "published_calibration_mse": 0.13805210984729127,
+  "fits_by_pivot": {
+    "legacy": {
+      "constrained_optimum": {
+        "bc": 0.21232404619598627,
+        "bh": 0.0,
+        "mse": 0.04267392748506234,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      },
+      "scaled_published": {
+        "scale": 0.4945109246711051,
+        "bc": 0.17307882363488677,
+        "bh": 0.9890218493422102,
+        "mse": 0.04609704682883821
+      },
+      "published_calibration_mse": 0.13805210984729127
+    },
+    "fast": {
+      "constrained_optimum": {
+        "bc": 0.21522229540537818,
+        "bh": 0.0,
+        "mse": 0.04298420636057044,
+        "success": true,
+        "start": [
+          0.1,
+          0.1
+        ]
+      },
+      "scaled_published": {
+        "scale": 0.5014685570235631,
+        "bc": 0.17551399495824707,
+        "bh": 1.0029371140471262,
+        "mse": 0.04649074734964099
+      },
+      "published_calibration_mse": 0.12862699798798172
+    },
+    "slow-N": {
+      "constrained_optimum": {
+        "bc": 0.21233798843694446,
+        "bh": 0.0,
+        "mse": 0.042418243334137,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      },
+      "scaled_published": {
+        "scale": 0.4943064079008235,
+        "bc": 0.1730072427652882,
+        "bh": 0.988612815801647,
+        "mse": 0.045881835914466304
+      },
+      "published_calibration_mse": 0.13717601230785842
+    }
+  },
+  "per_ensemble_optima": {
+    "AF2_MSAss": {
+      "legacy": {
+        "bc": 0.21225508115248307,
+        "bh": 0.0,
+        "mse": 0.04260330672286977,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      },
+      "fast": {
+        "bc": 0.21541063056970838,
+        "bh": 0.0,
+        "mse": 0.04295277039474848,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      },
+      "slow-N": {
+        "bc": 0.21227044432361192,
+        "bh": 0.0,
+        "mse": 0.04235168202682424,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      }
+    },
+    "AF2_filtered": {
+      "legacy": {
+        "bc": 0.21239337935568411,
+        "bh": 0.0,
+        "mse": 0.04274450096536475,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      },
+      "fast": {
+        "bc": 0.21503470182406562,
+        "bh": 0.0,
+        "mse": 0.04301531159993277,
+        "success": true,
+        "start": [
+          0.1,
+          0.1
+        ]
+      },
+      "slow-N": {
+        "bc": 0.21240582489276508,
+        "bh": 0.0,
+        "mse": 0.0424847595690105,
+        "success": true,
+        "start": [
+          0.5,
+          0.5
+        ]
+      }
+    }
+  },
+  "absorption_readout": {
+    "pairwise_optimum_geometry": {
+      "legacy_to_fast": {
+        "angle_degrees": 0.0,
+        "optimum_norm_ratio_right_over_left": 1.0136501223545669
+      },
+      "legacy_to_slow-N": {
+        "angle_degrees": 0.0,
+        "optimum_norm_ratio_right_over_left": 1.0000656649174127
+      },
+      "fast_to_slow-N": {
+        "angle_degrees": 0.0,
+        "optimum_norm_ratio_right_over_left": 0.98659847501858
+      }
+    },
+    "predicted_rate_multiplier": {
+      "legacy": {
+        "mean_exp_half_variance": 1.066592445353553,
+        "median_exp_half_variance": 1.0383931816320113
+      },
+      "fast": {
+        "mean_exp_half_variance": 1.0685519426355963,
+        "median_exp_half_variance": 1.0394690394275057
+      },
+      "slow-N": {
+        "mean_exp_half_variance": 1.0666017905034606,
+        "median_exp_half_variance": 1.0383983195617135
+      }
+    },
+    "direction_vs_magnitude": {
+      "legacy": {
+        "constrained_mse": 0.04267392748506234,
+        "scaled_published_mse": 0.04609704682883821,
+        "absolute_mse_gap": 0.003423119343775871,
+        "ratio": 1.080215708876904
+      },
+      "fast": {
+        "constrained_mse": 0.04298420636057044,
+        "scaled_published_mse": 0.04649074734964099,
+        "absolute_mse_gap": 0.00350654098907055,
+        "ratio": 1.0815774277569798
+      },
+      "slow-N": {
+        "constrained_mse": 0.042418243334137,
+        "scaled_published_mse": 0.045881835914466304,
+        "absolute_mse_gap": 0.003463592580329307,
+        "ratio": 1.0816533714761805
+      }
+    }
+  },
+  "boundary_solution": true,
+  "boundary_solution_by_pivot": {
+    "legacy": true,
+    "fast": true,
+    "slow-N": true
+  },
+  "boundary_note": "Boundary optima reflect the AF2 hydrogen-bond geometry limitation documented in hdx_moprp_pivot_calibration.md \u00a713.1: predicted structures provide little trustworthy acceptor-channel signal; they are not evidence of general BV model inadequacy.",
+  "verification": {
+    "legacy_bitwise_max_abs_by_ensemble": {
+      "AF2_MSAss": 0.0,
+      "AF2_filtered": 0.0
+    },
+    "litmus_legacy_all14_mse": 0.14870225745722215,
+    "litmus_expected_rmse": 0.3701202,
+    "jensen_violations": 0,
+    "degenerate_weight_curve_max_abs": 0.0,
+    "scaled_published_bounds": [
+      0.001,
+      3.0
+    ],
+    "all_scaled_published_interior": true
+  },
+  "n_frames": {
+    "AF2_MSAss": 500,
+    "AF2_filtered": 500
+  },
+  "input_hashes": {
+    "state_ratios_json": "0061b7e5c1a8e0039d3e68ebbfe4ff090cd48d639425a93abdd7cf48ca5321ca",
+    "cluster_csv": "14a35e72a47f9a85554204bfd517f9a3cc96da1a76975fa7d3168fc4bad09d27",
+    "rate_file": "43f9178630136a886bb9eb6e7a3ce922e398b96ff34fa15f23938271e280c83c",
+    "features_AF2_MSAss_hard.npz": "6709bb8b9608293f0ed9c5d2746599ecfee10f2cb3b64219bba81a9c5e894ab2",
+    "topology_AF2_MSAss_hard.json": "a38b444d86f5444e695fc21d3cb0668a6d9ad88bc81e343465570b65be0ea820",
+    "features_AF2_filtered_hard.npz": "6260a871893fabbadd85bb71a82ee94207b91833722e818d4e3a8220504caaf5",
+    "topology_AF2_filtered_hard.json": "a38b444d86f5444e695fc21d3cb0668a6d9ad88bc81e343465570b65be0ea820"
+  }
+}

@@ -1,0 +1,4 @@
+ensemble,component,size,open,closed,intermediate
+ISO_BI,0,830,0,830,0
+ISO_BI,1,44,44,0,0
+ISO_TRI,0,2225,44,830,1351

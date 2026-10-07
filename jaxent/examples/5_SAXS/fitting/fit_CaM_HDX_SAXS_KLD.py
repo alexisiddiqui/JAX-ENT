@@ -35,6 +35,7 @@ import numpy as np
 # Register MaxEnt and HDX losses
 import jaxent.src.opt.loss.weights  # noqa: F401
 from jaxent.examples.common.losses import get_loss_function_by_name
+from jaxent.examples.common.optimization import maxent_loss_weight
 
 from jaxent.src.models.SAXS.forwardmodel import SAXS_direct_model
 from jaxent.src.models.SAXS.config import SAXS_direct_Config
@@ -117,7 +118,12 @@ def main():
     parser.add_argument("--split-index", type=int, default=None)
     parser.add_argument("--saxs-weight", type=float, default=1.0)
     parser.add_argument("--hdx-weight", type=float, default=1.0)
-    parser.add_argument("--maxent-strength", type=float, required=True)
+    parser.add_argument(
+        "--maxent-strength",
+        type=float,
+        required=True,
+        help="Positive MaxEnt scale; the KL loss weight is 1 / this value.",
+    )
     parser.add_argument("--n-steps", type=int, default=50000)
     parser.add_argument("--learning-rate", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True)
@@ -190,21 +196,21 @@ def main():
     # --- Parameters Setup ---
     uniform_weights = jnp.ones(n_frames) / n_frames
     
-    model_weights = jnp.array([args.saxs_weight, args.hdx_weight, args.maxent_strength])
+    model_weights = jnp.array(
+        [args.saxs_weight, args.hdx_weight, maxent_loss_weight(args.maxent_strength)]
+    )
     model_scaling = jnp.ones(3) 
     
-    init_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    init_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(), bv_model.params,),
         forward_model_weights=model_weights,
         normalise_loss_functions=jnp.ones(3),
         forward_model_scaling=model_scaling,
     )
     
-    prior_params = Simulation_Parameters(
-        frame_weights=uniform_weights,
-        frame_mask=jnp.ones(n_frames),
+    prior_params = Simulation_Parameters.from_frame_weights(
+        uniform_weights,
         model_parameters=(SAXS_direct_Model_Parameters(), bv_model.params,),
         forward_model_weights=model_weights,
         normalise_loss_functions=jnp.ones(3),
@@ -237,8 +243,6 @@ def main():
     optimizer = OptaxOptimizer(
         learning_rate=args.learning_rate,
         parameter_partition_masks={Optimisable_Parameters.frame_weights},
-        initial_learning_rate=1.0,
-        initial_steps=2,
     )
     
     # --- Run Optimization ---
@@ -279,11 +283,6 @@ def main():
         str(output_path / f"{run_name}_results.hdf5"),
         history,
     )
-    if optimizer.ema_history is not None:
-        save_optimization_history_to_file(
-            str(output_path / f"{run_name}_results_EMA.hdf5"),
-            optimizer.ema_history,
-        )
 
     print(f"Saved results to {output_path}")
 

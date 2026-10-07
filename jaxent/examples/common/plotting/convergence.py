@@ -67,16 +67,11 @@ def plot_loss_convergence(
                 subset = df[
                     (df["ensemble"] == ensemble)
                     & (df["loss_function"] == loss_func)
-                    & (df.get("convergence_threshold_step", df.get("convergence_step", 0)) > 0)
+                    & (df["convergence_threshold"] > 0)
                 ]
                 if len(subset) > 0:
-                    step_col = "convergence_threshold_step" if "convergence_threshold_step" in subset.columns else "convergence_step"
-                    stats = subset.groupby(step_col).agg({"train_loss": ["mean", "std"]}).reset_index()
-                    stats.columns = ["step", "train_mean", "train_std"]
-                    stats["convergence_rate"] = stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                    )
-                    stats = stats.dropna(subset=["convergence_rate"])
+                    stats = subset.groupby("convergence_threshold").agg({"train_loss": ["mean", "std"]}).reset_index()
+                    stats.columns = ["convergence_rate", "train_mean", "train_std"]
 
                     if len(stats) > 0:
                         color = style.ensemble_colors.get(ensemble, "grey")
@@ -153,16 +148,11 @@ def plot_loss_convergence(
                 subset = df[
                     (df["ensemble"] == ensemble)
                     & (df["loss_function"] == loss_func)
-                    & (df.get("convergence_threshold_step", df.get("convergence_step", 0)) > 0)
+                    & (df["convergence_threshold"] > 0)
                 ]
                 if len(subset) > 0:
-                    step_col = "convergence_threshold_step" if "convergence_threshold_step" in subset.columns else "convergence_step"
-                    stats = subset.groupby(step_col).agg({"val_loss": ["mean", "std"]}).reset_index()
-                    stats.columns = ["step", "val_mean", "val_std"]
-                    stats["convergence_rate"] = stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                    )
-                    stats = stats.dropna(subset=["convergence_rate"])
+                    stats = subset.groupby("convergence_threshold").agg({"val_loss": ["mean", "std"]}).reset_index()
+                    stats.columns = ["convergence_rate", "val_mean", "val_std"]
 
                     if len(stats) > 0:
                         color = style.ensemble_colors.get(ensemble, "grey")
@@ -262,16 +252,11 @@ def plot_split_variability(
                 subset = df[
                     (df["ensemble"] == ensemble)
                     & (df["loss_function"] == loss_func)
-                    & (df.get("convergence_threshold_step", df.get("convergence_step", 0)) > 0)
+                    & (df["convergence_threshold"] > 0)
                 ]
                 if len(subset) > 0:
-                    step_col = "convergence_threshold_step" if "convergence_threshold_step" in subset.columns else "convergence_step"
-                    std_stats = subset.groupby(step_col).agg({"train_loss": "std"}).reset_index()
-                    std_stats.columns = ["step", "train_std"]
-                    std_stats["convergence_rate"] = std_stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                    )
-                    std_stats = std_stats.dropna(subset=["convergence_rate"])
+                    std_stats = subset.groupby("convergence_threshold").agg({"train_loss": "std"}).reset_index()
+                    std_stats.columns = ["convergence_rate", "train_std"]
 
                     if len(std_stats) > 0:
                         color = style.ensemble_colors.get(ensemble, "grey")
@@ -345,16 +330,11 @@ def plot_split_variability(
                 subset = df[
                     (df["ensemble"] == ensemble)
                     & (df["loss_function"] == loss_func)
-                    & (df.get("convergence_threshold_step", df.get("convergence_step", 0)) > 0)
+                    & (df["convergence_threshold"] > 0)
                 ]
                 if len(subset) > 0:
-                    step_col = "convergence_threshold_step" if "convergence_threshold_step" in subset.columns else "convergence_step"
-                    std_stats = subset.groupby(step_col).agg({"val_loss": "std"}).reset_index()
-                    std_stats.columns = ["step", "val_std"]
-                    std_stats["convergence_rate"] = std_stats["step"].apply(
-                        lambda x: convergence_rates[x - 1] if x - 1 < len(convergence_rates) else None
-                    )
-                    std_stats = std_stats.dropna(subset=["convergence_rate"])
+                    std_stats = subset.groupby("convergence_threshold").agg({"val_loss": "std"}).reset_index()
+                    std_stats.columns = ["convergence_rate", "val_std"]
 
                     if len(std_stats) > 0:
                         color = style.ensemble_colors.get(ensemble, "grey")
@@ -424,7 +404,7 @@ def plot_loss_convergence_2d(
 
         final_df = split_df.loc[
             split_df.groupby(["ensemble", "loss_function", "maxent_value", "bv_reg_value", "split"])[
-                "convergence_step"
+                "convergence_rank"
             ].idxmax()
         ]
 
@@ -536,7 +516,7 @@ def plot_split_variability_2d(
 
         final_df = split_df.loc[
             split_df.groupby(["ensemble", "loss_function", "maxent_value", "bv_reg_value", "split"])[
-                "convergence_step"
+                "convergence_rank"
             ].idxmax()
         ]
 
@@ -618,4 +598,3 @@ def plot_split_variability_2d(
     filename = f"split_variability_{split_type}.png" if split_type else "split_variability.png"
     plt.savefig(os.path.join(output_dir, filename), dpi=style.dpi, bbox_inches="tight")
     plt.close()
-

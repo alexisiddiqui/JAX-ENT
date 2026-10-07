@@ -354,8 +354,6 @@ The `run_maxent_parallel_BV_objective.sh` script accepts:
 |-----------|---------|-------------|
 | `n_steps` | 10000 | Total gradient steps |
 | `learning_rate` | 0.1 | Adam learning rate |
-| `initial_learning_rate` | 1.0 | Warm-up learning rate for first `initial_steps` |
-| `initial_steps` | 2 | Number of warm-up steps |
 | `ema_alpha` | 0.5 | EMA smoothing factor for convergence detection |
 | `forward_model_scaling` | 100.0 | Scale factor applied to the forward model loss |
 | `model_parameters_lr_scale` | 1.0 | Relative LR for BV parameters vs. frame weights |

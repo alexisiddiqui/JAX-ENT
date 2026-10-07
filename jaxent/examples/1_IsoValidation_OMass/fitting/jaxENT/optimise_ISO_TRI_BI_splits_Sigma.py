@@ -28,28 +28,29 @@ import argparse
 import os
 import time
 from datetime import datetime  # NEW: used to append timestamp when no output dir provided
-from typing import List
+from typing import List, Literal
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-jax.config.update("jax_platform_name", "cpu")
-os.environ["JAX_PLATFORM_NAME"] = "cpu"
+_jax_platform = os.environ.get("JAX_PLATFORM_NAME", "cpu")
+jax.config.update("jax_platform_name", _jax_platform)
 
 # Import model components
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
 from jaxent.examples.common.optimization import run_optimization
+from jaxent.examples.common.uptake_models import build_uptake_model
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.HDX import HDX_peptide
+from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Dataloader
 from jaxent.src.interfaces.simulation import Simulation_Parameters
-from jaxent.src.models.config import BV_model_Config
 from jaxent.src.models.core import Simulation
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.jit_fn import jit_Guard
 from jax import Array
 from jaxent.src.data.splitting.sparse_map import apply_sparse_mapping
@@ -99,11 +100,22 @@ def run_maxent_sweep(
     n_steps: int = 10000,
     num_splits: int = 3,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: allow caller to select output dir
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    reset_threshold_cooldown_on_oscillation: bool = True,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    datasplit_dir: str = None,
+    features_dir: str = None,
+    initial_frame_weights=None,
+    frame_averaging_mode: Literal[
+        "log_pf", "rate", "uptake", "frame_uptake"
+    ] = "log_pf",
+    kint_unit: Literal["s^-1", "min^-1"] = "s^-1",
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -127,8 +139,10 @@ def run_maxent_sweep(
     convergence_rates = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
 
     # Setup directories
-    datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
-    features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
+    if datasplit_dir is None:
+        datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
+    if features_dir is None:
+        features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
 
     # Use provided output directory or default to previous behavior (now with timestamp)
     if output_base_dir is None:
@@ -159,9 +173,24 @@ def run_maxent_sweep(
     primary_loss_str = loss_mapping[loss_name]
 
     # Setup BV model
-    bv_config = BV_model_Config(num_timepoints=5)
-    bv_config.timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
-    bv_model = BV_model(config=bv_config)
+    timepoints = jnp.array([0.167, 1.0, 10.0, 60.0, 120.0])
+    bv_model = build_uptake_model(
+        uptake_model, timepoints, kint_unit=kint_unit, time_unit="min"
+    )
+    uptake_forward = bv_model.forward[m_key("HDX_peptide")]
+    if uptake_model == "standard":
+        uptake_forward.frame_averaging_mode = frame_averaging_mode
+    if uptake_model == "standard" and frame_averaging_mode == "uptake":
+        clustering_dir = os.path.join(
+            os.path.dirname(__file__), "../../data/_clustering_results"
+        )
+        assignment_path = os.path.join(
+            clustering_dir, f"cluster_assignments_{ensemble.upper()}.csv"
+        )
+        assignments = np.genfromtxt(
+            assignment_path, delimiter=",", names=True, dtype=None, encoding="utf-8"
+        )["cluster_assignment"]
+        uptake_forward.set_frame_groups(assignments)
     model_parameters = bv_model.params
 
     # Discover split types
@@ -196,9 +225,8 @@ def run_maxent_sweep(
     print(f"Total runs: {results['total_runs']}")
     n_frames = features.features_shape[1]  # Assuming features.features_shape (n_residues, n_frames)
 
-    parameters = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames) / n_frames,
-        frame_mask=jnp.ones(n_frames),
+    parameters = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames) / n_frames,
         model_parameters=(model_parameters,),
         forward_model_weights=jnp.ones(2),
         normalise_loss_functions=jnp.ones(2),
@@ -245,7 +273,8 @@ def run_maxent_sweep(
             print(f"    Train samples: {len(train_data)}, Val samples: {len(val_data)}")
 
             for maxent_value in maxent_values:
-                run_name = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent{maxent_value:.1f}"
+                maxent_token = f"{maxent_value:g}".replace(".", "p")
+                run_name = f"{ensemble}_{loss_name}_{split_type}_split{split_idx:03d}_maxent{maxent_token}"
 
                 print(f"    Running maxent={maxent_value:.1f}: {run_name}")
                 run_start_time = time.time()
@@ -260,12 +289,16 @@ def run_maxent_sweep(
                     opt_config = OptimizationConfig(
                         n_steps=n_steps,
                         learning_rate=learning_rate,
-                        initial_learning_rate=initial_learning_rate,
-                        initial_steps=initial_steps,
                         ema_alpha=ema_alpha,
                         forward_model_scaling=forward_model_scaling,
                         convergence_rates=convergence_rates,
                         optimizer="adam",
+                        step_chunk_size=step_chunk_size,
+                        lr_adjustment=lr_adjustment,
+                        frame_average_impl=frame_average_impl,
+                        reset_threshold_cooldown_on_oscillation=(
+                            reset_threshold_cooldown_on_oscillation
+                        ),
                     )
 
                     run_optimization(
@@ -282,6 +315,8 @@ def run_maxent_sweep(
                         name=run_name,
                         output_dir=output_dir,
                         cov_matrix=cov_matrix_data,
+                        execution_mode=execution_mode,
+                        initial_frame_weights=initial_frame_weights,
                     )
 
                     run_elapsed = time.time() - run_start_time
@@ -351,16 +386,21 @@ def run_all_combinations(
     n_steps: int,
     num_splits: int,
     learning_rate: float = 1e-1,
-    initial_learning_rate: float = 1e0,
-    initial_steps: int = 2,
     ema_alpha: float = 0.5,
     forward_model_scaling: float = 100.0,
     output_base_dir: str = None,  # NEW: propagate chosen output dir
+    execution_mode: Literal["compiled", "python"] = "compiled",
+    step_chunk_size: int = 100,
+    lr_adjustment: bool = True,
+    frame_average_impl: str = "tensordot",
+    datasplit_dir: str = None,
+    features_dir: str = None,
+    uptake_model: Literal["standard", "linear"] = "standard",
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["ISO_TRI", "ISO_BI"]
 
-    loss_names = ["mcMSE", "MSE"]
+    loss_names = ["MSE", "Sigma_MSE"]
 
     combinations = [(ensemble, loss_name) for ensemble in ensembles for loss_name in loss_names]
 
@@ -387,11 +427,16 @@ def run_all_combinations(
                 n_steps=n_steps,
                 num_splits=num_splits,
                 learning_rate=learning_rate,
-                initial_learning_rate=initial_learning_rate,
-                initial_steps=initial_steps,
                 ema_alpha=ema_alpha,
                 forward_model_scaling=forward_model_scaling,
                 output_base_dir=output_base_dir,  # pass through
+                execution_mode=execution_mode,
+                step_chunk_size=step_chunk_size,
+                lr_adjustment=lr_adjustment,
+                frame_average_impl=frame_average_impl,
+                datasplit_dir=datasplit_dir,
+                features_dir=features_dir,
+                uptake_model=uptake_model,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -454,7 +499,11 @@ def main():
         "--maxent-range",
         type=str,
         default="1,10",
-        help="Range of maxent values as 'start,end' (inclusive). Default: '1,10'.",
+        help="Positive MaxEnt scales as 'start,end'; KL weight is reciprocal.",
+    )
+    parser.add_argument(
+        "--maxent-values",
+        help="Positive floating-point MaxEnt scales; KL weight is reciprocal.",
     )
     parser.add_argument(
         "--n-steps",
@@ -476,21 +525,13 @@ def main():
         help="Learning rate for optimizer (default: 1e-1).",
     )
 
-    # initial_learning_rate=initial_learning_rate,
+    parser.add_argument("--lr-adjustment", choices=["on", "off"], default="on")
     parser.add_argument(
-        "--initial-learning-rate",
-        type=float,
-        default=1e0,
-        help="Initial learning rate for optimizer (default: 1e0).",
+        "--frame-average-impl",
+        choices=["tensordot", "legacy_sum"],
+        default="tensordot",
     )
-
-    # initial_steps=initial_steps,
-    parser.add_argument(
-        "--initial-steps",
-        type=int,
-        default=2,
-        help="Number of initial steps with higher learning rate (default: 2).",
-    )
+    parser.add_argument("--step-chunk-size", type=int, default=100)
     # ema_alpha=ema_alpha,
     parser.add_argument(
         "--ema-alpha",
@@ -513,25 +554,79 @@ def main():
         default=None,
         help="Base output directory for runs (default: <script>/_optimise_quick_test_<timestamp> when not provided).",
     )
+    parser.add_argument(
+        "--datasplit-dir",
+        default=os.path.join(os.path.dirname(__file__), "_datasplits"),
+        help="Directory containing split data (default: script-local _datasplits).",
+    )
+    parser.add_argument(
+        "--features-dir",
+        default=os.path.join(os.path.dirname(__file__), "_featurise"),
+        help="Directory containing features_<ensemble>.npz and topology JSON files.",
+    )
+    parser.add_argument(
+        "--execution-mode",
+        choices=["compiled", "python"],
+        default="compiled",
+        help="Optimizer execution mode (default: compiled).",
+    )
+    parser.add_argument(
+        "--initial-frame-weights",
+        help="Optional .npy vector used instead of uniform initial frame weights.",
+    )
+    parser.add_argument(
+        "--frame-averaging-mode",
+        choices=("log_pf", "rate", "uptake", "frame_uptake"),
+        default="log_pf",
+        help="Where frame averaging occurs in the HDX forward calculation.",
+    )
+    parser.add_argument(
+        "--kint-unit",
+        choices=("s^-1", "min^-1"),
+        default="s^-1",
+        help="Unit of the stored intrinsic-rate features (legacy default: s^-1).",
+    )
+    parser.add_argument(
+        "--uptake-model",
+        choices=("standard", "linear"),
+        default="standard",
+        help="BV uptake model family (default: standard).",
+    )
 
     args = parser.parse_args()
+    if args.step_chunk_size < 1:
+        parser.error("--step-chunk-size must be >= 1")
+    initial_frame_weights = (
+        np.load(args.initial_frame_weights) if args.initial_frame_weights else None
+    )
 
     # Parse maxent range
-    try:
-        start_val, end_val = map(int, args.maxent_range.split(","))
-        maxent_values = list(range(start_val, end_val + 1))
-    except ValueError:
-        raise ValueError("maxent-range must be in format 'start,end' (e.g., '1,10')")
+    if args.maxent_values:
+        try:
+            maxent_values = [float(value) for value in args.maxent_values.split(",")]
+        except ValueError as exc:
+            raise ValueError("maxent-values must be comma-separated numbers") from exc
+        if not maxent_values or any(value <= 0 for value in maxent_values):
+            parser.error("--maxent-values must contain positive scales")
+    else:
+        try:
+            start_val, end_val = map(int, args.maxent_range.split(","))
+            maxent_values = list(range(start_val, end_val + 1))
+        except ValueError as exc:
+            raise ValueError(
+                "maxent-range must be in format 'start,end' (e.g., '1,10')"
+            ) from exc
+        if not maxent_values or any(value <= 0 for value in maxent_values):
+            parser.error("--maxent-range must contain positive scales")
 
     print(f"  Split types: {args.split_types}")
     print(f"  Maxent values: {maxent_values}")
     print(f"  Steps per run: {args.n_steps}")
     print(f"  Replicates per split: {args.n_replicates}")
     print(f"  Learning rate: {args.learning_rate}")
-    print(f"  Initial learning rate: {args.initial_learning_rate}")
-    print(f"  Initial steps: {args.initial_steps}")
     print(f"  EMA alpha: {args.ema_alpha}")
     print(f"  Forward model scaling: {args.forward_model_scaling}")
+    print(f"  Execution mode: {args.execution_mode}")
     # Check if specific combination is requested
     if args.ensemble is not None and args.loss_function is not None:
         # Single combination mode
@@ -550,11 +645,19 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through (None -> run_maxent_sweep will timestamp)
+            execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            datasplit_dir=args.datasplit_dir,
+            features_dir=args.features_dir,
+            initial_frame_weights=initial_frame_weights,
+            frame_averaging_mode=args.frame_averaging_mode,
+            kint_unit=args.kint_unit,
+            uptake_model=args.uptake_model,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -565,11 +668,16 @@ def main():
             n_steps=args.n_steps,
             num_splits=args.n_replicates,
             learning_rate=args.learning_rate,
-            initial_learning_rate=args.initial_learning_rate,
-            initial_steps=args.initial_steps,
             ema_alpha=args.ema_alpha,
             forward_model_scaling=args.forward_model_scaling,
             output_base_dir=args.output_dir,  # pass through
+            execution_mode=args.execution_mode,
+            step_chunk_size=args.step_chunk_size,
+            lr_adjustment=args.lr_adjustment == "on",
+            frame_average_impl=args.frame_average_impl,
+            datasplit_dir=args.datasplit_dir,
+            features_dir=args.features_dir,
+            uptake_model=args.uptake_model,
         )
 
     # Report where results were written

@@ -1,0 +1,52 @@
+{
+  "analysis": "MoPrP intrinsic-rate condition grid",
+  "best_grid_point_for_moprp_kint": {
+    "max_abs_ln_ratio_to_moprp_kint": 1.446716980967688,
+    "mean_ln_ratio_to_moprp_kint": -0.06709624184193971,
+    "n_compared": 97,
+    "ph": 4.0,
+    "rms_ln_ratio_to_moprp_kint": 0.43202598153855665,
+    "sd_ln_ratio_to_moprp_kint": 0.4267839536053824,
+    "temperature_k": 293.0
+  },
+  "canonical_control": {
+    "max_abs_ln_ratio": 4.2188474935756035e-15,
+    "max_abs_rate_difference_min_inverse": 2.1316282072803006e-14,
+    "n_compared": 97,
+    "ph": 4.4,
+    "temperature_k": 298.0
+  },
+  "conclusion": "no grid match",
+  "expfact_revision": "34d132930a41c5f1fdaad4b8a119d519c0e66fb3",
+  "expfact_root": "/tmp/expfact-provenance-full",
+  "inputs": {
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/expfact_kint_pH4p4_298K_min.dat": "f069ca46ecd7fd6a6ee4b8a450d9bf634703b10074ee72489dbdbfa16911f181",
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.kint": "7be0f0d23ecec367c65e2feccd97f1e2dc0b6c27ce09accab109061fdc069af1",
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/data/_MoPrP/moprp.seq": "f75d2d124d957b9c05492dccbc342d3f53cf7c0b89e91da9d436bc9063acf558",
+    "/tmp/expfact-provenance-full/python/constants_HD.py": "8ac7292dbdc12dbc6a253be3950545ace11b52760ac8ddf88190c6a4a2f3c2ca",
+    "/tmp/expfact-provenance-full/python/kint.py": "4b86de2344e7d36f3a8a2a3b86f3b2534440e9cc1ce9aae814e6f3e607b18a7d"
+  },
+  "outputs": {
+    "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/current_3ala/condition_grid.csv": "b46aab7a9f399166511653791e1d0c5a237cff08d9b72c06b73e32336c96f08a"
+  },
+  "ph_grid": [
+    2.5,
+    4.0,
+    4.4,
+    6.5,
+    7.0,
+    7.4
+  ],
+  "rate_convention": "upstream calculate_kint_for_sequence output divided by 60 (hr^-1 to min^-1)",
+  "script": {
+    "path": "/home/alexi/Documents/JAX-ENT/jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_provenance/identify_kint_conditions.py",
+    "sha256": "8b6530f59a20837b9d996acb56ecda0a874df235d0ca245c7866d8fd7200d715"
+  },
+  "temperature_grid_k": [
+    278.0,
+    288.0,
+    293.0,
+    298.0,
+    310.0
+  ]
+}

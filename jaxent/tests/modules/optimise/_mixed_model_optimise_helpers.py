@@ -117,9 +117,8 @@ def build_mixed_simulation(
         targets.append(jnp.asarray(xlms_feature.distances)[:, :, target_frame])
 
     n_models = len(models)
-    params = Simulation_Parameters(
-        frame_weights=jnp.ones(n_frames, dtype=jnp.float32) / n_frames,
-        frame_mask=jnp.ones(n_frames, dtype=jnp.float32),
+    params = Simulation_Parameters.from_frame_weights(
+        jnp.ones(n_frames, dtype=jnp.float32) / n_frames,
         model_parameters=model_parameters,
         forward_model_weights=jnp.ones(n_models, dtype=jnp.float32),
         forward_model_scaling=jnp.ones(n_models, dtype=jnp.float32),

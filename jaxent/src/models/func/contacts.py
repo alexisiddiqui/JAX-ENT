@@ -1,13 +1,60 @@
 from collections.abc import Sequence
-from beartype.typing import Literal
+from typing import Literal
 
-import MDAnalysis as mda
 from MDAnalysis import Universe
 import numpy as np
-from icecream import ic  # Import icecream for debugging
 from MDAnalysis.core.groups import AtomGroup  # type: ignore
 from MDAnalysis.lib.distances import distance_array  # type: ignore
-from tqdm import tqdm  # Add tqdm import
+from tqdm import tqdm
+
+from jaxent.src.interfaces.topology.mda_adapter import mda_TopologyAdapter
+
+
+ContactMode = Literal["hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"]
+
+
+def bradshaw_rational_6_12(
+    distance: np.ndarray | float,
+    *,
+    center: float,
+    scale: float,
+) -> np.ndarray:
+    """Bradshaw/Radou continuous rational 6--12 contact switch.
+
+    The reference implementation evaluates
+
+    ``(1-y**6) / (1-y**12)``, where ``y=(distance-center)/scale``,
+
+    for every eligible atom pair.  The expression is exactly
+    ``1 / (1+y**6)`` after cancelling the removable singularity at
+    ``abs(y) == 1``; the simplified form is used here for numerical safety.
+    Distances, ``center``, and ``scale`` must use the same units.
+    """
+    if center < 0:
+        raise ValueError("center must be non-negative")
+    if scale <= 0:
+        raise ValueError("scale must be positive")
+    values = np.asarray(distance, dtype=float)
+    return 1.0 / (1.0 + ((values - center) / scale) ** 6)
+
+
+def smooth_cutoff_rational_6_12(
+    distance: np.ndarray | float,
+    *,
+    radius: float,
+    scale: float,
+) -> np.ndarray:
+    """Full contacts inside radius, with a rational tail of half-height at radius+scale.
+
+    All distances are in Angstroms. Unlike the historical Bradshaw equation,
+    shortening the tail cannot suppress contacts inside the contact radius.
+    """
+    if not np.isfinite(radius) or radius <= 0:
+        raise ValueError("radius must be positive and finite")
+    if not np.isfinite(scale) or scale <= 0:
+        raise ValueError("switch_scale must be positive and finite")
+    excess = np.maximum(np.asarray(distance, dtype=float) - radius, 0.0)
+    return np.asarray(1.0 / (1.0 + (excess / scale) ** 6))
 
 
 # def calc_BV_contacts_universe(
@@ -129,11 +176,18 @@ def calc_BV_contacts_universe(
     radius: float,
     residue_ignore: tuple[int, int] = (-2, 2),
     switch: bool = False,
-    n_jobs: int = 10  # Added parameter for OpenMP threads
+    n_jobs: int = 10,
+    environment_selection: str = "all",
+    contact_mode: ContactMode | None = None,
+    switch_scale: float = 10.0,
 ) -> Sequence[Sequence[float]]:
-    """
-    Calculate contacts for Best-Vendruscolo HDX prediction using vectorized 
-    operations and MDAnalysis OpenMP backend.
+    """Calculate Best--Vendruscolo contacts for backbone amide donors.
+
+    The parity construction counts protein non-hydrogen atoms around the
+    amide N and protein oxygen atoms around the amide H.  Sequence neighbours
+    are masked by their ordinal position within the same protein chain; this
+    remains correct for non-contiguous residue numbering and never masks an
+    equally numbered residue in another chain.
 
     Args:
         universe: MDAnalysis Universe object
@@ -141,103 +195,137 @@ def calc_BV_contacts_universe(
         contact_selection: "heavy" or "oxygen"
         radius: Cutoff distance in Angstroms
         residue_ignore: Relative residue range to ignore (start, end)
-        switch: Use rational switching function
+        switch: Backward-compatible alias selecting ``legacy_switch`` when true.
         n_jobs: Number of OpenMP threads to use for distance calculation
+        environment_selection: MDAnalysis selection defining atoms that may
+            protect the amide. General featurisation includes all explicitly
+            modelled atoms; a protein-only experiment must request ``protein``.
+        contact_mode: Explicit contact construction. ``hard`` counts contacts
+            within ``radius``; ``legacy_switch`` applies JAX-ENT's truncated
+            rational switch; ``bradshaw_switch`` applies the Bradshaw/Radou
+            continuous rational 6--12 switch to every eligible pair; ``smooth_cutoff``
+            retains unit contacts inside radius and switches only beyond it.
+        switch_scale: Rational switch scale in Angstroms; for ``smooth_cutoff``
+            this is the distance beyond radius at which a contact contributes 0.5.
 
     Returns:
         List of contact counts per frame (N_targets, N_frames)
     """
-    ic.configureOutput(prefix="DEBUG | ")
-    
-    # --- 1. PRE-CALCULATION PHASE ---
-    
-    # Define selection string
+    if radius <= 0:
+        raise ValueError("radius must be positive")
+    if contact_mode is None:
+        contact_mode = "legacy_switch" if switch else "hard"
+    if contact_mode not in {"hard", "legacy_switch", "bradshaw_switch", "smooth_cutoff"}:
+        raise ValueError(f"unknown contact_mode: {contact_mode!r}")
+    if switch and contact_mode != "legacy_switch":
+        raise ValueError("switch=True cannot be combined with an explicit non-legacy contact_mode")
+    if contact_mode in {"bradshaw_switch", "smooth_cutoff"} and (
+        not np.isfinite(switch_scale) or switch_scale <= 0
+    ):
+        raise ValueError("switch_scale must be positive")
+    if residue_ignore[0] > residue_ignore[1]:
+        raise ValueError("residue_ignore must be ordered (lower, upper)")
+    if len(target_atoms) == 0:
+        raise ValueError("target_atoms must not be empty")
+
     if contact_selection == "heavy":
-        sel_string = "not type H"
+        atom_selection = "not type H"
     elif contact_selection == "oxygen":
-        sel_string = "type O"
+        atom_selection = "type O"
     else:
         raise ValueError("contact_selection must be either 'heavy' or 'oxygen'")
 
-    # Select ALL potential contact atoms once (Global selection)
-    # We rely on indices, assuming topology does not change during trajectory
-    all_contact_atoms = universe.select_atoms(sel_string)
-    
-    ic(len(target_atoms), len(all_contact_atoms), contact_selection)
+    try:
+        environment_atoms = universe.select_atoms(environment_selection)
+    except AttributeError:
+        # Minimal in-memory test Universes may omit resnames and therefore
+        # cannot evaluate MDAnalysis' ``protein`` keyword.  They contain no
+        # solvent/ligand classification to preserve, so all atoms are the
+        # only meaningful environment in that specific case.
+        if environment_selection != "protein":
+            raise
+        environment_atoms = universe.atoms
+    all_contact_atoms = environment_atoms.select_atoms(atom_selection)
+    if len(all_contact_atoms) == 0:
+        return np.zeros((len(target_atoms), universe.trajectory.n_frames)).tolist()
 
-    # Pre-calculate Residue Masking Matrix
-    # We create a boolean matrix (N_targets x N_contacts) where True = Ignore
-    # This replaces the slow 'resid X:Y' query inside the loop
-    target_resids = target_atoms.resids[:, np.newaxis]  # Column vector
-    contact_resids = all_contact_atoms.resids[np.newaxis, :]  # Row vector
-    
-    # Calculate relative residue difference matrix
-    resid_diff = contact_resids - target_resids
-    
-    # Create mask: True if atom is within the ignored residue range
-    # range is inclusive in selection strings, so we use <= and >=
-    ignore_mask = (resid_diff >= residue_ignore[0]) & (resid_diff <= residue_ignore[1])
-    
-    ic(f"Mask shape: {ignore_mask.shape}. Ignored pairs: {np.sum(ignore_mask)}")
+    # Map protein residues to chain-local sequence positions.  Non-protein
+    # environment atoms deliberately have no ordinal and are never removed as
+    # covalent sequence neighbours.
+    ordinal_by_resindex: dict[int, tuple[str, int]] = {}
+    try:
+        protein_residues = universe.select_atoms("protein").residues
+    except AttributeError:
+        protein_residues = universe.atoms.residues
+    residues_by_chain: dict[str, list] = {}
+    for residue in protein_residues:
+        chain = str(mda_TopologyAdapter._get_chain_id(residue))
+        residues_by_chain.setdefault(chain, []).append(residue)
+    for chain, residues in residues_by_chain.items():
+        for ordinal, residue in enumerate(residues):
+            ordinal_by_resindex[int(residue.resindex)] = (chain, ordinal)
+
+    target_positions = []
+    for atom in target_atoms:
+        position = ordinal_by_resindex.get(int(atom.resindex))
+        if position is None:
+            raise ValueError(f"target atom {atom} is not in the protein sequence")
+        target_positions.append(position)
+
+    ignore_mask = np.zeros((len(target_atoms), len(all_contact_atoms)), dtype=bool)
+    for target_index, (target_chain, target_ordinal) in enumerate(target_positions):
+        for contact_index, atom in enumerate(all_contact_atoms):
+            contact_position = ordinal_by_resindex.get(int(atom.resindex))
+            if contact_position is None:
+                continue
+            contact_chain, contact_ordinal = contact_position
+            ordinal_delta = contact_ordinal - target_ordinal
+            ignore_mask[target_index, contact_index] = (
+                contact_chain == target_chain
+                and residue_ignore[0] <= ordinal_delta <= residue_ignore[1]
+            )
 
     # Initialize results
     n_frames = universe.trajectory.n_frames
     n_targets = len(target_atoms)
-    results = np.zeros((n_targets, n_frames))
+    results = np.zeros((n_targets, n_frames), dtype=float)
 
     # Switching function definition (vectorized)
     def rational_switch(r: np.ndarray, r0: float) -> np.ndarray:
-        # Avoid division by zero if r close to r0 (though logic below handles it)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            x = (r / r0) ** 6
-            val = (1 - x) / (1 - x * x)
-        # Fix singularity at r = r0 (limit is 0.5)
-        val[np.isnan(val)] = 0.5 
-        return val
+        # Algebraically equivalent to (1-x)/(1-x^2), including its 0.5
+        # limit at r=r0, without a removable singularity.
+        return 1.0 / (1.0 + (r / r0) ** 6)
 
-    # --- 2. TRAJECTORY LOOP ---
-    
-    # Setup OpenMP backend check
-    # Note: 'backend' argument requires MDAnalysis >= 2.0.0
-    calc_backend = 'OpenMP' if n_jobs > 1 else 'serial'
-    ic(f"Using backend: {calc_backend} with {n_jobs} threads (if OpenMP)")
-
-    for ts in tqdm(universe.trajectory, total=n_frames, desc="Processing Frames"):
-        
-        # Calculate full Distance Matrix (N_targets x N_all_contacts)
-        # This is where OpenMP provides speedup
+    calc_backend = "OpenMP" if n_jobs > 1 else "serial"
+    for frame_index, _ in enumerate(
+        tqdm(universe.trajectory, total=n_frames, desc="Processing Frames")
+    ):
         dists = distance_array(
             target_atoms.positions,
             all_contact_atoms.positions,
             box=universe.dimensions,
-            backend=calc_backend
+            backend=calc_backend,
         )
-
-        # Apply the pre-calculated residue mask
-        # We set distances of ignored residues to Infinity so they fail the cutoff check
         dists[ignore_mask] = np.inf
 
-        if switch:
-            # 1. Identify valid contacts within radius (boolean mask)
+        if contact_mode == "legacy_switch":
             within_cutoff = dists <= radius
-            
-            # 2. Calculate switch values for ALL pairs (vectorized)
-            # We filter by within_cutoff to match original logic (and save computation time)
-            # However, for pure vectorization, we calc all, then zero out failures
-            switch_vals = rational_switch(dists, radius)
-            
-            # 3. Zero out values outside radius or masked residues
-            switch_vals[~within_cutoff] = 0.0
-            
-            # 4. Sum across rows (axis 1 = sum contacts per target)
-            results[:, ts.frame] = np.sum(switch_vals, axis=1)
-            
+            switch_values = np.zeros_like(dists)
+            switch_values[within_cutoff] = rational_switch(dists[within_cutoff], radius)
+            results[:, frame_index] = np.sum(switch_values, axis=1)
+        elif contact_mode == "bradshaw_switch":
+            switch_values = bradshaw_rational_6_12(
+                dists,
+                center=radius,
+                scale=switch_scale,
+            )
+            results[:, frame_index] = np.sum(switch_values, axis=1)
+        elif contact_mode == "smooth_cutoff":
+            switch_values = smooth_cutoff_rational_6_12(
+                dists, radius=radius, scale=switch_scale
+            )
+            results[:, frame_index] = np.sum(switch_values, axis=1)
         else:
-            # Hard cutoff mode
-            # Count how many items in each row are <= radius
-            contact_counts = np.sum(dists <= radius, axis=1)
-            results[:, ts.frame] = contact_counts
+            results[:, frame_index] = np.sum(dists <= radius, axis=1)
 
-    ic(f"Final results shape: {results.shape}")
-    
     return results.tolist()

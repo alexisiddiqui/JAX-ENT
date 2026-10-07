@@ -260,22 +260,25 @@ class TestBVUptakeForwardPass:
 
 
 # ============================================================================
-# Test linear_BV_ForwardPass (uptake = bc * heavy + bh * acceptor)
+# Test additive interval-hazard linear_BV_ForwardPass
 # ============================================================================
 
 
 class TestLinearBVForwardPass:
-    """Test linear_BV_ForwardPass linear uptake computation."""
+    """Test the bounded additive interval-hazard uptake computation."""
 
     def test_known_linear_combination(self, simple_bv_inputs):
-        """Test linear combination: uptake = bc * heavy + bh * acceptor."""
+        """Zero offsets recover average-contact EX2 uptake."""
         params = linear_BV_Model_Parameters(
-            bv_bc=jnp.array([0.35]),
-            bv_bh=jnp.array([2.0]),
+            bv_bc=0.35,
+            bv_bh=2.0,
+            timepoints=(1.0,),
+            kint_unit="min^-1",
+            time_unit="min",
         )
         result = linear_BV_ForwardPass()(simple_bv_inputs, params)
-        # 0.35 * [1, 2, 3] + 2.0 * [0.5, 1, 1.5] = [1.35, 2.7, 4.05]
-        expected = jnp.array([1.35, 2.7, 4.05])
+        log_pf = 0.35 * simple_bv_inputs.heavy_contacts + 2.0 * simple_bv_inputs.acceptor_contacts
+        expected = -jnp.expm1(-simple_bv_inputs.k_ints * jnp.exp(-log_pf))[None, :]
         np.testing.assert_allclose(result.uptake, expected, rtol=1e-6)
 
     def test_output_type(self, simple_bv_inputs):
@@ -287,19 +290,18 @@ class TestLinearBVForwardPass:
         result = linear_BV_ForwardPass()(simple_bv_inputs, params)
         assert isinstance(result, uptake_BV_output_features)
 
-    def test_zero_params(self):
-        """Test with zero parameters."""
+    def test_zero_contacts_follow_intrinsic_rate(self):
         inputs = BV_input_features(
-            heavy_contacts=jnp.array([1.0, 2.0]),
-            acceptor_contacts=jnp.array([0.5, 1.0]),
+            heavy_contacts=jnp.zeros(2),
+            acceptor_contacts=jnp.zeros(2),
             k_ints=jnp.array([0.1, 0.5]),
         )
         params = linear_BV_Model_Parameters(
-            bv_bc=jnp.array([0.0]),
-            bv_bh=jnp.array([0.0]),
+            bv_bc=0.35, bv_bh=2.0, timepoints=(1.0,),
+            kint_unit="min^-1", time_unit="min",
         )
         result = linear_BV_ForwardPass()(inputs, params)
-        expected = jnp.zeros(2)
+        expected = -jnp.expm1(-inputs.k_ints)[None, :]
         np.testing.assert_allclose(result.uptake, expected, rtol=1e-6)
 
 

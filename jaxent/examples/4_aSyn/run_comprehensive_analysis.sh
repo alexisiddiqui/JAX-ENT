@@ -107,60 +107,80 @@ fi
 BASENAME="$(basename "$RESULTS_DIR")"
 PROCESSED_DIR="$(dirname "$RESULTS_DIR")/_processed_${BASENAME}"
 
-if run_step "score_models" "$LOG_DIR/score_models.log" \
-  python "$ANA_DIR/score_models_aSyn_conditions.py" \
-    --processed-data-dir "$PROCESSED_DIR" \
-    --results-dir "$RESULTS_DIR" \
-    --datasplit-dir "${DIR_WD}/_datasplits" \
-    --absolute-paths; then
-  SCORE_STATUS="ok"
+if [ "$PROCESS_STATUS" = "ok" ]; then
+  if run_step "score_models" "$LOG_DIR/score_models.log" \
+    python "$ANA_DIR/score_models_aSyn_conditions.py" \
+      --processed-data-dir "$PROCESSED_DIR" \
+      --results-dir "$RESULTS_DIR" \
+      --datasplit-dir "${DIR_WD}/_datasplits" \
+      --absolute-paths; then
+    SCORE_STATUS="ok"
+  else
+    SCORE_STATUS="fail"
+  fi
 else
-  SCORE_STATUS="fail"
+  echo "[SKIP] score_models (process_optimisation_results did not succeed)"
+  SCORE_STATUS="skipped_upstream_failure"
 fi
 
 SCORES_BASENAME="$(basename "$PROCESSED_DIR")"
 SCORES_DIR="${PROCESSED_DIR}/_scores_${SCORES_BASENAME}"
 SCORES_CSV="${SCORES_DIR}/model_scores.csv"
 
-if run_step "analyse_scores_mixed_linear_model" "$LOG_DIR/analyse_scores_mixed_linear_model.log" \
-  python "$ANA_DIR/analyse_scores_mixed_linear_model_aSyn_conditions.py" \
-    --scores-csv-path "$SCORES_CSV" \
-    --target-metric "recovery_percent" \
-    --filter-mode "both" \
-    --analyze-subsets \
-    --absolute-paths; then
-  MLM_STATUS="ok"
+if [ "$SCORE_STATUS" = "ok" ]; then
+  if run_step "analyse_scores_mixed_linear_model" "$LOG_DIR/analyse_scores_mixed_linear_model.log" \
+    python "$ANA_DIR/analyse_scores_mixed_linear_model_aSyn_conditions.py" \
+      --scores-csv-path "$SCORES_CSV" \
+      --target-metric "recovery_percent" \
+      --filter-mode "both" \
+      --analyze-subsets \
+      --absolute-paths; then
+    MLM_STATUS="ok"
+  else
+    MLM_STATUS="fail"
+  fi
 else
-  MLM_STATUS="fail"
+  echo "[SKIP] analyse_scores_mixed_linear_model (score_models did not succeed)"
+  MLM_STATUS="skipped_upstream_failure"
 fi
 
 ANALYSIS_DIR="${PROCESSED_DIR}/_analysis_$(basename "$SCORES_DIR")"
 BEFORE_CSV="${ANALYSIS_DIR}/whole_dataset/model_selection_performance_summary.csv"
 AFTER_CSV="${ANALYSIS_DIR}_filtered/whole_dataset/model_selection_performance_summary.csv"
 
-if run_step "plot_selected_models" "$LOG_DIR/plot_selected_models.log" \
-  python "$ANA_DIR/plot_selected_models_aSyn_conditions.py" \
-    --before-csv "$BEFORE_CSV" \
-    --after-csv "$AFTER_CSV" \
-    --output-dir "${ANALYSIS_DIR}/plots_selection"; then
-  PLOT_STATUS="ok"
+if [ "$MLM_STATUS" = "ok" ]; then
+  if run_step "plot_selected_models" "$LOG_DIR/plot_selected_models.log" \
+    python "$ANA_DIR/plot_selected_models_aSyn_conditions.py" \
+      --before-csv "$BEFORE_CSV" \
+      --after-csv "$AFTER_CSV" \
+      --output-dir "${ANALYSIS_DIR}/plots_selection"; then
+    PLOT_STATUS="ok"
+  else
+    PLOT_STATUS="fail"
+  fi
 else
-  PLOT_STATUS="fail"
+  echo "[SKIP] plot_selected_models (analyse_scores_mixed_linear_model did not succeed)"
+  PLOT_STATUS="skipped_upstream_failure"
 fi
 
 EXTRACT_DIR="${PROCESSED_DIR}/_extracted_$(basename "$PROCESSED_DIR")"
 
-if run_step "extract_selected_models" "$LOG_DIR/extract_selected_models.log" \
-  python "$ANA_DIR/extract_selected_models_aSyn_conditions.py" \
-    --processed-data-dir "$PROCESSED_DIR" \
-    --scores-csv "$SCORES_CSV" \
-    --selection-csv "$BEFORE_CSV" \
-    --output-dir "$EXTRACT_DIR" \
-    --datasplit-dir "${DIR_WD}/_datasplits" \
-    --absolute-paths; then
-  EXTRACT_STATUS="ok"
+if [ "$MLM_STATUS" = "ok" ]; then
+  if run_step "extract_selected_models" "$LOG_DIR/extract_selected_models.log" \
+    python "$ANA_DIR/extract_selected_models_aSyn_conditions.py" \
+      --processed-data-dir "$PROCESSED_DIR" \
+      --scores-csv "$SCORES_CSV" \
+      --selection-csv "$BEFORE_CSV" \
+      --output-dir "$EXTRACT_DIR" \
+      --datasplit-dir "${DIR_WD}/_datasplits" \
+      --absolute-paths; then
+    EXTRACT_STATUS="ok"
+  else
+    EXTRACT_STATUS="fail"
+  fi
 else
-  EXTRACT_STATUS="fail"
+  echo "[SKIP] extract_selected_models (analyse_scores_mixed_linear_model did not succeed)"
+  EXTRACT_STATUS="skipped_upstream_failure"
 fi
 
 # Build plot_feature_distributions args; add clustering outputs if present
@@ -186,11 +206,16 @@ elif [ -f "$CLUSTER_DIR/macro_cluster_labels.npy" ]; then
   FEAT_DIST_ARGS+=(--macro-cluster-labels-npy "$CLUSTER_DIR/macro_cluster_labels.npy")
 fi
 
-if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
-  "${FEAT_DIST_ARGS[@]}"; then
-  FEAT_DIST_STATUS="ok"
+if [ "$EXTRACT_STATUS" = "ok" ]; then
+  if run_step "plot_feature_distributions" "$LOG_DIR/plot_feature_distributions.log" \
+    "${FEAT_DIST_ARGS[@]}"; then
+    FEAT_DIST_STATUS="ok"
+  else
+    FEAT_DIST_STATUS="fail"
+  fi
 else
-  FEAT_DIST_STATUS="fail"
+  echo "[SKIP] plot_feature_distributions (extract_selected_models did not succeed)"
+  FEAT_DIST_STATUS="skipped_upstream_failure"
 fi
 
 echo
@@ -206,3 +231,22 @@ echo "extract_selected_models: $EXTRACT_STATUS"
 echo "plot_feature_distributions: $FEAT_DIST_STATUS"
 
 echo "Logs: $LOG_DIR"
+
+REQUIRED_STAGES=(
+  "process_optimisation_results:$PROCESS_STATUS"
+  "score_models:$SCORE_STATUS"
+  "analyse_scores_mixed_linear_model:$MLM_STATUS"
+  "plot_selected_models:$PLOT_STATUS"
+  "extract_selected_models:$EXTRACT_STATUS"
+  "plot_feature_distributions:$FEAT_DIST_STATUS"
+)
+OVERALL_STATUS=0
+for entry in "${REQUIRED_STAGES[@]}"; do
+  name="${entry%%:*}"
+  status="${entry#*:}"
+  if [ "$status" != "ok" ]; then
+    echo "[REQUIRED STAGE NOT OK] $name: $status"
+    OVERALL_STATUS=1
+  fi
+done
+exit "$OVERALL_STATUS"

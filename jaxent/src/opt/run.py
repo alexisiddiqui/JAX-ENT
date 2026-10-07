@@ -1,7 +1,8 @@
 import logging
-import time
 from collections.abc import Sequence
 from typing import Optional, TypedDict, cast
+
+import numpy as np
 
 import jax
 import jax.numpy as jnp
@@ -18,23 +19,22 @@ from jaxent.src.models.core import Simulation
 from jaxent.src.opt.base import (
     InitialisedSimulation,
     JaxEnt_Loss,
-    LossComponents,
-    OptimisationCarry,
     OptimizationHistory,
     OptimizationState,
+    validate_convergence_labels,
 )
-from jaxent.src.opt.gradients import check_gradient_oscillation, get_previous_grads
-from jaxent.src.opt.log import (
-    format_optimization_error,
-    log_final_states,
-    log_optimization_step,
-    log_oscillation_warning,
-    log_threshold_met,
-    print_optimization_summary,
+from jaxent.src.opt.chunk import (
+    ChunkCarry,
+    ChunkInputs,
+    ChunkResult,
+    StateSnapshot,
+    _make_record,
+    initialise_convergence_snapshots,
+    optimisation_step,
+    run_sequential,
 )
 from jaxent.src.opt.optimiser import OptaxOptimizer, compute_loss
 from jaxent.src.opt.track import (
-    ConvergenceTracker,
     create_convergence_thresholds,
     initialise_convergence_carry,
 )
@@ -96,11 +96,10 @@ def _ensure_dense_state(
     ],
     indexes: tuple[int, ...],
     loss_functions: tuple[JaxEnt_Loss, ...],
-) -> tuple[OptimizationState, InitialisedSimulation]:
-    updated_sim = simulation
+) -> OptimizationState:
     losses = opt_state.losses
     if losses is None:
-        losses, updated_sim = compute_loss(
+        losses = compute_loss(
             simulation,
             opt_state.params,
             data_to_fit,
@@ -110,32 +109,92 @@ def _ensure_dense_state(
     gradients = opt_state.gradients
     if gradients is None:
         gradients = jax.tree_util.tree_map(jnp.zeros_like, opt_state.params)
-    return (
-        OptimizationState(
-            params=opt_state.params,
-            opt_state=opt_state.opt_state,
-            step=opt_state.step,
-            losses=losses,
-            gradients=gradients,
+    return OptimizationState(
+        params=opt_state.params,
+        opt_state=opt_state.opt_state,
+        step=opt_state.step,
+        losses=losses,
+        gradients=gradients,
+    )
+
+
+def _build_chunk_state(
+    _simulation: InitialisedSimulation,
+    data_to_fit: Sequence[
+        ExpD_Dataloader | Model_Parameters | Output_Features | Array | Simulation_Parameters
+    ],
+    tolerance: float,
+    convergence: float | list[float],
+    indexes: Sequence[int],
+    loss_functions: Sequence[JaxEnt_Loss],
+    opt_state: OptimizationState,
+    optimizer: OptaxOptimizer,
+    learning_rate: float | Array | None = None,
+    convergence_parameter_partitions=None,
+    retain_convergence_params: bool = True,
+) -> tuple[ChunkCarry, ChunkInputs, tuple[JaxEnt_Loss, ...], tuple[int, ...]]:
+    tuple_data_to_fit = tuple(data_to_fit)
+    tuple_indexes = tuple(indexes)
+    tuple_loss_functions = tuple(loss_functions)
+
+    dense_state = _ensure_dense_state(
+        simulation=_simulation,
+        opt_state=opt_state,
+        data_to_fit=tuple_data_to_fit,
+        indexes=tuple_indexes,
+        loss_functions=tuple_loss_functions,
+    )
+    if dense_state.losses is None:
+        raise ValueError("Dense state must include losses for chunked optimisation.")
+
+    base_learning_rate = (
+        jnp.asarray(optimizer.learning_rate, dtype=jnp.float32)
+        if learning_rate is None
+        else jnp.asarray(learning_rate, dtype=jnp.float32)
+    )
+    convergence_thresholds = create_convergence_thresholds(
+        convergence, base_learning_rate
+    )
+    init_carry = ChunkCarry(
+        opt_state=dense_state,
+        sim=_simulation,
+        convergence=initialise_convergence_carry(),
+        lr=base_learning_rate,
+        model_lr=jnp.asarray(
+            base_learning_rate * optimizer.model_parameters_lr_scale,
+            dtype=jnp.float32,
         ),
-        updated_sim,
+        executed_steps=jnp.array(0, dtype=jnp.int32),
+        active=(
+            jnp.isfinite(dense_state.losses.total_train_loss)
+            & ((dense_state.losses.total_train_loss < 0)
+               | (dense_state.losses.total_train_loss >= jnp.asarray(tolerance, dtype=jnp.float32)))
+        ),
+        best=StateSnapshot(
+            params=dense_state.params,
+            losses=dense_state.losses,
+            step=jnp.asarray(dense_state.step, dtype=jnp.int32),
+        ),
+        convergence_snapshots=initialise_convergence_snapshots(
+            dense_state.params,
+            dense_state.losses,
+            convergence_thresholds.shape[0],
+            parameter_partitions=convergence_parameter_partitions,
+            retain_params=retain_convergence_params,
+        ),
     )
-
-
-def _build_history_buffers(
-    n_steps: int,
-    params: Simulation_Parameters,
-    losses: LossComponents,
-) -> tuple[Simulation_Parameters, LossComponents]:
-    history_params = jax.tree_util.tree_map(
-        lambda x: jnp.zeros((n_steps,) + x.shape, dtype=x.dtype),
-        params,
+    inputs = ChunkInputs(
+        data_targets=tuple_data_to_fit,
+        convergence_thresholds=convergence_thresholds,
+        tolerance=jnp.asarray(tolerance, dtype=jnp.float32),
+        ema_alpha=jnp.asarray(0.5, dtype=jnp.float32),
+        base_lr=base_learning_rate,
+        base_model_lr=jnp.asarray(
+            base_learning_rate * optimizer.model_parameters_lr_scale,
+            dtype=jnp.float32,
+        ),
     )
-    history_losses = jax.tree_util.tree_map(
-        lambda x: jnp.zeros((n_steps,) + x.shape, dtype=x.dtype),
-        losses,
-    )
-    return history_params, history_losses
+    return init_carry, inputs, tuple_loss_functions, tuple_indexes
 
 
 def _optimise_pure(
@@ -153,83 +212,171 @@ def _optimise_pure(
     ema_alpha: float = 0.5,
     min_steps_per_threshold: int = 2,
     learning_rate: float | Array | None = None,
-) -> OptimisationCarry:
-    """Pure optimisation loop based on ``jax.lax.while_loop``."""
-    tuple_data_to_fit = tuple(data_to_fit)
-    tuple_indexes = tuple(indexes)
-    tuple_loss_functions = tuple(loss_functions)
-
-    dense_state, _simulation = _ensure_dense_state(
-        simulation=_simulation,
-        opt_state=opt_state,
-        data_to_fit=tuple_data_to_fit,
-        indexes=tuple_indexes,
-        loss_functions=tuple_loss_functions,
+    chunk_size: int = 100,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
+    reset_threshold_cooldown_on_oscillation: bool = True,
+) -> tuple[InitialisedSimulation, OptaxOptimizer]:
+    carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
+        _simulation,
+        data_to_fit,
+        tolerance,
+        convergence,
+        indexes,
+        loss_functions,
+        opt_state,
+        optimizer,
+        learning_rate,
+        state_parameter_partitions,
+        save_convergence,
     )
-    if dense_state.losses is None:
-        raise ValueError("Dense state must include losses for pure optimisation.")
+    inputs = inputs._replace(ema_alpha=jnp.asarray(ema_alpha, dtype=jnp.float32))
+    initial_state = carry.opt_state
+    result = run_sequential(
+        carry,
+        inputs,
+        n_steps,
+        chunk_size,
+        optimizer,
+        tuple_loss_functions,
+        tuple_indexes,
+        min_steps_per_threshold,
+        parameter_partitions=state_parameter_partitions,
+        retain_record_params=save_states,
+        reset_threshold_cooldown_on_oscillation=reset_threshold_cooldown_on_oscillation,
 
-    base_learning_rate = (
-        jnp.asarray(optimizer.learning_rate, dtype=jnp.float32)
-        if learning_rate is None
-        else jnp.asarray(learning_rate, dtype=jnp.float32)
     )
-    convergence_thresholds = create_convergence_thresholds(convergence, base_learning_rate)
-
-    history_params, history_losses = _build_history_buffers(
-        n_steps=n_steps,
-        params=dense_state.params,
-        losses=dense_state.losses,
+    history = result_to_history(
+        result,
+        optimizer,
+        save_states=save_states,
+        save_convergence=save_convergence,
+        save_best=save_best,
+        state_parameter_partitions=state_parameter_partitions,
     )
-    init_carry = OptimisationCarry(
-        opt_state=dense_state,
-        sim=_simulation,
-        convergence=initialise_convergence_carry(dense_state.params),
-        lr=jnp.asarray(optimizer.initial_learning_rate, dtype=jnp.float32),
-        model_lr=jnp.asarray(
-            optimizer.initial_learning_rate * optimizer.model_parameters_lr_scale,
-            dtype=jnp.float32,
-        ),
-        gradient_mask_idx=jnp.array(0, dtype=jnp.int32),
-        history_params=history_params,
-        history_losses=history_losses,
-        write_idx=jnp.array(0, dtype=jnp.int32),
+    _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
+    # Convergence snapshots and the running-best diagnostic are observational;
+    # the returned simulation remains at the terminal optimizer trajectory.
+    _simulation.params = result.carry.opt_state.params
+    return _simulation, optimizer
+
+
+def _snapshot_to_state(snapshot: StateSnapshot, final_state: OptimizationState) -> OptimizationState:
+    return OptimizationState(
+        params=snapshot.params,
+        opt_state=final_state.opt_state,
+        step=snapshot.step,
+        losses=snapshot.losses,
+        gradients=final_state.gradients,
     )
 
-    n_steps_arr = jnp.asarray(n_steps, dtype=jnp.int32)
-    tolerance_arr = jnp.asarray(tolerance, dtype=jnp.float32)
 
-    def cond_fn(carry: OptimisationCarry) -> Array:
-        if carry.opt_state.losses is None:
-            return jnp.array(False)
-        current_loss = carry.opt_state.losses.total_train_loss
-        return (
-            (~carry.convergence.converged)
-            & (jnp.asarray(carry.opt_state.step, dtype=jnp.int32) < n_steps_arr)
-            & jnp.isfinite(current_loss)
-            & (current_loss >= tolerance_arr)
+def result_to_history(
+    result: ChunkResult,
+    optimizer: OptaxOptimizer,
+    *,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
+) -> OptimizationHistory:
+    """Convert final chunk outputs into the public Python history contract."""
+    records = result.records
+    active = (
+        np.asarray(jax.device_get(records.active))
+        if (save_states or save_convergence)
+        else None
+    )
+    active_indices = np.flatnonzero(active) if active is not None else []
+
+    final_state = result.carry.opt_state
+    history = OptimizationHistory(state_parameter_partitions=state_parameter_partitions)
+
+    def state_from_record(index: int) -> OptimizationState:
+        params = jax.tree_util.tree_map(lambda value: value[index], records.params)
+        losses = jax.tree_util.tree_map(lambda value: value[index], records.losses)
+        return OptimizationState(
+            params=params,
+            opt_state=final_state.opt_state,
+            step=records.step[index],
+            losses=losses,
+            gradients=final_state.gradients,
         )
 
-    def body_fn(carry: OptimisationCarry) -> OptimisationCarry:
-        return jax.lax.cond(
-            carry.convergence.converged,
-            lambda c: c,
-            lambda c: OptaxOptimizer._pure_step(
-                optimizer=optimizer,
-                carry=c,
-                data_targets=tuple_data_to_fit,
-                loss_functions=tuple_loss_functions,
-                indexes=tuple_indexes,
-                convergence_thresholds=convergence_thresholds,
-                ema_alpha=ema_alpha,
-                min_steps_per_threshold=min_steps_per_threshold,
-                target_lr=base_learning_rate,
-                target_model_lr=base_learning_rate * optimizer.model_parameters_lr_scale,
+    threshold_labels: list[float] = []
+    for index in active_indices:
+        state = state_from_record(int(index)) if save_states else None
+        if save_states:
+            history.states.append(state)
+
+    # A valid zero-step termination must still have an inspectable terminal
+    # state. Never substitute the running-best state for the terminal state.
+    if save_states and not history.states:
+        terminal_record = _make_record(
+            result.carry, jnp.asarray(False), jnp.asarray(0.), jnp.asarray(True),
+            parameter_partitions=state_parameter_partitions,
+        )
+        history.states.append(OptimizationState(
+            params=terminal_record.params, opt_state=final_state.opt_state,
+            step=final_state.step, losses=final_state.losses, gradients=final_state.gradients,
+        ))
+
+    if save_convergence:
+        snapshots = result.carry.convergence_snapshots
+        valid = np.asarray(jax.device_get(snapshots.valid))
+        thresholds = np.asarray(jax.device_get(snapshots.thresholds))
+
+        def state_from_snapshot(index: int) -> OptimizationState:
+            params = jax.tree_util.tree_map(
+                lambda value: value[index], snapshots.params
+            )
+            losses = jax.tree_util.tree_map(
+                lambda value: value[index], snapshots.losses
+            )
+            return OptimizationState(
+                params=params,
+                opt_state=final_state.opt_state,
+                step=snapshots.steps[index],
+                losses=losses,
+                gradients=final_state.gradients,
+            )
+
+        for index in np.flatnonzero(valid):
+            history.convergence_states.append(
+                state_from_snapshot(int(index))
+            )
+            threshold_labels.append(float(thresholds[int(index)]))
+
+    history.convergence_thresholds = tuple(threshold_labels)
+
+    if save_best:
+        history.best_state = _snapshot_to_state(result.carry.best, final_state)
+    validate_convergence_labels(history)
+    optimizer.history = history
+    return history
+
+
+def _prepend_short_run_initial_state(
+    history: OptimizationHistory,
+    initial_state: OptimizationState,
+    final_opt_state: OptimizationState,
+    n_steps: int,
+    chunk_size: int,
+) -> None:
+    """Keep the legacy two-point diagnostic history for sub-chunk runs."""
+    if n_steps < chunk_size and history.states:
+        history.states.insert(
+            0,
+            OptimizationState(
+                params=initial_state.params,
+                opt_state=final_opt_state.opt_state,
+                step=initial_state.step,
+                losses=initial_state.losses,
+                gradients=final_opt_state.gradients,
             ),
-            carry,
         )
-
-    return jax.lax.while_loop(cond_fn, body_fn, init_carry)
 
 
 def _optimise(
@@ -246,131 +393,102 @@ def _optimise(
     optimizer: OptaxOptimizer,
     ema_alpha: float = 0.5,  # EMA smoothing factor
     min_steps_per_threshold: int = 2,  # Minimum steps before checking convergence
+    chunk_size: int = 100,
     logger: logging.Logger | None = None,
     silent: bool = False,
+    terminal_state_callback: Callable[[OptimizationState], None] | None = None,
+    save_states: bool = True,
+    save_convergence: bool = True,
+    save_best: bool = True,
+    state_parameter_partitions=None,
+    reset_threshold_cooldown_on_oscillation: bool = True,
 ) -> tuple[InitialisedSimulation, OptaxOptimizer]:
-    """Python-loop optimisation path."""
-    _logger = logger if logger is not None else LOGGER
-
-    if isinstance(convergence, float):
-        convergence = [convergence]
-
-    tracker = ConvergenceTracker(
-        convergence=convergence,
-        learning_rate=optimizer.learning_rate,
-        ema_alpha=ema_alpha,
-        min_steps_per_threshold=min_steps_per_threshold,
+    """Python diagnostic orchestration over the shared step primitives."""
+    carry, inputs, tuple_loss_functions, tuple_indexes = _build_chunk_state(
+        _simulation,
+        data_to_fit,
+        tolerance,
+        convergence,
+        indexes,
+        loss_functions,
+        opt_state,
+        optimizer,
+        convergence_parameter_partitions=state_parameter_partitions,
+        retain_convergence_params=save_convergence,
     )
-
-    previous_loss = None
-    prev_params = None
-    save_state = None
-
-    optimizer.history = OptimizationHistory()
-    loop_start_time = time.time()
-    step = 0
-    try:
-        for step in range(n_steps):
-            prev_grads = get_previous_grads(opt_state)
-
-            opt_state, current_loss, save_state, _simulation = optimizer.step(
-                optimizer=optimizer,
-                state=opt_state,
-                simulation=_simulation,
-                data_targets=tuple(data_to_fit),
-                loss_functions=tuple(loss_functions),
-                indexes=tuple(indexes),
+    inputs = inputs._replace(ema_alpha=jnp.asarray(ema_alpha, dtype=jnp.float32))
+    initial_state = carry.opt_state
+    records = []
+    metrics = []
+    remaining = n_steps
+    while remaining > 0:
+        current_size = min(chunk_size, remaining)
+        boundary_metrics = []
+        old_active = carry.active
+        for _ in range(current_size):
+            carry, step_metrics = optimisation_step(
+                carry,
+                inputs,
+                optimizer,
+                tuple_loss_functions,
+                tuple_indexes,
+                min_steps_per_threshold,
+                reset_threshold_cooldown_on_oscillation,
             )
-
-            raw_loss_delta = tracker.update(previous_loss, current_loss, save_state.params)
-            previous_loss = current_loss
-
-            grad_dot_product = check_gradient_oscillation(prev_grads, opt_state.gradients)
-
-            log_optimization_step(
-                step=step,
-                n_steps=n_steps,
-                current_loss=current_loss,
-                raw_delta=raw_loss_delta,
-                prev_params=prev_params,
-                opt_state=opt_state,
-                grad_dot_product=grad_dot_product,
-                tracker=tracker,
-                optimizer=optimizer,
-                logger=_logger,
-                silent=silent,
-            )
-            prev_params = opt_state.params
-
-            if grad_dot_product < 0:
-                log_oscillation_warning(step, logger=_logger, silent=silent)
-                tracker.reset_threshold_steps()
-
-            if hasattr(current_loss, "item"):
-                _loss_val = current_loss.item()
-            else:
-                _loss_val = current_loss
-
-            if (_loss_val < tolerance) or jnp.isnan(current_loss).item() or jnp.isinf(current_loss).item():
-                _logger.info("Stopping optimisation at step %s due to tolerance/non-finite loss.", step)
-                break
-
-            if step == 0 or tracker.is_threshold_met(current_loss, step, optimizer.initial_steps):
-                optimizer = optimizer.update_history_compute_ema_loss(
-                    optimizer=optimizer,
-                    simulation=_simulation,
-                    data_targets=tuple(data_to_fit),
-                    indexes=tuple(indexes),
-                    loss_functions=tuple(loss_functions),
-                    state=save_state,
-                    ema_params=tracker.ema_params,
-                )
-
-                if step > 0:
-                    log_threshold_met(
-                        step,
-                        current_loss,
-                        tracker,
-                        optimizer,
-                        logger=_logger,
-                        silent=silent,
-                    )
-
-                    if tracker.advance_threshold():
-                        _logger.info(
-                            "Moving to threshold %s/%s: %.2e",
-                            tracker.current_threshold_idx + 1,
-                            len(tracker.convergence_thresholds),
-                            tracker.current_threshold,
-                        )
-                    else:
-                        _logger.info("All relative thresholds completed at step %s", step)
-                        break
-
-    except Exception as e:
-        raise RuntimeError(
-            format_optimization_error(e, _simulation, save_state, tracker.ema_params, opt_state)
+            boundary_metrics.append(step_metrics)
+        stacked_boundary_metrics = jax.tree_util.tree_map(
+            lambda *values: jnp.stack(values), *boundary_metrics
         )
+        threshold_event = jnp.any(stacked_boundary_metrics.threshold_event)
+        event_indices = jnp.where(
+            stacked_boundary_metrics.threshold_event,
+            jnp.arange(current_size, dtype=jnp.int32),
+            jnp.asarray(-1, dtype=jnp.int32),
+        )
+        last_event_index = jnp.maximum(jnp.max(event_indices), 0)
+        crossed_threshold = jax.lax.select(
+            threshold_event,
+            stacked_boundary_metrics.crossed_threshold[last_event_index],
+            jnp.asarray(jnp.nan, dtype=jnp.float32),
+        )
+        metrics.extend(boundary_metrics)
+        records.append(
+            _make_record(
+                carry,
+                threshold_event,
+                crossed_threshold,
+                old_active & jnp.any(boundary_metrics[0].executed),
+                state_parameter_partitions,
+                save_states,
+            )
+        )
+        remaining -= current_size
+        # Avoid launching later chunks once the per-step convergence checks have
+        # completed the threshold ladder.
+        if not bool(jax.device_get(carry.active)):
+            break
 
-    log_final_states(
-        simulation=_simulation,
-        save_state=save_state,
-        ema_params=tracker.ema_params,
-        opt_state=opt_state,
-        logger=_logger,
-        silent=silent,
+    result = ChunkResult(
+        carry=carry,
+        records=jax.tree_util.tree_map(lambda *values: jnp.stack(values), *records),
+        metrics=jax.tree_util.tree_map(lambda *values: jnp.stack(values), *metrics),
     )
-
-    if optimizer.history.states:
-        best_state = optimizer.history.get_best_state()
-        if best_state is not None:
-            _simulation.params = optimizer.history.best_state.params
-
-    total_time = time.time() - loop_start_time
-    print_optimization_summary(step, total_time, logger=_logger, silent=silent)
-
-    _simulation = cast(InitialisedSimulation, _simulation)
-    return _simulation, optimizer
+    history = result_to_history(
+        result,
+        optimizer,
+        save_states=save_states,
+        save_convergence=save_convergence,
+        save_best=save_best,
+        state_parameter_partitions=state_parameter_partitions,
+    )
+    _prepend_short_run_initial_state(history, initial_state, result.carry.opt_state, n_steps, chunk_size)
+    # Do not replace the optimizer trajectory with a checkpoint candidate.
+    _simulation.params = result.carry.opt_state.params
+    if terminal_state_callback is not None:
+        terminal_state_callback(result.carry.opt_state)
+    if logger is not None and not silent:
+        logger.info("Optimisation completed after %s executed steps", result.carry.executed_steps)
+    return cast(InitialisedSimulation, _simulation), optimizer
 
 
 def run_optimise(
@@ -385,8 +503,7 @@ def run_optimise(
     optimizer: Optional[OptaxOptimizer] = None,
     optimisable_funcs: list[bool] | Array | None = None,
     initialise: Optional[bool] = False,
-    _opt_fn: Callable = _optimise,  # we separate this so users can add diagnostics in the loop
-    jit_update_step: bool = False,
+    jit_update_step: bool | None = None,
     logger: logging.Logger | None = None,
     silent: bool = False,
 ) -> tuple[InitialisedSimulation, OptimizationHistory]:
@@ -410,20 +527,25 @@ def run_optimise(
             learning_rate=config.learning_rate,
             optimizer=config.optimiser_type,
         )
-    if not jit_update_step:
-        jit_test_args = None
-    else:
-        jit_test_args = (data_to_fit, loss_functions, indexes)
-
     opt_state = optimizer.initialise(
         _simulation,
         optimisable_funcs,
-        _jit_test_args=jit_test_args,
     )
     _optimizer: OptaxOptimizer = cast(OptaxOptimizer, optimizer)
 
-    if _opt_fn is _optimise:
-        _simulation, optimizer = _opt_fn(
+    execution_mode = config.execution_mode
+    if jit_update_step is not None:
+        import warnings
+
+        warnings.warn(
+            "jit_update_step is deprecated; use OptimiserSettings.execution_mode instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        execution_mode = "compiled" if jit_update_step else "python"
+
+    if execution_mode == "compiled":
+        _simulation, optimizer = _optimise_pure(
             _simulation,
             data_to_fit,
             config.n_steps,
@@ -435,23 +557,41 @@ def run_optimise(
             _optimizer,
             ema_alpha=config.ema_alpha,
             min_steps_per_threshold=config.min_steps_per_threshold,
+            chunk_size=config.step_chunk_size,
+            save_states=config.save_states,
+            save_convergence=config.save_convergence,
+            save_best=config.save_best,
+            state_parameter_partitions=config.parameter_partitions,
+            reset_threshold_cooldown_on_oscillation=(
+                config.reset_threshold_cooldown_on_oscillation
+            ),
+        )
+    elif execution_mode == "python":
+        _simulation, optimizer = _optimise(
+            _simulation,
+            data_to_fit,
+            config.n_steps,
+            config.tolerance,
+            config.convergence,
+            indexes,
+            loss_functions,
+            opt_state,
+            _optimizer,
+            ema_alpha=config.ema_alpha,
+            min_steps_per_threshold=config.min_steps_per_threshold,
+            chunk_size=config.step_chunk_size,
             logger=_logger,
             silent=silent,
+            save_states=config.save_states,
+            save_convergence=config.save_convergence,
+            save_best=config.save_best,
+            state_parameter_partitions=config.parameter_partitions,
+            reset_threshold_cooldown_on_oscillation=(
+                config.reset_threshold_cooldown_on_oscillation
+            ),
         )
     else:
-        _simulation, optimizer = _opt_fn(
-            _simulation,
-            data_to_fit,
-            config.n_steps,
-            config.tolerance,
-            config.convergence,
-            indexes,
-            loss_functions,
-            opt_state,
-            _optimizer,
-            ema_alpha=config.ema_alpha,
-            min_steps_per_threshold=config.min_steps_per_threshold,
-        )
+        raise ValueError(f"Unsupported execution mode: {execution_mode}")
 
     if optimizer.history.best_state is not None:
         _logger.info("Best parameters: %s", optimizer.history.best_state.params)

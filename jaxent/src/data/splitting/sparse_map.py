@@ -233,3 +233,19 @@ def apply_sparse_mapping(
     """
     # Use matrix multiplication for proper broadcasting
     return jnp.squeeze(sparse_map.todense() @ features)
+
+
+def normalize_sparse_map_rows(sparse_map: sparse.BCOO) -> sparse.BCOO:
+    """Renormalize non-empty fragment rows to sum to one.
+
+    ``create_sparse_map`` divides by every active topology residue.  A peptide can
+    include residues absent from the model feature topology, leaving its row sum
+    below one.  This opt-in construction helper makes the map an average over the
+    represented residues without changing the legacy default behavior.
+    """
+
+    dense = sparse_map.todense()
+    row_sums = jnp.sum(dense, axis=1, keepdims=True)
+    if bool(jnp.any(row_sums <= 0.0)):
+        raise ValueError("Cannot normalize a sparse mapping with an empty fragment row")
+    return sparse.bcoo_fromdense(dense / row_sums)

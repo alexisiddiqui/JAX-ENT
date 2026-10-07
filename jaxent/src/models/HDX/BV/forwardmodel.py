@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from beartype.typing import cast
 
 import jax.numpy as jnp
-import MDAnalysis as mda
 from MDAnalysis import Universe
 from MDAnalysis.core.groups import AtomGroup, ResidueGroup
 
@@ -10,13 +9,22 @@ from jaxent.src.custom_types.base import ForwardModel, ForwardPass
 from jaxent.src.custom_types.key import m_key
 from jaxent.src.data.loader import ExpD_Datapoint
 from jaxent.src.interfaces.topology import Partial_Topology, mda_TopologyAdapter, rank_and_index
-from jaxent.src.models.config import BV_model_Config, linear_BV_model_Config
+from jaxent.src.interfaces.topology.mda_adapter import TerminalExclusion
+from jaxent.src.models.config import (
+    BV_model_Config,
+    BVRateDistributionConfig,
+    linear_BV_model_Config,
+)
 from jaxent.src.models.func.contacts import calc_BV_contacts_universe
 from jaxent.src.models.func.uptake import calculate_HDXrate
 from jaxent.src.models.HDX.BV.features import BV_input_features
-from jaxent.src.models.HDX.BV.parameters import BV_Model_Parameters
+from jaxent.src.models.HDX.BV.parameters import (
+    BV_Model_Parameters,
+    BVRateDistributionParameters,
+)
 from jaxent.src.models.HDX.forward import (
     BV_ForwardPass,
+    BVRateDistributionForwardPass,
     BV_uptake_ForwardPass,
     linear_BV_ForwardPass,
 )
@@ -31,10 +39,12 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
     base_include_selection: str = "protein"
     base_exclude_selection: str = "resname PRO"
-    exclude_termini: bool = True
+    # A protein N terminus is not a backbone amide; the C-terminal residue is.
+    exclude_termini: TerminalExclusion = "n"
 
     def __init__(self, config: BV_model_Config) -> None:
         super().__init__(config=config)
+        self.base_exclude_selection = config.mda_selection_exclusion
         self.common_k_ints: list[float]
         self.forward: dict[m_key, ForwardPass] = {
             m_key("HDX_resPF"): BV_ForwardPass(),
@@ -128,6 +138,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             ensemble,
             include_selection=self.final_include_selection,
             exclude_selection=self.final_exclude_selection,
+            exclude_termini=self.exclude_termini,
             renumber_residues=True,
         )[0]
 
@@ -151,7 +162,10 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
             )
             common_residue_group = cast(ResidueGroup, common_residue_group)
             k_ints_res_dict = calculate_HDXrate(
-                common_residue_group, self.config.temperature, self.config.ph
+                common_residue_group,
+                self.config.temperature,
+                self.config.ph,
+                unit=self.config.kint_unit,
             )
 
             # Map results back to Partial_Topology objects
@@ -260,7 +274,11 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=n_atoms,
                 contact_selection="heavy",
                 radius=HEAVY_RADIUS,
+                residue_ignore=self.config.residue_ignore,
                 switch=self.config.switch,
+                environment_selection=self.config.mda_contact_environment,
+                contact_mode=self.config.contact_mode,
+                switch_scale=self.config.switch_scale_nc,
             )
 
             # Calculate O atom contacts (H-bond acceptors) using H atoms
@@ -269,15 +287,43 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
                 target_atoms=h_atoms,
                 contact_selection="oxygen",
                 radius=O_RADIUS,
+                residue_ignore=(
+                    self.config.residue_ignore_hbond
+                    if self.config.residue_ignore_hbond is not None
+                    else self.config.residue_ignore
+                ),
                 switch=self.config.switch,
+                environment_selection=self.config.mda_contact_environment,
+                contact_mode=self.config.contact_mode,
+                switch_scale=self.config.switch_scale_nh,
             )
 
             # --- Ensure ordering matches self.topology_order ---
-            # Get reordering indices for this universe
-            reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(n_atoms)
-            # Reorder contacts accordingly
-            _heavy_contacts = [_heavy_contacts[i] for i in reorder_indices]
-            _o_contacts = [_o_contacts[i] for i in reorder_indices]
+            n_reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(n_atoms)
+            h_reorder_indices = mda_TopologyAdapter.get_residuegroup_ranking_indices(h_atoms)
+            _heavy_contacts = [_heavy_contacts[i] for i in n_reorder_indices]
+            _o_contacts = [_o_contacts[i] for i in h_reorder_indices]
+
+            ordered_n_atoms = n_atoms[n_reorder_indices]
+            ordered_h_atoms = h_atoms[h_reorder_indices]
+            n_keys = [
+                (mda_TopologyAdapter._get_chain_id(atom), int(atom.resid))
+                for atom in ordered_n_atoms
+            ]
+            h_keys = [
+                (mda_TopologyAdapter._get_chain_id(atom), int(atom.resid))
+                for atom in ordered_h_atoms
+            ]
+            if len(set(n_keys)) != len(n_keys) or len(set(h_keys)) != len(h_keys):
+                raise ValueError("each represented BV residue must have exactly one N and H/HN")
+            if n_keys != h_keys:
+                raise ValueError(
+                    "amide N and H/HN contact targets do not have identical residue ordering"
+                )
+            if len(n_keys) != len(self.topology_order):
+                raise ValueError(
+                    "BV target atoms do not align one-to-one with the feature topology"
+                )
             # ---------------------------------------------------
 
             heavy_contacts.append(_heavy_contacts)
@@ -320,7 +366,7 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
     #     average_features = map(
     #         frame_average_features,
     #         self.input_features,
-    #         [self.params.frame_weights] * len(self.input_features),
+    #         [self.params.frame_weight_simplex] * len(self.input_features),
     #     )
     #     # map the single_pass function
     #     output_features = map(
@@ -336,13 +382,46 @@ class BV_model(ForwardModel[BV_Model_Parameters, BV_input_features, BV_model_Con
 
 class linear_BV_model(BV_model):
     """
-    Linear BV model that uses a linear combination of bc and bh to predict protection factors.
-    Inherits from BV_model for compatibility but overrides featurization to use H-bond networks.
+    Additive interval-hazard BV uptake model using standard BV contacts.
     """
 
     def __init__(self, config: linear_BV_model_Config):
         super().__init__(config=config)
         self.forward: dict[m_key, ForwardPass] = {
-            m_key("HDX_resPF"): linear_BV_ForwardPass(),
+            m_key("HDX_peptide"): linear_BV_ForwardPass(),
         }
         self.compatability: dict[m_key, ExpD_Datapoint]
+
+
+class BVRateDistributionModel(BV_model):
+    """BV uptake model with an explicit soft-mixture or Gamma backend."""
+
+    def __init__(self, config: BVRateDistributionConfig):
+        super().__init__(config=config)
+        self.forward = {m_key("HDX_peptide"): BVRateDistributionForwardPass()}
+        self.compatability: dict[m_key, ExpD_Datapoint]
+
+    def initialise_parameters_from_features(
+        self, input_features: BV_input_features
+    ) -> BVRateDistributionParameters:
+        """Replace default mixture anchors with empirical BV log-PF quantiles."""
+        if self.config.backend != "soft_mixture":
+            return self.params
+        self.params = BVRateDistributionParameters.from_features(
+            input_features.heavy_contacts,
+            input_features.acceptor_contacts,
+            n_components=self.config.n_components,
+            bv_bc=float(self.config.bv_bc),
+            bv_bh=float(self.config.bv_bh),
+            bandwidth_floor=self.config.bandwidth_floor,
+            temperature=self.config.temperature,
+            timepoints=self.config.timepoints,
+            kint_unit=self.config.kint_unit,
+            time_unit=self.config.time_unit,
+        )
+        return self.params
+
+    def featurise(self, ensemble):
+        features, topology = super().featurise(ensemble)
+        self.initialise_parameters_from_features(features)
+        return features, topology

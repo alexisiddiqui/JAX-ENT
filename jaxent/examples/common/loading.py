@@ -9,8 +9,11 @@ helpers scattered across example scripts.
 from __future__ import annotations
 
 import glob
+import functools
+import json
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -22,17 +25,68 @@ from jax import Array
 
 import jaxent.src.interfaces.topology as pt
 from jaxent.src.custom_types.config import FeaturiserSettings
+from jaxent.src.analysis.frame_weights import validated_frame_weight_simplex
 from jaxent.src.data.splitting.split import DataSplitter
 from jaxent.src.featurise import run_featurise
 from jaxent.src.interfaces.builder import Experiment_Builder
 from jaxent.src.models.HDX.BV.features import BV_input_features
 from jaxent.src.models.HDX.BV.forwardmodel import BV_model
 from jaxent.src.utils.hdf import load_optimization_history_from_file
+from jaxent.examples.common.legacy_thresholds import recover_convergence_thresholds_from_sidecar
 
 
 # ---------------------------------------------------------------------------
 # Filename parsing helpers
 # ---------------------------------------------------------------------------
+
+
+def load_hdx_timepoints_minutes(
+    path: str | Path,
+    *,
+    drop_initial_zero: bool = True,
+) -> np.ndarray:
+    """Load an HDX protocol time file expressed in hours and return minutes.
+
+    The MoPrP ``moprp.times`` source includes an initial zero-time reference
+    that has no corresponding uptake column.  Production fitting therefore
+    drops that value and uses the remaining exact protocol times.
+    """
+    source = Path(path)
+    timepoints_hours = np.asarray(np.loadtxt(source, dtype=float), dtype=float).reshape(-1)
+    if drop_initial_zero:
+        if timepoints_hours.size == 0 or not np.isclose(timepoints_hours[0], 0.0):
+            raise ValueError(f"Expected an initial zero timepoint in {source}")
+        timepoints_hours = timepoints_hours[1:]
+    timepoints_minutes = timepoints_hours * 60.0
+    if (
+        timepoints_minutes.size == 0
+        or not np.isfinite(timepoints_minutes).all()
+        or np.any(timepoints_minutes <= 0)
+        or np.any(np.diff(timepoints_minutes) <= 0)
+    ):
+        raise ValueError(f"Invalid HDX timepoint grid in {source}")
+    return timepoints_minutes
+
+
+def validate_hdx_timepoint_count(
+    datapoints: list,
+    timepoints: np.ndarray,
+    *,
+    label: str,
+) -> None:
+    """Require every HDX uptake vector to match the protocol time grid."""
+    expected = int(np.asarray(timepoints).size)
+    mismatches = [
+        (index, int(np.asarray(datapoint.extract_features()).size))
+        for index, datapoint in enumerate(datapoints)
+        if int(np.asarray(datapoint.extract_features()).size) != expected
+    ]
+    if mismatches:
+        preview = ", ".join(f"{index}:{size}" for index, size in mismatches[:5])
+        raise ValueError(
+            f"{label} HDX vectors do not match the {expected}-point protocol "
+            f"(index:length {preview})"
+        )
 
 
 def extract_maxent_value_from_filename(filename: str) -> float | None:
@@ -96,7 +150,12 @@ def load_all_optimization_results(
                         maxent_val = extract_maxent_value_from_filename(filename)
                         if maxent_val is not None:
                             try:
-                                history = load_optimization_history_from_file(filepath)
+                                history = load_optimization_history_from_file(
+                                    filepath,
+                                    legacy_convergence_recovery=functools.partial(
+                                        recover_convergence_thresholds_from_sidecar, filepath
+                                    ),
+                                )
                                 results[ensemble][loss_name][split_idx][maxent_val] = history
                                 print(f"Loaded: {filename}")
                             except Exception as e:
@@ -166,7 +225,12 @@ def load_all_optimization_results_with_maxent(
 
                     filepath = os.path.join(split_type_dir, filename)
                     try:
-                        history = load_optimization_history_from_file(filepath)
+                        history = load_optimization_history_from_file(
+                            filepath,
+                            legacy_convergence_recovery=functools.partial(
+                                recover_convergence_thresholds_from_sidecar, filepath
+                            ),
+                        )
                         results[split_type][ensemble][loss_name][maxent_val][split_idx] = history
                         print(f"Loaded: {filepath}")
                     except Exception as e:
@@ -232,15 +296,28 @@ def load_all_optimization_results_2d(
                             maxent_val = float(match.group(2))
                             bvreg_val = float(match.group(3))
                             
+                            filepath = os.path.join(split_type_dir, filename)
+                            config_path = filepath.replace("_results.hdf5", "_config.json")
+                            if os.path.exists(config_path):
+                                try:
+                                    with open(config_path) as config_file:
+                                        config_data = json.load(config_file)
+                                    configured_bv = config_data.get("loss_config", {}).get("bv_reg_scaling")
+                                    if configured_bv is not None:
+                                        bvreg_val = float(configured_bv)
+                                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                                    pass
                             if maxent_val not in results[split_type][ensemble][loss_name][bv_reg_fn]:
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val] = {}
-
                             if bvreg_val not in results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val]:
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][bvreg_val] = {}
-
-                            filepath = os.path.join(split_type_dir, filename)
                             try:
-                                history = load_optimization_history_from_file(filepath)
+                                history = load_optimization_history_from_file(
+                                    filepath,
+                                    legacy_convergence_recovery=functools.partial(
+                                        recover_convergence_thresholds_from_sidecar, filepath
+                                    ),
+                                )
                                 results[split_type][ensemble][loss_name][bv_reg_fn][maxent_val][bvreg_val][split_idx] = history
                             except Exception as e:
                                 print(f"Failed to load {filename}: {e}")
@@ -453,9 +530,7 @@ def augment_best_models_with_metrics(
         loss_func = row["loss_function"]
         split_idx = int(row["split"])
         maxent_val = row["maxent_value"]
-        conv_step = int(row["convergence_step"])
-        split_type = row.get("split_type", None)
-
+        conv_threshold = float(row["convergence_threshold"])
         # Navigate nested dict
         history = None
         entry = results.get(ensemble, {}).get(loss_func, {}).get(split_idx, None)
@@ -466,16 +541,16 @@ def augment_best_models_with_metrics(
         else:
             history = entry
 
-        if history is None or not hasattr(history, "states") or not history.states:
+        if history is None or not getattr(history, "convergence_states", None):
             continue
-        if conv_step <= 0 or conv_step > len(history.states):
+        from .analysis.convergence_labels import find_state_nearest_threshold
+        _, state = find_state_nearest_threshold(history, conv_threshold)
+        if state is None:
+            continue
+        if not (hasattr(state, "params") and hasattr(state.params, "frame_weight_simplex") and state.params.frame_weight_simplex is not None):
             continue
 
-        state = history.states[conv_step - 1]
-        if not (hasattr(state, "params") and hasattr(state.params, "frame_weights") and state.params.frame_weights is not None):
-            continue
-
-        weights = np.array(state.params.frame_weights)
+        weights = validated_frame_weight_simplex(state.params.frame_weight_simplex)
         uniform_prior = np.ones(len(weights)) / len(weights)
         kl_div = kl_divergence(weights, uniform_prior)
 
@@ -723,6 +798,58 @@ def load_HDXer_kints(kint_path: str) -> tuple[Array, list[pt.Partial_Topology]]:
     return kints, topology_list
 
 
+def align_kints_to_feature_topology(
+    kint_data: tuple[Array, list[pt.Partial_Topology]],
+    feature_topology: list[pt.Partial_Topology],
+) -> Array:
+    """Align a residue-rate provider exactly to a featurised topology.
+
+    Extra provider residues are permitted because non-exchanging N termini and
+    prolines may be present in source rate files.  Duplicate provider keys,
+    missing feature keys, multi-residue entries, and nonpositive active rates
+    are rejected rather than positionally padded or truncated.
+    """
+
+    rates, rate_topology = kint_data
+    rates_array = np.asarray(rates, dtype=float)
+    if rates_array.ndim != 1 or len(rates_array) != len(rate_topology):
+        raise ValueError("intrinsic rates and rate topology must be aligned vectors")
+
+    rate_by_key: dict[tuple[str, int], float] = {}
+    for rate, topology in zip(rates_array, rate_topology):
+        residues = topology._get_active_residues(check_trim=False)
+        if len(residues) != 1:
+            raise ValueError("intrinsic-rate topology entries must each contain one residue")
+        key = (str(topology.chain), int(residues[0]))
+        if key in rate_by_key:
+            raise ValueError(f"duplicate intrinsic rate for topology key {key}")
+        rate_by_key[key] = float(rate)
+
+    aligned = []
+    missing = []
+    for topology in feature_topology:
+        residues = topology._get_active_residues(check_trim=False)
+        if len(residues) != 1:
+            raise ValueError("feature topology entries must each contain one residue")
+        key = (str(topology.chain), int(residues[0]))
+        if key not in rate_by_key:
+            missing.append(key)
+        else:
+            aligned.append(rate_by_key[key])
+
+    if missing:
+        raise ValueError(f"intrinsic-rate provider is missing feature residues: {missing}")
+    aligned_array = np.asarray(aligned, dtype=float)
+    if np.any(~np.isfinite(aligned_array)) or np.any(aligned_array <= 0):
+        bad = [
+            (str(topology.chain), int(topology._get_active_residues(check_trim=False)[0]))
+            for topology, rate in zip(feature_topology, aligned_array)
+            if not np.isfinite(rate) or rate <= 0
+        ]
+        raise ValueError(f"feature residues require finite positive intrinsic rates: {bad}")
+    return jnp.asarray(aligned_array)
+
+
 def featurise_trajectory(
     trajectory_path: str,
     topology_path: str,
@@ -778,20 +905,12 @@ def featurise_trajectory(
     print(f"Acceptor contacts length: {len(features.acceptor_contacts)}")
     print(f"Kints length: {len(features.k_ints)}")
 
-    _kints, _kint_topology = kint_data
-    _kint_topology = pt.TopologyFactory.merge(_kint_topology)
-
-    for top in feature_topology:
-        if not pt.PairwiseTopologyComparisons.intersects(top, _kint_topology):
-            raise ValueError(
-                f"Topology {top} does not intersect with kint topology {_kint_topology}. "
-                "Ensure that the kint topology matches the feature topology."
-            )
+    aligned_kints = align_kints_to_feature_topology(kint_data, feature_topology)
 
     features = BV_input_features(
         heavy_contacts=features.heavy_contacts,
         acceptor_contacts=features.acceptor_contacts,
-        k_ints=_kints,
+        k_ints=aligned_kints,
     )
 
     features_path = os.path.join(output_dir, f"features_{output_name}.npz")
