@@ -5,6 +5,67 @@ soft-regression reference for frame-averaging semantics, validation-based model
 selection, and conformational recovery. It is not an exact numerical test:
 optimizer, JAX/XLA, hardware, and dependency changes can cause small differences.
 
+## Adopted fitting and selection policy (2026-10-04)
+
+Going forward, fit the experimental uptake with ordinary MSE, then select each
+replicate using its validation data: raw peptide × timepoint `MoPrP.weights`
+weighted MSE for MoPrP, and closed-coordinate Sigma-MSE for ISO validation.
+Use `MoPrP.weights` directly, without squaring, inversion, or division by their
+sum. Keep optimization and selection on the identical fitted forward model and
+saved parameters. Recovery, ESS, and ground-truth Sigma are evaluation-only.
+The historical campaigns below retain their original stated conventions.
+
+The ISO policy SI campaign uses full frame-wise uptake, sequence-cluster and
+spatial splits, and three replicates. All trajectories are fitted with MSE;
+solid and dashed curves compare ordinary MSE and closed-Sigma selection on the
+existing candidate pool: saved trajectory, convergence, and running-best
+states, deduplicated by step and weights. Closed-Sigma retains
+alpha zero, numerical stabilization, full inversion before validation subsetting,
+and trace normalization.
+
+The first SI sweeps MaxEnt scaling for ISO BI and TRI. The second compares
+all-pairs Work Scale, optimal C-alpha RMSD, and unrelaxed PyRosetta `ref2015`
+kernels for ISO TRI, with independent strength and bandwidth sweeps. Each
+distance matrix is divided by its positive pairwise-distance median; this
+structural bandwidth scaling does not normalize experimental loss weights.
+MaxEnt references are black. Recovery and ESS each have curve and heatmap
+exports, with means and sample SD over three replicates.
+
+Run `jaxent/examples/1_IsoValidation_OMass/fitting/jaxENT/run_iso_policy_sidecars.py`
+with `.venv/bin/python`, `--phase all --jobs 8`. `--phase prepare`, `fit`, and
+`analyze` support preparation, resumable fitting, and replay independently;
+`--smoke` uses a separate output directory and short native fits. PyRosetta
+scoring runs in the installed Python 3.10 environment. The default outputs are
+under `artifacts/iso_policy_sidecars/`, including `report.html`, PNG/SVG/PDF
+figures, candidate and selected tables, and a replay audit. Both selectors use
+the identical existing saved-state pool. Individual replicate traces and the
+available mean follow the existing sidecar plotting convention; replicate
+counts are recorded in the tables.
+
+Invalidated 2026-10-05: the accelerated campaign passed loss replay but failed
+full-length fitting equivalence. For ISO TRI spatial split 0, MaxEnt S=100000,
+the original scalar path records a convergence checkpoint at step 879; the
+cached single-lane path records step 1456; the cached strength batch records
+none. The uncached single-lane control matches the original final weights and
+MSE exactly. A native pairwise OMC RMSD h=0.01, S=100 control still records no
+checkpoint, so acceleration does not explain every missing candidate.
+
+The accelerated figures and tables are withdrawn and archived. The campaign
+now uses the original optimizer, native frame-uptake forward pass, and direct
+pairwise OMC evaluation; accelerated histories cannot be reused. The new
+convergence-only candidate filter and three-replicate plotting gate have also
+been removed to restore the existing selection and plotting conventions. The
+replacement run must finish and be audited before new figures are accepted.
+See the [campaign report](../artifacts/iso_policy_sidecars/report.html) for status.
+
+Replacement completed 2026-10-07: all 882 fits were audited using the original
+fitting execution and existing saved-state candidate pool. The two validation
+selectors produce 1,764 selections from 48,480 saved candidates, with no missing
+selections or incomplete replicate groups. Maximum absolute native-MSE replay
+discrepancy is `1.86e-8`. All six figures have PNG, SVG, and PDF exports; the
+recovery sweep and construction heatmaps were visually checked. The focused
+test suite passed 35 tests after the conventions were restored.
+
 ## Conventions
 
 - Model selection is performed independently for each split replicate by minimum

@@ -10,19 +10,22 @@ SELECTION_METRIC = "val_closed_sigma_mse"
 SELECTION_POLICY = "closed_coordinate_sigma_mse_alpha0_over_native_convergence_states"
 
 
-def select_best_rows(scores):
+def select_best_rows(scores, metric=SELECTION_METRIC):
     if scores.empty:
         return scores.copy()
-    if SELECTION_METRIC not in scores:
-        raise ValueError(f"Missing {SELECTION_METRIC}; rescore old histories before selecting")
+    if metric not in {SELECTION_METRIC, "val_mse"}:
+        raise ValueError(f"Unsupported sidecar selector: {metric}")
+    if metric not in scores:
+        raise ValueError(f"Missing {metric}; rescore old histories before selecting")
     rows = []
     for _, group in scores.groupby("run_id", sort=False):
-        valid = group[np.isfinite(group[SELECTION_METRIC])].sort_values(
-            [SELECTION_METRIC, "convergence_rank"], kind="stable")
+        tie_columns = ["step", "candidate_index"] if "candidate_index" in scores else ["convergence_rank"]
+        valid = group[np.isfinite(group[metric])].sort_values(
+            [metric, *tie_columns], kind="stable")
         if not valid.empty:
             rows.append(valid.iloc[0])
     result = pd.DataFrame(rows, columns=scores.columns).reset_index(drop=True)
-    result["selection_metric"] = SELECTION_METRIC
+    result["selection_metric"] = metric
     return result
 
 

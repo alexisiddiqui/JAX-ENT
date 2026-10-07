@@ -84,6 +84,17 @@ def work_distances(features, model):
 def regularizer(spec, features, model):
     if spec.method == "maxent":
         return None
+    if getattr(spec, "distance_path", ""):
+        with np.load(spec.distance_path) as archive:
+            distances = archive["normalized_distances"]
+            if distances.shape != (features.features_shape[1],) * 2:
+                raise ValueError("Cached all-pairs distances/features do not match")
+            if str(archive["metric"]) != spec.graph_metric:
+                raise ValueError("Cached distance metric does not match run")
+        kernel = build_omc_kernel(distances, bandwidth=spec.bandwidth,
+                                  metric=f"{spec.graph_metric}_all_pairs_median_scaled")
+        return ("original_omc_laplacian", create_original_omc_loss(normalise=False),
+                kernel, spec.omc_strength)
     if spec.graph_k:
         with np.load(spec.graph_path) as archive:
             if int(archive["n_nodes"]) != features.features_shape[1]:
