@@ -91,6 +91,16 @@ def regularizer(spec, features, model):
                 raise ValueError("Cached all-pairs distances/features do not match")
             if str(archive["metric"]) != spec.graph_metric:
                 raise ValueError("Cached distance metric does not match run")
+        if getattr(spec, "graph_k", 0):
+            with np.load(spec.graph_path) as archive:
+                if int(archive["n_nodes"]) != features.features_shape[1] or int(archive["k"]) != spec.graph_k:
+                    raise ValueError("Precomputed L2-logPF neighbours do not match run")
+                left, right = archive["edge_sources"], archive["edge_targets"]
+                edge_weights = np.exp(-np.minimum((distances[left, right]/spec.bandwidth)**2/2., 80.))
+                graph = FrameGraph(edge_sources=jnp.asarray(left), edge_targets=jnp.asarray(right),
+                    edge_weights=jnp.asarray(edge_weights), n_nodes=int(archive["n_nodes"]),
+                    metric=f"logpf_l2_neighbours_{spec.graph_metric}_median_scaled", k=spec.graph_k)
+            return ("original_omc_laplacian_knn", sparse_omc_loss, graph, spec.omc_strength)
         kernel = build_omc_kernel(distances, bandwidth=spec.bandwidth,
                                   metric=f"{spec.graph_metric}_all_pairs_median_scaled")
         return ("original_omc_laplacian", create_original_omc_loss(normalise=False),

@@ -66,6 +66,25 @@ discrepancy is `1.86e-8`. All six figures have PNG, SVG, and PDF exports; the
 recovery sweep and construction heatmaps were visually checked. The focused
 test suite passed 35 tests after the conventions were restored.
 
+The subsequent k=20 comparison uses the existing L2-logPF symmetric-union
+neighbour construction for every OMC metric. Work Scale, RMSD, and PyRosetta
+provide their respective median-scaled Gaussian edge weights on that shared
+graph. Bandwidths are restricted to 0.001, 0.01, 0.1, and 1; strengths and split
+replicates retain the all-pairs grid. The campaign reuses all 126 MaxEnt
+references and fits 432 new OMC trajectories. Run the same driver with
+`--graph-k 20 --bandwidths 0.001,0.01,0.1,1`; outputs are under
+`artifacts/iso_policy_sidecars_knn20/`. The shared graph has 2,225 frames and
+32,978 canonical undirected edges. Existing fitting, candidate selection, and
+replicate plotting conventions are retained.
+
+The k=20 campaign completed 2026-10-08: all 558 histories (432 new OMC fits
+and 126 reused MaxEnt references) passed replay. Both selectors produced 1,116
+selections from 30,115 saved candidates, with no missing selections or
+incomplete replicate groups. Maximum absolute native-MSE replay discrepancy
+is `1.30e-8`. All 18 exports are present; recovery and ESS OMC line plots were
+visually checked. See the
+[k=20 report](../artifacts/iso_policy_sidecars_knn20/report.html).
+
 ## Conventions
 
 - Model selection is performed independently for each split replicate by minimum

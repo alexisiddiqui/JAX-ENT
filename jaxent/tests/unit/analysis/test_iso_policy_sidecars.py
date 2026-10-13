@@ -129,6 +129,15 @@ def test_grid_axes_independent_and_ids_include_split(tmp_path):
     omc = [s for s in specs if s.method == "omc"]
     assert {s.ensemble for s in omc} == {"ISO_TRI"}
     assert all(s.graph_k == 0 and s.bandwidth == s.kernel_bandwidth and s.omc_strength == 1/s.sweep_maxent for s in omc)
+    args.graph_k, args.graph_path = 20, str(tmp_path/"logpf_neighbours.npz")
+    args.bandwidths = [.001, .01, .1, 1.]
+    knn = sidecar.build_specs(args, paths)
+    assert len(knn) == 558
+    knn_omc = [s for s in knn if s.method == "omc"]
+    assert len(knn_omc) == 432
+    assert all(s.graph_k == 20 and s.graph_path == args.graph_path for s in knn_omc)
+    assert all("logpf_knn20" in s.run_id for s in knn_omc)
+    assert all(s.graph_k == 0 for s in knn if s.method == "maxent")
 
 
 def test_cached_kernel_uses_normalized_distances_and_rejects_mismatch(tmp_path):
@@ -144,3 +153,26 @@ def test_cached_kernel_uses_normalized_distances_and_rejects_mismatch(tmp_path):
     with pytest.raises(ValueError, match="metric"):
         sidecar.base.regularizer(spec, features, None)
 
+
+@pytest.mark.parametrize("metric", ["work_scale", "rmsd", "pyrosetta"])
+def test_knn_uses_same_logpf_edges_and_construction_specific_gaussian_weights(tmp_path, metric):
+    import jax.numpy as jnp
+    distance_path, graph_path = tmp_path/"distance.npz", tmp_path/"neighbours.npz"
+    distances = np.array([[0., 1., 3.], [1., 0., 2.], [3., 2., 0.]])
+    np.savez(distance_path, normalized_distances=distances, metric=metric)
+    np.savez(graph_path, edge_sources=[0, 1], edge_targets=[1, 2], n_nodes=3, k=1)
+    spec = SimpleNamespace(method="omc", distance_path=str(distance_path), graph_path=str(graph_path),
+        graph_metric=metric, graph_k=1, bandwidth=.5, omc_strength=.1)
+    _, loss, graph, coefficient = sidecar.base.regularizer(spec, SimpleNamespace(features_shape=(10, 3)), None)
+    np.testing.assert_array_equal(graph.edge_sources, [0, 1])
+    np.testing.assert_array_equal(graph.edge_targets, [1, 2])
+    np.testing.assert_allclose(graph.edge_weights, np.exp(-np.array([1., 2.])**2/(2*.5**2)), rtol=1e-6)
+    w = jnp.array([.2, .3, .5])
+    model = SimpleNamespace(params=SimpleNamespace(frame_weight_simplex=w))
+    actual, _ = loss(model, graph, 0)
+    dense = np.zeros((3, 3))
+    dense[[0, 1], [1, 2]] = np.asarray(graph.edge_weights)
+    dense += dense.T
+    from jaxent.src.opt.loss.original_omc_laplacian import omc_graph_energy
+    assert float(actual) == pytest.approx(float(omc_graph_energy(w, dense)), rel=1e-6)
+    assert coefficient == .1

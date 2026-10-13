@@ -69,7 +69,8 @@ class RunSpec(strength.RunSpec):
     @property
     def run_id(self):
         h = f"_h{base.shrinkage.alpha_token(self.kernel_bandwidth)}" if self.method == "omc" else ""
-        return (f"{VERSION}_{self.ensemble}_{self.split_type}_{self.method}_{self.graph_metric}"
+        graph = f"_logpf_knn{self.graph_k}" if self.graph_k else ""
+        return (f"{VERSION}{graph}_{self.ensemble}_{self.split_type}_{self.method}_{self.graph_metric}"
                 f"{h}_S{base.shrinkage.alpha_token(self.sweep_maxent)}_split{self.split_idx:03d}")
 
     @property
@@ -218,6 +219,20 @@ def reuse_index(args):
             for name in ("train_dfrac.csv", "val_dfrac.csv", "train_topology.json", "val_topology.json"))
         if matches:
             result[spec.ensemble, spec.split_type, spec.split_idx, spec.sweep_maxent] = spec
+    baseline = getattr(args, "baseline_output", None)
+    if getattr(args, "graph_k", 0) and baseline and (baseline/"manifest.json").exists():
+        for payload in json.loads((baseline/"manifest.json").read_text())["specs"]:
+            spec = RunSpec(**payload)
+            if spec.method != "maxent" or not completed(spec):
+                continue
+            matches = (spec.n_steps == args.n_steps and Path(spec.features_dir).resolve() == args.features_dir
+                and Path(spec.clustering_dir).resolve() == args.clustering_dir)
+            matches &= all(digest(Path(spec.datasplit_dir)/spec.split_type/f"split_{spec.split_idx:03d}"/name)
+                == digest(args.datasplit_dir/spec.split_type/f"split_{spec.split_idx:03d}"/name)
+                for name in ("train_dfrac.csv", "val_dfrac.csv", "train_topology.json", "val_topology.json"))
+            if matches:
+                result[spec.ensemble, spec.split_type, spec.split_idx, spec.sweep_maxent] = dataclasses.replace(
+                    spec, reuse_history=str(spec.saved_history), reuse_config=str(spec.saved_config))
     return result
 
 
@@ -236,13 +251,15 @@ def build_specs(args, distance_paths, reused=None):
                 for value in ([10.] if args.smoke else MAXENT[ensemble]):
                     old = reused.get((ensemble, split, index, value))
                     specs.append(RunSpec(**common, method="maxent", sweep_maxent=value, omc_strength=0.,
-                        reuse_history=str(old.history_path) if old else "",
-                        reuse_config=str(old.config_path) if old else ""))
+                        reuse_history=str(getattr(old, "saved_history", old.history_path)) if old else "",
+                        reuse_config=str(getattr(old, "saved_config", old.config_path)) if old else ""))
                 if ensemble == "ISO_TRI":
                     for metric in METRICS:
                         for h in args.bandwidths:
                             for value in args.strengths:
-                                specs.append(RunSpec(**common, method="omc", sweep_maxent=value,
+                                graph_common = dict(common, graph_k=getattr(args, "graph_k", 0),
+                                    graph_path=getattr(args, "graph_path", ""))
+                                specs.append(RunSpec(**graph_common, method="omc", sweep_maxent=value,
                                     omc_strength=1/value, graph_metric=metric,
                                     kernel_bandwidth=h, distance_path=str(distance_paths[metric])))
     if len({s.run_id for s in specs}) != len(specs):
@@ -264,6 +281,8 @@ def completed(spec):
         if spec.method == "omc":
             if effective.get("omc_diagonal_policy") != "pairwise_exact_zero":
                 return False
+            if config["sidecar_settings"].get("graph_k", 0) != spec.graph_k:
+                return False
         history = base.source.load_optimization_history_from_file(str(spec.saved_history))
         return bool(history.states) and bool(np.isfinite(float(history.states[-1].losses.total_train_loss)))
     except (OSError, ValueError, KeyError, AttributeError):
@@ -284,6 +303,8 @@ def run_fit(spec):
     config = json.loads(spec.config_path.read_text())
     if spec.method == "omc":
         config["effective_settings"]["omc_diagonal_policy"] = "pairwise_exact_zero"
+        config["effective_settings"]["omc_evaluation"] = "canonical_undirected_edges" if spec.graph_k else "direct_all_pairs"
+        config["effective_settings"]["neighbour_metric"] = "logpf_l2" if spec.graph_k else None
     config["sidecar_settings"].update(training_loss="MSE", selection_metrics=list(SELECTORS),
         data_strength=spec.sweep_maxent, regularizer_coefficient=1/spec.sweep_maxent,
         graph_metric=spec.graph_metric, distance_normalization="median_positive_off_diagonal",
@@ -389,6 +410,7 @@ def analyze(specs, args):
             ess = base.source.effective_sample_size(weights)
             local.append(dict(run_id=spec.run_id, ensemble=spec.ensemble, method=spec.method,
                 graph_metric=spec.graph_metric, split_type=spec.split_type, split_idx=spec.split_idx,
+                graph_k=spec.graph_k,
                 data_strength=spec.sweep_maxent, bandwidth=spec.kernel_bandwidth if spec.method=="omc" else 0.,
                 training_loss="MSE", forward_model="frame_uptake", step=int(state.step),
                 candidate_index=candidate_index, candidate_kind=kind,
@@ -447,6 +469,8 @@ def analyze(specs, args):
     audit["jax_version"] = jax.__version__
     audit["numpy_version"] = np.__version__
     audit["geometry_manifest"] = json.loads((args.output_dir/"geometry/manifest.json").read_text())
+    if getattr(args, "graph_k", 0):
+        audit["neighbour_graph"] = json.loads((args.output_dir/"graph_metadata.json").read_text())
     write_json(args.output_dir/"audit.json", audit)
     status_path = args.output_dir/"regression_status.json"
     if status_path.exists():
@@ -464,7 +488,7 @@ def analyze(specs, args):
             '<h1>ISO full uptake: MSE fitting, MSE versus closed-Sigma selection</h1>'
             f'<p>{len(audits)} fits; {len(candidates)} saved-state candidates. Mean ± sample SD across split replicates.</p>'
             '<p>Both selectors use the existing candidate pool: all saved trajectory, convergence, and running-best states, deduplicated by step and weights.</p>'
-            '<p>All-pairs Gaussian OMC uses metric distances divided by their positive-distance median. Strength coefficient is 1/S. '
+            f'<p>{"L2-logPF k="+str(args.graph_k)+" symmetric-union neighbours" if getattr(args, "graph_k", 0) else "All-pairs"} Gaussian OMC uses metric distances divided by their positive-distance median. Strength coefficient is 1/S. '
             'Closed-Sigma is alpha zero, numerical ridge, full inversion then validation subsetting, trace-normalized precision. '
             'Recovery and ESS are report-only. PyRosetta uses unrelaxed ref2015 coordinates.</p>'
             f'<p>{warning}</p><p><a href="selected.csv">Selected checkpoints</a> · <a href="summary.csv">Mean/SD tables</a> · '
@@ -486,6 +510,8 @@ def main():
     parser.add_argument("--n-splits", type=int, default=3)
     parser.add_argument("--n-steps", type=int, default=5000)
     parser.add_argument("--jobs", type=int, default=8)
+    parser.add_argument("--graph-k", type=int, default=0)
+    parser.add_argument("--baseline-output", type=Path, default=REPO/"artifacts/iso_policy_sidecars")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--worker-spec", type=Path)
     args = parser.parse_args()
@@ -502,29 +528,46 @@ def main():
         if args.output_dir == REPO/"artifacts/iso_policy_sidecars":
             args.output_dir = REPO/"artifacts/iso_policy_sidecars_smoke"
         args.n_steps, args.n_splits, args.strengths, args.bandwidths = 20, 1, "10", "1"
+    if args.graph_k and args.output_dir == REPO/"artifacts/iso_policy_sidecars":
+        args.output_dir = REPO/f"artifacts/iso_policy_sidecars_knn{args.graph_k}"
     if args.n_splits != 3 and not args.smoke:
         parser.error("Publication figures require three split replicates")
-    if args.n_steps < 1 or not 1 <= args.jobs <= max(1, len(os.sched_getaffinity(0))//2):
+    if args.graph_k < 0 or args.n_steps < 1 or not 1 <= args.jobs <= max(1, len(os.sched_getaffinity(0))//2):
         parser.error("Steps must be positive and workers require two available CPUs each")
-    for key in ("output_dir", "features_dir", "clustering_dir", "trajectory_dir", "reuse_campaign", "pyrosetta_python"):
+    for key in ("output_dir", "features_dir", "clustering_dir", "trajectory_dir", "reuse_campaign", "pyrosetta_python", "baseline_output"):
         setattr(args, key, getattr(args, key).resolve())
     for key in ("strengths", "bandwidths"):
         values = list(base.shrinkage.parse_csv(getattr(args, key), float))
         if not values or len(set(values)) != len(values) or any(not np.isfinite(x) or x <= 0 for x in values):
             parser.error(f"Invalid {key}")
         setattr(args, key, sorted(values))
+    if args.graph_k:
+        args.bandwidths = [h for h in args.bandwidths if h <= 1.]
+        if not args.bandwidths:
+            parser.error("The kNN comparison requires bandwidths at or below 1")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = args.output_dir/"manifest.json"
     settings = {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()
-                if k not in {"phase", "jobs", "worker_spec"}}
+                if k not in {"phase", "jobs", "worker_spec"} and (args.graph_k or k not in {"graph_k", "baseline_output"})}
     if manifest_path.exists():
         previous = json.loads(manifest_path.read_text())
         if previous["settings"] != settings:
             raise ValueError("Campaign settings changed; use a new output directory")
         specs = [RunSpec(**s) for s in previous["specs"]]
     else:
+        if args.graph_k:
+            shutil.copytree(args.baseline_output/"datasplits", args.output_dir/"datasplits", dirs_exist_ok=True)
         args.datasplit_dir = prepare_splits(args)
+        if args.graph_k and not (args.output_dir/"geometry").exists():
+            shutil.copytree(args.baseline_output/"geometry", args.output_dir/"geometry")
         paths = prepare_distances(args)
+        args.graph_path = base.prepare_neighbours(args)
+        if args.graph_k:
+            metadata_path = args.output_dir/"graph_metadata.json"
+            metadata = json.loads(metadata_path.read_text())
+            metadata.update(edge_metric="respective median-scaled Work Scale, RMSD, or PyRosetta distance",
+                shared_neighbours_for_all_constructions=True, graph_sha256=digest(Path(args.graph_path)))
+            write_json(metadata_path, metadata)
         specs = build_specs(args, paths, reuse_index(args))
         write_json(manifest_path, dict(version=VERSION, settings=settings,
             expected_fits=len(specs), training_loss="MSE", selectors=list(SELECTORS),
@@ -542,6 +585,9 @@ def main():
             args.clustering_dir/f"cluster_assignments_{ensemble}.csv"]
     input_paths += sorted((args.output_dir/"datasplits").rglob("*.csv"))
     input_paths += sorted((args.output_dir/"datasplits").rglob("*.json"))
+    if args.graph_k:
+        input_paths += sorted({Path(s.graph_path) for s in specs if s.graph_path})
+        input_paths += sorted({Path(s.distance_path) for s in specs if s.distance_path})
     fingerprints = {str(p): digest(p) for p in input_paths}
     if "input_sha256" in current and current["input_sha256"] != fingerprints:
         raise ValueError("Campaign data changed; use a new output directory")

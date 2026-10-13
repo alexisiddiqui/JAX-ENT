@@ -17,6 +17,13 @@ LABELS = {"work_scale": "Work Scale", "rmsd": "Cα RMSD", "pyrosetta": "PyRosett
 METRICS = {"recovery_percent": "Recovery (%)", "ess_percent": "ESS (%)"}
 
 
+def graph_label(selected):
+    values = selected.loc[selected.method == "omc", "graph_k"].unique() if "graph_k" in selected else [0]
+    if len(values) != 1:
+        raise ValueError("Cannot combine different neighbour graphs in one figure")
+    return f"L2-logPF neighbours, k={int(values[0])}" if values[0] else "all pairs"
+
+
 def decade_label(value):
     exponent = np.log10(value)
     return rf"$10^{{{round(exponent)}}}$" if np.isclose(exponent, round(exponent)) else f"{value:g}"
@@ -99,7 +106,7 @@ def plot_omc_curves(selected, metric, output):
     handles += [Line2D([], [], color=c, label=f"h={h:g}") for h, c in colors.items()]
     handles += [Line2D([], [], color=".25", linestyle=STYLES[s], label=SELECTOR_LABELS[s]) for s in SELECTORS]
     fig.legend(handles=handles, loc="lower center", ncol=5, frameon=False)
-    fig.suptitle("ISO TRI · full uptake · MSE fitting · all-pairs OMC\nBandwidth h in median-distance units · mean ± SD (3 replicates)")
+    fig.suptitle(f"ISO TRI · full uptake · MSE fitting · OMC · {graph_label(selected)}\nBandwidth h in median-distance units · mean ± SD (3 replicates)")
     fig.subplots_adjust(bottom=.17, top=.88, hspace=.3, wspace=.12)
     save(fig, output)
 
@@ -142,7 +149,7 @@ def plot_omc_heatmaps(selected, metric, output):
     fig.subplots_adjust(right=.9, bottom=.06, top=.91)
     colorbar_ax = fig.add_axes([.93, .15, .015, .7])
     fig.colorbar(image, cax=colorbar_ax, label=METRICS[metric])
-    fig.suptitle("ISO TRI · full uptake · MSE fitting · all-pairs OMC\nBandwidth in median-distance units · mean of 3 replicates · black: MaxEnt mean ± SD", y=.98)
+    fig.suptitle(f"ISO TRI · full uptake · MSE fitting · OMC · {graph_label(selected)}\nBandwidth in median-distance units · mean of 3 replicates · black: MaxEnt mean ± SD", y=.98)
     fig.text(.5, .015, "Strength columns are aligned with the MaxEnt references.",
              ha="center", fontsize=10)
     save(fig, output)
