@@ -81,10 +81,10 @@ def make_loader(fitting, config, ensemble, split, split_idx):
     return loader, features, topology
 
 
-def coordinate_covariance(topology, nframes):
+def coordinate_covariance(topology, nframes, *, reference=None, trajectory=None):
     data = ROOT / "jaxent/examples/2_CrossValidation/data"
-    reference = data / "MoPrP_max_plddt_4334.pdb"
-    trajectory = (
+    reference = Path(reference) if reference is not None else data / "MoPrP_max_plddt_4334.pdb"
+    trajectory = Path(trajectory) if trajectory is not None else (
         data / "_archived_MoPrP101/_cluster_MoPrP_filtered/clusters/all_clusters.xtc"
     )
     ref = mda.Universe(str(reference))
@@ -111,6 +111,7 @@ def coordinate_covariance(topology, nframes):
     covariance = np.einsum("fic,fjc->ij", delta, delta) / (3 * len(delta))
     return covariance, {
         "reference": str(reference),
+        "reference_sha256": hashlib.sha256(reference.read_bytes()).hexdigest(),
         "trajectory": str(trajectory),
         "trajectory_sha256": hashlib.sha256(trajectory.read_bytes()).hexdigest(),
         "frames": len(delta),
