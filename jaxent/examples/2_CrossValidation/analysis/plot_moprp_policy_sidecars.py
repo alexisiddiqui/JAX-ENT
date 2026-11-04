@@ -24,8 +24,18 @@ LABELS = {"AF2_MSAss": "AF2-MSAss", "AF2_filtered": "AF2-Filtered",
     "work_scale": "Work Scale", "dihedral_rmsd": "Dihedral RMSD"}
 METRICS = {"recovery_percent": "Recovery (%)", "ess_percent": "ESS (%)"}
 VALIDATION_METRICS = {"val_weighted_mse": "Weighted validation MSE", "val_mse": "Validation MSE"}
-METRIC_LABELS = METRICS | VALIDATION_METRICS | {"val_coordinate_sigma_mse": "Coordinate Sigma-MSE (validation)"}
-ERROR_METRICS = set(VALIDATION_METRICS) | {"val_coordinate_sigma_mse"}
+ALL_PEPTIDE_METRICS = {"all_peptide_mse": "All-peptide MSE", "all_peptide_weighted_mse": "Weighted all-peptide MSE"}
+METRIC_LABELS = METRICS | VALIDATION_METRICS | ALL_PEPTIDE_METRICS | {"val_coordinate_sigma_mse": "Coordinate Sigma-MSE (validation)"}
+ERROR_METRICS = set(VALIDATION_METRICS) | set(ALL_PEPTIDE_METRICS) | {"val_coordinate_sigma_mse"}
+
+
+def selection_label(selected):
+    metrics = set(selected.selection_metric) if "selection_metric" in selected else {"val_weighted_mse"}
+    if metrics == {"val_weighted_mse"}:
+        return "validation"
+    if metrics == {"all_peptide_weighted_mse"}:
+        return "all-peptide"
+    raise ValueError(f"Cannot combine selection metrics in a figure: {metrics}")
 
 
 def uptake_label(selected):
@@ -74,7 +84,7 @@ def plot_maxent(selected, metric, output, smoke=False, bv_fitted=False):
     prefix = "SMOKE TEST · " if smoke else ""
     fitting = "MSE fitting · BV fitted" if bv_fitted else "MSE fitting"
     penalty = " · L1 penalty selected per replicate" if bv_fitted else ""
-    fig.suptitle(prefix+f"MoPrP · {uptake_label(selected)} · {fitting}\nSelection: raw peptide × timepoint MoPrP.weights validation MSE{penalty}")
+    fig.suptitle(prefix+f"MoPrP · {uptake_label(selected)} · {fitting}\nSelection: raw peptide × timepoint MoPrP.weights {selection_label(selected)} MSE{penalty}")
     fig.subplots_adjust(bottom=.18, top=.77, wspace=.12)
     save(fig, output)
 
@@ -107,7 +117,7 @@ def plot_omc(selected, metric, output, graph_k, smoke=False, bv_fitted=False):
     prefix = "SMOKE TEST · " if smoke else ""
     fitting = "MSE fitting · BV fitted" if bv_fitted else "MSE fitting"
     penalty = " · L1 penalty selected per replicate" if bv_fitted else ""
-    fig.suptitle(f"{prefix}MoPrP AF2-MSAss · {uptake_label(selected)} · {fitting} · {graph}\nRaw MoPrP.weights validation selection · h in median-distance units{penalty}")
+    fig.suptitle(f"{prefix}MoPrP AF2-MSAss · {uptake_label(selected)} · {fitting} · {graph}\nRaw MoPrP.weights {selection_label(selected)} selection · h in median-distance units{penalty}")
     fig.subplots_adjust(bottom=.12, top=.85, hspace=.3, wspace=.12)
     save(fig, output)
 

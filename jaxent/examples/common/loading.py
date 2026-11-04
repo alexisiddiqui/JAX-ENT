@@ -768,6 +768,17 @@ def load_split_data(
 # ---------------------------------------------------------------------------
 
 
+def load_sequence_residue_names(seq_path: str, first_resid: int = 1) -> dict[int, str]:
+    """Map residue ids to one-letter codes from a plain sequence file.
+
+    Whitespace is ignored; the first letter is ``first_resid``.  Used as the
+    ``residue_names`` proline lookup for sparse-map row normalisation.
+    """
+    with open(seq_path) as handle:
+        sequence = "".join(handle.read().split())
+    return {first_resid + offset: letter.upper() for offset, letter in enumerate(sequence)}
+
+
 def load_HDXer_kints(kint_path: str) -> tuple[Array, list[pt.Partial_Topology]]:
     """Load intrinsic rates from a 2-column .dat file.
 

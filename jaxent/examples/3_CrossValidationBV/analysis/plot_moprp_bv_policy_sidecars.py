@@ -14,9 +14,9 @@ from plot_moprp_policy_sidecars import VALIDATION_METRICS, export_figures as exp
 from plot_moprp_policy_model_selection_bars import METRICS, plot_bars, select_across_parameters, summarize
 
 
-def profile_bv_penalties(selected):
+def profile_bv_penalties(selected, selection_metric="val_weighted_mse"):
     keys = ["ensemble", "method", "edge_type", "graph_k", "split_type", "split_idx", "strength", "bandwidth"]
-    return selected.sort_values(["val_weighted_mse", "bv_reg_scaling", "step", "candidate_index"],
+    return selected.sort_values([selection_metric, "bv_reg_scaling", "step", "candidate_index"],
         kind="stable").groupby(keys, sort=False).head(1).copy()
 
 

@@ -6,7 +6,7 @@ import argparse
 import concurrent.futures
 import contextlib
 import fcntl
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 import hashlib
 import io
 import json
@@ -151,37 +151,6 @@ def score_history(spec, cache):
         checkpoint_specific_bv_parameters_verified=True)
 
 
-def verified_reuse(specs, source):
-    cache, result, audits = {}, [], []
-    for spec in specs:
-        if spec.method != "maxent":
-            result.append(spec)
-            continue
-        pattern = f"{spec.ensemble}_MSE_{spec.split_type}_split{spec.split_idx:03d}_maxent*_config.json"
-        paths = []
-        for path in (source/spec.split_type).glob(pattern):
-            loss = json.loads(path.read_text())["loss_config"]
-            if (float(loss["maxent_scaling"]) == spec.strength and
-                    float(loss["bv_reg_scaling"]) == spec.bv_reg_scaling and
-                    loss.get("optimize_bv_params") and not loss.get("normalize_bv_reg") and
-                    loss.get("regularization_losses") == [{"name": "model_params_L1_loss"}]):
-                paths.append(path)
-        if len(paths) != 1:
-            result.append(spec)
-            audits.append(dict(run_id=spec.run_id, reusable=False, reason="No unique compatible native BV configuration"))
-            continue
-        old = replace(spec, reuse_config=str(paths[0]),
-            reuse_history=str(paths[0]).replace("_config.json", "_results.hdf5"))
-        try:
-            _, audit = score_history(old, cache)
-            result.append(old)
-            audits.append(dict(reusable=True, **audit))
-        except (OSError, ValueError, AssertionError, IndexError) as error:
-            result.append(spec)
-            audits.append(dict(run_id=spec.run_id, reusable=False, reason=str(error)[:1000]))
-    return result, audits
-
-
 def loss_configuration(spec, template):
     source = template["loss_config"]
     if not source["optimize_bv_params"] or source["regularization_losses"] != [{"name": "model_params_L1_loss"}]:
@@ -195,6 +164,7 @@ def loss_configuration(spec, template):
 
 
 def run_fit(spec):
+    fixed.validate_worker(spec)
     features, topology, native, train, val, loader, _, _, _, _ = context(spec, {})
     template = json.loads(Path(spec.template_config).read_text())
     options = OptimizationConfig(**(template["opt_config"] | dict(n_steps=spec.n_steps)))
@@ -203,7 +173,8 @@ def run_fit(spec):
         run_optimization(train_data=train, val_data=val, prior_data=loader, features=features,
             feature_top=topology, forward_model=native, model_parameters=native.params,
             convergence=options.convergence_rates, loss_config=loss, opt_config=options,
-            name=spec.run_id, output_dir=str(spec.run_dir), execution_mode="compiled", frame_regularizer=regularizer(spec))
+            name=spec.run_id, output_dir=str(spec.run_dir), execution_mode="compiled", frame_regularizer=regularizer(spec),
+            **fixed.sparse_map_options(spec))
     config = json.loads(spec.config_path.read_text())
     config["effective_settings"]["frame_averaging_mode"] = spec.frame_averaging_mode
     config["moprp_sidecar"] = dict(spec=asdict(spec), training_loss="MSE", bv_fitted=True,
@@ -216,6 +187,7 @@ def run_fit(spec):
 
 
 def execute(specs, args):
+    fixed.validate_fitting_campaign(specs)
     pending = [s for s in specs if not fixed.completed(s)]
     cores = sorted(os.sched_getaffinity(0))
     for name in ("logs", "specs"):
@@ -280,6 +252,7 @@ def analyze(specs, args):
         training_loss="MSE", forward_model=args.frame_averaging_mode, bv_fitted=True,
         bv_penalties=args.bv_reg_values, geometry_bv_coefficients=[.35, 2.], geometry_frozen=True,
         same_optimization_forward_model_verified=True, checkpoint_specific_bv_parameters_verified=True,
+        normalize_sparse_map_rows=bool(args.normalize_sparse_map_rows),
         native_loss_max_absolute_delta=max(a["native_loss_max_absolute_delta"] for a in audits), fit_audits=audits)
     write_json(args.analysis_dir/f"audit{suffix}.json", audit)
     sys.path.insert(0, str(EXPERIMENT/"analysis"))
@@ -315,7 +288,8 @@ def main():
     parser.add_argument("--datasplit-dir", type=Path, default=HERE/"_datasplits")
     parser.add_argument("--clustering-dir", type=Path, default=EXAMPLE2/"analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters")
     parser.add_argument("--geometry-dir", type=Path, default=EXAMPLE2/"fitting/jaxENT/_moprp_policy_sidecars/geometry")
-    parser.add_argument("--source-campaign", type=Path)
+    parser.add_argument("--source-campaign", type=Path,
+        help="Configuration templates only; optimization trajectories are never imported")
     parser.add_argument("--frame-averaging-mode", choices=tuple(fixed.MODE_SUFFIXES), default="frame_uptake")
     parser.add_argument("--strengths")
     parser.add_argument("--bandwidths")
@@ -323,9 +297,11 @@ def main():
     parser.add_argument("--bv-reg-values", default="0.5,1")
     parser.add_argument("--n-steps", type=int, default=5000)
     parser.add_argument("--worker-spec", type=Path)
+    fixed.add_sparse_map_arguments(parser)
     args = parser.parse_args()
     if args.worker_spec:
         spec = RunSpec(**json.loads(args.worker_spec.read_text()))
+        fixed.validate_worker(spec)
         if not fixed.completed(spec):
             run_fit(spec)
         return
@@ -338,6 +314,7 @@ def main():
         setattr(args, name, getattr(args, name).resolve())
     path = args.output_dir/"manifest.json"
     existing = json.loads(path.read_text()) if path.exists() else None
+    fixed.resolve_sparse_map_settings(args, existing)
     for name, default in (("strengths", fixed.STRENGTHS), ("bandwidths", BANDWIDTHS)):
         if getattr(args, name) is None:
             values = existing["settings"][name] if existing else default
@@ -357,6 +334,7 @@ def main():
         if k not in {"jobs", "phase", "worker_spec", "experiment", "revise_grid"}}
     if args.frame_averaging_mode == "frame_uptake":
         settings.pop("frame_averaging_mode")
+    fixed.record_sparse_map_settings(settings)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     revision_lock = None
     before_revision = None
@@ -375,11 +353,16 @@ def main():
         specs = [RunSpec(**row) for row in manifest["specs"]]
     else:
         specs = build_specs(args)
-        specs, reuse = (specs, []) if args.smoke else verified_reuse(specs, args.source_campaign)
-        write_json(args.output_dir/"reuse_audit.json", reuse)
+        write_json(args.output_dir/"reuse_audit.json", [])
         manifest = dict(settings=settings, expected_fits=len(specs), geometry=geometry,
-            specs=[asdict(s) for s in specs], verified_reuses=sum(bool(s.reuse_history) for s in specs))
+            specs=[asdict(s) for s in specs], verified_reuses=0,
+            trajectory_policy="campaign_local_only", optimization_code_sha256=fixed.fitting_code_sha256())
+    if args.phase != "analyze":
+        fixed.validate_fitting_campaign(specs, manifest)
+    fixed.validate_sparse_map_inputs(args, ExperimentConfig.from_yaml(str(EXPERIMENT/"config.yaml")).scoring.ensemble_feature_map)
     paths = [EXPERIMENT/"config.yaml", EXAMPLE2/"config.yaml", EXAMPLE2/"analysis/state_ratios.json"]
+    if args.normalize_sparse_map_rows:
+        paths.append(fixed.SEQUENCE)
     paths += [EXAMPLE2/"data/_MoPrP"/name for name in ("moprp.weights", "moprp.times", "moprp.dexp")]
     paths += sorted(args.features_dir.glob("*.npz"))+sorted(args.features_dir.glob("topology_*.json"))
     paths += sorted(args.datasplit_dir.rglob("*.csv"))+sorted(args.datasplit_dir.rglob("*.json"))

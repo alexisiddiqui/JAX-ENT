@@ -10,6 +10,19 @@ sys.path.insert(0, str(HERE))
 import run_moprp_sidecars_background as background
 
 
+def test_controller_rejects_borrowed_histories_before_launching_any_stage(tmp_path, monkeypatch):
+    output, analysis = tmp_path/"fits", tmp_path/"analysis"
+    output.mkdir()
+    (output/"manifest.json").write_text(json.dumps(dict(specs=[dict(reuse_history="/old/fit.hdf5")],
+        settings={})))
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("A campaign with borrowed histories must never launch a stage")
+    monkeypatch.setattr(background.subprocess, "run", unexpected_run)
+    with pytest.raises(ValueError, match="Cross-campaign optimization histories are forbidden"):
+        background.run_campaign(output, analysis, 10)
+    assert not (output/"background_status.json").exists()
+
+
 def test_experiments_run_sequentially_and_finished_queue_can_be_reopened(tmp_path, monkeypatch):
     output, analysis = tmp_path/"fits", tmp_path/"analysis"
     output.mkdir()

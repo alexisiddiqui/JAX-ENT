@@ -13,7 +13,7 @@ import hashlib
 import math
 import subprocess
 import time
-from typing import List, Literal, Sequence, Tuple, cast
+from typing import List, Literal, Mapping, Sequence, Tuple, cast
 
 import jax
 import jax.numpy as jnp
@@ -69,10 +69,14 @@ def create_data_loaders(
     features: BV_input_features,
     feature_top: list[pt.Partial_Topology],
     cov_matrix: Array | None = None,
+    normalize_sparse_map_rows: bool = False,
+    residue_names: Mapping | None = None,
+    allow_missing_residues: bool = False,
 ) -> ExpD_Dataloader:
     """Create data loaders for training and validation datasets.
 
-    Identical across all 3 active copies of ``optimise_fn.py``.
+    Identical across all 3 active copies of ``optimise_fn.py``.  The sparse-map
+    options are forwarded to :meth:`ExpD_Dataloader.create_datasets`.
     """
     train_indices = [data.top.fragment_index for data in train_data]
     val_indices = [data.top.fragment_index for data in val_data]
@@ -90,6 +94,9 @@ def create_data_loaders(
         val_data=val_data,
         features=features,
         feature_topology=feature_top,
+        normalize_sparse_map_rows=normalize_sparse_map_rows,
+        residue_names=residue_names,
+        allow_missing_residues=allow_missing_residues,
     )
     return loader
 
@@ -131,6 +138,9 @@ def run_optimization(
     frame_average_impl: str = "tensordot",
     initial_frame_weights: Array | None = None,
     frame_regularizer: tuple[str, JaxEnt_Loss, object, float] | None = None,
+    normalize_sparse_map_rows: bool = False,
+    residue_names: Mapping | None = None,
+    allow_missing_residues: bool = False,
 ) -> None:
     """Single entry point replacing all ``run_optimise_ISO_TRI_BI_*`` variants.
 
@@ -146,6 +156,9 @@ def run_optimization(
     ``frame_regularizer=(name, loss, target, strength)`` replaces the MaxEnt
     slot, including its target and coefficient. The default retains MaxEnt.
     The native slot-weight normalization and optimizer are unchanged.
+
+    ``normalize_sparse_map_rows``, ``residue_names`` and ``allow_missing_residues``
+    are forwarded to :func:`create_data_loaders` and recorded in the saved config.
     """
     run_start = time.time()
     # Apply OptimizationConfig overrides
@@ -199,6 +212,9 @@ def run_optimization(
         features=features,
         feature_top=feature_top,
         cov_matrix=cov_matrix,
+        normalize_sparse_map_rows=normalize_sparse_map_rows,
+        residue_names=residue_names,
+        allow_missing_residues=allow_missing_residues,
     )
 
     n_frames = features.features_shape[1]
@@ -328,6 +344,8 @@ def run_optimization(
                     ),
                     "log_pf",
                 ),
+                "normalize_sparse_map_rows": normalize_sparse_map_rows,
+                "allow_missing_residues": allow_missing_residues,
                 "lr_adjustment": lr_adjustment,
                 "step_chunk_size": step_chunk_size,
                 "reset_threshold_cooldown_on_oscillation": (

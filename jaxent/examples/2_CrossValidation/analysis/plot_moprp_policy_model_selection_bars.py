@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from plot_moprp_policy_sidecars import EXPERIMENT, METRICS, plt, save, uptake_label
+from plot_moprp_policy_sidecars import EXPERIMENT, METRICS, plt, save, uptake_label, selection_label
 
 PANELS = {0: "All pairs", 20: "k=20 · L2-logPF neighbours"}
 MODELS = ("MaxEnt", "OMC Work Scale", "OMC Dihedral RMSD")
@@ -16,22 +16,22 @@ MODEL_LABELS = {"work_scale": MODELS[1], "dihedral_rmsd": MODELS[2]}
 COLORS = ("black", "#0072B2", "#D55E00")
 
 
-def select_across_parameters(candidates):
+def select_across_parameters(candidates, selection_metric="val_weighted_mse"):
     """Select independently within each split replicate, before pooling splits."""
     candidates = candidates[candidates.ensemble == "AF2_MSAss"].copy()
     candidates["model"] = candidates.edge_type.map(MODEL_LABELS)
     candidates.loc[candidates.method == "maxent", "model"] = "MaxEnt"
     if candidates.model.isna().any():
         raise ValueError("Unknown OMC edge-weight construction")
-    if not np.isfinite(candidates.val_weighted_mse).all():
-        raise ValueError("Nonfinite weighted validation MSE")
+    if not np.isfinite(candidates[selection_metric]).all():
+        raise ValueError(f"Nonfinite selection MSE: {selection_metric}")
     selections = []
     for graph_k, panel in PANELS.items():
         rows = candidates[(candidates.method == "maxent") |
             ((candidates.method == "omc") & (candidates.graph_k == graph_k))]
         if not (rows.method == "omc").any():
             continue
-        order = ["val_weighted_mse", "strength", "bandwidth"]
+        order = [selection_metric, "strength", "bandwidth"]
         if "bv_reg_scaling" in rows:
             order += ["bv_reg_scaling"]
         best = rows.sort_values(
@@ -78,7 +78,7 @@ def plot_bars(selected, summary, metric, output, bandwidths, bv_fitted=False, sm
     penalty = ", BV penalty" if bv_fitted else ""
     prefix = "SMOKE TEST · " if smoke else ""
     fig.suptitle(prefix+f"MoPrP AF2-MSAss · {uptake_label(selected)} · {fitting}\n"
-        f"Final selection: raw MoPrP.weights validation MSE over saved states, strength{penalty} and bandwidth")
+        f"Final selection: raw MoPrP.weights {selection_label(selected)} MSE over saved states, strength{penalty} and bandwidth")
     fig.text(.5, .07, "Both split types pooled · bars: mean ± sample SD · dots: individual split replicates",
         ha="center", fontsize=9)
     fig.text(.5, .025, f"OMC bandwidths h = {grid}", ha="center", fontsize=9)

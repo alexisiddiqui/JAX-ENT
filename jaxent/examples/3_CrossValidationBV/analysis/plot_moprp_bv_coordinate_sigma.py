@@ -21,7 +21,7 @@ EXPERIMENT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(EXPERIMENT/"fitting/jaxENT"))
 import run_moprp_bv_policy_sidecars as bv
 sys.path.insert(0, str(bv.EXAMPLE2/"analysis"))
-from plot_moprp_policy_sidecars import export_figures
+from plot_moprp_policy_sidecars import export_figures, selection_label
 from jaxent.examples.common.analysis.rescore_crossval_coordinate_sigma import (
     coordinate_covariance, make_loader, sigma_mse, split_precisions,
 )
@@ -157,7 +157,7 @@ def main():
         checkpoint_specific_bv_parameters_verified=True,
         weighted_score_max_replay_absolute_error=float(result.weighted_score_replay_absolute_error.max()),
         metric="0.5 * sum_t(residual_t.T @ validation_precision @ residual_t) / (validation_peptides * timepoints)",
-        source_selection="unchanged raw MoPrP.weights validation selection", coordinate_sources=sources)
+        source_selection=f"unchanged raw MoPrP.weights {selection_label(points)} selection", coordinate_sources=sources)
     bv.write_json(directory/"audit_profiled_coordinate_sigma.json", audit)
     print(f"Saved three Sigma-MSE versus S plots for {len(result)} existing sweep points; no fitting or reselection.", flush=True)
 

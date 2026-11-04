@@ -59,6 +59,7 @@ from jaxent.examples.common.optimization import run_optimization
 from jaxent.examples.common.uptake_models import build_uptake_model
 from jaxent.examples.common.loading import (
     load_hdx_timepoints_minutes,
+    load_sequence_residue_names,
     validate_hdx_timepoint_count,
 )
 from jaxent.examples.common.config import LossConfig, OptimizationConfig
@@ -127,6 +128,9 @@ def run_maxent_sweep(
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
     convergence_values: List[float] | None = None,
     uptake_model: Literal["standard", "linear"] = "standard",
+    features_dir: str | None = None,
+    normalize_sparse_map_rows: bool = False,
+    allow_missing_residues: bool = False,
 ) -> dict:
     """
     Run optimization sweep across different maxent scaling values in serial.
@@ -156,7 +160,7 @@ def run_maxent_sweep(
 
     # Setup directories
     datasplit_dir = os.path.join(os.path.dirname(__file__), "_datasplits")
-    features_dir = os.path.join(os.path.dirname(__file__), "_featurise")
+    features_dir = features_dir or os.path.join(os.path.dirname(__file__), "_featurise")
 
     # Use provided output directory or default to previous behavior (now with timestamp)
     if output_base_dir is None:
@@ -177,6 +181,15 @@ def run_maxent_sweep(
     features = BV_input_features.load(feature_path)
     topology_path = feature_path.replace("features_", "topology_").replace(".npz", ".json")
     feature_top = pt.PTSerialiser.load_list_from_json(topology_path)
+    sparse_map_options = {}
+    if normalize_sparse_map_rows:
+        # moprp.seq positions are MoPrP101 resids; used to confirm omitted residues are prolines.
+        sequence_path = os.path.join(os.path.dirname(__file__), "../../../2_CrossValidation/data/_MoPrP/moprp.seq")
+        sparse_map_options = dict(
+            normalize_sparse_map_rows=True,
+            allow_missing_residues=allow_missing_residues,
+            residue_names=load_sequence_residue_names(os.path.normpath(sequence_path)),
+        )
 
     # Setup BV model
     timepoints_path = os.path.join(
@@ -328,6 +341,7 @@ def run_maxent_sweep(
                             output_dir=output_dir,
                             cov_matrix=cov_matrix_data,
                             execution_mode=execution_mode,
+                            **sparse_map_options,
                         )
 
                         run_elapsed = time.time() - run_start_time
@@ -423,6 +437,9 @@ def run_all_combinations(
     frame_averaging_mode: Literal["log_pf", "rate", "frame_uptake"] = "log_pf",
     convergence_values: List[float] | None = None,
     uptake_model: Literal["standard", "linear"] = "standard",
+    features_dir: str | None = None,
+    normalize_sparse_map_rows: bool = False,
+    allow_missing_residues: bool = False,
 ) -> List[dict]:  # now returns list of result dicts
     """Run maxent sweep for all ensemble-loss combinations."""
     ensembles = ["AF2_filtered", "AF2_MSAss"]
@@ -468,6 +485,9 @@ def run_all_combinations(
                 frame_averaging_mode=frame_averaging_mode,
                 convergence_values=convergence_values,
                 uptake_model=uptake_model,
+                features_dir=features_dir,
+                normalize_sparse_map_rows=normalize_sparse_map_rows,
+                allow_missing_residues=allow_missing_residues,
             )
             all_results.append(result)
             print(f"✓ Completed combination: {ensemble}-{loss_name}")
@@ -632,6 +652,24 @@ def main():
         help="Multiplier applied to the model-parameter learning rate (default: 1.0).",
     )
 
+    parser.add_argument(
+        "--features-dir",
+        default=None,
+        help="Feature directory (default: <script>/_featurise).",
+    )
+    parser.add_argument(
+        "--normalize-sparse-map-rows",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Row-normalise peptide maps over residues present in the features (default: on; "
+        "recorded in each run config).",
+    )
+    parser.add_argument(
+        "--allow-missing-residues",
+        action="store_true",
+        help="Warn instead of failing when features omit non-proline peptide residues.",
+    )
+
     args = parser.parse_args()
     if args.step_chunk_size < 1:
         parser.error("--step-chunk-size must be >= 1")
@@ -719,6 +757,9 @@ def main():
             frame_averaging_mode=args.frame_averaging_mode,
             convergence_values=convergence_values,
             uptake_model=args.uptake_model,
+            features_dir=args.features_dir,
+            normalize_sparse_map_rows=args.normalize_sparse_map_rows,
+            allow_missing_residues=args.allow_missing_residues,
         )
 
     elif args.ensemble is None and args.loss_function is None:
@@ -742,6 +783,9 @@ def main():
             frame_averaging_mode=args.frame_averaging_mode,
             convergence_values=convergence_values,
             uptake_model=args.uptake_model,
+            features_dir=args.features_dir,
+            normalize_sparse_map_rows=args.normalize_sparse_map_rows,
+            allow_missing_residues=args.allow_missing_residues,
         )
 
     # Report where results were written

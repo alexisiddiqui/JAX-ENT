@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from collections.abc import Sequence, Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Generic
 
 import chex
@@ -16,7 +16,12 @@ from jaxent.src.custom_types.datapoint import ExpD_Datapoint
 from jaxent.src.custom_types.protocols import ExpDDatapointLike
 from jaxent.src.custom_types.features import Input_Features
 from jaxent.src.custom_types.key import m_id, m_key
-from jaxent.src.data.splitting.sparse_map import create_sparse_map, create_covariance_mat
+from jaxent.src.data.splitting.sparse_map import (
+    check_unrepresented_residues,
+    create_covariance_mat,
+    create_sparse_map,
+    normalize_sparse_map_rows as _normalize_rows,
+)
 from jaxent.src.data.splitting.mapping import DataMapping, SparseFragmentMapping
 from jaxent.src.interfaces.topology import Partial_Topology
 
@@ -148,6 +153,9 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         val_data: Sequence[T_ExpD] | None = None,
         test_data: Sequence[T_ExpD] | None = None,
         mapping_factory: Callable[..., DataMapping] | None = None,
+        normalize_sparse_map_rows: bool = False,
+        residue_names: Mapping | None = None,
+        allow_missing_residues: bool = False,
     ) -> None:
         """
         Create train, val, and test Dataset objects with sparse mappings.
@@ -160,6 +168,15 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             test_data: Test datapoints. If None, uses all data from dataloader
             mapping_factory: Optional factory to create mapping for train/val/test data.
                 Required for whole-system data types (e.g. SAXS_curve).
+            normalize_sparse_map_rows: If True, rescale every sparse-map row to sum to
+                one, so a fragment is the mean over its residues present in the feature
+                topology. Default False keeps the legacy ``overlap / n_fragment_residues``
+                weights. Before normalising, every fragment residue absent from the
+                feature topology must be a proline (see ``check_unrepresented_residues``).
+            residue_names: Optional ``resid`` or ``(chain, resid)`` -> residue name lookup
+                used for the proline check when fragments carry no sequence.
+            allow_missing_residues: Warn instead of raising when non-proline fragment
+                residues are absent from the feature topology.
         """
         _whole_system = self.data[0].is_whole_system()
         if _whole_system and mapping_factory is None:
@@ -224,6 +241,9 @@ class ExpD_Dataloader(Generic[T_ExpD]):
         print(f"Val y_true shape: {val_y_true.shape}")
         print(f"Test y_true shape: {test_y_true.shape}")
 
+        if normalize_sparse_map_rows and mapping_factory is not None:
+            raise ValueError("normalize_sparse_map_rows applies only to the default sparse maps")
+
         if mapping_factory is not None:
             train_mapping = mapping_factory(features, feature_topology, train_data)
             val_mapping = mapping_factory(features, feature_topology, val_data)
@@ -233,6 +253,21 @@ class ExpD_Dataloader(Generic[T_ExpD]):
             train_sparse_map = create_sparse_map(features, feature_topology, train_data)
             val_sparse_map = create_sparse_map(features, feature_topology, val_data)
             test_sparse_map = create_sparse_map(features, feature_topology, test_data)
+            if normalize_sparse_map_rows:
+                fragments = list({id(data): data for data in (*train_data, *val_data, *test_data)}.values())
+                missing = check_unrepresented_residues(
+                    feature_topology,
+                    fragments,
+                    residue_names=residue_names,
+                    allow_missing_residues=allow_missing_residues,
+                )
+                print("Row-normalising sparse maps; fragment residues absent from features:", {
+                    f"{fragments[i].top.residue_start}-{fragments[i].top.residue_end}": residues
+                    for i, residues in missing.items()
+                })
+                train_sparse_map = _normalize_rows(train_sparse_map)
+                val_sparse_map = _normalize_rows(val_sparse_map)
+                test_sparse_map = _normalize_rows(test_sparse_map)
             train_mapping = SparseFragmentMapping(sparse_map=train_sparse_map)
             val_mapping = SparseFragmentMapping(sparse_map=val_sparse_map)
             test_mapping = SparseFragmentMapping(sparse_map=test_sparse_map)

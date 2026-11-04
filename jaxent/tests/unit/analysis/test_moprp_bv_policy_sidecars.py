@@ -34,6 +34,57 @@ def campaign_args(tmp_path):
         bandwidths=list(bv.BANDWIDTHS), bv_reg_values=list(bv.BV_PENALTIES))
 
 
+@pytest.mark.parametrize("runner", [bv.fixed, bv])
+def test_imported_histories_cannot_skip_fitting_via_queue_or_worker(tmp_path, monkeypatch, runner):
+    args = campaign_args(tmp_path)
+    spec = runner.build_specs(args)[0]
+    source = tmp_path/"imported"
+    source.mkdir()
+    history = source/"old_results.hdf5"
+    config = source/"old_config.json"
+    history.write_bytes(b"historical fit")
+    config.write_text("{}")
+    imported = replace(spec, reuse_history=str(history), reuse_config=str(config))
+    assert bv.fixed.completed(imported)  # Historical analysis can still read it.
+    with pytest.raises(ValueError, match="Cross-campaign optimization histories are forbidden"):
+        runner.execute([imported], args)
+    worker = tmp_path/"worker.json"
+    from dataclasses import asdict
+    worker.write_text(json.dumps(asdict(imported)))
+    monkeypatch.setattr(sys, "argv", ["runner", "--worker-spec", str(worker)])
+    with pytest.raises(ValueError, match="Cross-campaign optimization histories are forbidden"):
+        runner.main()
+    assert history.read_bytes() == b"historical fit"
+
+
+def test_campaign_restart_requires_the_original_fitting_code(tmp_path, monkeypatch):
+    spec = bv.build_specs(campaign_args(tmp_path))[0]
+    code = {"optimizer.py": "original"}
+    monkeypatch.setattr(bv.fixed, "fitting_code_sha256", lambda: code.copy())
+    manifest = dict(optimization_code_sha256=code.copy())
+    bv.fixed.validate_fitting_campaign([spec], manifest)
+    code["optimizer.py"] = "changed"
+    with pytest.raises(ValueError, match="Fitting code changed"):
+        bv.fixed.validate_fitting_campaign([spec], manifest)
+    with pytest.raises(ValueError, match="no frozen fitting code"):
+        bv.fixed.validate_fitting_campaign([spec], {})
+
+
+def test_workers_require_a_registered_job_in_a_frozen_campaign(tmp_path, monkeypatch):
+    from dataclasses import asdict
+    spec = bv.build_specs(campaign_args(tmp_path))[0]
+    monkeypatch.setattr(bv.fixed, "fitting_code_sha256", lambda: {"optimizer.py": "original"})
+    with pytest.raises(ValueError, match="prepared campaign manifest"):
+        bv.fixed.validate_worker(spec)
+    output = Path(spec.output_dir)
+    output.mkdir()
+    (output/"manifest.json").write_text(json.dumps(dict(
+        optimization_code_sha256={"optimizer.py": "original"}, specs=[asdict(spec)])))
+    bv.fixed.validate_worker(spec)
+    with pytest.raises(ValueError, match="not registered"):
+        bv.fixed.validate_worker(replace(spec, strength=spec.strength+1))
+
+
 def test_production_and_smoke_cover_bv_penalties_and_both_graphs(tmp_path):
     args = campaign_args(tmp_path)
     specs = bv.build_specs(args)

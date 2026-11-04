@@ -27,6 +27,7 @@ from jaxent.src.models.HDX.BV.forwardmodel import BV_model_Config
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parents[1] / "data"
 DEFAULT_OUTPUT = HERE / "_featurise_physics_v2"
+DEFAULT_RATES = DATA / "_MoPrP/hdxrate_poly_pD4p0_298K_min.dat"
 
 
 def _sha256(path: Path) -> str:
@@ -42,6 +43,18 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
+        "--kint-file", type=Path, default=DEFAULT_RATES,
+        help="two-column '<resid> <rate min^-1>' file numbered as moprp.seq (default: HDXrate poly pD 4.0, 298 K)",
+    )
+    parser.add_argument(
+        "--contact-environment", default="protein",
+        help="MDAnalysis selection of protecting atoms (historical _featurise used all atoms)",
+    )
+    parser.add_argument(
+        "--plain-names", action="store_true",
+        help="write features_<ensemble>.npz/topology_<ensemble>.json (requires a single --modes value)",
+    )
+    parser.add_argument(
         "--modes",
         nargs="+",
         choices=("hard", "switched"),
@@ -52,6 +65,8 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
+    if args.plain_names and len(args.modes) != 1:
+        raise SystemExit("--plain-names requires exactly one --modes value")
     if args.output_dir is None:
         name = "_featurise_physics_v2" + ("" if args.structure == "101" else "_109")
         args.output_dir = HERE / name
@@ -67,7 +82,7 @@ def main() -> None:
         else "MoPrP109_s20_r1_msa1-127_n12700_do1_20260904_191954_protonated_max_plddt_1627.pdb"
     )
     traj_root = DATA / ("_archived_MoPrP101" if args.structure == "101" else "")
-    rate_path = DATA / "_MoPrP/hdxrate_poly_pD4p0_298K_min.dat"
+    rate_path = args.kint_file.resolve()
     time_path = DATA / "_MoPrP/moprp.times"
     trajectories = {
         "AF2_MSAss": traj_root / "_cluster_MoPrP/clusters/all_clusters.xtc",
@@ -107,10 +122,10 @@ def main() -> None:
         if args.hbond_ignore is not None:
             config.residue_ignore_hbond = tuple(args.hbond_ignore)
         config.mda_selection_exclusion = "resname PRO"
-        config.mda_contact_environment = "protein"
+        config.mda_contact_environment = args.contact_environment
 
         for ensemble, trajectory_path in trajectories.items():
-            output_name = f"{ensemble}_{mode}"
+            output_name = ensemble if args.plain_names else f"{ensemble}_{mode}"
             feature_path, topology_output_path = featurise_trajectory(
                 trajectory_path=str(trajectory_path),
                 topology_path=str(topology_path),
@@ -163,25 +178,39 @@ def main() -> None:
                     "n_rates": n_rates,
                     "n_topology_rows": len(residue_keys),
                     "contains_c_terminal_amide_101": ("A", 101) in residue_keys,
+                    "residue_keys": [list(key) for key in residue_keys],
                     "hard_contacts_are_integer": (
                         hard_contacts_are_integer if mode == "hard" else None
                     ),
                 }
             )
 
+    rate_header = [
+        line.strip() for line in rate_path.read_text().splitlines() if line.startswith("#")
+    ]
     manifest = {
         "construction": "MoPrP_BV_physics_v2",
+        "script": str(Path(__file__).resolve()),
+        "script_sha256": _sha256(Path(__file__).resolve()),
+        "script_args": {
+            key: (str(value) if isinstance(value, Path) else value) for key, value in vars(args).items()
+        },
+        "structure": args.structure,
         "terminal_exclusion": "n",
         "excluded_residue_selection": "resname PRO",
-        "contact_environment": "protein",
+        "contact_environment": args.contact_environment,
+        "contact_modes": {mode: ("legacy_switch" if mode == "switched" else "hard") for mode in args.modes},
         "heavy_contact": {"target": "amide_N", "radius_angstrom": 6.5},
         "hbond_contact": {"target": "amide_H", "atom": "protein_O", "radius_angstrom": 2.4},
         "sequence_neighbor_exclusion": [-2, 2],
         "coefficients": {"beta_c": 0.35, "beta_h": 2.0, "log_base": "natural"},
         "intrinsic_rates": {
-            "provider": "HDXrate-poly",
-            "temperature_k": 298.0,
-            "pD": 4.0,
+            **(
+                {"provider": "HDXrate-poly", "temperature_k": 298.0, "pD": 4.0}
+                if rate_path == DEFAULT_RATES.resolve()
+                else {}
+            ),
+            "header": rate_header,
             "units": "min^-1",
             "path": str(rate_path.resolve()),
             "sha256": _sha256(rate_path),

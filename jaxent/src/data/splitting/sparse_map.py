@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+import warnings
 
 import chex
 import jax.numpy as jnp
@@ -249,3 +250,84 @@ def normalize_sparse_map_rows(sparse_map: sparse.BCOO) -> sparse.BCOO:
     if bool(jnp.any(row_sums <= 0.0)):
         raise ValueError("Cannot normalize a sparse mapping with an empty fragment row")
     return sparse.bcoo_fromdense(dense / row_sums)
+
+
+PROLINE_NAMES = frozenset({"P", "PRO"})
+
+
+def find_unrepresented_residues(
+    feature_topology: Sequence[Partial_Topology],
+    output_features: Sequence[ExpD_Datapoint],
+    check_trim: bool = True,
+) -> dict[int, list[int]]:
+    """Return, per fragment position, active fragment residues absent from the feature topology."""
+    represented: dict[str, set[int]] = {}
+    for topology in feature_topology:
+        represented.setdefault(str(topology.chain), set()).update(
+            int(residue) for residue in topology._get_active_residues(check_trim=check_trim)
+        )
+    missing = {}
+    for index, fragment in enumerate(output_features):
+        covered = represented.get(str(fragment.top.chain), set())
+        absent = [
+            int(residue)
+            for residue in fragment.top._get_active_residues(check_trim=check_trim)
+            if int(residue) not in covered
+        ]
+        if absent:
+            missing[index] = absent
+    return missing
+
+
+def _residue_name(
+    topology: Partial_Topology,
+    residue: int,
+    residue_names: Mapping | None,
+) -> str | None:
+    """Look up a residue name from the fragment sequence, then ``residue_names``."""
+    sequence = topology.fragment_sequence
+    if sequence and len(sequence) == len(topology.residues):
+        return str(sequence[list(topology.residues).index(residue)])
+    if residue_names is None:
+        return None
+    name = residue_names.get((str(topology.chain), residue), residue_names.get(residue))
+    return None if name is None else str(name)
+
+
+def check_unrepresented_residues(
+    feature_topology: Sequence[Partial_Topology],
+    output_features: Sequence[ExpD_Datapoint],
+    residue_names: Mapping | None = None,
+    check_trim: bool = True,
+    allow_missing_residues: bool = False,
+) -> dict[int, list[int]]:
+    """Require every fragment residue missing from the feature topology to be a proline.
+
+    Proline identity is taken from a fragment's ``fragment_sequence`` when it is
+    aligned with its residues, otherwise from ``residue_names`` (keyed by
+    ``(chain, resid)`` or ``resid``; one- or three-letter codes).  Residues of
+    unknown identity are treated as non-proline.  Raises ``ValueError`` on any
+    non-proline omission unless ``allow_missing_residues`` (then warns).
+
+    Returns the output of :func:`find_unrepresented_residues`.
+    """
+    missing = find_unrepresented_residues(feature_topology, output_features, check_trim)
+    problems = []
+    for index, residues in missing.items():
+        topology = output_features[index].top
+        for residue in residues:
+            name = _residue_name(topology, residue, residue_names)
+            if name is None or name.upper() not in PROLINE_NAMES:
+                problems.append(
+                    f"fragment {index} ({topology.chain}:{topology.residue_start}-{topology.residue_end}) "
+                    f"residue {residue} ({name or 'unknown'})"
+                )
+    if problems:
+        message = (
+            "Experimental fragment residues absent from the feature topology are not all prolines: "
+            + "; ".join(problems)
+        )
+        if not allow_missing_residues:
+            raise ValueError(message + " (pass allow_missing_residues=True to override)")
+        warnings.warn(message, stacklevel=2)
+    return missing

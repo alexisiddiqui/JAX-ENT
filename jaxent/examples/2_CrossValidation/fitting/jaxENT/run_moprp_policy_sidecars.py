@@ -46,6 +46,8 @@ SPLITS = ("sequence_cluster", "spatial")
 EDGE_TYPES = ("work_scale", "dihedral_rmsd")
 STRENGTHS = (1., 5., 10., 50., 100., 500., 1000.)
 BANDWIDTHS = (.001, .01, .1, 1.)
+SEQUENCE = EXPERIMENT/"data/_MoPrP/moprp.seq"  # 1-based positions == MoPrP101 resids
+SPARSE_MAP_FLAGS = ("normalize_sparse_map_rows", "allow_missing_residues")
 
 
 def experiment_specs(specs, experiment):
@@ -76,6 +78,8 @@ class RunSpec:
     reuse_history: str = ""
     reuse_config: str = ""
     frame_averaging_mode: str = "frame_uptake"
+    normalize_sparse_map_rows: bool = False
+    allow_missing_residues: bool = False
 
     @property
     def run_id(self):
@@ -114,6 +118,7 @@ def build_specs(args):
                     geometry_dir=str(args.output_dir/"geometry"), template_config=str(templates[0]))
                 if getattr(args, "frame_averaging_mode", "frame_uptake") != "frame_uptake":
                     common["frame_averaging_mode"] = args.frame_averaging_mode
+                common.update({flag: bool(getattr(args, flag, False)) for flag in SPARSE_MAP_FLAGS})
                 for strength in args.strengths:
                     specs.append(RunSpec(**common, method="maxent", edge_type="none", graph_k=0,
                         strength=strength, bandwidth=0.))
@@ -201,6 +206,55 @@ def reset_grid_status(output, manifest):
         write_json(path, status)
 
 
+def sparse_map_options(spec):
+    """Loader keywords for row-normalised maps; empty (legacy maps) when disabled."""
+    if not spec.normalize_sparse_map_rows:
+        return {}
+    return dict(normalize_sparse_map_rows=True, allow_missing_residues=spec.allow_missing_residues,
+        residue_names=loading.load_sequence_residue_names(str(SEQUENCE)))
+
+
+def resolve_sparse_map_settings(args, manifest):
+    """New campaigns row-normalise by default; prepared campaigns keep their recorded choice (legacy: off)."""
+    recorded = (manifest or {}).get("settings", {})
+    if args.normalize_sparse_map_rows is None:
+        args.normalize_sparse_map_rows = recorded.get("normalize_sparse_map_rows", manifest is None)
+    if args.allow_missing_residues is None:
+        args.allow_missing_residues = recorded.get("allow_missing_residues", False)
+
+
+def record_sparse_map_settings(settings):
+    """Omit disabled flags so legacy manifests keep their settings identity."""
+    for flag in SPARSE_MAP_FLAGS:
+        if not settings[flag]:
+            settings.pop(flag)
+
+
+def validate_sparse_map_inputs(args, ensemble_feature_map):
+    """Fail before fitting if features omit non-proline residues of any experimental peptide."""
+    if not args.normalize_sparse_map_rows:
+        return
+    from jaxent.src.custom_types.HDX import HDX_peptide
+    from jaxent.src.data.splitting.sparse_map import check_unrepresented_residues
+    names = loading.load_sequence_residue_names(str(SEQUENCE))
+    data = HDX_peptide.load_list_from_files(json_path=str(args.datasplit_dir/"full_dataset_topology.json"),
+        csv_path=str(args.datasplit_dir/"full_dataset_dfrac.csv"))
+    for ensemble in ENSEMBLES:
+        _, topology = loading.load_features_and_topology(str(args.features_dir), ensemble, ensemble_feature_map)
+        missing = check_unrepresented_residues(topology, data, residue_names=names,
+            allow_missing_residues=args.allow_missing_residues)
+        print(f"{ensemble}: peptide residues absent from features "
+            f"{ {f'{data[i].top.residue_start}-{data[i].top.residue_end}': r for i, r in missing.items()} }", flush=True)
+
+
+def add_sparse_map_arguments(parser):
+    parser.add_argument("--normalize-sparse-map-rows", action=argparse.BooleanOptionalAction, default=None,
+        help="Row-normalise peptide maps over residues present in the features (default: on for new "
+             "campaigns, the recorded setting for prepared ones)")
+    parser.add_argument("--allow-missing-residues", action=argparse.BooleanOptionalAction, default=None,
+        help="Warn instead of failing when features omit non-proline peptide residues")
+
+
 def configured_model(mode):
     native = model()
     if mode == "linear_uptake":
@@ -224,13 +278,14 @@ def validate_protocol(parameters, native):
 
 
 def context(spec, cache):
-    key = spec.ensemble, spec.split_type, spec.split_idx, spec.frame_averaging_mode
+    key = (spec.ensemble, spec.split_type, spec.split_idx, spec.frame_averaging_mode,
+        spec.normalize_sparse_map_rows, spec.allow_missing_residues)
     if key not in cache:
         config, targets = config_and_targets()
         with contextlib.redirect_stdout(io.StringIO()):
             features, topology = loading.load_features_and_topology(spec.features_dir, spec.ensemble, config.scoring.ensemble_feature_map)
             train, val, full, _ = loading.load_experimental_data("", spec.datasplit_dir, spec.split_type, spec.split_idx)
-            loader = create_data_loaders(train+val, train, val, features, topology)
+            loader = create_data_loaders(train+val, train, val, features, topology, **sparse_map_options(spec))
             clusters = loading.load_clustering_results(spec.clustering_dir, config.scoring.ensemble_clustering_map)
         assignments = np.asarray(clusters[spec.ensemble]["cluster_assignments"])
         if len(assignments) != features.features_shape[1]:
@@ -289,29 +344,36 @@ def score_history(spec, cache):
         history_sha256=digest(spec.saved_history), same_optimization_forward_model_verified=True)
 
 
-def verified_reuse(specs, source):
-    cache, result, audit = {}, [], []
-    for spec in specs:
-        if spec.method != "maxent":
-            result.append(spec)
-            continue
-        pattern = f"{spec.ensemble}_MSE_{spec.split_type}_split{spec.split_idx:03d}_maxent*config.json"
-        matched = [p for p in (source/spec.split_type).glob(pattern)
-            if float(json.loads(p.read_text())["loss_config"]["maxent_scaling"]) == spec.strength]
-        if len(matched) != 1:
-            audit.append(dict(run_id=spec.run_id, reusable=False, reason="No unique source configuration"))
-            result.append(spec)
-            continue
-        path = matched[0]
-        old = replace(spec, reuse_config=str(path), reuse_history=str(path).replace("_config.json", "_results.hdf5"))
-        try:
-            _, verified = score_history(old, cache)
-            result.append(old)
-            audit.append(dict(run_id=spec.run_id, reusable=True, **{k: v for k, v in verified.items() if k != "run_id"}))
-        except (OSError, ValueError, AssertionError, IndexError) as error:
-            result.append(spec)
-            audit.append(dict(run_id=spec.run_id, reusable=False, reason=str(error)[:1000]))
-    return result, audit
+def fitting_code_sha256():
+    root = EXPERIMENT.parents[2]
+    paths = list((root/"jaxent/src").rglob("*.py"))
+    common = root/"jaxent/examples/common"
+    paths += [common/name for name in ("optimization.py", "config.py", "loading.py", "losses.py", "uptake_models.py")]
+    paths += [Path(__file__), HERE/"moprp_sidecar_support.py",
+        root/"jaxent/examples/3_CrossValidationBV/fitting/jaxENT/run_moprp_bv_policy_sidecars.py"]
+    return {str(path.relative_to(root)): digest(path) for path in sorted(set(paths))}
+
+
+def validate_fitting_campaign(specs, manifest=None):
+    if any(s.reuse_history or s.reuse_config for s in specs):
+        raise ValueError("Cross-campaign optimization histories are forbidden. Preserve this campaign as historical data; prepare a fresh campaign to fit MaxEnt and OMC together.")
+    if manifest is not None:
+        expected = manifest.get("optimization_code_sha256")
+        if expected is None:
+            raise ValueError("This historical campaign has no frozen fitting code. Prepare a fresh campaign for fitting; existing results remain available for analysis.")
+        if expected != fitting_code_sha256():
+            raise ValueError("Fitting code changed since campaign preparation. Refusing to mix optimization versions; prepare a fresh campaign.")
+
+
+def validate_worker(spec):
+    validate_fitting_campaign([spec])
+    path = Path(spec.output_dir)/"manifest.json"
+    if not path.exists():
+        raise ValueError("Fitting workers require a prepared campaign manifest")
+    manifest = json.loads(path.read_text())
+    validate_fitting_campaign([spec], manifest)
+    if spec not in [type(spec)(**row) for row in manifest.get("specs", [])]:
+        raise ValueError("Worker specification is not registered in its campaign manifest")
 
 
 def completed(spec):
@@ -329,6 +391,7 @@ def completed(spec):
 
 
 def run_fit(spec):
+    validate_worker(spec)
     features, topology, native, train, val, loader, _, _, _, _ = context(spec, {})
     template = json.loads(Path(spec.template_config).read_text())
     if template["loss_config"]["optimize_bv_params"]:
@@ -339,7 +402,8 @@ def run_fit(spec):
         run_optimization(train_data=train, val_data=val, prior_data=loader, features=features,
             feature_top=topology, forward_model=native, model_parameters=native.params,
             convergence=options.convergence_rates, loss_config=loss, opt_config=options,
-            name=spec.run_id, output_dir=str(spec.run_dir), execution_mode="compiled", frame_regularizer=regularizer(spec))
+            name=spec.run_id, output_dir=str(spec.run_dir), execution_mode="compiled", frame_regularizer=regularizer(spec),
+            **sparse_map_options(spec))
     config = json.loads(spec.config_path.read_text())
     config["effective_settings"]["frame_averaging_mode"] = native.forward[m_key("HDX_peptide")].frame_averaging_mode
     config["moprp_sidecar"] = dict(spec=asdict(spec), training_loss="MSE", selection="mean(moprp.weights * residual²)",
@@ -351,6 +415,7 @@ def run_fit(spec):
 
 
 def execute(specs, args):
+    validate_fitting_campaign(specs)
     pending = [s for s in specs if not completed(s)]
     cores = sorted(os.sched_getaffinity(0))
     for name in ("logs", "specs"):
@@ -402,6 +467,7 @@ def analyze(specs, args):
         selection="mean(moprp.weights * residual²)", weight_power=1, weight_normalization=False,
         candidate_policy="existing saved trajectory/convergence/running-best states, deduplicated by step and weights",
         training_loss="MSE", forward_model=args.frame_averaging_mode, same_optimization_forward_model_verified=True,
+        normalize_sparse_map_rows=bool(args.normalize_sparse_map_rows),
         native_loss_max_absolute_delta=max(a["native_loss_max_absolute_delta"] for a in audits), fit_audits=audits)
     write_json(args.analysis_dir/f"audit{suffix}.json", audit)
     sys.path.insert(0, str(EXPERIMENT/"analysis"))
@@ -438,7 +504,8 @@ def main():
     parser.add_argument("--features-dir", type=Path, default=HERE/"_featurise")
     parser.add_argument("--datasplit-dir", type=Path, default=HERE/"_datasplits")
     parser.add_argument("--clustering-dir", type=Path, default=EXPERIMENT/"analysis/_MoPrP_analysis_clusters_feature_spec_AF2_test/clusters")
-    parser.add_argument("--source-campaign", type=Path)
+    parser.add_argument("--source-campaign", type=Path,
+        help="Configuration templates only; optimization trajectories are never imported")
     parser.add_argument("--frame-averaging-mode", choices=tuple(MODE_SUFFIXES), default="frame_uptake")
     parser.add_argument("--topology", type=Path, default=EXPERIMENT/"data/MoPrP_max_plddt_4334.pdb")
     parser.add_argument("--trajectory", type=Path, default=EXPERIMENT/"data/_archived_MoPrP101/_cluster_MoPrP/clusters/all_clusters.xtc")
@@ -448,9 +515,11 @@ def main():
     parser.add_argument("--revise-grid", action="store_true", help="Explicitly revise active bandwidths and extend strengths; --phase prepare only")
     parser.add_argument("--n-steps", type=int, default=5000)
     parser.add_argument("--worker-spec", type=Path)
+    add_sparse_map_arguments(parser)
     args = parser.parse_args()
     if args.worker_spec:
         spec = RunSpec(**json.loads(args.worker_spec.read_text()))
+        validate_worker(spec)
         if not completed(spec):
             run_fit(spec)
         return
@@ -462,6 +531,7 @@ def main():
     for name in ("output_dir", "analysis_dir", "features_dir", "datasplit_dir", "clustering_dir", "source_campaign", "topology", "trajectory"):
         setattr(args, name, getattr(args, name).resolve())
     manifest_path = args.output_dir/"manifest.json"
+    resolve_sparse_map_settings(args, json.loads(manifest_path.read_text()) if manifest_path.exists() else None)
     if args.strengths is None:
         values = json.loads(manifest_path.read_text())["settings"]["strengths"] if manifest_path.exists() else STRENGTHS
         args.strengths = ",".join(map(str, values))
@@ -490,6 +560,7 @@ def main():
         if key not in {"jobs", "phase", "worker_spec", "experiment", "extend_bandwidths", "revise_grid"}}
     if args.frame_averaging_mode == "frame_uptake":
         settings.pop("frame_averaging_mode")  # Preserve existing full-uptake manifest identity.
+    record_sparse_map_settings(settings)
     before_extension = None
     before_revision = None
     if manifest_path.exists():
@@ -509,21 +580,25 @@ def main():
             shutil.copytree(HERE/"_moprp_policy_sidecars/geometry", args.output_dir/"geometry")
         geometry = prepare_geometry(args.output_dir/"geometry", args.features_dir, args.topology, args.trajectory)
         specs = build_specs(args)
-        if args.smoke:
-            reuse = []
-        else:
-            specs, reuse = verified_reuse(specs, args.source_campaign)
-        write_json(args.output_dir/"reuse_audit.json", reuse)
+        write_json(args.output_dir/"reuse_audit.json", [])
         manifest = dict(settings=settings, expected_fits=len(specs), geometry=geometry,
-            specs=[asdict(s) for s in specs], verified_reuses=sum(bool(s.reuse_history) for s in specs))
+            specs=[asdict(s) for s in specs], verified_reuses=0,
+            trajectory_policy="campaign_local_only", optimization_code_sha256=fitting_code_sha256())
         write_json(manifest_path, manifest)
+    if args.phase != "analyze":
+        validate_fitting_campaign(specs, manifest)
+    validate_sparse_map_inputs(args, config_and_targets()[0].scoring.ensemble_feature_map)
     paths = [EXPERIMENT/"config.yaml", EXPERIMENT/"analysis/state_ratios.json",
         EXPERIMENT/"data/_MoPrP/moprp.weights", EXPERIMENT/"data/_MoPrP/moprp.dexp", EXPERIMENT/"data/_MoPrP/moprp.times",
         args.topology, args.trajectory]
+    if args.normalize_sparse_map_rows:
+        paths.append(SEQUENCE)
     paths += sorted(args.features_dir.glob("*.npz")) + sorted(args.features_dir.glob("topology_*.json"))
     paths += sorted(args.datasplit_dir.rglob("*.csv")) + sorted(args.datasplit_dir.rglob("*.json"))
     paths += sorted(args.clustering_dir.rglob("*_frame_to_cluster.csv"))
     paths += sorted((args.output_dir/"geometry").glob("*.npz"))
+    if manifest.get("trajectory_policy") == "campaign_local_only":
+        paths += sorted({Path(spec.template_config) for spec in specs})
     fingerprints = {str(path): digest(path) for path in paths}
     if "input_sha256" in manifest and manifest["input_sha256"] != fingerprints:
         raise ValueError("Frozen experimental/features/geometry inputs changed")

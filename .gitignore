@@ -243,3 +243,6 @@ jaxent/examples/2_CrossValidation/data/_MoPrP/*
 jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/*
 !jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/hdxrate_pdla_validated/
 !jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_kint_sensitivity/hdxrate_pdla_validated/**
+
+
+artifacts/

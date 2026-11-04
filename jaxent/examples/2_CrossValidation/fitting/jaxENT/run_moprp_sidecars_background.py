@@ -39,7 +39,14 @@ def run_campaign(output, analysis, jobs, runner=None):
     previous = json.loads(status_path.read_text()) if status_path.exists() else {}
     manifest = output/"manifest.json"
     fingerprint = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    campaign_settings = json.loads(manifest.read_text()).get("settings", {})
+    campaign = json.loads(manifest.read_text())
+    if any(s.get("reuse_history") or s.get("reuse_config") for s in campaign.get("specs", [])):
+        raise ValueError("Cross-campaign optimization histories are forbidden; prepare a fresh campaign before fitting.")
+    if "optimization_code_sha256" in campaign:
+        from run_moprp_policy_sidecars import fitting_code_sha256
+        if campaign["optimization_code_sha256"] != fitting_code_sha256():
+            raise ValueError("Fitting code changed since campaign preparation; refusing to mix optimization versions.")
+    campaign_settings = campaign.get("settings", {})
     if previous and previous.get("manifest_sha256") != fingerprint:
         raise ValueError("Campaign manifest changed since the background run")
     if previous.get("runner") not in (None, str(runner)):
@@ -90,9 +97,7 @@ def run_campaign(output, analysis, jobs, runner=None):
             if result.returncode:
                 raise RuntimeError(f"Combined analysis exited {result.returncode}")
             sigma_plot = runner.parents[2]/"analysis/plot_moprp_bv_coordinate_sigma.py"
-            sigma_requested = (analysis/"audit_profiled_coordinate_sigma.json").exists() or (
-                campaign_settings.get("frame_averaging_mode") in {"rate", "linear_uptake"}
-                and "bv_reg_values" in campaign_settings)
+            sigma_requested = (analysis/"audit_profiled_coordinate_sigma.json").exists() or "bv_reg_values" in campaign_settings
             if sigma_requested and sigma_plot.exists():
                 status["current_stage"] = "coordinate_sigma_plot"
                 write_status(status_path, status)
