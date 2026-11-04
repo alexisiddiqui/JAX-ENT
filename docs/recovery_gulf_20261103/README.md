@@ -17,6 +17,7 @@ with the script that produced them.
 | `selgci/` | rules A/B/C/1-SE/D on sweeps with a known answer (ISO control) | `selgci_report.md` |
 | `lap/` | Laplacian-smoothed openness for p0; OMC term | `lap_report.md` |
 | `stk/` | self-tuning kNN kernel: two-sided variance in selection, OMC | `stk_report.md` |
+| `iso_stk/` | sidecars' scalar-distance OMC (Work Scale / RMSD / PyRosetta / dihedral) in the new setup; self-tuning OMC on ISO | `omc_scalar_report.md` |
 
 The earlier reports of the same investigation (ISO/Ex2/Ex3 deep dives,
 diagnostics digest, pipeline-mechanics audit, calibration, re-selection,
