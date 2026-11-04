@@ -15,6 +15,83 @@ sum. Keep optimization and selection on the identical fitted forward model and
 saved parameters. Recovery, ESS, and ground-truth Sigma are evaluation-only.
 The historical campaigns below retain their original stated conventions.
 
+### Campaign-local fitting trajectories (2026-10-23)
+
+Never import optimization trajectories from another campaign. Every new MoPrP
+arm fits its own MaxEnt and OMC histories from the configured initial weights
+and BV priors. Reproducing an older history's validation MSE does not establish
+equivalence to a fresh optimization under the current implementation.
+
+Automatic MaxEnt-history borrowing has been removed from both MoPrP runners.
+Configuration sources provide settings only. New manifests record
+`trajectory_policy=campaign_local_only`, zero imported histories, and SHA256
+fingerprints of the fitting code. Resuming requires the same frozen code and
+inputs; a changed optimizer/model implementation requires a fresh campaign.
+Historical manifests with borrowed histories cannot be submitted for fitting.
+Their files remain available for historical analysis.
+
+The existing full-uptake and rate campaigns each imported 84 MaxEnt histories
+in Example 2 and 168 in Example 3; their comparisons retain that limitation.
+The additive-linear campaigns contain no imported optimization histories.
+The earlier reuse procedures and counts documented below are historical and
+are superseded by this policy. This change does not alter checkpoint selection,
+losses, structural inputs, or existing results, and launches no production fits.
+
+Fresh production was subsequently submitted on 2026-10-23 at 12:13 UTC as
+`moprp-fresh-sidecars-20261023.service`. The persistent queue runs rate Example
+2 then 3, full uptake Example 2 then 3, and additive-linear-BV Example 2 then 3.
+Each Example 2 campaign has 588 newly fitted histories and each Example 3
+campaign has 1,176: 5,292 fresh histories in total, with zero imported histories.
+All arms use S=`1,5,10,50,100,500,1000`, h=`10,100,1000`, three replicates per
+split type, 5,000 native scalar steps, MSE fitting, and raw `MoPrP.weights`
+validation selection. Example 3 retains L1 penalties `0.5,1.0` and evaluation-only
+coordinate Sigma-MSE plots for each arm. Checkpoint selection is unchanged.
+
+Outputs stay under each example's fitting/analysis folders with the existing
+arm name followed by `_fresh_20261023`. Previous outputs remain in place.
+The queue uses ten workers on CPUs 0–19, one campaign at a time. Its script is
+`2_CrossValidation/fitting/jaxENT/run_moprp_fresh_sidecars.sh 20261023`; the first
+rate Example 2 campaign's `logs/queue_plan.json` records all six destinations
+and `logs/queue.log` records overall progress. Each campaign also writes its
+own `background_status.json` and `logs/background.log`. Restart with
+`systemctl --user restart moprp-fresh-sidecars-20261023.service`; only jobs from
+this campaign with matching frozen code may resume. All 28 focused tests,
+manifest/worker checks, Ruff, and shell syntax checks passed before submission.
+
+### All-peptide selection comparison (2026-10-24)
+
+`2_CrossValidation/analysis/rescore_moprp_all_peptide_selection.py` reselects the
+six fresh Example 2/3 campaigns using `mean(MoPrP.weights * residual^2)` on all
+12 canonical peptides and 15 timepoints. Each peptide is counted once, including
+where the original training and validation sets overlap. The same native
+forward model, saved checkpoint pool, and checkpoint-specific BV parameters
+are retained. Optimization histories are read only; no fitting is performed.
+
+Each source analysis folder has a sibling suffixed `_all_peptide_selection`.
+Original validation scores remain in their own columns; new columns are
+`all_peptide_mse` and `all_peptide_weighted_mse`. Selection of checkpoints, BV
+penalties, strengths and bandwidths uses the latter. The existing sweep/bar
+layouts and replicate aggregation are preserved, with all-peptide selection
+explicitly labelled. `selection_comparison.csv` and
+`selection_comparison_summary.csv` report recovery/ESS changes relative to the
+original validation-selected bars; `maxent_selection_comparison.csv` includes
+both ensembles. Example 3 also evaluates validation coordinate Sigma-MSE on
+the newly selected sweep points.
+
+The resumable analysis uses up to ten native read-only workers within one
+campaign at a time. Source tables and history fingerprints are checked, and
+original validation errors are replayed before accepting each score. Progress
+is in each sibling's `rescore_progress.json`; the rate Example 2 sibling's
+`logs/rescore_queue.log` records the overall queue.
+
+All six comparisons completed successfully: 285,877 saved candidates from
+5,292 histories, with 129 plots exported in PNG/SVG/PDF. All 33 focused tests
+passed. Validation scores and original candidate columns were replayed/checked;
+all-peptide selections improve or tie the all-peptide objective for every run
+and final bar. The 261 original source tables, audit files and PNG plots checked
+by SHA256 remained unchanged. All three BV arms also completed their 588-point
+coordinate Sigma-MSE evaluations with their own selected BV parameters.
+
 The ISO policy SI campaign uses full frame-wise uptake, sequence-cluster and
 spatial splits, and three replicates. All trajectories are fitted with MSE;
 solid and dashed curves compare ordinary MSE and closed-Sigma selection on the
@@ -379,6 +456,90 @@ Production was submitted at 14:22 UTC on 2026-10-18 as
 `moprp-linear-bv-sidecars.service`, using ten workers on CPUs 0–19. It starts
 with Example 2's 84 MaxEnt fits and is recoverable with
 `systemctl --user restart moprp-linear-bv-sidecars.service`.
+
+## Recovery-gulf diagnosis and validated MoPrP recipe (2026-11-02 to 2026-11-04)
+
+Read-only investigation of why recovery across Examples 1--3 was large and
+inconsistent. Reports, scripts and key figures: `docs/recovery_gulf_20261103/`.
+No production fits were run; all numbers come from existing candidate pools or
+NumPy re-evaluations validated against the framework forward pass (<=3e-7).
+
+### Diagnosis
+
+1. Selection picked optimiser transients. `running_best` (chosen on unweighted
+   validation loss at every step, `jaxent/src/opt/chunk.py:352`) wins 95--99% of
+   sidecar selections; median selected step is 1--7. Gradients are pre-scaled by
+   the configured learning rate and passed to Adam with `learning_rate=1.0`
+   (`optimiser.py:131`), so the configured rate is inert and the first update
+   moves every frame logit by +-1 (ESS ~44%). That state is identical across S,
+   bandwidth and MaxEnt/OMC (both regularisers have zero gradient at uniform).
+   Step 0 (the prior) is absent from the full-uptake and linear pools. Removing
+   transients (no `running_best`, step >= 100) changes several headline
+   conclusions: the "corrected linear BV strongest in all four Ex3 cells" claim
+   reverses, the OMC lead in Ex2 full uptake disappears, MSAss-vs-Filtered flips
+   in three arms.
+2. The original "corrected linear BV" rows (2026-09-26, Examples 2--3) rest on a
+   units error: `optimise_ISO_TRI_BI_splits_maxENT_BV_Objective.py` declared
+   `kint_unit="s^-1"` with `time_unit="min"` on min^-1 rates (x60, -4.1 ln
+   protection). Fresh min^-1 runs give 15--25%. Those rows are unit-confounded.
+3. With published bc=0.35/bh=2.0 and frame_uptake averaging the MoPrP prior
+   under-predicts uptake (mean 0.25 vs 0.50; exp>pred in 99% of cells) and only
+   zero-target frames reach the observed uptake, so better fit = lower recovery
+   (within-replicate Spearman +0.7 to +0.99). Uniform prior recovery is 73.3%
+   (AF2_MSAss) / 80.8% (AF2_filtered); all-Folded caps at 87.9%.
+4. The peptide map divided by every trimmed residue including prolines and
+   residues absent from the feature topology (`sparse_map.py:173`), capping
+   11-24, 11-26, 32-45, 33-40 and 95-101 (A101 unfeaturised) below their
+   experimental normalisation. Fixed: `normalize_sparse_map_rows` option with a
+   proline-only gap check (default off; MoPrP runners default on), and new
+   features `_featurise_a101_k109` (A101 included, 109-construct rates,
+   contacts bit-identical to `_featurise` on residues 2--100).
+5. Train/validation peptides overlap in 4 of 6 MoPrP splits
+   (`split.py` re-admits peptides touching the trimmed region); no held-out test
+   set; 12 of 14 peptides used. ISO spatial replicates 0/1 share 96% of
+   validation. The ISO sidecar fits the first-party BV target (98% of prior MSE
+   reducible) whereas the original fits Bradshaw/PH (6.6%), which explains
+   99% vs 83%; ISO_TRI's ~62% ceiling is exactly the weight left on unassigned
+   frames.
+6. Mouse-PrP numbering is seq = mouse - 122 (construct 123--223); every
+   Moulick 2015 Table 1 segment except 133--143 is one of the 14 peptides
+   (205--212 = 83--90, dG_op 4.79 = global). `moprp.weights` are 1/sigma per
+   exPfact's README and are applied linearly in its cost; with n=3 replicates
+   the per-cell values need pooling/flooring (sigma floor 0.0586).
+
+### What makes recovery work (validated on ISO BI as control)
+
+- Forward model: BV lnPF + delta, delta = median(median.pfact>0) -
+  median(ensemble lnPF) = -3.11 (MSAss) / -3.17 (Filtered), lnPF floored at 0;
+  no least-squares bc/bh refit (bh is not identified: 0 on all cells, 0.3--5.4
+  depending on which pLDDT-selected peptides are included).
+- Averaging: rate (EX2 fast-interconversion). Under rate + delta the state-level
+  landscape has its optimum at Folded 96--99 / PUF1 1--3.5 / decoys 0
+  (recovery 94--95) for every fit score; under frame_uptake or unscaled BV it is
+  flat or inverted.
+- Prior: p0_i ∝ exp(-sum_s lambda_s o_{i,s}) with lambda_s solved so the
+  ensemble reproduces per-segment K_op = exp(-dG_op/RT) from Table 1. p0 alone:
+  96.4/2.8/0 (MSAss, 91.7%, ESS 84%) and 96.2/3.3/0.3 (Filtered, 96.1%, ESS 91%).
+  MSAss PUF2 is unreachable (alpha1-open frames are a subset of beta2-open
+  frames; Laplacian smoothing cannot break the nesting).
+- Objective: pooled-sigma chi^2 + KL(w||p0)/S, S spanning ESS 10--100%,
+  converged states only.
+- Selection rule D: fewest Sidak flags on held-out contiguous-block z, ties
+  toward p0, then argmin of F = 1/2 sum z^2 + KL(w||p0); ESS >= 50% acceptance
+  check on the pick (not a candidate filter: the true ISO weights have ESS 28%).
+  Passes ISO BI at sigma 0.01/0.02 (98%); MoPrP 93.1 +/- 1.2 (MSAss),
+  94.9 +/- 3.1 (Filtered). Rule A alone fails ISO at sigma 0.02; the 1-SE rule
+  always returns p0 on MoPrP; argmin chi^2 is equivalent to the free energy here.
+- Two-sided variance (self-tuning kNN kernel in L2-logPF, union k=20, alpha=1/2;
+  N_eff ~1.6 MSAss / 5.5 Filtered / 8.6 ISO BI) is a diagnostic only: diagonal z
+  labels flags as ensemble-uncertain (32-45, 33-40 vanish) vs BV model error
+  (60-74, 83-90, 11-26, 27-31 persist). The full Mahalanobis form with C_walk at
+  uniform weights fails ISO (it forgives the open/closed mode). OMC w^T L w terms
+  lower recovery; gamma = 0.
+
+Not yet implemented in production: the KL-reference path (p0), the delta-shift
+model config, rule-D selection, contiguous disjoint splits, Adam step < 1 and
+removal of `running_best` from the candidate pool.
 
 ## Conventions
 
