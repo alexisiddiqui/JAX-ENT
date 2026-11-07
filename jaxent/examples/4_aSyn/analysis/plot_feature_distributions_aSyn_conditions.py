@@ -1813,7 +1813,9 @@ def plot_residue_pf_distributions_per_metric(
     # Determine paths for target experimental data
     # metric_dir: examples/4_aSyn/fitting/_processed_.../_extracted_.../val_mse_min
     # exp_dir is 4 levels up: examples/4_aSyn
-    exp_dir = metric_dir.parents[3]
+    # Example directory (jaxent/examples/4_aSyn) from this script's location; the previous
+    # metric_dir.parents[3] resolved to fitting/ for benchmark layouts and silently skipped plots.
+    exp_dir = Path(__file__).resolve().parents[1]
     data_dir = exp_dir / "data" / "_aSyn"
 
     target_pfs = {}
@@ -1980,7 +1982,9 @@ def plot_tris_bound_distributions_per_metric(
 
     Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
     """
-    exp_dir = metric_dir.parents[3]
+    # Example directory (jaxent/examples/4_aSyn) from this script's location; the previous
+    # metric_dir.parents[3] resolved to fitting/ for benchmark layouts and silently skipped plots.
+    exp_dir = Path(__file__).resolve().parents[1]
     tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
     if not tris_npz_path.exists():
         print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris bound plot.")
@@ -2089,7 +2093,9 @@ def plot_tris_contacts_distributions_per_metric(
 
     Shows the fitted ensemble mean + replicate SD (black) and original unweighted mean + SD (grey dashed).
     """
-    exp_dir = metric_dir.parents[3]
+    # Example directory (jaxent/examples/4_aSyn) from this script's location; the previous
+    # metric_dir.parents[3] resolved to fitting/ for benchmark layouts and silently skipped plots.
+    exp_dir = Path(__file__).resolve().parents[1]
     tris_npz_path = exp_dir / "data" / "_aSyn" / "tris_MD" / "features" / "tris_residue_contacts.npz"
     if not tris_npz_path.exists():
         print(f"WARNING: tris contact file not found at {tris_npz_path}. Skipping Tris contacts plot.")

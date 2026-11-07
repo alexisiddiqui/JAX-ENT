@@ -1,8 +1,8 @@
 #!/bin/bash
 # featurise_benchmark.sh
 # Featurises all 5 new (md_source x time) combinations for the ensemble-size benchmark.
-# tris_MD 1.0us features already exist in data/_aSyn/tris_MD/features/; only the
-# 5 new combos are run here.
+# All six (md_source x time) combinations are featurised; existing outputs are
+# skipped unless --overwrite is given.
 #
 # Prerequisites: run truncate_trajectories.sh first (produces 0.25us / 0.5us XTCs).
 # Requires jaxent-featurise on PATH (activate .venv first).
@@ -61,7 +61,8 @@ run_featurise() {
         echo "[SKIP] ${label}: trajectory not found at ${traj}"
         return 0
     fi
-    if [ "${OVERWRITE}" -eq 0 ] && [ -f "${outdir}/features.npz" ] && [ -f "${outdir}/${name}.npz" ]; then
+    # jaxent-featurise writes features.npz + topology.json (the --name is not used as a filename)
+    if [ "${OVERWRITE}" -eq 0 ] && [ -f "${outdir}/features.npz" ] && [ -f "${outdir}/topology.json" ]; then
         echo "[SKIP] ${label}: outputs already exist in ${outdir} (use --overwrite to re-run)"
         return 0
     fi
@@ -87,7 +88,14 @@ run_featurise() {
     echo ""
 }
 
-echo "=== Featurising tris_MD sub-trajectories ==="
+echo "=== Featurising tris_MD trajectories ==="
+
+run_featurise \
+    "tris_MD 1.0us" \
+    "${TRIS_TOP}" \
+    "${TRIS_DIR}/tris_all_combined.xtc" \
+    "${TRIS_DIR}/features" \
+    "tris_featurised"
 
 run_featurise \
     "tris_MD 0.25us" \
@@ -128,6 +136,7 @@ run_featurise \
 
 echo "=== Featurisation complete. Output summary: ==="
 for d in \
+    "${TRIS_DIR}/features" \
     "${TRIS_DIR}/features_0.25us" \
     "${TRIS_DIR}/features_0.5us" \
     "${CTRL_DIR}/features_0.25us" \
