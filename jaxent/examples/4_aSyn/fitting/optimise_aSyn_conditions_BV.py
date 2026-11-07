@@ -36,6 +36,8 @@ python optimise_aSyn_conditions_BV.py \\
 """
 
 import argparse
+import dataclasses
+import json
 import os
 import time
 from datetime import datetime
@@ -121,6 +123,8 @@ def run_conditions_sweep(
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
     execution_mode: Literal["compiled", "python"] = "compiled",
+    freeze_frame_weights: bool = False,
+    fixed_bv_params: dict | None = None,
 ) -> dict:
     """
     Run optimization sweep across maxent and BV regularization values for one condition.
@@ -259,14 +263,29 @@ def run_conditions_sweep(
                         f"{condition}_{loss_name}_{split_type}_split{split_idx:03d}"
                         f"_maxent{maxent_value:.1f}_bvreg{bv_reg_value:.1f}_bvregfn{bv_reg_name}"
                     )
+                    run_model_parameters = model_parameters
+                    if fixed_bv_params is not None:
+                        # Stage-2 mode: BV parameters pinned to externally fitted values (per condition,
+                        # bv_reg arm and split), frame weights optimised, no BV regulariser.
+                        fx = fixed_bv_params[condition][f"{bv_reg_value:g}"][f"{split_idx:03d}"]
+                        run_model_parameters = dataclasses.replace(
+                            model_parameters,
+                            bv_bc=jnp.asarray([float(fx["bv_bc"])]),
+                            bv_bh=jnp.asarray([float(fx["bv_bh"])]),
+                        )
+                        print(f"    fixed BV params: bc={fx['bv_bc']:.4f} bh={fx['bv_bh']:.4f}")
                     print(f"    Running maxent={maxent_value:.1f}, bv_reg={bv_reg_value:.1f}: {run_name}")
                     run_start_time = time.time()
 
                     try:
                         loss_config = LossConfig(
-                            optimize_bv_params=True,
+                            optimize_bv_params=fixed_bv_params is None,
+                            optimize_frame_weights=not freeze_frame_weights,
                             primary_loss=LOSS_NAME_MAP[loss_name],
-                            regularization_losses=[{"name": f"model_params_{bv_reg_name}_loss"}],
+                            regularization_losses=(
+                                [] if fixed_bv_params is not None
+                                else [{"name": f"model_params_{bv_reg_name}_loss"}]
+                            ),
                             bv_reg_scaling=bv_reg_value,
                             maxent_scaling=maxent_value,
                             normalize_bv_reg=False,
@@ -287,7 +306,7 @@ def run_conditions_sweep(
                             prior_data=prior_dataset,
                             features=features,
                             forward_model=bv_model,
-                            model_parameters=model_parameters,
+                            model_parameters=run_model_parameters,
                             feature_top=feature_top,
                             convergence=convergence_rates,
                             loss_config=loss_config,
@@ -366,6 +385,8 @@ def run_all_conditions(
     model_parameters_lr_scale: float = 1.0,
     features_dir: str = None,
     execution_mode: Literal["compiled", "python"] = "compiled",
+    freeze_frame_weights: bool = False,
+    fixed_bv_params: dict | None = None,
 ) -> List[dict]:
     """Run sweep for all conditions with MSE loss."""
     loss_names = ["MSE"]
@@ -403,6 +424,8 @@ def run_all_conditions(
                 model_parameters_lr_scale=model_parameters_lr_scale,
                 features_dir=features_dir,
                 execution_mode=execution_mode,
+                freeze_frame_weights=freeze_frame_weights,
+                fixed_bv_params=fixed_bv_params,
             )
             all_results.append(result)
             print(f"Completed: {condition}-{loss_name}")
@@ -553,7 +576,26 @@ def main():
              "Overrides features_dir from config.yaml.",
     )
 
+    parser.add_argument(
+        "--freeze-frame-weights",
+        action="store_true",
+        help="Optimise the BV parameters only; frame weights stay uniform (parameter calibration stage).",
+    )
+    parser.add_argument(
+        "--fixed-bv-params",
+        type=str,
+        default=None,
+        help="JSON {condition: {bv_reg: {split: {bv_bc, bv_bh}}}}: pin the BV parameters to these values, "
+             "optimise frame weights only, drop the BV regulariser (second stage).",
+    )
+
     args = parser.parse_args()
+    fixed_bv_params = None
+    if args.fixed_bv_params:
+        with open(args.fixed_bv_params) as fh:
+            fixed_bv_params = json.load(fh)
+    if args.freeze_frame_weights and fixed_bv_params is not None:
+        parser.error("--freeze-frame-weights and --fixed-bv-params are mutually exclusive")
 
     try:
         start_val, end_val = map(int, args.maxent_range.split(","))
@@ -602,6 +644,8 @@ def main():
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
             execution_mode=args.execution_mode,
+            freeze_frame_weights=args.freeze_frame_weights,
+            fixed_bv_params=fixed_bv_params,
         )
 
     else:
@@ -619,6 +663,8 @@ def main():
             model_parameters_lr_scale=args.model_parameters_lr_scale,
             features_dir=args.features_dir,
             execution_mode=args.execution_mode,
+            freeze_frame_weights=args.freeze_frame_weights,
+            fixed_bv_params=fixed_bv_params,
         )
 
     if args.output_dir:

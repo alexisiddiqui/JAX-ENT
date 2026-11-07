@@ -68,6 +68,8 @@ class LossConfig:
     primary_loss: str  # e.g. "hdx_uptake_mean_centred_MSE_loss"
     regularization_losses: list[dict] = field(default_factory=list)
     optimize_bv_params: bool = False
+    # False freezes the frame weights (parameter-only fit, e.g. a BV calibration stage).
+    optimize_frame_weights: bool = True
     # Optional dynamic-slot allow-list. None means all model parameters when
     # optimize_bv_params is enabled.
     trainable_model_parameters: frozenset[str] | None = None

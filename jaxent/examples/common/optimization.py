@@ -269,9 +269,13 @@ def run_optimization(
         sim.initialise()
 
         # Build optimizer with appropriate parameter masks
-        partition_masks = {Optimisable_Parameters.frame_weights}
+        partition_masks = set()
+        if getattr(loss_config, "optimize_frame_weights", True):
+            partition_masks.add(Optimisable_Parameters.frame_weights)
         if loss_config.optimize_bv_params:
             partition_masks.add(Optimisable_Parameters.model_parameters)
+        if not partition_masks:
+            raise ValueError("nothing to optimise: enable frame weights and/or BV parameters")
 
         optimizer_type = opt_config.optimizer if opt_config is not None else "adam"
         optimizer = OptaxOptimizer(
@@ -353,6 +357,8 @@ def run_optimization(
                 ),
                 "learning_rate": learning_rate,
                 "optimizer": optimizer_type,
+                "optimize_frame_weights": bool(getattr(loss_config, "optimize_frame_weights", True)),
+                "optimize_bv_params": bool(loss_config.optimize_bv_params),
                 "initial_frame_weights": (
                     "uniform" if initial_frame_weights is None else "user_supplied"
                 ),
