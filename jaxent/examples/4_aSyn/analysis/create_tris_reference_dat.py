@@ -4,7 +4,8 @@ import csv
 from pathlib import Path
 
 def create_tris_dat():
-    base_dir = Path("/Users/alexi/JAX-ENT/jaxent/examples/4_aSyn")
+    # jaxent/examples/4_aSyn, resolved from this script's location (was a hard-coded /Users path)
+    base_dir = Path(__file__).resolve().parents[1]
     json_path = base_dir / "data/_aSyn/aSyn_PF_Tris_only.json"
     csv_path = base_dir / "data/_aSyn/aSyn_PF_Tris_only.csv"
     output_path = base_dir / "data/_aSyn/aSyn_PF_Tris_only.dat"

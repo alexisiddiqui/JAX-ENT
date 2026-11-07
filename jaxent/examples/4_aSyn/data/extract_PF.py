@@ -5,7 +5,19 @@ and the topology from jaxent/examples/4_aSyn/data/_cluster_aSyn/data/topology.js
 
 outputs jaxent/examples/4_aSyn/data/_aSyn/aSyn_PF.csv over all conditions
 and a jaxENT BV protection features object for each condition, matching the topology.json provided
+
+Units: the observed rates (k_obs) in the source spreadsheet (ac2c03183_si_002.xlsx) are headed
+"(s-1)" but are per millisecond: on the bradykinin sheet S5 (explicit "Labelling time (ms)") the
+listed rate reproduces the uptake curve per ms (rmse 0.1 Da) and not per s (rmse 2.4 Da); the
+S11 peptide fits in fitting/run_asyn_uptake_sidecars.py agree (k_fit / (1000 x reported) ~ 1 for
+29/30 peptides).  k_obs is therefore multiplied by 1000 here (per-ms -> s^-1; accepted
+2026-11-07, see docs/HANDOFF_20261107.md), intrinsic rates are computed in s^-1 at 293 K and
+the condition pD (taken equal to the measured pH, no +0.4 correction). PF = k_int / k_obs;
+outputs store ln PF.  History: until 2026-11-05 k_obs was also divided by 60 (ln 60 inflation);
+until 2026-11-07 the per-ms unit was taken as s^-1 (ln 1000 inflation).  Outputs produced under
+the old conventions are archived in _aSyn/_pre_units_fix/ (May) and _aSyn/_pre_ms_units_20261105/.
 """
+KOBS_PER_MS_TO_PER_S = 1000.0
 
 import argparse
 import json
@@ -133,8 +145,8 @@ def plot_hdx_metrics(plot_data_list, output_dir, topology_resids=None):
     fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
     
     metrics = [
-        ("k_obs", r"$k_{obs}$ ($min^{-1}$)", "Observed Rates"),
-        ("k_int", r"$k_{int}$ ($min^{-1}$)", "Intrinsic Rates"),
+        ("k_obs", r"$k_{obs}$ ($s^{-1}$)", "Observed Rates"),
+        ("k_int", r"$k_{int}$ ($s^{-1}$)", "Intrinsic Rates"),
         ("log_PF", r"$\log(Pf)$", "Protection Factors")
     ]
     
@@ -241,7 +253,7 @@ def main():
         logging.info(f"Using pD = {pD} for condition '{condition}'")
         
         # Calculate intrinsic rates for this condition's pH/pD
-        kint_dict = calculate_HDXrate(protein_residues, temperature=293.0, pD=pD)
+        kint_dict = calculate_HDXrate(protein_residues, temperature=293.0, pD=pD, unit="s^-1")
         
         # Map intrinsic rates - kint_dict maps mda.Residue -> rate
         topo_k_ints = {}
@@ -257,7 +269,10 @@ def main():
 
         for i, row in df_kobs.iterrows():
             resid = int(row["Amino acid residues"])
-            k_obs = row[condition] / 60   # Convert from s^-1 to min^-1
+            # Spreadsheet rates are per ms despite the "(s-1)" header (see module docstring);
+            # intrinsic rates are in s^-1.  Until 2026-11-05 this line divided by 60 and until
+            # 2026-11-07 it applied no unit conversion.
+            k_obs = float(row[condition]) * KOBS_PER_MS_TO_PER_S
             
             pf = np.nan
             k_int = np.nan
