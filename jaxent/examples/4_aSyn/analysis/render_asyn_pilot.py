@@ -61,7 +61,7 @@ STRUCTURE_PANELS = (  # name, metric, target, reference, spectrum, (vmin, vmax),
      "rule-D minus prior ln PF"),
     ("ruleD_foldSD", "uncertainty_sd", "ruleD", None, "white_red", (0.0, 1.0), "rule-D ln PF SD over folds"),
 )
-FOLD_COLOURS = {"A_1-38": "#1b9e77", "B_39-69": "#d95f02", "C_55-94": "#7570b3", "D_90-113": "#e7298a"}
+FOLD_COLOURS = {"A_1-38": "#1b9e77", "B_39-69": "#d95f02", "C_55-94": "#7570b3", "D_90-113": "#e7298a", "E_114-140": "#66a61e"}
 MACRO = ["Rod", "Wavy", "Compact", "Unassigned"]
 MACRO_COLOURS = {"Rod": "grey", "Wavy": "blue", "Compact": "orange", "Unassigned": "lightgrey"}
 GRIDSIZE = 20
