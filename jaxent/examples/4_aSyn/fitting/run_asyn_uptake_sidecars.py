@@ -27,8 +27,12 @@ aSyn specifics (prepare phase):
     sigma_pt over timepoints (the MoPrP sig_pep convention); the loader trace-normalises it.  Variant 'floorBV'
     adds sigma_BV^2 (1.4826 MAD of prior training residuals after delta).  Held-out z for selection use sigma_pt
     (and sigma_pt^2 + sigma_BV^2 for floorBV).
-  * folds: 4 contiguous disjoint peptide blocks, leave-one-block-out; tail peptides (start >= 114) excluded from
-    train and val, kept in an 'excluded' list and predicted.
+  * folds: 4 contiguous disjoint peptide blocks, leave-one-block-out; by default tail peptides (start >= 114) are
+    excluded from train and val, kept in an 'excluded' list and predicted; with --include-tail they form a fifth
+    block E_114-140 fitted and held out like the others (2026-11-08).
+  * --calibration tris freezes the ensemble's Tris_only training-median delta for every condition (one shift,
+    "fit the Tris median"); --bradykinin-chem multiplies k_int of the other conditions by the paper's bradykinin
+    chemistry factor net of pH (Extracellular 0.848, Intracellular 0.920).
 
 Regulariser arms (--regulariser; default convexKL reproduces the 2026-11-06 pilot):
   * convexKL : maxent_convexKL_loss via maxent_scaling = KL(uniform || w) (the pipeline default; README gap 4).
@@ -85,6 +89,7 @@ TEMPLATE = (REPO/"jaxent/examples/2_CrossValidation/fitting/jaxENT/_moprp_policy
             "MoPrP_rate_AF2_filtered_MSE_maxent_sequence_cluster_split000_maxent1000_config.json")
 CELLS = ("TrisMD__Tris_only", "ControlMD__Tris_only", "TrisMD__Extracellular", "TrisMD__Intracellular")
 PD = {"Tris_only": 7.4, "Extracellular": 7.4, "Intracellular": 7.2}
+CALIBRATION_COND = "Tris_only"  # --calibration tris: delta from <ensemble>__Tris_only, frozen for the other conditions
 TEMP_K = 293.0
 BC, BH = 0.35, 2.0
 TIMES_S = (0.05, 0.1, 0.25, 0.5, 1.0, 10.0, 30.0)  # t_index 1..7 of the 8-point grid (t = 0 is identically 0)
@@ -105,13 +110,26 @@ ALPHA = 0.05
 ALPHA_EACH = 1-0.95**(1/3)
 SPLIT_TYPE = "blocks"
 # contiguous disjoint peptide blocks (end <= 38 | 39-69 | 55-94 not in B | 90-113); see README for the choice
-BLOCKS = {
+BASE_BLOCKS = {
     "A_1-38": lambda s, e: e <= 38,
     "B_39-69": lambda s, e: s >= 39 and e <= 69,
     "C_55-94": lambda s, e: s >= 55 and e <= 94 and not (s >= 39 and e <= 69),
     "D_90-113": lambda s, e: 90 <= s < TAIL_START,
 }
+TAIL_BLOCK = {"E_114-140": lambda s, e: s >= TAIL_START}
+INCLUDE_TAIL = False
+BLOCKS = dict(BASE_BLOCKS)
 FOLDS = tuple(BLOCKS)
+
+
+def set_tail_mode(include_tail):
+    """--include-tail: the acidic tail peptides (start >= 114) form a fifth block fitted and held out like the
+    others (user 2026-11-07: excluding the C-tail from the fit was unfounded).  Default keeps the 2026-11-06
+    pilot behaviour (tail excluded from train/val, predicted only)."""
+    global INCLUDE_TAIL, BLOCKS, FOLDS
+    INCLUDE_TAIL = bool(include_tail)
+    BLOCKS = {**BASE_BLOCKS, **(TAIL_BLOCK if INCLUDE_TAIL else {})}
+    FOLDS = tuple(BLOCKS)
 
 
 def default_output():
@@ -160,6 +178,7 @@ class RunSpec:
     normalize_sparse_map_rows: bool = True
     regulariser: str = "convexKL"  # convexKL = maxent_convexKL_loss KL(u||w); reverseKL = KL(w||u) (recipe)
     inner_adam_step: float = 1.0  # 1.0 = OptaxOptimizer as shipped; otherwise emulated (see _scale_inner_adam)
+    include_tail: bool = False  # tail peptides (start >= 114) as a fifth fitted block (see set_tail_mode)
 
     @property
     def ensemble(self):
@@ -178,6 +197,8 @@ class RunSpec:
         tag = "maxent" if self.regulariser == "convexKL" else self.regulariser
         if self.inner_adam_step != 1.0:
             tag += f"_adam{self.inner_adam_step:g}"
+        if self.include_tail:
+            tag += "_tailin"
         return f"aSyn_rate_{self.cell}_{self.variant}_sigMSE_{tag}_{SPLIT_TYPE}_split{self.split_idx:03d}_maxent{self.strength:g}"
 
     @property
@@ -217,7 +238,8 @@ def build_specs(args):
                 for strength in sorted(set(args.strengths) | set(extra)):
                     specs.append(RunSpec(cell=cell, variant=variant, split_idx=split_idx, strength=float(strength),
                                          n_steps=args.n_steps, output_dir=str(args.output_dir),
-                                         regulariser=args.regulariser, inner_adam_step=args.inner_adam_step))
+                                         regulariser=args.regulariser, inner_adam_step=args.inner_adam_step,
+                                         include_tail=args.include_tail))
     if len({s.run_id for s in specs}) != len(specs):
         raise ValueError("duplicate run ids")
     return specs
@@ -258,7 +280,7 @@ def peptide_table(condition):
     peps["residue_list"] = peps.residues.map(lambda s: [int(x) for x in str(s).split()])
     blocks = []
     for _, p in peps.iterrows():
-        if p.start >= TAIL_START:
+        if p.start >= TAIL_START and not INCLUDE_TAIL:
             blocks.append("tail")
             continue
         hit = [b for b, fn in BLOCKS.items() if fn(p.start, p.end)]
@@ -286,7 +308,8 @@ def write_datasplits(condition, peps, y, out):
     save = lambda items, stem: ExpD_Datapoint.save_list_to_files(items, json_path=str(stem)+"_topology.json",
                                                                   csv_path=str(stem)+"_dfrac.csv")
     save(data, out/"full_dataset")
-    save([d for d, b in zip(data, peps.block) if b == "tail"], out/"excluded")
+    if any(b == "tail" for b in peps.block):
+        save([d for d, b in zip(data, peps.block) if b == "tail"], out/"excluded")
     for k, fold in enumerate(FOLDS):
         sd = out/SPLIT_TYPE/f"split_{k:03d}"
         sd.mkdir(parents=True, exist_ok=True)
@@ -295,7 +318,17 @@ def write_datasplits(condition, peps, y, out):
     return data
 
 
-def prepare_cell(cell, out, names, residues_mda):
+def bradykinin_chem_factor(cond):
+    """Residual (non-pH) chemistry factor from the paper's bradykinin calibration (SI Figure S5):
+    k_brady(cond)/k_brady(Tris) = 1/norm_factor, divided by the pH-only expectation 10^(pH_cond - pH_Tris)
+    that the Bai k_int at the condition pD already carries.  Tris 1.0, Extracellular 0.848, Intracellular 0.920."""
+    norm = json.loads((UPTAKE/"S11_time_grids.json").read_text())["norm_factor"][cond]
+    return float((1.0/norm)/10**(PD[cond]-PD[CALIBRATION_COND]))
+
+
+def prepare_cell(cell, out, names, residues_mda, delta_override=None, chem_factor=1.0):
+    """delta_override: ln PF shift taken from another cell (e.g. the ensemble's Tris_only median) instead of this
+    cell's own training median; chem_factor multiplies k_int (bradykinin chemistry net of pH)."""
     from jaxent.src.models.HDX.BV.features import BV_input_features
     import jaxent.src.interfaces.topology as pt
     ens, cond = cell.split("__")
@@ -307,7 +340,7 @@ def prepare_cell(cell, out, names, residues_mda):
     E0 = np.exp(-(BC*h+BH*a)).mean(1)
     del h, a
     kd = intrinsic_rates(cond, residues_mda)
-    kint = np.array([kd[r] for r in res])
+    kint = np.array([kd[r] for r in res])*chem_factor
     peps, y, sd, y8 = peptide_table(cond)
     ridx = {r: i for i, r in enumerate(res)}
     rows = [[ridx[r] for r in rl] for rl in peps.residue_list]
@@ -316,7 +349,8 @@ def prepare_cell(cell, out, names, residues_mda):
     mean_kint = np.array([kint[r].mean() for r in rows])
     lnpf_exp = np.log(mean_kint/kfit[:, 0])
     lnpf_prior = -np.log(np.array([E0[r].mean() for r in rows]))
-    delta = float(np.median((lnpf_exp-lnpf_prior)[train]))
+    delta_cell = float(np.median((lnpf_exp-lnpf_prior)[train]))
+    delta = delta_cell if delta_override is None else float(delta_override)
     M = np.zeros((len(peps), len(res)))
     for p, r in enumerate(rows):
         M[p, r] = 1/len(r)
@@ -354,6 +388,8 @@ def prepare_cell(cell, out, names, residues_mda):
              starts=peps.start.to_numpy(), ends=peps.end.to_numpy(), lnpf_exp=lnpf_exp, delta=delta, M=M,
              times=np.asarray(TIMES_S))
     info = dict(cell=cell, n_frames=int(feat.features_shape[1]), n_residues=len(res), delta=delta, floor=floor,
+                delta_cell_median=delta_cell, delta_source="own training median" if delta_override is None else
+                f"{ens}__{CALIBRATION_COND} training median (frozen)", kint_chem_factor=chem_factor,
                 sigma_bv=sigma_bv, n_train=int(len(train)), n_tail=int((peps.block == "tail").sum()),
                 blocks={b: peps.label[peps.block == b].tolist() for b in FOLDS+("tail",)},
                 prior_chi2_train_floor=float(np.mean(((P0-y)/sig["floor"])[train]**2)),
@@ -387,7 +423,17 @@ def prepare(args):
     names, residues_mda = residue_names_from_pdb()
     (out/"datasplits").mkdir(parents=True, exist_ok=True)
     (out/"datasplits"/"asyn.seq").write_text("".join(names[i] for i in sorted(names))+"\n")
-    infos = {cell: prepare_cell(cell, out, names, residues_mda) for cell in args.cells}
+    infos = {}
+    for cell in sorted(args.cells, key=lambda c: c.split("__")[1] != CALIBRATION_COND):  # Tris_only cells first
+        ens, cond = cell.split("__")
+        override = None
+        if args.calibration == "tris" and cond != CALIBRATION_COND:
+            src = f"{ens}__{CALIBRATION_COND}"
+            if src not in infos:
+                raise ValueError(f"--calibration tris needs {src} among the cells to calibrate {cell}")
+            override = infos[src]["delta"]
+        chem = bradykinin_chem_factor(cond) if args.bradykinin_chem else 1.0
+        infos[cell] = prepare_cell(cell, out, names, residues_mda, delta_override=override, chem_factor=chem)
     missing = validate_sparse_maps(out, args.cells, names)
     print(f"[prepare] peptide residues absent from features (must be prolines): {missing}", flush=True)
     return infos, missing
@@ -625,7 +671,7 @@ class CellScorer:
                    ho_chi2=float(np.mean(zv**2)), ho_n_cells=int(zv.size), ho_t_n=tn, ho_n_flags=int(fl.sum()),
                    ho_flagged=";".join(f"{self.labels[va[i]]}({int(fl[i].sum())})" for i in range(len(va)) if fl[i].any()),
                    ho_maxabsz=float(np.abs(zv).max()), F=float(0.5*np.sum(zv**2)+KL),
-                   chi2_tail=float(np.mean(z[tail]**2)), mean_resid_train=float((P-self.y)[tr].mean()),
+                   chi2_tail=float(np.mean(z[tail]**2)) if len(tail) else float("nan"), mean_resid_train=float((P-self.y)[tr].mean()),
                    loss_train_replay=self.replay_loss(P, tr), loss_val_replay=self.replay_loss(P, va), **gci_triple(zv))
         return row, P, z
 
@@ -780,13 +826,23 @@ def main():
     ap.add_argument("--inner-adam-step", type=float, default=1.0,
                     help="inner Adam step (1.0 = OptaxOptimizer as shipped; e.g. 0.1 = MoPrP diagnostic, emulated)")
     ap.add_argument("--splits", help="comma-separated split indices (default all four folds; 0 with --smoke)")
+    ap.add_argument("--calibration", choices=("cell", "tris"), default="cell",
+                    help="ln PF shift delta: 'cell' = each cell's own training median (2026-11-06 pilot); "
+                         "'tris' = the ensemble's Tris_only training median, frozen for every condition")
+    ap.add_argument("--bradykinin-chem", action="store_true",
+                    help="multiply k_int of the non-Tris conditions by the paper's bradykinin chemistry factor net of pH "
+                         "(Extracellular 0.848, Intracellular 0.920; SI Figure S5)")
+    ap.add_argument("--include-tail", action="store_true",
+                    help="fit the tail peptides (start >= 114) as a fifth block E_114-140 instead of excluding them")
     ap.add_argument("--worker-spec", type=Path)
     args = ap.parse_args()
     if args.worker_spec:
         spec = RunSpec(**json.loads(args.worker_spec.read_text()))
+        set_tail_mode(spec.include_tail)
         if not completed(spec):
             run_fit(spec)
         return
+    set_tail_mode(args.include_tail)
     args.output_dir = (args.output_dir or default_output()).resolve()
     if args.smoke:
         args.output_dir = args.output_dir.with_name(args.output_dir.name+"_smoke")
@@ -822,7 +878,8 @@ def main():
                                 bv_fixed=dict(bc=BC, bh=BH), frame_averaging_mode="rate", peptide_trim=PEPTIDE_TRIM,
                                 normalize_sparse_map_rows=True, primary_loss="hdx_uptake_sigma_MSE_loss",
                                 regulariser=args.regulariser, maxent=REGULARISER_DESCRIPTION[args.regulariser],
-                                inner_adam_step=args.inner_adam_step,
+                                inner_adam_step=args.inner_adam_step, calibration=args.calibration,
+                                bradykinin_chem=args.bradykinin_chem, include_tail=args.include_tail,
                                 template_opt_config=str(TEMPLATE), min_candidate_step=MIN_CANDIDATE_STEP,
                                 tail_start=TAIL_START, alpha=ALPHA)
     manifest["specs"] = [asdict(s) for s in specs]
